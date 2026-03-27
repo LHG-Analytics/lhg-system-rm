@@ -1,0 +1,234 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
+import {
+  BarChart3,
+  BotMessageSquare,
+  Building2,
+  ChevronDown,
+  ChevronsUpDown,
+  Hotel,
+  LayoutDashboard,
+  LogOut,
+  Settings,
+  Tags,
+  Warehouse,
+} from 'lucide-react'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+} from '@/components/ui/sidebar'
+import { createClient } from '@/lib/supabase/client'
+import type { Database } from '@/types/database.types'
+
+type Unit = Database['public']['Tables']['units']['Row']
+type UserRole = Database['public']['Enums']['user_role']
+
+interface AppSidebarProps {
+  units: Unit[]
+  activeUnit: Unit
+  userEmail: string
+  userRole: UserRole
+}
+
+const navItems = [
+  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Preços', href: '/dashboard/precos', icon: Tags },
+  { label: 'Disponibilidade', href: '/dashboard/disponibilidade', icon: Warehouse },
+  { label: 'Agente RM', href: '/dashboard/agente', icon: BotMessageSquare },
+  { label: 'Relatórios', href: '/dashboard/relatorios', icon: BarChart3 },
+]
+
+const adminNavItems = [
+  { label: 'Configurações', href: '/dashboard/configuracoes', icon: Settings },
+  { label: 'Administração', href: '/dashboard/admin', icon: Building2 },
+]
+
+export function AppSidebar({ units, activeUnit, userEmail, userRole }: AppSidebarProps) {
+  const pathname = usePathname()
+  const router = useRouter()
+
+  const showAdmin = userRole === 'super_admin' || userRole === 'admin'
+
+  async function handleSignOut() {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
+  function handleUnitChange(unit: Unit) {
+    router.push(`/dashboard?unit=${unit.slug}`)
+    router.refresh()
+  }
+
+  const initials = userEmail
+    .split('@')[0]
+    .slice(0, 2)
+    .toUpperCase()
+
+  return (
+    <Sidebar collapsible="icon">
+      {/* Unit selector */}
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton
+                  size="lg"
+                  className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                >
+                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                    <Hotel className="size-4" />
+                  </div>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-semibold">{activeUnit.name}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {activeUnit.city ?? 'LHG Motéis'}
+                    </span>
+                  </div>
+                  <ChevronsUpDown className="ml-auto size-4" />
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="w-[--radix-dropdown-menu-trigger-width] min-w-56"
+                align="start"
+                side="bottom"
+                sideOffset={4}
+              >
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  Unidades
+                </DropdownMenuLabel>
+                {units.map((unit) => (
+                  <DropdownMenuItem
+                    key={unit.id}
+                    onClick={() => handleUnitChange(unit)}
+                    className="gap-2 p-2"
+                  >
+                    <div className="flex size-6 items-center justify-center rounded-sm border">
+                      <Hotel className="size-3 shrink-0" />
+                    </div>
+                    {unit.name}
+                    {unit.id === activeUnit.id && (
+                      <ChevronDown className="ml-auto size-3 rotate-[-90deg]" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+
+      {/* Main navigation */}
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Gestão</SidebarGroupLabel>
+          <SidebarMenu>
+            {navItems.map((item) => (
+              <SidebarMenuItem key={item.href}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === item.href}
+                  tooltip={item.label}
+                >
+                  <Link href={item.href}>
+                    <item.icon />
+                    <span>{item.label}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+
+        {showAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Administração</SidebarGroupLabel>
+            <SidebarMenu>
+              {adminNavItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname === item.href}
+                    tooltip={item.label}
+                  >
+                    <Link href={item.href}>
+                      <item.icon />
+                      <span>{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
+      </SidebarContent>
+
+      {/* User menu */}
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton
+                  size="lg"
+                  className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                >
+                  <Avatar className="size-8 rounded-lg">
+                    <AvatarFallback className="rounded-lg text-xs">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-semibold">{userEmail.split('@')[0]}</span>
+                    <span className="truncate text-xs text-muted-foreground">{userEmail}</span>
+                  </div>
+                  <ChevronsUpDown className="ml-auto size-4" />
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="w-[--radix-dropdown-menu-trigger-width] min-w-56"
+                side="bottom"
+                align="end"
+                sideOffset={4}
+              >
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">{userEmail.split('@')[0]}</p>
+                    <p className="text-xs text-muted-foreground">{userEmail}</p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                  <LogOut className="size-4" />
+                  Sair
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+
+      <SidebarRail />
+    </Sidebar>
+  )
+}
