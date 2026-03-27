@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -26,8 +27,24 @@ export default async function LoginPage({
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-6">
-        <div className="text-center space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">LHG Revenue Manager</h1>
+        <div className="flex flex-col items-center gap-3">
+          {/* Logo — dark mode usa versão branca, light usa colorida */}
+          <Image
+            src="/lhg-logo-white.png"
+            alt="LHG"
+            width={120}
+            height={48}
+            priority
+            className="dark:block hidden"
+          />
+          <Image
+            src="/lhg-logo-color.png"
+            alt="LHG"
+            width={120}
+            height={48}
+            priority
+            className="dark:hidden block"
+          />
           <p className="text-sm text-muted-foreground">
             Gestão de preços e disponibilidade
           </p>
