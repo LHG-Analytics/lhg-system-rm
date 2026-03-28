@@ -35,6 +35,7 @@ export default async function LoginPage({
             width={120}
             height={48}
             priority
+            style={{ height: 'auto' }}
             className="dark:block hidden"
           />
           <Image
@@ -43,6 +44,7 @@ export default async function LoginPage({
             width={120}
             height={48}
             priority
+            style={{ height: 'auto' }}
             className="dark:hidden block"
           />
           <p className="text-sm text-muted-foreground">

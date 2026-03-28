@@ -81,7 +81,6 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
 
   function handleUnitChange(unit: Unit) {
     router.push(`/dashboard?unit=${unit.slug}`)
-    router.refresh()
   }
 
   const initials = userEmail
