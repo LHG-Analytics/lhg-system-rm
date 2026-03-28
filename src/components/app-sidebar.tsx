@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   BarChart3,
   BotMessageSquare,
@@ -62,13 +62,9 @@ const adminNavItems = [
   { label: 'Administração', href: '/dashboard/admin', icon: Building2 },
 ]
 
-export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole }: AppSidebarProps) {
+export function AppSidebar({ units, activeUnit, userEmail, userRole }: AppSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const searchParams = useSearchParams()
-
-  const unitSlug = searchParams.get('unit')
-  const activeUnit = units.find(u => u.slug === unitSlug) ?? defaultUnit
 
   const showAdmin = userRole === 'super_admin' || userRole === 'admin'
 
