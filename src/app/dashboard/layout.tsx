@@ -62,7 +62,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={false}>
       <Suspense fallback={null}>
         <AppSidebar
           units={units}
@@ -73,8 +73,9 @@ export default async function DashboardLayout({
       </Suspense>
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
+          {/* Trigger visível só no mobile — no desktop o hover abre a sidebar */}
+          <SidebarTrigger className="-ml-1 md:hidden" />
+          <Separator orientation="vertical" className="mr-2 h-4 md:hidden" />
           <div className="flex-1" />
           <ThemeToggle />
         </header>

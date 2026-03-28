@@ -6,7 +6,6 @@ import {
   BarChart3,
   BotMessageSquare,
   Building2,
-  ChevronDown,
   ChevronsUpDown,
   Hotel,
   LayoutDashboard,
@@ -35,6 +34,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import { createClient } from '@/lib/supabase/client'
 import type { Database } from '@/types/database.types'
@@ -66,6 +66,7 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { setOpen, isMobile } = useSidebar()
 
   const unitSlug = searchParams.get('unit')
   const activeUnit = units.find((u) => u.slug === unitSlug) ?? defaultUnit
@@ -89,7 +90,11 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
     .toUpperCase()
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar
+      collapsible="icon"
+      onMouseEnter={() => !isMobile && setOpen(true)}
+      onMouseLeave={() => !isMobile && setOpen(false)}
+    >
       {/* Unit selector */}
       <SidebarHeader>
         <SidebarMenu>
@@ -131,9 +136,6 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
                       <Hotel className="size-3 shrink-0" />
                     </div>
                     {unit.name}
-                    {unit.id === activeUnit.id && (
-                      <ChevronDown className="ml-auto size-3 rotate-[-90deg]" />
-                    )}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
