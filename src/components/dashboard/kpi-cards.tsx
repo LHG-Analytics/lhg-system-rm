@@ -1,4 +1,4 @@
-import type { CompanyKPIResponse, BookingsKPIResponse } from '@/lib/lhg-analytics/types'
+import type { CompanyKPIResponse } from '@/lib/lhg-analytics/types'
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -62,10 +62,9 @@ function KPICard({ label, value, previous, deltaPct, description }: KPICardProps
 
 interface DashboardKPICardsProps {
   company: CompanyKPIResponse | null
-  bookings: BookingsKPIResponse | null
 }
 
-export function DashboardKPICards({ company, bookings }: DashboardKPICardsProps) {
+export function DashboardKPICards({ company }: DashboardKPICardsProps) {
   if (!company) {
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -127,17 +126,6 @@ export function DashboardKPICards({ company, bookings }: DashboardKPICardsProps)
       deltaPct: prev ? delta(timeToSeconds(cur.totalAverageOccupationTime), timeToSeconds(prev.totalAverageOccupationTimePreviousData)) : null,
     },
   ]
-
-  // Add bookings card if available
-  if (bookings?.BigNumbers?.[0]) {
-    const bCur = bookings.BigNumbers[0].currentDate
-    const bPrev = bookings.BigNumbers[0].previousDate
-    cards.splice(4, 0, {
-      label: 'Reservas Online',
-      value: formatNumber(bCur.totalAllBookings),
-      deltaPct: bPrev ? delta(bCur.totalAllBookings, bPrev.totalAllBookingsPreviousData) : null,
-    })
-  }
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

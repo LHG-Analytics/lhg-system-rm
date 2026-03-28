@@ -132,6 +132,10 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
     router.push(`${pathname}?unit=${unit.slug}`)
   }
 
+  function prefetchUnit(unit: Unit) {
+    router.prefetch(`${pathname}?unit=${unit.slug}`)
+  }
+
   const initials = userEmail
     .split('@')[0]
     .slice(0, 2)
@@ -176,7 +180,8 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
                   <DropdownMenuItem
                     key={unit.id}
                     onClick={() => handleUnitChange(unit)}
-                    className="gap-2 p-2"
+                    onMouseEnter={() => prefetchUnit(unit)}
+                    className="gap-2 p-2 cursor-pointer"
                   >
                     <UnitLogo slug={unit.slug} name={unit.name} size={20} />
                     {unit.name}

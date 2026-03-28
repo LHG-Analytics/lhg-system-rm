@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { fetchCompanyKPIs, fetchBookingsKPIs } from '@/lib/lhg-analytics/client'
+import { fetchCompanyKPIs } from '@/lib/lhg-analytics/client'
 import { resolvePreset, toLhgDate, fmtDisplay } from '@/lib/date-range'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
@@ -83,13 +83,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
   const lhgUnit = { slug: activeUnit.slug, apiBaseUrl: activeUnit.api_base_url ?? '' }
 
-  const [companyResult, bookingsResult] = await Promise.allSettled([
-    activeUnit.api_base_url ? fetchCompanyKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
-    activeUnit.api_base_url ? fetchBookingsKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
-  ])
+  const companyResult = await (
+    activeUnit.api_base_url ? fetchCompanyKPIs(lhgUnit, kpiParams) : Promise.reject('no api url')
+  ).catch(() => null)
 
-  const company  = companyResult.status  === 'fulfilled' ? companyResult.value  : null
-  const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : null
+  const company = companyResult
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -106,7 +104,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </Suspense>
       </div>
 
-      <DashboardKPICards company={company} bookings={bookings} />
+      <DashboardKPICards company={company} />
       <DashboardCharts company={company} />
       <OccupancyHeatmap
         unitSlug={activeUnit.slug}
