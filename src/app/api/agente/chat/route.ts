@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
     model: PRIMARY_MODEL,
     system: systemPrompt,
     messages: await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]),
-    maxOutputTokens: 2048,
+    maxOutputTokens: 8192,
     temperature: 0.3,
     providerOptions: gatewayOptions,
   })

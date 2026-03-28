@@ -26,10 +26,27 @@ export function AgenteChat({ unitSlug }: AgenteChatProps) {
   })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const isAtBottomRef = useRef(true)
+  const prevMessageCountRef = useRef(0)
+
+  // Detecta se o usuário está perto do final (threshold de 80px)
+  function handleScroll() {
+    const el = scrollAreaRef.current
+    if (!el) return
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const newMessageAdded = messages.length > prevMessageCountRef.current
+    prevMessageCountRef.current = messages.length
+
+    // Nova mensagem (usuário enviou ou agente começou a responder): sempre scrolla
+    // Durante streaming da mesma mensagem: só scrolla se já estava no fundo
+    if (newMessageAdded || isAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [messages])
 
   const isStreaming = status === 'streaming' || status === 'submitted'
@@ -51,7 +68,7 @@ export function AgenteChat({ unitSlug }: AgenteChatProps) {
   return (
     <div className="flex flex-1 flex-col rounded-xl border bg-card overflow-hidden min-h-0">
       {/* Área de mensagens */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+      <div ref={scrollAreaRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-16">
             <div className="rounded-full bg-primary/10 p-4">
