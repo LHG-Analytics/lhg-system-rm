@@ -51,6 +51,11 @@ Só commitar se ambos passarem sem erros.
 - `<script>` inline dentro de componentes React não é executado no cliente no React 19 — usar `useEffect` para lógica de inicialização.
 - `useSearchParams()` sem `<Suspense>` causa "Can't perform a React state update on a component that hasn't mounted yet" no React 19 concurrent mode.
 
+### Next.js 16 — armadilhas conhecidas
+- **Nunca chamar `router.refresh()` imediatamente após `router.push()`** — causa "Router action dispatched before initialization". O `push()` já faz fresh render do servidor; o `refresh()` é desnecessário.
+- **`next/image` com CSS de tamanho**: sempre incluir `style={{ height: 'auto' }}` ou `style={{ width: 'auto' }}` para manter o aspect ratio quando só uma dimensão é definida no CSS.
+- **`SidebarProvider` do shadcn/ui** deve envolver com `<TooltipProvider delayDuration={0}>` internamente — a versão gerada pelo CLI não inclui, causando erro de SSR "Tooltip must be used within TooltipProvider".
+
 ## LHG Analytics API
 
 Base URL por unidade: `https://analytics.lhgmoteis.com.br/{unit_slug}/{unit_name}/api`
@@ -136,8 +141,8 @@ Sistema para gestão de preços e disponibilidade de suítes de motéis da LHG.
 
 #### 🤖 Agente RM — núcleo do produto
 1. ~~**LHG-35:** Edge Function: Endpoint seguro para Claude API~~ ✅
-2. **LHG-36:** Agente RM: Interface de chat com streaming
-3. **LHG-37:** Agente RM: Injeção automática de KPIs no contexto do agente
+2. ~~**LHG-36:** Agente RM: Interface de chat com streaming~~ ✅
+3. ~~**LHG-37:** Agente RM: Injeção automática de KPIs no contexto do agente~~ ✅ (feito junto com LHG-35 — `buildSystemPrompt` injeta KPIs de 12 meses automaticamente)
 4. **LHG-40:** Agente RM: Prompt engineering e estratégia de precificação
 5. **LHG-41:** Agente RM: Interface de aprovação (humano sempre aprova no MVP)
 
