@@ -10,6 +10,7 @@ import {
 import { buildSystemPrompt } from '@/lib/agente/system-prompt'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
+import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 
 function getAdminClient() {
   return createAdminClient<Database>(
@@ -88,20 +89,25 @@ export async function POST(req: NextRequest) {
     return new Response('Nenhuma unidade disponível', { status: 400 })
   }
 
-  // 5. Buscar KPIs para contexto (não bloqueia se falhar)
+  // 5. Buscar KPIs e tabela de preços ativa em paralelo (não bloqueia se falhar)
   const kpiParams = trailingYear()
   const lhgUnit = { slug: unit.slug, apiBaseUrl: unit.api_base_url ?? '' }
 
-  const [companyResult, bookingsResult] = await Promise.allSettled([
+  const [companyResult, bookingsResult, priceImportResult] = await Promise.allSettled([
     unit.api_base_url ? fetchCompanyKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
     unit.api_base_url ? fetchBookingsKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
+    admin.from('price_imports').select('parsed_data').eq('unit_id', unit.id).eq('is_active', true).single(),
   ])
 
   const company = companyResult.status === 'fulfilled' ? companyResult.value : null
   const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : null
+  const priceRows: ParsedPriceRow[] =
+    priceImportResult.status === 'fulfilled' && priceImportResult.value.data?.parsed_data
+      ? (priceImportResult.value.data.parsed_data as unknown as ParsedPriceRow[])
+      : []
 
-  // 6. Montar system prompt com contexto de KPIs
-  const systemPrompt = buildSystemPrompt(unit.name, kpiParams, company, bookings)
+  // 6. Montar system prompt com contexto de KPIs + tabela de preços
+  const systemPrompt = buildSystemPrompt(unit.name, kpiParams, company, bookings, priceRows)
 
   // 7. Stream com Claude
   const result = streamText({

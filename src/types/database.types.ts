@@ -221,6 +221,47 @@ export type Database = {
         }
         Relationships: []
       }
+      price_imports: {
+        Row: {
+          canals: string[]
+          id: string
+          imported_at: string
+          imported_by: string
+          is_active: boolean
+          parsed_data: Json
+          raw_content: string
+          unit_id: string
+        }
+        Insert: {
+          canals?: string[]
+          id?: string
+          imported_at?: string
+          imported_by: string
+          is_active?: boolean
+          parsed_data?: Json
+          raw_content: string
+          unit_id: string
+        }
+        Update: {
+          canals?: string[]
+          id?: string
+          imported_at?: string
+          imported_by?: string
+          is_active?: boolean
+          parsed_data?: Json
+          raw_content?: string
+          unit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_imports_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       price_rules: {
         Row: {
           category_id: string
@@ -355,7 +396,7 @@ export type Database = {
           {
             foreignKeyName: "rm_agent_config_unit_id_fkey"
             columns: ["unit_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "units"
             referencedColumns: ["id"]
           },

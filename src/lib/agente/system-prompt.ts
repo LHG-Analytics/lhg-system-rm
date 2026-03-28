@@ -2,6 +2,7 @@ import type {
   CompanyKPIResponse,
   BookingsKPIResponse,
 } from '@/lib/lhg-analytics/types'
+import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 
 // ─── Formatadores ─────────────────────────────────────────────────────────────
 
@@ -122,15 +123,49 @@ ${weeklyOccupancy}
 ${bookingsSummary}`
 }
 
+// ─── Contexto de Tabela de Preços ─────────────────────────────────────────────
+
+const CANAL_LABELS: Record<string, string> = {
+  balcao_site: 'Balcão / Site Imediato',
+  site_programada: 'Site Programada (Reserva Antecipada)',
+  guia_moteis: 'Guia de Motéis',
+}
+
+function buildPriceTableContext(rows: ParsedPriceRow[]): string {
+  if (!rows.length) return ''
+
+  // Agrupar por canal
+  const byCanal = new Map<string, ParsedPriceRow[]>()
+  for (const row of rows) {
+    const list = byCanal.get(row.canal) ?? []
+    list.push(row)
+    byCanal.set(row.canal, list)
+  }
+
+  const sections: string[] = []
+  for (const [canal, canalRows] of byCanal) {
+    const label = CANAL_LABELS[canal] ?? canal
+    const lines = canalRows.map(
+      (r) =>
+        `  | ${r.categoria} | ${r.periodo} | ${r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | R$ ${r.preco.toFixed(2).replace('.', ',')} |`
+    )
+    sections.push(`**${label}**\n  | Categoria | Período | Dia | Preço |\n  |-----------|---------|-----|-------|\n${lines.join('\n')}`)
+  }
+
+  return `### Tabela de preços atual (importada pelo gestor)\n${sections.join('\n\n')}`
+}
+
 // ─── System Prompt ─────────────────────────────────────────────────────────────
 
 export function buildSystemPrompt(
   unitName: string,
   period: { startDate: string; endDate: string },
   company: CompanyKPIResponse | null,
-  bookings: BookingsKPIResponse | null
+  bookings: BookingsKPIResponse | null,
+  priceRows: ParsedPriceRow[] = []
 ): string {
   const kpiContext = buildKPIContext(unitName, period, company, bookings)
+  const priceContext = buildPriceTableContext(priceRows)
 
   return `Você é o Agente de Revenue Management sênior da LHG Motéis — especialista em yield management para o setor moteleiro brasileiro com mais de 10 anos de experiência.
 
@@ -181,6 +216,7 @@ Após a tabela, inclua:
 ---
 
 ${kpiContext}
+${priceContext ? `\n${priceContext}` : ''}
 
 ---
 Se o usuário pedir algo fora do escopo de Revenue Management, redirecione gentilmente para o foco em precificação e receita.`
