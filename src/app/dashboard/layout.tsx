@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AppSidebar } from '@/components/app-sidebar'
@@ -62,12 +63,14 @@ export default async function DashboardLayout({
 
   return (
     <SidebarProvider>
-      <AppSidebar
-        units={units}
-        activeUnit={activeUnit}
-        userEmail={user.email ?? ''}
-        userRole={profile.role}
-      />
+      <Suspense fallback={null}>
+        <AppSidebar
+          units={units}
+          activeUnit={activeUnit}
+          userEmail={user.email ?? ''}
+          userRole={profile.role}
+        />
+      </Suspense>
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
