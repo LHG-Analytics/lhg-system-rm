@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
   }
 
   // 3. Payload
-  const body = await req.json() as { messages: unknown[]; unitSlug?: string }
-  const { messages, unitSlug } = body
+  const body = await req.json() as { messages: unknown[]; unitSlug?: string; startDate?: string; endDate?: string }
+  const { messages, unitSlug, startDate, endDate } = body
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response('messages inválido', { status: 400 })
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 5. Buscar KPIs e tabela de preços ativa em paralelo (não bloqueia se falhar)
-  const kpiParams = trailingYear()
+  const kpiParams = (startDate && endDate) ? { startDate, endDate } : trailingYear()
   const lhgUnit = { slug: unit.slug, apiBaseUrl: unit.api_base_url ?? '' }
 
   const [companyResult, bookingsResult, priceImportResult] = await Promise.allSettled([

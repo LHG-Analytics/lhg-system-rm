@@ -3,25 +3,61 @@
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { useSearchParams } from 'next/navigation'
-import { useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle } from 'lucide-react'
+import { useRef, useEffect, useState } from 'react'
+import { Send, Bot, User, Loader2, AlertCircle, Calendar, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { MessageResponse } from '@/components/ai-elements/message'
 
-interface AgenteChatProps {
-  unitSlug: string
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+
+// DD/MM/YYYY → YYYY-MM-DD (formato do input type="date")
+function toInputDate(ddmmyyyy: string): string {
+  const [d, m, y] = ddmmyyyy.split('/')
+  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
 }
 
-export function AgenteChat({ unitSlug }: AgenteChatProps) {
-  const searchParams = useSearchParams()
-  const activeSlug = searchParams.get('unit') ?? unitSlug
+// YYYY-MM-DD → DD/MM/YYYY (formato da API LHG Analytics)
+function fromInputDate(yyyymmdd: string): string {
+  const [y, m, d] = yyyymmdd.split('-')
+  return `${d}/${m}/${y}`
+}
 
+// Espelha trailingYear() do servidor para pré-preencher os seletores
+function getDefaultDateRange(): { startDate: string; endDate: string } {
+  const now = new Date()
+  const opToday =
+    now.getHours() < 6
+      ? new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+      : new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+  const end = new Date(opToday)
+  end.setDate(end.getDate() - 1)
+
+  const start = new Date(opToday)
+  start.setFullYear(start.getFullYear() - 1)
+
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  const apiDate = (dt: Date) => `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`
+
+  return { startDate: apiDate(start), endDate: apiDate(end) }
+}
+
+// ─── Inner chat (recriado quando key muda) ────────────────────────────────────
+
+interface AgenteChatInnerProps {
+  unitSlug: string
+  startDate: string
+  endDate: string
+}
+
+function AgenteChatInner({ unitSlug, startDate, endDate }: AgenteChatInnerProps) {
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/agente/chat',
-      body: { unitSlug: activeSlug },
+      body: { unitSlug, startDate, endDate },
     }),
   })
 
@@ -31,7 +67,6 @@ export function AgenteChat({ unitSlug }: AgenteChatProps) {
   const isAtBottomRef = useRef(true)
   const prevMessageCountRef = useRef(0)
 
-  // Detecta se o usuário está perto do final (threshold de 80px)
   function handleScroll() {
     const el = scrollAreaRef.current
     if (!el) return
@@ -41,9 +76,6 @@ export function AgenteChat({ unitSlug }: AgenteChatProps) {
   useEffect(() => {
     const newMessageAdded = messages.length > prevMessageCountRef.current
     prevMessageCountRef.current = messages.length
-
-    // Nova mensagem (usuário enviou ou agente começou a responder): sempre scrolla
-    // Durante streaming da mesma mensagem: só scrolla se já estava no fundo
     if (newMessageAdded || isAtBottomRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
@@ -66,7 +98,7 @@ export function AgenteChat({ unitSlug }: AgenteChatProps) {
   }
 
   return (
-    <div className="flex flex-1 flex-col rounded-xl border bg-card overflow-hidden min-h-0">
+    <>
       {/* Área de mensagens */}
       <div ref={scrollAreaRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
         {messages.length === 0 && (
@@ -185,12 +217,93 @@ export function AgenteChat({ unitSlug }: AgenteChatProps) {
           }
         </Button>
       </div>
+    </>
+  )
+}
+
+// ─── Outer component (gerencia seletor de período) ────────────────────────────
+
+interface AgenteChatProps {
+  unitSlug: string
+}
+
+export function AgenteChat({ unitSlug }: AgenteChatProps) {
+  const searchParams = useSearchParams()
+  const activeSlug = searchParams.get('unit') ?? unitSlug
+
+  const defaults = getDefaultDateRange()
+
+  // Datas aplicadas ao chat atual
+  const [startDate, setStartDate] = useState(defaults.startDate)
+  const [endDate, setEndDate] = useState(defaults.endDate)
+
+  // Datas pendentes (ainda não aplicadas)
+  const [pendingStart, setPendingStart] = useState(defaults.startDate)
+  const [pendingEnd, setPendingEnd] = useState(defaults.endDate)
+
+  // Incrementar essa key força remount do AgenteChatInner com novo transport
+  const [chatKey, setChatKey] = useState(0)
+
+  const isDirty = pendingStart !== startDate || pendingEnd !== endDate
+
+  function applyDates() {
+    setStartDate(pendingStart)
+    setEndDate(pendingEnd)
+    setChatKey((k) => k + 1) // reseta a conversa com o novo período
+  }
+
+  return (
+    <div className="flex flex-1 flex-col rounded-xl border bg-card overflow-hidden min-h-0">
+      {/* Seletor de período */}
+      <div className="flex items-center gap-2 border-b px-3 py-2 bg-muted/30 flex-wrap">
+        <Calendar className="size-3.5 text-muted-foreground shrink-0" />
+        <span className="text-xs text-muted-foreground shrink-0">Período de análise:</span>
+        <Input
+          type="date"
+          value={toInputDate(pendingStart)}
+          max={toInputDate(pendingEnd)}
+          onChange={(e) => e.target.value && setPendingStart(fromInputDate(e.target.value))}
+          className="h-7 text-xs w-36 px-2"
+        />
+        <span className="text-xs text-muted-foreground">até</span>
+        <Input
+          type="date"
+          value={toInputDate(pendingEnd)}
+          min={toInputDate(pendingStart)}
+          onChange={(e) => e.target.value && setPendingEnd(fromInputDate(e.target.value))}
+          className="h-7 text-xs w-36 px-2"
+        />
+        {isDirty && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 text-xs gap-1.5"
+            onClick={applyDates}
+          >
+            <RefreshCw className="size-3" />
+            Aplicar
+          </Button>
+        )}
+        {!isDirty && (
+          <span className="text-xs text-muted-foreground/60">
+            ({startDate} — {endDate})
+          </span>
+        )}
+      </div>
+
+      {/* Inner chat — remontado quando chatKey muda (novo período aplicado) */}
+      <AgenteChatInner
+        key={chatKey}
+        unitSlug={activeSlug}
+        startDate={startDate}
+        endDate={endDate}
+      />
     </div>
   )
 }
 
 const SUGESTOES = [
-  'Como está a ocupação nos últimos 12 meses?',
+  'Analise o desempenho por dia da semana e categoria',
   'Quais categorias têm maior RevPAR?',
   'Sugira ajustes de preço para o fim de semana',
   'Compare o desempenho com o período anterior',

@@ -1,6 +1,7 @@
 import type {
   CompanyKPIResponse,
   BookingsKPIResponse,
+  DataTableByWeek,
 } from '@/lib/lhg-analytics/types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 
@@ -16,6 +17,39 @@ function fmt(n: number, style: 'currency' | 'percent' | 'number' = 'number') {
 function formatTime(hhmmss: string) {
   const parts = hhmmss?.split(':') ?? []
   return parts.length >= 2 ? `${parts[0]}h${parts[1]}m` : (hhmmss ?? '—')
+}
+
+// ─── Tabelas semanais (RevPAR / Giro / Ocupação por categoria × dia) ──────────
+
+/**
+ * Formata um DataTableByWeek em tabela markdown.
+ * Estrutura: [{ weekDay: "Segunda-feira", "Standard": 45.5, "Master": 78.2, ... }]
+ */
+function buildWeekTable(
+  rows: DataTableByWeek[],
+  title: string,
+  valueFormatter: (v: number) => string
+): string {
+  if (!rows.length) return ''
+
+  // Extrai nomes de categoria (chaves exceto weekDay)
+  const categories = [...new Set(
+    rows.flatMap((row) => Object.keys(row).filter((k) => k !== 'weekDay'))
+  )]
+
+  if (!categories.length) return ''
+
+  const header = `| Dia | ${categories.join(' | ')} |`
+  const sep    = `|-----|${categories.map(() => '------').join('|')}|`
+  const dataRows = rows.map((row) => {
+    const cols = categories.map((cat) => {
+      const val = row[cat]
+      return typeof val === 'number' ? valueFormatter(val) : '—'
+    })
+    return `| ${row.weekDay} | ${cols.join(' | ')} |`
+  })
+
+  return `**${title}**\n${header}\n${sep}\n${dataRows.join('\n')}`
 }
 
 // ─── Contexto de KPIs ─────────────────────────────────────────────────────────
@@ -56,22 +90,6 @@ function buildKPIContext(
       ).join('\n')
     : '  Dados não disponíveis'
 
-  // Padrão semanal de ocupação (se disponível)
-  const weeklyOccupancy = company.DataTableOccupancyRateByWeek?.length
-    ? (() => {
-        type WeekRow = { weekDay: string; [key: string]: unknown }
-        const rows = company.DataTableOccupancyRateByWeek as WeekRow[]
-        return rows
-          .map((row) => {
-            const { weekDay, ...rest } = row
-            const vals = Object.values(rest).filter((v) => typeof v === 'number') as number[]
-            const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
-            return `  • ${weekDay}: ${avg.toFixed(1)}% ocupação média`
-          })
-          .join('\n')
-      })()
-    : '  Dados não disponíveis'
-
   // Comparativo vs período anterior
   const vsAnterior = prev
     ? [
@@ -94,8 +112,29 @@ function buildKPIContext(
       })()
     : '  Dados não disponíveis'
 
+  // ── Tabelas semanais por categoria ─────────────────────────────────────────
+  const revparWeek = buildWeekTable(
+    company.DataTableRevparByWeek ?? [],
+    'RevPAR por categoria × dia da semana',
+    (v) => fmt(v, 'currency')
+  )
+  const giroWeek = buildWeekTable(
+    company.DataTableGiroByWeek ?? [],
+    'Giro por categoria × dia da semana',
+    (v) => v.toFixed(2)
+  )
+  const ocupWeek = buildWeekTable(
+    company.DataTableOccupancyRateByWeek ?? [],
+    'Taxa de ocupação por categoria × dia da semana',
+    (v) => fmt(v, 'percent')
+  )
+
+  const weeklySection = [revparWeek, giroWeek, ocupWeek]
+    .filter(Boolean)
+    .join('\n\n')
+
   return `## Dados operacionais — ${unitName}
-Período: ${period.startDate} a ${period.endDate} (últimos 12 meses rolantes)
+Período: ${period.startDate} a ${period.endDate}
 
 ### KPIs gerais
 - Taxa de Ocupação: **${fmt(r.totalOccupancyRate, 'percent')}**
@@ -107,7 +146,7 @@ Período: ${period.startDate} a ${period.endDate} (últimos 12 meses rolantes)
 - Total Locações: ${fmt(r.totalAllRentalsApartments)}
 - Faturamento Total: ${fmt(r.totalAllValue, 'currency')}
 
-### Comparativo vs 12 meses anteriores
+### Comparativo vs período anterior
 ${vsAnterior}
 
 ### Desempenho por categoria de suíte
@@ -116,11 +155,11 @@ ${suiteSummary}
 ### Mix de receita por tipo de locação
 ${billingMix}
 
-### Padrão semanal de ocupação
-${weeklyOccupancy}
-
 ### Reservas online (canais digitais)
-${bookingsSummary}`
+${bookingsSummary}
+
+### Análise semanal detalhada por categoria
+${weeklySection || '  Dados não disponíveis'}`
 }
 
 // ─── Contexto de Tabela de Preços ─────────────────────────────────────────────
@@ -178,12 +217,21 @@ Analisar dados operacionais e propor estratégias de precificação que maximize
 3. **Propostas de preço sempre em tabela markdown** com colunas: Categoria | Período | Preço Atual | Preço Proposto | Variação % | Justificativa.
 4. **Variação máxima por proposta: ±30%** — mudanças maiores exigem justificativa explícita e aprovação especial.
 5. **Responda em português brasileiro**, de forma direta e objetiva — sem enrolação.
+6. **Pergunte quando faltar informação** — se precisar de dados não fornecidos (ex: número total de suítes por categoria, total de apartamentos disponíveis, dados de concorrência, eventos locais), pergunte ao usuário antes de fazer suposições. É melhor perguntar do que inventar dados.
 
 ## Framework de análise (use sempre nesta ordem)
 1. **Diagnóstico** — como está a performance atual? Identifique pontos fortes e fracos nos KPIs.
-2. **Oportunidades** — onde há espaço para otimizar receita? (ocupação alta + ticket baixo = aumentar preço; giro baixo + ticket alto = promover período específico)
-3. **Proposta** — tabela com mudanças específicas, priorizadas por impacto estimado no RevPAR.
-4. **Próximos passos** — o que monitorar após a mudança.
+2. **Padrão semanal** — analise as tabelas de RevPAR, Giro e Ocupação por dia da semana para identificar dias de pico e dias fracos por categoria.
+3. **Oportunidades** — onde há espaço para otimizar receita? (ocupação alta + ticket baixo = aumentar preço; giro baixo + ticket alto = promover período específico)
+4. **Proposta** — tabela com mudanças específicas, priorizadas por impacto estimado no RevPAR.
+5. **Próximos passos** — o que monitorar após a mudança.
+
+## Como usar as tabelas semanais
+As tabelas de RevPAR, Giro e Ocupação por dia da semana são o principal insumo para precificação dinâmica:
+- **Dias com giro alto (>3,5) e RevPAR baixo**: oportunidade de aumentar preço sem risco de queda de volume.
+- **Dias com ocupação >80% em alguma categoria**: demanda inelástica, priorizar aumento nessa combinação categoria × dia.
+- **Dias com ocupação <50%**: demanda elástica — considerar promoção ou ajuste pontual.
+- **Variação entre dias úteis e FDS**: quanto maior a diferença de giro entre semana e FDS, mais agressiva pode ser a diferenciação de preço dia × tipo.
 
 ## Lógica de precificação para motéis
 - **Giro alto (>3,5) + ticket abaixo da média** → oportunidade de aumento de preço sem risco de queda de demanda.
