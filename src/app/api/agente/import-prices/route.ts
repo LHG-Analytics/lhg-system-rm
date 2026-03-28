@@ -123,15 +123,13 @@ Para cada linha de preço encontrada, retorne um objeto JSON com:
 - dia_tipo: "semana" (dias úteis/semana), "fds_feriado" (finais de semana e feriados), ou "todos" (se não houver distinção)
 - preco: valor numérico em reais (apenas o número, sem R$)
 
-Retorne SOMENTE um JSON válido no formato:
-{
-  "rows": [...],
-  "canais_encontrados": ["balcao_site", "guia_moteis"],
-  "observacoes": "texto opcional com observações relevantes sobre a planilha"
-}
+Retorne SOMENTE JSON minificado (sem espaços ou quebras de linha desnecessárias) no formato:
+{"rows":[...],"canais_encontrados":["balcao_site"],"observacoes":"opcional"}
 
-Se não encontrar nenhum dos canais listados, retorne rows vazio.
-Não inclua texto fora do JSON.
+Regras:
+- JSON minificado — sem indentação, sem espaços extras
+- Sem texto antes ou depois do JSON
+- Se não encontrar nenhum canal, retorne {"rows":[],"canais_encontrados":[]}
 
 CSV:
 ${csvContent.slice(0, 8000)}`
@@ -140,7 +138,7 @@ ${csvContent.slice(0, 8000)}`
       model: PRIMARY_MODEL,
       providerOptions: gatewayOptions,
       prompt,
-      maxOutputTokens: 4000,
+      maxOutputTokens: 8000,
       temperature: 0,
     })
 
