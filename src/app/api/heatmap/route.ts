@@ -126,39 +126,12 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: st
     ORDER BY ${orderDay('e')}, e.hour_of_day`
 }
 
-function ocupacaoEventsSelect(
-  col: string, idList: string,
-  startDate: string, endDate: string,
-  extraWhere = '',
-) {
-  return `
-    SELECT
-      ${dowCase(col)} AS day_name,
-      EXTRACT(HOUR FROM ${col})::INT AS hour_of_day,
-      EXTRACT(EPOCH FROM (
-        COALESCE(la.datafinaldaocupacao, la.datainicialdaocupacao + INTERVAL '6 hours')
-        - la.datainicialdaocupacao
-      )) / 3600 AS hours_occupied
-    FROM locacaoapartamento la
-    INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
-    INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
-    INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-    WHERE ${col} >= '${startDate}'::date
-      AND ${col} <  ('${endDate}'::date + INTERVAL '1 day')
-      AND la.datafinaldaocupacao IS NOT NULL
-      AND la.fimocupacaotipo = 'FINALIZADA'
-      ${extraWhere}
-      AND ca.id IN (${idList})`
-}
-
 function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string): string {
-  const checkinSel  = ocupacaoEventsSelect('la.datainicialdaocupacao', idList, startDate, endDate)
-  const checkoutSel = ocupacaoEventsSelect('la.datafinaldaocupacao',   idList, startDate, endDate)
-
-  const eventsCTE =
-    dateType === 'checkin'  ? checkinSel  :
-    dateType === 'checkout' ? checkoutSel :
-    `${checkinSel}\n        UNION ALL\n${checkoutSel}`
+  // Filtra locações pelo campo de referência conforme dateType
+  const dateFilter =
+    dateType === 'checkout'
+      ? `la.datafinaldaocupacao >= '${startDate}'::date AND la.datafinaldaocupacao < ('${endDate}'::date + INTERVAL '1 day')`
+      : `la.datainicialdaocupacao >= '${startDate}'::date AND la.datainicialdaocupacao < ('${endDate}'::date + INTERVAL '1 day')`
 
   return `
     WITH date_occurrences AS (
@@ -172,30 +145,42 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
       FROM generate_series('${startDate}'::date, '${endDate}'::date, '1 day'::interval) AS d
       GROUP BY day_name
     ),
-    events AS (${eventsCTE}
-    ),
     capacity AS (
       SELECT COUNT(*) AS total_suites
       FROM apartamento a
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
       WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
     ),
-    hourly AS (
+    occupied_hours AS (
+      -- Expande cada locação pelos slots de 1h que ela ocupa (checkin até checkout)
+      -- Fórmula: suite_hours / (total_suites × n_dias_da_semana) × 100
       SELECT
-        day_name,
-        hour_of_day,
-        SUM(hours_occupied) AS total_hours
-      FROM events
+        ${dowCase('h_ts')} AS day_name,
+        EXTRACT(HOUR FROM h_ts)::INT AS hour_of_day,
+        COUNT(*) AS suite_hours
+      FROM locacaoapartamento la
+      INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+      INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
+      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      CROSS JOIN LATERAL generate_series(
+        date_trunc('hour', la.datainicialdaocupacao),
+        date_trunc('hour', la.datafinaldaocupacao),
+        '1 hour'::interval
+      ) AS h_ts
+      WHERE ${dateFilter}
+        AND la.fimocupacaotipo = 'FINALIZADA'
+        AND la.datafinaldaocupacao IS NOT NULL
+        AND ca.id IN (${idList})
       GROUP BY day_name, hour_of_day
     )
     SELECT
-      h.day_name,
-      h.hour_of_day,
-      ROUND((h.total_hours::DECIMAL / (c.total_suites * dc.n_days)) * 100, 2)::float AS value
-    FROM hourly h
-    JOIN date_occurrences dc ON dc.day_name = h.day_name
+      oh.day_name,
+      oh.hour_of_day,
+      ROUND((oh.suite_hours::DECIMAL / (c.total_suites * dc.n_days)) * 100, 2)::float AS value
+    FROM occupied_hours oh
+    JOIN date_occurrences dc ON dc.day_name = oh.day_name
     CROSS JOIN capacity c
-    ORDER BY ${orderDay('h')}, h.hour_of_day`
+    ORDER BY ${orderDay('oh')}, oh.hour_of_day`
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
