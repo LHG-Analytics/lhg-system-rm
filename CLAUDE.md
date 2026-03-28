@@ -75,7 +75,7 @@ Base URL por unidade: `https://analytics.lhgmoteis.com.br/{unit_slug}/{unit_name
 - `DataTableSuiteCategory`: `Array<{ [categoryName: string]: SuiteCategoryKPI }>` (objeto com chave dinâmica, não array plano)
 - Campos da suíte: `totalRentalsApartments`, `totalValue`, `totalTicketAverage` (não `rentals`, `revenue`, `ticketAverage`)
 
-**Período padrão:** "acumulado do ano" (`yearToDate()`) — Jan 1 até hoje operacional (06:00 cutoff). Evita sazonalidade para o agente RM. Pós-MVP: usar janela de 1 ano completo (`hoje - 1 ano` até `hoje`).
+**Período padrão:** "últimos 12 meses" via `trailingYear()` — mesma data do ano passado até ontem operacional (06:00 cutoff). Ex: hoje 28/03/2026 → 28/03/2025 a 27/03/2026. Evita sazonalidade (YTD seria incompleto no início do ano).
 
 ## Contexto de negócio
 
@@ -121,29 +121,39 @@ Sistema para gestão de preços e disponibilidade de suítes de motéis da LHG.
 - **LHG-9:** Auth Google SSO + email/senha
 - **LHG-10:** DB Schema completo + migrations
 - **LHG-11:** RLS Policies
-- **LHG-14:** Sidebar + Navegação + Layout base
-- **LHG-21:** Integração LHG Analytics API — KPIs em tempo real
+- **LHG-14:** Sidebar + Navegação + Layout base (incl. hover expand/collapse, unit switcher com Suspense)
+- **LHG-21:** Integração LHG Analytics API — KPIs em tempo real (trailing 12 meses, fallback unidade para super_admin)
 - **LHG-5:** SPIKE — Mapear banco Automo
 - **LHG-64:** Supabase local + vínculo remoto
 - **LHG-65:** Google OAuth configurado
 - **LHG-66:** Logo LHG na tela de login
 - **LHG-67:** Fix cursor pointer
-- **LHG-68:** Toggle dark/light mode
+- **LHG-68:** Toggle dark/light mode (custom ThemeProvider — sem next-themes)
 - **LHG-70:** Cadastro de unidades reais no banco
 
-### 🔲 Backlog MVP
-- **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations
-- **LHG-50:** Deploy produção + onboarding unidades piloto
-- **LHG-71:** Logo de cada unidade no seletor da sidebar
-- **LHG-72:** Ajustes de layout e polish geral
-- **LHG-30:** Dashboard: Heatmap ocupação × hora × dia da semana
-- **LHG-31:** Dashboard: Visão de canais
-- **LHG-32:** Notificações push + email (Resend)
-- **LHG-36:** Agente RM: Interface de chat com streaming
-- **LHG-37:** Agente RM: Injeção automática de KPIs
-- **LHG-40:** Agente RM: Prompt engineering e estratégia de precificação
-- **LHG-41:** Agente RM: Interface de aprovação (humano sempre aprova no MVP)
-- **LHG-35:** Edge Function: Endpoint seguro para Claude API
+### 🔲 Backlog MVP (por prioridade)
+
+#### 🤖 Agente RM — núcleo do produto
+1. **LHG-35:** Edge Function: Endpoint seguro para Claude API (pré-requisito do agente)
+2. **LHG-36:** Agente RM: Interface de chat com streaming
+3. **LHG-37:** Agente RM: Injeção automática de KPIs no contexto do agente
+4. **LHG-40:** Agente RM: Prompt engineering e estratégia de precificação
+5. **LHG-41:** Agente RM: Interface de aprovação (humano sempre aprova no MVP)
+
+#### 🚀 Deploy e CI/CD
+6. **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations
+7. **LHG-50:** Deploy produção + onboarding unidades piloto
+
+#### 📊 Dashboard — enriquecimento
+8. **LHG-30:** Dashboard: Heatmap ocupação × hora × dia da semana
+9. **LHG-31:** Dashboard: Visão de canais
+
+#### 🔔 Notificações
+10. **LHG-32:** Notificações push + email (Resend)
+
+#### ✨ Polish
+11. **LHG-72:** Ajustes de layout e polish geral
+12. **LHG-71:** Logo de cada unidade no seletor da sidebar
 
 ### 📅 Pós-MVP (Backlog)
 LHG-51 a LHG-63: guardrails, clima, eventos, trânsito, aprendizado autônomo, dynamic pricing loop.
