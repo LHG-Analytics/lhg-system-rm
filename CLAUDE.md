@@ -8,8 +8,13 @@
   - Local: `http://127.0.0.1:54321` (Docker via Scoop CLI v2.84.2)
   - Remoto: `https://pvlcktqbjianrbzpqrbd.supabase.co`
 - **Upstash Redis** — cache (a configurar)
-- **Anthropic Claude API** — Agente de Revenue Management
+- **Vercel AI Gateway** — roteamento de IA (Claude primário + Gemini Flash fallback automático)
+  - Auth: `VERCEL_OIDC_TOKEN` (via `vercel env pull`) + `AI_GATEWAY_API_KEY`
+  - Modelo primário: `anthropic/claude-sonnet-4.6` | Fallback: `google/gemini-2.0-flash`
+  - Config centralizada em `src/lib/agente/model.ts`
 - **Deploy:** Vercel + Supabase hosted
+  - Projeto linkado: `danilo-dinizs-projects/lhg-system-rm`
+  - AI Gateway habilitado no dashboard Vercel
 
 ## Convenções obrigatórias
 
@@ -50,6 +55,13 @@ Só commitar se ambos passarem sem erros.
 ### React 19 / Compatibilidade
 - `<script>` inline dentro de componentes React não é executado no cliente no React 19 — usar `useEffect` para lógica de inicialização.
 - `useSearchParams()` sem `<Suspense>` causa "Can't perform a React state update on a component that hasn't mounted yet" no React 19 concurrent mode.
+
+### Vercel AI Gateway
+- Usar `gateway('provider/model')` de `'ai'` — não usar providers diretos nas rotas do agente
+- Versões com ponto: `anthropic/claude-sonnet-4.6` (não hífen: `claude-sonnet-4-6`)
+- Fallback via `providerOptions: { gateway: { models: ['google/gemini-2.0-flash'] } }`
+- `VERCEL_OIDC_TOKEN` expira em ~24h em dev — reexecutar `vercel env pull` se expirar
+- `NODE_OPTIONS="--max-old-space-size=4096" npm run build` para build local (evita OOM)
 
 ### Next.js 16 — armadilhas conhecidas
 - **Nunca chamar `router.refresh()` imediatamente após `router.push()`** — causa "Router action dispatched before initialization". O `push()` já faz fresh render do servidor; o `refresh()` é desnecessário.
@@ -136,15 +148,16 @@ Sistema para gestão de preços e disponibilidade de suítes de motéis da LHG.
 - **LHG-67:** Fix cursor pointer
 - **LHG-68:** Toggle dark/light mode (custom ThemeProvider — sem next-themes)
 - **LHG-70:** Cadastro de unidades reais no banco
+- **LHG-35:** Edge Function: Endpoint seguro para Claude API (via Vercel AI Gateway)
+- **LHG-36:** Agente RM: Interface de chat com streaming
+- **LHG-37:** Agente RM: Injeção automática de KPIs no contexto do agente
+- **LHG-38:** Agente RM: Import de tabela de preços via CSV (Claude/Gemini parseia, preview, confirmação)
+- **LHG-40:** Agente RM: Prompt engineering e estratégia de precificação (framework Diagnóstico→Proposta, KPIs + tabela de preços injetados)
 
 ### 🔲 Backlog MVP (por prioridade)
 
 #### 🤖 Agente RM — núcleo do produto
-1. ~~**LHG-35:** Edge Function: Endpoint seguro para Claude API~~ ✅
-2. ~~**LHG-36:** Agente RM: Interface de chat com streaming~~ ✅
-3. ~~**LHG-37:** Agente RM: Injeção automática de KPIs no contexto do agente~~ ✅ (feito junto com LHG-35 — `buildSystemPrompt` injeta KPIs de 12 meses automaticamente)
-4. **LHG-40:** Agente RM: Prompt engineering e estratégia de precificação
-5. **LHG-41:** Agente RM: Interface de aprovação (humano sempre aprova no MVP)
+1. **LHG-41:** Agente RM: Interface de aprovação (humano sempre aprova no MVP)
 
 #### 🚀 Deploy e CI/CD
 6. **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations

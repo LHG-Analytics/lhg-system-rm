@@ -262,6 +262,50 @@ export type Database = {
           },
         ]
       }
+      price_proposals: {
+        Row: {
+          id: string
+          unit_id: string
+          created_by: string
+          context: string | null
+          rows: Json
+          status: 'pending' | 'approved' | 'rejected'
+          reviewed_by: string | null
+          reviewed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          unit_id: string
+          created_by: string
+          context?: string | null
+          rows?: Json
+          status?: 'pending' | 'approved' | 'rejected'
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          unit_id?: string
+          created_by?: string
+          context?: string | null
+          rows?: Json
+          status?: 'pending' | 'approved' | 'rejected'
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_proposals_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       price_rules: {
         Row: {
           category_id: string
