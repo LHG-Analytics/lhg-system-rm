@@ -94,7 +94,18 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: st
     `${checkinSel}\n        UNION ALL\n${checkoutSel}`
 
   return `
-    WITH category_suites AS (
+    WITH date_occurrences AS (
+      SELECT
+        CASE EXTRACT(DOW FROM d::date)
+          WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
+          WHEN 3 THEN 'Quarta'  WHEN 4 THEN 'Quinta'  WHEN 5 THEN 'Sexta'
+          WHEN 6 THEN 'Sabado'
+        END AS day_name,
+        COUNT(*) AS n_days
+      FROM generate_series('${startDate}'::date, '${endDate}'::date, '1 day'::interval) AS d
+      GROUP BY day_name
+    ),
+    category_suites AS (
       SELECT ca.id, COUNT(a.id) AS suites
       FROM apartamento a
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
@@ -104,12 +115,13 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: st
     events AS (${eventsCTE}
     )
     SELECT
-      day_name,
-      hour_of_day,
-      ROUND(SUM(rentals::DECIMAL / suites), 2)::float AS value
-    FROM events
-    GROUP BY day_name, hour_of_day
-    ORDER BY ${ORDER_DAY}, hour_of_day`
+      e.day_name,
+      e.hour_of_day,
+      ROUND(SUM(e.rentals::DECIMAL / e.suites) / do.n_days, 2)::float AS value
+    FROM events e
+    JOIN date_occurrences do ON do.day_name = e.day_name
+    GROUP BY e.day_name, e.hour_of_day, do.n_days
+    ORDER BY ${ORDER_DAY}, e.hour_of_day`
 }
 
 function ocupacaoEventsSelect(
@@ -147,7 +159,18 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
     `${checkinSel}\n        UNION ALL\n${checkoutSel}`
 
   return `
-    WITH events AS (${eventsCTE}
+    WITH date_occurrences AS (
+      SELECT
+        CASE EXTRACT(DOW FROM d::date)
+          WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
+          WHEN 3 THEN 'Quarta'  WHEN 4 THEN 'Quinta'  WHEN 5 THEN 'Sexta'
+          WHEN 6 THEN 'Sabado'
+        END AS day_name,
+        COUNT(*) AS n_days
+      FROM generate_series('${startDate}'::date, '${endDate}'::date, '1 day'::interval) AS d
+      GROUP BY day_name
+    ),
+    events AS (${eventsCTE}
     ),
     capacity AS (
       SELECT COUNT(*) AS total_suites
@@ -159,16 +182,17 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
       SELECT
         day_name,
         hour_of_day,
-        SUM(hours_occupied) AS total_hours,
-        COUNT(*)            AS cnt
+        SUM(hours_occupied) AS total_hours
       FROM events
       GROUP BY day_name, hour_of_day
     )
     SELECT
       h.day_name,
       h.hour_of_day,
-      ROUND((h.total_hours::DECIMAL / (c.total_suites * h.cnt)) * 100, 2)::float AS value
-    FROM hourly h, capacity c
+      ROUND((h.total_hours::DECIMAL / (c.total_suites * do.n_days)) * 100, 2)::float AS value
+    FROM hourly h
+    JOIN date_occurrences do ON do.day_name = h.day_name
+    CROSS JOIN capacity c
     ORDER BY ${ORDER_DAY}, h.hour_of_day`
 }
 

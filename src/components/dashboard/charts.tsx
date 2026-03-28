@@ -71,12 +71,17 @@ function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
 }
 
 // ─── Tabela Semanal Genérica ───────────────────────────────────────────────────
+// Estrutura do payload: weekDay = nome da categoria, demais chaves = dias da semana.
+// A API já inclui uma linha "Total ..." ao final.
 
-const DAY_ORDER: Record<string, number> = {
-  'Segunda-feira': 1, 'Terça-feira': 2, 'Quarta-feira': 3,
-  'Quinta-feira':  4, 'Sexta-feira': 5, 'Sábado':       6, 'Domingo': 7,
-  'Segunda': 1, 'Terca': 2, 'Quarta': 3,
-  'Quinta':  4, 'Sexta': 5, 'Sabado': 6,
+const WEEK_COL_ORDER: Record<string, number> = {
+  'Domingo': 1,
+  'Segunda-Feira': 2, 'Segunda-feira': 2,
+  'Terça-Feira':   3, 'Terça-feira':   3,
+  'Quarta-Feira':  4, 'Quarta-feira':  4,
+  'Quinta-Feira':  5, 'Quinta-feira':  5,
+  'Sexta-Feira':   6, 'Sexta-feira':   6,
+  'Sábado':        7,
 }
 
 function WeeklyTable({
@@ -90,24 +95,16 @@ function WeeklyTable({
 }) {
   if (!data?.length) return null
 
-  // Extrai colunas (tudo exceto weekDay)
+  // Colunas = dias da semana (tudo exceto weekDay), ordenados
   const firstRow = data[0]
-  const categories = Object.keys(firstRow).filter((k) => k !== 'weekDay')
-  if (!categories.length) return null
+  const dayCols = Object.keys(firstRow)
+    .filter((k) => k !== 'weekDay')
+    .sort((a, b) => (WEEK_COL_ORDER[a] ?? 99) - (WEEK_COL_ORDER[b] ?? 99))
+  if (!dayCols.length) return null
 
-  // Ordena por dia da semana
-  const sorted = [...data].sort(
-    (a, b) => (DAY_ORDER[a.weekDay] ?? 99) - (DAY_ORDER[b.weekDay] ?? 99)
-  )
-
-  // Calcula média por categoria
-  const avgs: Record<string, number> = {}
-  for (const cat of categories) {
-    const vals = data
-      .map((r) => r[cat])
-      .filter((v): v is number => typeof v === 'number')
-    avgs[cat] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
-  }
+  // Separa linhas normais das linhas de total (weekDay começa com "Total")
+  const dataRows  = data.filter((r) => !String(r.weekDay ?? '').toLowerCase().startsWith('total'))
+  const totalRows = data.filter((r) =>  String(r.weekDay ?? '').toLowerCase().startsWith('total'))
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -119,38 +116,42 @@ function WeeklyTable({
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                Dia
+                Categorias
               </th>
-              {categories.map((cat) => (
-                <th key={cat} className="text-right px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  {cat}
+              {dayCols.map((col) => (
+                <th key={col} className="text-right px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
+                  {col}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row, i) => (
-              <tr key={`${row.weekDay ?? i}-${i}`} className="border-b hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3 font-medium whitespace-nowrap">{row.weekDay}</td>
-                {categories.map((cat) => {
-                  const v = row[cat]
+            {dataRows.map((row, i) => (
+              <tr key={`${String(row.weekDay)}-${i}`} className="border-b hover:bg-muted/30 transition-colors">
+                <td className="px-4 py-3 font-medium whitespace-nowrap">{String(row.weekDay ?? '–')}</td>
+                {dayCols.map((col) => {
+                  const v = row[col]
                   return (
-                    <td key={cat} className="px-4 py-3 text-right tabular-nums">
+                    <td key={col} className="px-4 py-3 text-right tabular-nums">
                       {typeof v === 'number' ? formatVal(v) : '–'}
                     </td>
                   )
                 })}
               </tr>
             ))}
-            {/* Linha de média */}
-            <tr className="bg-muted/40 border-t-2 border-border font-semibold">
-              <td className="px-4 py-3 whitespace-nowrap">Média</td>
-              {categories.map((cat) => (
-                <td key={cat} className="px-4 py-3 text-right tabular-nums">
-                  {formatVal(avgs[cat])}
-                </td>
-              ))}
-            </tr>
+            {totalRows.map((row, i) => (
+              <tr key={`total-${i}`} className="bg-muted/40 border-t-2 border-border font-semibold">
+                <td className="px-4 py-3 whitespace-nowrap">{String(row.weekDay ?? 'Total')}</td>
+                {dayCols.map((col) => {
+                  const v = row[col]
+                  return (
+                    <td key={col} className="px-4 py-3 text-right tabular-nums">
+                      {typeof v === 'number' ? formatVal(v) : '–'}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
