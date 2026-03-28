@@ -105,9 +105,26 @@ Sistema para gestão de preços e disponibilidade de suítes de motéis da LHG.
 - **Canais MVP:** ERP + Site Próprio + Guia de Motéis
 - **Agente RM:** MVP gera proposta para aprovação humana; pós-MVP flutua preços autonomamente
 
-## Arquitetura do banco (schema v1 — 2026-03-27)
+## Automo PostgreSQL (ERP — read-only)
 
-17 tabelas + 5 ENUMs + RLS em todas as tabelas:
+Conexão direta ao banco do ERP Automo para dados de locações/reservas em tempo real.
+
+**Variáveis de ambiente necessárias:**
+- `AUTOMO_DB_HOST` — host do servidor PostgreSQL
+- `AUTOMO_DB_PORT` — porta (normalmente 5432)
+- `AUTOMO_DB_NAME` — nome do banco
+- `AUTOMO_DB_USER` — usuário read-only
+- `AUTOMO_DB_PASSWORD` — senha
+
+**Regras:**
+- Acesso exclusivamente server-side (Route Handlers / Server Actions)
+- Nunca expor credenciais ou dados brutos ao cliente
+- Queries apenas SELECT — nunca INSERT/UPDATE/DELETE
+- Usar `pg` ou `@neondatabase/serverless` como driver se necessário
+
+## Arquitetura do banco (schema v1 — 2026-03-28)
+
+18 tabelas + 5 ENUMs + RLS em todas as tabelas (inclui `price_proposals` adicionada em 2026-03-28):
 
 | Tabela | Descrição |
 |--------|-----------|
@@ -129,6 +146,7 @@ Sistema para gestão de preços e disponibilidade de suítes de motéis da LHG.
 | `lhg_analytics_tokens` | Tokens de auth da LHG Analytics API por unidade |
 | `channel_sync_log` | Log de sincronização com canais |
 | `notifications` | Notificações para usuários |
+| `price_proposals` | Propostas de preço do agente (JSONB rows, pending/approved/rejected) — sem FK para tabelas de categorias/períodos/canais |
 
 **RLS:** funções `current_user_role()` e `current_user_unit_id()` como `SECURITY DEFINER` são a base de todas as policies.
 
@@ -153,26 +171,34 @@ Sistema para gestão de preços e disponibilidade de suítes de motéis da LHG.
 - **LHG-37:** Agente RM: Injeção automática de KPIs no contexto do agente
 - **LHG-38:** Agente RM: Import de tabela de preços via CSV (Claude/Gemini parseia, preview, confirmação)
 - **LHG-40:** Agente RM: Prompt engineering e estratégia de precificação (framework Diagnóstico→Proposta, KPIs + tabela de preços injetados)
+- **LHG-41:** Agente RM: Interface de aprovação de propostas (humano sempre aprova no MVP)
+  - Tabela `price_proposals` com JSONB rows (sem FK — independente de suite_categories/periods/channels)
+  - API `/api/agente/proposals` (GET/POST/PATCH) — gera, lista e aprova/rejeita propostas
+  - `ProposalsListcomponent` com expand/collapse, aprovação inline, badge de pendentes
+  - Agente com seletor de período customizável (não fixo em 12 meses)
+  - Tabelas semanais injetadas no contexto: DataTableRevparByWeek/GiroByWeek/OccupancyRateByWeek
+  - BigNumbers com comparativo 3 colunas: período atual | mesmo período ano anterior | previsão fechamento
+  - Regra: agente pergunta ao usuário quando precisar de info não disponível (ex: total de suítes)
 
 ### 🔲 Backlog MVP (por prioridade)
 
-#### 🤖 Agente RM — núcleo do produto
-1. **LHG-41:** Agente RM: Interface de aprovação (humano sempre aprova no MVP)
+#### 🗄️ Integração ERP
+1. **LHG-73:** Integração Automo PostgreSQL (read-only) — locações/reservas para heatmap e análise avançada
 
 #### 🚀 Deploy e CI/CD
-6. **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations
-7. **LHG-50:** Deploy produção + onboarding unidades piloto
+2. **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations
+3. **LHG-50:** Deploy produção + onboarding unidades piloto
 
 #### 📊 Dashboard — enriquecimento
-8. **LHG-30:** Dashboard: Heatmap ocupação × hora × dia da semana
-9. **LHG-31:** Dashboard: Visão de canais
+4. **LHG-30:** Dashboard: Heatmap ocupação × hora × dia da semana (depende de LHG-73)
+5. **LHG-31:** Dashboard: Visão de canais
 
 #### 🔔 Notificações
-10. **LHG-32:** Notificações push + email (Resend)
+6. **LHG-32:** Notificações push + email (Resend)
 
 #### ✨ Polish
-11. **LHG-72:** Ajustes de layout e polish geral
-12. **LHG-71:** Logo de cada unidade no seletor da sidebar
+7. **LHG-72:** Ajustes de layout e polish geral
+8. **LHG-71:** Logo de cada unidade no seletor da sidebar
 
 ### 📅 Pós-MVP (Backlog)
 LHG-51 a LHG-63: guardrails, clima, eventos, trânsito, aprendizado autônomo, dynamic pricing loop.
