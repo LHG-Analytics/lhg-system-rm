@@ -41,6 +41,7 @@ Só commitar se ambos passarem sem erros.
 
 ### Git
 - **Sempre fazer `git push` após cada commit** — nunca deixar commits locais pendentes.
+- **Nunca avançar para a próxima issue sem commitar e fazer push da anterior** — uma issue por vez, sempre finalizada antes de iniciar a próxima.
 
 ### shadcn/ui
 - Adicionar componentes: `npx shadcn@latest add [componente]`
@@ -134,7 +135,7 @@ Sistema para gestão de preços e disponibilidade de suítes de motéis da LHG.
 ### 🔲 Backlog MVP (por prioridade)
 
 #### 🤖 Agente RM — núcleo do produto
-1. **LHG-35:** Edge Function: Endpoint seguro para Claude API (pré-requisito do agente)
+1. ~~**LHG-35:** Edge Function: Endpoint seguro para Claude API~~ ✅
 2. **LHG-36:** Agente RM: Interface de chat com streaming
 3. **LHG-37:** Agente RM: Injeção automática de KPIs no contexto do agente
 4. **LHG-40:** Agente RM: Prompt engineering e estratégia de precificação
