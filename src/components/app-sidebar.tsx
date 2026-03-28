@@ -1,12 +1,11 @@
 'use client'
 
 import Link from 'next/link'
-import Image, { type StaticImageData } from 'next/image'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import lushLogoSrc from '../../public/lush-logo.png'
-import altanaLogoSrc from '../../public/altana - logo.webp'
-import andarLogoSrc from '../../public/logo andar de cima.png'
+import altanaLogoSrc from '../../public/altana-logo.webp'
+import andarLogoSrc from '../../public/andar-de-cima-logo.png'
 import toutLogoSrc from '../../public/tout-logo.png'
 import {
   BarChart3,
@@ -55,13 +54,14 @@ interface AppSidebarProps {
   userRole: UserRole
 }
 
-// Importações estáticas garantem URLs com hash geradas pelo bundler (mais confiável que caminhos públicos)
-const UNIT_LOGO_CONFIG: Record<string, { src: StaticImageData; darkBg?: boolean }> = {
-  lush_ipiranga: { src: lushLogoSrc },
-  lush_lapa:     { src: lushLogoSrc },
-  altana:        { src: altanaLogoSrc, darkBg: true },
-  andar_de_cima: { src: andarLogoSrc },
-  tout:          { src: toutLogoSrc },
+// StaticImageData importada — .src é a URL com hash gerada pelo bundler
+// Usamos <img> nativo para evitar qualquer pipeline de otimização do next/image
+const UNIT_LOGO_CONFIG: Record<string, { src: string; darkBg?: boolean }> = {
+  lush_ipiranga: { src: lushLogoSrc.src },
+  lush_lapa:     { src: lushLogoSrc.src },
+  altana:        { src: altanaLogoSrc.src, darkBg: true },
+  andar_de_cima: { src: andarLogoSrc.src },
+  tout:          { src: toutLogoSrc.src },
 }
 
 function UnitLogo({ slug, name, size = 32 }: { slug: string; name: string; size?: number }) {
@@ -75,14 +75,14 @@ function UnitLogo({ slug, name, size = 32 }: { slug: string; name: string; size?
         className={`flex items-center justify-center rounded-lg overflow-hidden shrink-0 ${bgClass}`}
         style={{ width: size, height: size, minWidth: size }}
       >
-        <Image
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
           src={config.src}
           alt={name}
           width={size}
           height={size}
           onError={() => setImgError(true)}
-          className="object-contain"
-          style={{ width: size, height: size }}
+          style={{ objectFit: 'contain', width: size, height: size }}
         />
       </div>
     )

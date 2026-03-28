@@ -20,48 +20,77 @@ export const UNIT_CATEGORY_IDS: Record<string, number[]> = {
 }
 
 /**
- * Parseia um connection string PostgreSQL com senha que pode conter '@'.
- * Ex: "postgresql://user:pass@word@host:port/db"
- * O último '@' antes do host é o separador user:pass vs host.
+ * Parseia connection string PostgreSQL com senha contendo '@'.
+ * Estratégia: o ÚLTIMO '@' antes do host é o separador userinfo/host.
+ * Ex: "postgresql://user:pass@word@host:5432/db"
  */
-function parseConnectionString(url: string) {
-  // Remove scheme
-  const withoutScheme = url.replace(/^postgresql:\/\//, '')
+function parseConnectionString(url: string): {
+  host: string; port: number; user: string; password: string; database: string
+} {
+  const raw = url.trim()
+  const withoutScheme = raw.replace(/^postgres(?:ql)?:\/\//, '')
 
-  // Último '@' separa userinfo de host
   const lastAt = withoutScheme.lastIndexOf('@')
+  if (lastAt === -1) throw new Error('URL inválida: sem @')
+
   const userinfo = withoutScheme.slice(0, lastAt)
   const hostpart = withoutScheme.slice(lastAt + 1)
 
-  // user:password (password pode conter ':' — split no primeiro)
   const colonIdx = userinfo.indexOf(':')
-  const user = decodeURIComponent(userinfo.slice(0, colonIdx))
+  const user     = decodeURIComponent(userinfo.slice(0, colonIdx))
   const password = decodeURIComponent(userinfo.slice(colonIdx + 1))
 
-  // host:port/database
-  const [hostport, database] = hostpart.split('/')
-  const [host, portStr] = hostport.split(':')
-  const port = portStr ? parseInt(portStr, 10) : 5432
+  // hostpart pode ser "host:port/db?params" — pega só até '?'
+  const hostNoQuery = hostpart.split('?')[0]
+  const slashIdx = hostNoQuery.indexOf('/')
+  const hostport  = slashIdx >= 0 ? hostNoQuery.slice(0, slashIdx) : hostNoQuery
+  const database  = slashIdx >= 0 ? hostNoQuery.slice(slashIdx + 1) : 'automo'
+
+  const colonH = hostport.lastIndexOf(':')
+  const host   = colonH >= 0 ? hostport.slice(0, colonH) : hostport
+  const port   = colonH >= 0 ? parseInt(hostport.slice(colonH + 1), 10) : 5432
 
   return { host, port, user, password, database }
 }
 
-// Cache de pools por slug para não recriar conexões a cada request
+// Cache de pools por slug
 const poolCache = new Map<string, Pool>()
 
 export function getAutomPool(unitSlug: string): Pool | null {
   const connStr = UNIT_ENV_MAP[unitSlug]
-  if (!connStr) return null
+  if (!connStr) {
+    console.warn(`[automo] Env var não configurada para slug: ${unitSlug}`)
+    return null
+  }
 
   if (poolCache.has(unitSlug)) return poolCache.get(unitSlug)!
 
-  const config = parseConnectionString(connStr)
+  let config
+  try {
+    config = parseConnectionString(connStr)
+  } catch (e) {
+    console.error(`[automo] Erro ao parsear connection string para ${unitSlug}:`, e)
+    return null
+  }
+
+  console.log(`[automo] Criando pool para ${unitSlug} → ${config.host}:${config.port}/${config.database} (user=${config.user})`)
+
   const pool = new Pool({
-    ...config,
+    host:     config.host,
+    port:     config.port,
+    user:     config.user,
+    password: config.password,
+    database: config.database,
     max: 3,
-    idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
-    ssl: false,
+    idleTimeoutMillis:    30_000,
+    connectionTimeoutMillis: 8_000,
+    // Aceita SSL auto-negociado sem validar certificado (servidores internos)
+    ssl: { rejectUnauthorized: false },
+  })
+
+  // Log de erros de conexão em background
+  pool.on('error', (err) => {
+    console.error(`[automo] Pool error (${unitSlug}):`, err.message)
   })
 
   poolCache.set(unitSlug, pool)

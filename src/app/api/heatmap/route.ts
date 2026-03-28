@@ -13,10 +13,21 @@ function getAdminClient() {
 
 export type HeatmapMetric = 'giro' | 'ocupacao'
 
+export interface HeatmapCategory {
+  id: number
+  nome: string
+}
+
 export interface HeatmapCell {
   day_name: string
   hour_of_day: number
   value: number
+}
+
+export interface HeatmapResponse {
+  rows: HeatmapCell[]
+  metric: HeatmapMetric
+  categories: HeatmapCategory[]
 }
 
 export async function GET(req: NextRequest) {
@@ -25,8 +36,9 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return new Response('Não autorizado', { status: 401 })
 
-  const unitSlug = req.nextUrl.searchParams.get('unitSlug')
-  const metric = (req.nextUrl.searchParams.get('metric') ?? 'giro') as HeatmapMetric
+  const unitSlug   = req.nextUrl.searchParams.get('unitSlug')
+  const metric     = (req.nextUrl.searchParams.get('metric') ?? 'giro') as HeatmapMetric
+  const categoryId = req.nextUrl.searchParams.get('categoryId')  // null = total geral
 
   if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
 
@@ -41,7 +53,6 @@ export async function GET(req: NextRequest) {
 
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
 
-  // Verifica acesso do usuário
   const { data: profile } = await supabase
     .from('profiles')
     .select('role, unit_id')
@@ -53,23 +64,42 @@ export async function GET(req: NextRequest) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
   }
 
-  // Pega pool Automo
+  // Pool Automo
   const pool = getAutomPool(unitSlug)
   if (!pool) {
     return Response.json(
-      { error: 'Conexão Automo não configurada para esta unidade.' },
+      { error: `Conexão Automo não configurada para ${unitSlug}. Verifique DATABASE_URL_LOCAL_${unitSlug.toUpperCase()}.` },
       { status: 422 }
     )
   }
 
-  const categoryIds = UNIT_CATEGORY_IDS[unitSlug]
-  if (!categoryIds?.length) {
+  const allCategoryIds = UNIT_CATEGORY_IDS[unitSlug]
+  if (!allCategoryIds?.length) {
     return Response.json({ error: 'IDs de categoria não configurados.' }, { status: 422 })
   }
 
-  const idList = categoryIds.join(',')
+  // Filtra por categoria selecionada ou usa todas
+  const selectedIds = categoryId
+    ? allCategoryIds.filter((id) => id === parseInt(categoryId, 10))
+    : allCategoryIds
+
+  if (!selectedIds.length) {
+    return Response.json({ error: 'Categoria inválida para esta unidade.' }, { status: 400 })
+  }
+
+  const idList = selectedIds.join(',')
+  const allIdList = allCategoryIds.join(',')
 
   try {
+    // Busca nomes das categorias (sempre todas as da unidade)
+    const catResult = await pool.query<{ id: number; nome: string }>(`
+      SELECT ca.id, ca.descricao as nome
+      FROM categoriaapartamento ca
+      WHERE ca.id IN (${allIdList})
+      ORDER BY ca.descricao
+    `)
+    const categories: HeatmapCategory[] = catResult.rows
+
     let rows: HeatmapCell[]
 
     if (metric === 'giro') {
@@ -128,7 +158,6 @@ export async function GET(req: NextRequest) {
       `)
       rows = result.rows
     } else {
-      // ocupacao
       const result = await pool.query<HeatmapCell>(`
         WITH checkin_times AS (
           SELECT
@@ -196,11 +225,12 @@ export async function GET(req: NextRequest) {
       rows = result.rows
     }
 
-    return Response.json({ rows, metric })
+    return Response.json({ rows, metric, categories } satisfies HeatmapResponse)
   } catch (err) {
-    console.error('[heatmap] Erro Automo:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[heatmap] Erro Automo (${unitSlug}):`, msg)
     return Response.json(
-      { error: 'Erro ao conectar com o banco Automo. Verifique a conexão.' },
+      { error: `Erro ao conectar com o banco Automo: ${msg}` },
       { status: 500 }
     )
   }

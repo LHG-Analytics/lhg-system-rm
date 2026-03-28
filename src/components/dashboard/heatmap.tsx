@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { HeatmapCell, HeatmapMetric } from '@/app/api/heatmap/route'
+import type { HeatmapCell, HeatmapMetric, HeatmapCategory } from '@/app/api/heatmap/route'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -28,14 +28,12 @@ function getColor(value: number | undefined, metric: HeatmapMetric): string {
   if (value === undefined) return 'bg-muted/30'
 
   if (metric === 'giro') {
-    // Giro: 0 → cinza, ~2 → amarelo, ~4+ → verde
     if (value < 0.5) return 'bg-muted/40'
     if (value < 1.5) return 'bg-yellow-900/30'
     if (value < 2.5) return 'bg-yellow-600/50'
     if (value < 3.5) return 'bg-green-600/50'
     return 'bg-green-500/80'
   } else {
-    // Ocupação: 0–100%
     if (value < 10) return 'bg-muted/40'
     if (value < 30) return 'bg-blue-900/30'
     if (value < 50) return 'bg-blue-700/40'
@@ -56,22 +54,28 @@ interface HeatmapProps {
 }
 
 export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
-  const [metric, setMetric] = useState<HeatmapMetric>('giro')
-  const [rows, setRows] = useState<HeatmapCell[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [metric, setMetric]         = useState<HeatmapMetric>('giro')
+  const [categoryId, setCategoryId] = useState<string | null>(null) // null = Total Geral
+  const [rows, setRows]             = useState<HeatmapCell[]>([])
+  const [categories, setCategories] = useState<HeatmapCategory[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState<string | null>(null)
 
-  const fetchData = useCallback(async (m: HeatmapMetric) => {
+  const fetchData = useCallback(async (m: HeatmapMetric, catId: string | null) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/heatmap?unitSlug=${unitSlug}&metric=${m}`)
+      const params = new URLSearchParams({ unitSlug, metric: m })
+      if (catId) params.set('categoryId', catId)
+
+      const res = await fetch(`/api/heatmap?${params}`)
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error ?? `Erro ${res.status}`)
       }
       const data = await res.json()
       setRows(data.rows ?? [])
+      if (data.categories?.length) setCategories(data.categories)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar heatmap')
     } finally {
@@ -79,44 +83,63 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
     }
   }, [unitSlug])
 
-  useEffect(() => { fetchData(metric) }, [metric, fetchData])
+  useEffect(() => { fetchData(metric, categoryId) }, [metric, categoryId, fetchData])
 
   const matrix = buildMatrix(rows)
-
   const allValues = rows.map((r) => r.value).filter((v) => v > 0)
   const maxVal = allValues.length ? Math.max(...allValues) : 1
 
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h3 className="font-semibold text-sm">Mapa de calor — últimos 7 dias</h3>
           <p className="text-xs text-muted-foreground">Dia da semana × hora do check-in</p>
         </div>
-        <div className="flex gap-1 rounded-lg border p-0.5 text-xs">
-          <button
-            onClick={() => setMetric('giro')}
-            className={cn(
-              'px-3 py-1 rounded-md transition-colors',
-              metric === 'giro'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Giro
-          </button>
-          <button
-            onClick={() => setMetric('ocupacao')}
-            className={cn(
-              'px-3 py-1 rounded-md transition-colors',
-              metric === 'ocupacao'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Ocupação
-          </button>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Filtro de categoria */}
+          {categories.length > 0 && (
+            <select
+              value={categoryId ?? ''}
+              onChange={(e) => setCategoryId(e.target.value || null)}
+              className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="">Total Geral</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={String(cat.id)}>
+                  {cat.nome}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Toggle métrica */}
+          <div className="flex gap-1 rounded-lg border p-0.5 text-xs">
+            <button
+              onClick={() => setMetric('giro')}
+              className={cn(
+                'px-3 py-1 rounded-md transition-colors',
+                metric === 'giro'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Giro
+            </button>
+            <button
+              onClick={() => setMetric('ocupacao')}
+              className={cn(
+                'px-3 py-1 rounded-md transition-colors',
+                metric === 'ocupacao'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Ocupação
+            </button>
+          </div>
         </div>
       </div>
 
@@ -148,7 +171,6 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
         )}
       </div>
 
-      {/* Estado de loading / erro */}
       {loading && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -156,9 +178,9 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
       )}
 
       {error && (
-        <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
-          <AlertCircle className="size-4 shrink-0" />
-          {error}
+        <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+          <AlertCircle className="size-4 shrink-0 mt-0.5" />
+          <span className="break-all">{error}</span>
         </div>
       )}
 
@@ -166,7 +188,6 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
       {!loading && !error && (
         <div className="overflow-x-auto">
           <div className="min-w-[600px]">
-            {/* Header de horas */}
             <div className="flex">
               <div className="w-10 shrink-0" />
               {HOURS.map((h) => (
@@ -180,7 +201,6 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
               ))}
             </div>
 
-            {/* Linhas por dia */}
             {DAYS.map((day) => (
               <div key={day} className="flex items-center gap-0.5 mb-0.5">
                 <div className="w-10 shrink-0 text-[11px] text-muted-foreground text-right pr-1">
