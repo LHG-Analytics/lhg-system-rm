@@ -56,10 +56,13 @@ function formatValue(value: number | undefined, metric: HeatmapMetric): string {
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 interface HeatmapProps {
-  unitSlug: string
+  unitSlug:   string
+  startDate:  string  // YYYY-MM-DD
+  endDate:    string  // YYYY-MM-DD
+  rangeLabel: string
 }
 
-export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
+export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: HeatmapProps) {
   const [metric,     setMetric]     = useState<HeatmapMetric>('giro')
   const [dateType,   setDateType]   = useState<HeatmapDateType>('all')
   const [categoryId, setCategoryId] = useState<string | null>(null)
@@ -76,7 +79,13 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
     setLoading(true)
     setError(null)
     try {
-      const params = new URLSearchParams({ unitSlug, metric: m, dateType: dt })
+      const params = new URLSearchParams({
+        unitSlug,
+        metric:    m,
+        dateType:  dt,
+        startDate,
+        endDate,
+      })
       if (catId) params.set('categoryId', catId)
 
       const res = await fetch(`/api/heatmap?${params}`)
@@ -92,7 +101,7 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
     } finally {
       setLoading(false)
     }
-  }, [unitSlug])
+  }, [unitSlug, startDate, endDate])
 
   useEffect(() => {
     fetchData(metric, dateType, categoryId)
@@ -111,7 +120,7 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h3 className="font-semibold text-sm">Mapa de calor — últimos 7 dias</h3>
+          <h3 className="font-semibold text-sm">Mapa de calor — {rangeLabel.toLowerCase()}</h3>
           <p className="text-xs text-muted-foreground">{subtitle}</p>
         </div>
 
@@ -281,7 +290,7 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
 
       {!loading && !error && rows.length === 0 && (
         <div className="text-center py-8 text-sm text-muted-foreground">
-          Sem dados de locações nos últimos 7 dias.
+          Sem dados de locações no período selecionado.
         </div>
       )}
     </div>

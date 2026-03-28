@@ -1,20 +1,24 @@
+import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import {
-  fetchCompanyKPIs,
-  fetchBookingsKPIs,
-  trailingYear,
-} from '@/lib/lhg-analytics/client'
+import { fetchCompanyKPIs, fetchBookingsKPIs } from '@/lib/lhg-analytics/client'
+import { resolvePreset, toLhgDate, fmtDisplay } from '@/lib/date-range'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
+import { DateRangePicker } from '@/components/dashboard/date-range-picker'
 
 interface DashboardPageProps {
-  searchParams: Promise<{ unit?: string }>
+  searchParams: Promise<{
+    unit?:   string
+    preset?: string
+    start?:  string
+    end?:    string
+  }>
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-  const { unit: unitSlug } = await searchParams
+  const { unit: unitSlug, preset, start, end } = await searchParams
 
   const supabase = await createClient()
   const { data: profile } = await supabase
@@ -25,7 +29,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   if (!profile) redirect('/login')
 
-  // Resolve active unit: prefer URL param, fall back to profile unit
+  // Resolve active unit
   let activeUnit: { slug: string; api_base_url: string | null; name: string } | null = null
 
   if (unitSlug) {
@@ -47,7 +51,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     activeUnit = data
   }
 
-  // Fallback para super_admin (unit_id = null): pega a primeira unidade ativa
   if (!activeUnit) {
     const { data } = await supabase
       .from('units')
@@ -72,10 +75,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     )
   }
 
-  // Janela rolante de 12 meses: mesma data do ano passado → ontem.
-  // Garante 365 dias completos de contexto histórico para o agente RM
-  // sem viés de sazonalidade (YTD seria incompleto no início do ano).
-  const kpiParams = trailingYear()
+  // Resolve date range from URL preset / custom dates
+  const dateRange  = resolvePreset(preset, start, end)
+  const kpiParams  = {
+    startDate: toLhgDate(dateRange.startDate),
+    endDate:   toLhgDate(dateRange.endDate),
+  }
   const lhgUnit = { slug: activeUnit.slug, apiBaseUrl: activeUnit.api_base_url ?? '' }
 
   const [companyResult, bookingsResult] = await Promise.allSettled([
@@ -83,21 +88,32 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     activeUnit.api_base_url ? fetchBookingsKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
   ])
 
-  const company = companyResult.status === 'fulfilled' ? companyResult.value : null
+  const company  = companyResult.status  === 'fulfilled' ? companyResult.value  : null
   const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : null
 
   return (
     <div className="flex flex-1 flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{activeUnit.name}</h1>
-        <p className="text-sm text-muted-foreground">
-          Últimos 12 meses · {kpiParams.startDate} até {kpiParams.endDate}
-        </p>
+      {/* Header com seletor de período */}
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{activeUnit.name}</h1>
+          <p className="text-sm text-muted-foreground">
+            {dateRange.label} · {fmtDisplay(dateRange.startDate)} até {fmtDisplay(dateRange.endDate)}
+          </p>
+        </div>
+        <Suspense fallback={null}>
+          <DateRangePicker />
+        </Suspense>
       </div>
 
       <DashboardKPICards company={company} bookings={bookings} />
       <DashboardCharts company={company} />
-      <OccupancyHeatmap unitSlug={activeUnit.slug} />
+      <OccupancyHeatmap
+        unitSlug={activeUnit.slug}
+        startDate={dateRange.startDate}
+        endDate={dateRange.endDate}
+        rangeLabel={dateRange.label}
+      />
     </div>
   )
 }

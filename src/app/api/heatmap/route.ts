@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
+import { isValidIsoDate, resolvePreset } from '@/lib/date-range'
 import type { Database } from '@/types/database.types'
 
 function getAdminClient() {
@@ -55,11 +56,11 @@ const ORDER_DAY = `CASE day_name
   WHEN 'Domingo' THEN 7
 END`
 
-/**
- * Gera o bloco SELECT interno para giro, parametrizado pelo coluna de data.
- * Retorna rentals+suites por categoria+dia+hora.
- */
-function giroEventsSelect(col: string, idList: string, extraWhere = '') {
+function giroEventsSelect(
+  col: string, idList: string,
+  startDate: string, endDate: string,
+  extraWhere = '',
+) {
   return `
     SELECT
       ca.id  AS category_id,
@@ -72,18 +73,18 @@ function giroEventsSelect(col: string, idList: string, extraWhere = '') {
     INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
     INNER JOIN category_suites cs ON ca.id = cs.id
-    WHERE ${col} >= CURRENT_DATE - INTERVAL '7 days'
-      AND ${col} < CURRENT_DATE
+    WHERE ${col} >= '${startDate}'::date
+      AND ${col} <  ('${endDate}'::date + INTERVAL '1 day')
       AND la.fimocupacaotipo = 'FINALIZADA'
       ${extraWhere}
       AND ca.id IN (${idList})
     GROUP BY ca.id, cs.suites, day_name, hour_of_day`
 }
 
-function buildGiroQuery(idList: string, dateType: HeatmapDateType): string {
-  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList)
+function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string): string {
+  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, startDate, endDate)
   const checkoutSel = giroEventsSelect(
-    'la.datafinaldaocupacao', idList,
+    'la.datafinaldaocupacao', idList, startDate, endDate,
     'AND la.datafinaldaocupacao IS NOT NULL'
   )
 
@@ -111,11 +112,11 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType): string {
     ORDER BY ${ORDER_DAY}, hour_of_day`
 }
 
-/**
- * Gera o bloco SELECT interno para ocupação, parametrizado pela coluna de data
- * que define o horário de referência no heatmap.
- */
-function ocupacaoEventsSelect(col: string, idList: string, extraWhere = '') {
+function ocupacaoEventsSelect(
+  col: string, idList: string,
+  startDate: string, endDate: string,
+  extraWhere = '',
+) {
   return `
     SELECT
       ${dowCase(col)} AS day_name,
@@ -128,17 +129,17 @@ function ocupacaoEventsSelect(col: string, idList: string, extraWhere = '') {
     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
     INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-    WHERE ${col} >= CURRENT_DATE - INTERVAL '7 days'
-      AND ${col} < CURRENT_DATE
+    WHERE ${col} >= '${startDate}'::date
+      AND ${col} <  ('${endDate}'::date + INTERVAL '1 day')
       AND la.datafinaldaocupacao IS NOT NULL
       AND la.fimocupacaotipo = 'FINALIZADA'
       ${extraWhere}
       AND ca.id IN (${idList})`
 }
 
-function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType): string {
-  const checkinSel  = ocupacaoEventsSelect('la.datainicialdaocupacao', idList)
-  const checkoutSel = ocupacaoEventsSelect('la.datafinaldaocupacao',   idList)
+function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string): string {
+  const checkinSel  = ocupacaoEventsSelect('la.datainicialdaocupacao', idList, startDate, endDate)
+  const checkoutSel = ocupacaoEventsSelect('la.datafinaldaocupacao',   idList, startDate, endDate)
 
   const eventsCTE =
     dateType === 'checkin'  ? checkinSel  :
@@ -174,19 +175,26 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType): string {
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  // Auth
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return new Response('Não autorizado', { status: 401 })
 
-  const unitSlug   = req.nextUrl.searchParams.get('unitSlug')
-  const metric     = (req.nextUrl.searchParams.get('metric')   ?? 'giro')    as HeatmapMetric
-  const dateType   = (req.nextUrl.searchParams.get('dateType') ?? 'all')     as HeatmapDateType
-  const categoryId = req.nextUrl.searchParams.get('categoryId')
+  const sp         = req.nextUrl.searchParams
+  const unitSlug   = sp.get('unitSlug')
+  const metric     = (sp.get('metric')   ?? 'giro') as HeatmapMetric
+  const dateType   = (sp.get('dateType') ?? 'all')  as HeatmapDateType
+  const categoryId = sp.get('categoryId')
+
+  // Date range: accept explicit ISO dates or fall back to last 7 days
+  const rawStart = sp.get('startDate')
+  const rawEnd   = sp.get('endDate')
+  const range    = (rawStart && rawEnd && isValidIsoDate(rawStart) && isValidIsoDate(rawEnd))
+    ? { startDate: rawStart, endDate: rawEnd }
+    : resolvePreset('7d')
 
   if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
 
-  // Resolve unit + verifica acesso
+  // Auth + unit check
   const admin = getAdminClient()
   const { data: unit } = await admin
     .from('units')
@@ -208,7 +216,6 @@ export async function GET(req: NextRequest) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
   }
 
-  // Pool Automo
   const pool = getAutomPool(unitSlug)
   if (!pool) {
     return Response.json(
@@ -232,9 +239,9 @@ export async function GET(req: NextRequest) {
 
   const idList    = selectedIds.join(',')
   const allIdList = allCategoryIds.join(',')
+  const { startDate, endDate } = range
 
   try {
-    // Nomes das categorias (sempre todas da unidade)
     const catResult = await pool.query<{ id: number; nome: string }>(`
       SELECT ca.id, ca.descricao AS nome
       FROM categoriaapartamento ca
@@ -244,8 +251,8 @@ export async function GET(req: NextRequest) {
     const categories: HeatmapCategory[] = catResult.rows
 
     const sql = metric === 'giro'
-      ? buildGiroQuery(idList, dateType)
-      : buildOcupacaoQuery(idList, dateType)
+      ? buildGiroQuery(idList, dateType, startDate, endDate)
+      : buildOcupacaoQuery(idList, dateType, startDate, endDate)
 
     const result = await pool.query<HeatmapCell>(sql)
 
