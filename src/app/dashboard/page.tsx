@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import {
   fetchCompanyKPIs,
   fetchBookingsKPIs,
-  yearToDate,
+  trailingYear,
 } from '@/lib/lhg-analytics/client'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
@@ -59,7 +59,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     )
   }
 
-  const kpiParams = yearToDate() // acumulado do ano — evita sazonalidade para o agente RM
+  // Janela rolante de 12 meses: mesma data do ano passado → ontem.
+  // Garante 365 dias completos de contexto histórico para o agente RM
+  // sem viés de sazonalidade (YTD seria incompleto no início do ano).
+  const kpiParams = trailingYear()
   const lhgUnit = { slug: activeUnit.slug, apiBaseUrl: activeUnit.api_base_url ?? '' }
 
   const [companyResult, bookingsResult] = await Promise.allSettled([
@@ -75,7 +78,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{activeUnit.name}</h1>
         <p className="text-sm text-muted-foreground">
-          {kpiParams.startDate} — {kpiParams.endDate}
+          Últimos 12 meses · {kpiParams.startDate} até {kpiParams.endDate}
         </p>
       </div>
 

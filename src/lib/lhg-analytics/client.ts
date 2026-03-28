@@ -178,20 +178,32 @@ export function toApiDate(date: Date): string {
 }
 
 /**
- * Acumulado do ano: Jan 1 → today (or yesterday if before 06:00).
- * Default period for RM agent context — avoids seasonality bias.
+ * Janela rolante de 12 meses: mesma data do ano passado → ontem.
+ * Ex: hoje = 28/03/2026 → startDate = 28/03/2025, endDate = 27/03/2026.
+ *
+ * Usado como contexto histórico do agente RM para evitar sazonalidade
+ * (YTD seria enviesado no início do ano — aqui sempre há 365 dias completos).
  */
-export function yearToDate(): KPIQueryParams {
+export function trailingYear(): KPIQueryParams {
   const now = new Date()
+
+  // Dia operacional atual (antes das 06:00 ainda é "ontem")
   const operationalToday =
     now.getHours() < 6
       ? new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
-      : now
+      : new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
-  const jan1 = new Date(operationalToday.getFullYear(), 0, 1)
+  // endDate = ontem (dados do dia de hoje ainda incompletos)
+  const endDate = new Date(operationalToday)
+  endDate.setDate(endDate.getDate() - 1)
+
+  // startDate = mesma data do ano passado
+  const startDate = new Date(operationalToday)
+  startDate.setFullYear(startDate.getFullYear() - 1)
+
   return {
-    startDate: toApiDate(jan1),
-    endDate: toApiDate(operationalToday),
+    startDate: toApiDate(startDate),
+    endDate: toApiDate(endDate),
   }
 }
 
