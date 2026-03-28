@@ -49,12 +49,14 @@ function dowCase(col: string) {
     END`
 }
 
-/** ORDER BY para dia da semana */
-const ORDER_DAY = `CASE day_name
+/** ORDER BY para dia da semana — requer alias qualificado para evitar ambiguidade */
+function orderDay(alias: string) {
+  return `CASE ${alias}.day_name
   WHEN 'Segunda' THEN 1 WHEN 'Terca' THEN 2 WHEN 'Quarta' THEN 3
   WHEN 'Quinta'  THEN 4 WHEN 'Sexta' THEN 5 WHEN 'Sabado' THEN 6
   WHEN 'Domingo' THEN 7
 END`
+}
 
 function giroEventsSelect(
   col: string, idList: string,
@@ -121,7 +123,7 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: st
     FROM events e
     JOIN date_occurrences dc ON dc.day_name = e.day_name
     GROUP BY e.day_name, e.hour_of_day, dc.n_days
-    ORDER BY ${ORDER_DAY}, e.hour_of_day`
+    ORDER BY ${orderDay('e')}, e.hour_of_day`
 }
 
 function ocupacaoEventsSelect(
@@ -193,7 +195,7 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
     FROM hourly h
     JOIN date_occurrences dc ON dc.day_name = h.day_name
     CROSS JOIN capacity c
-    ORDER BY ${ORDER_DAY}, h.hour_of_day`
+    ORDER BY ${orderDay('h')}, h.hour_of_day`
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
