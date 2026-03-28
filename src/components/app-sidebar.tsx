@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import Image from 'next/image'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useState } from 'react'
 import {
   BarChart3,
   BotMessageSquare,
@@ -50,36 +50,43 @@ interface AppSidebarProps {
   userRole: UserRole
 }
 
-// Mapeamento slug → logo pública
-const UNIT_LOGOS: Record<string, string> = {
-  lush_ipiranga: '/lush-logo.png',
-  lush_lapa:     '/lush-logo.png',
-  altana:        '/altana - logo.webp',
-  andar_de_cima: '/logo andar de cima.png',
-  tout:          '/tout-logo.png',
+// Configuração por slug: src da logo e classe de fundo do container
+// bg: 'dark' para logos brancas (precisam de fundo escuro), 'light' para logos escuras/coloridas
+const UNIT_LOGO_CONFIG: Record<string, { src: string; darkBg?: boolean }> = {
+  lush_ipiranga: { src: '/lush-logo.png' },
+  lush_lapa:     { src: '/lush-logo.png' },
+  altana:        { src: '/altana - logo.webp', darkBg: true },
+  andar_de_cima: { src: '/logo andar de cima.png' },
+  tout:          { src: '/tout-logo.png' },
 }
 
 function UnitLogo({ slug, name, size = 32 }: { slug: string; name: string; size?: number }) {
-  const src = UNIT_LOGOS[slug]
-  if (src) {
+  const [imgError, setImgError] = useState(false)
+  const config = UNIT_LOGO_CONFIG[slug]
+
+  if (config && !imgError) {
+    const bgClass = config.darkBg ? 'bg-zinc-900' : 'bg-transparent'
     return (
       <div
-        className="flex items-center justify-center rounded-lg overflow-hidden bg-white"
+        className={`flex items-center justify-center rounded-lg overflow-hidden shrink-0 ${bgClass}`}
         style={{ width: size, height: size, minWidth: size }}
       >
-        <Image
-          src={src}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={config.src}
           alt={name}
-          width={size}
-          height={size}
-          className="object-contain"
-          style={{ width: size, height: size }}
+          onError={() => setImgError(true)}
+          className="object-contain w-full h-full"
         />
       </div>
     )
   }
+
   return (
-    <div className="flex items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground" style={{ width: size, height: size, minWidth: size }}>
+    <div
+      className="flex items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shrink-0"
+      style={{ width: size, height: size, minWidth: size }}
+    >
       <Hotel className="size-4" />
     </div>
   )
