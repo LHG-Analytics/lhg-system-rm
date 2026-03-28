@@ -1,5 +1,5 @@
-import { anthropic } from '@ai-sdk/anthropic'
 import { streamText, convertToModelMessages } from 'ai'
+import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -109,13 +109,14 @@ export async function POST(req: NextRequest) {
   // 6. Montar system prompt com contexto de KPIs + tabela de preços
   const systemPrompt = buildSystemPrompt(unit.name, kpiParams, company, bookings, priceRows)
 
-  // 7. Stream com Claude
+  // 7. Stream via AI Gateway (Claude primário, Gemini como fallback automático)
   const result = streamText({
-    model: anthropic('claude-sonnet-4.6'),
+    model: PRIMARY_MODEL,
     system: systemPrompt,
     messages: await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]),
     maxOutputTokens: 2048,
-    temperature: 0.3, // mais determinístico para análises financeiras
+    temperature: 0.3,
+    providerOptions: gatewayOptions,
   })
 
   return result.toUIMessageStreamResponse()

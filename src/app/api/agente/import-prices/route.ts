@@ -1,5 +1,5 @@
-import { anthropic } from '@ai-sdk/anthropic'
 import { generateText } from 'ai'
+import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -102,7 +102,8 @@ CSV:
 ${csvContent.slice(0, 8000)}`
 
     const { text } = await generateText({
-      model: anthropic('claude-sonnet-4.6'),
+      model: PRIMARY_MODEL,
+      providerOptions: gatewayOptions,
       prompt,
       maxOutputTokens: 2000,
       temperature: 0,
