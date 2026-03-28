@@ -46,6 +46,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     activeUnit = data
   }
 
+  // Fallback para super_admin (unit_id = null): pega a primeira unidade ativa
+  if (!activeUnit) {
+    const { data } = await supabase
+      .from('units')
+      .select('slug, api_base_url, name')
+      .eq('is_active', true)
+      .order('name')
+      .limit(1)
+      .single()
+    activeUnit = data
+  }
+
   if (!activeUnit) {
     return (
       <div className="flex flex-1 flex-col gap-4">
