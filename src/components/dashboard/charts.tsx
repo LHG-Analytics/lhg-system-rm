@@ -19,6 +19,8 @@ export function DashboardCharts({ company }: DashboardChartsProps) {
 
   if (!rows.length) return null
 
+  const total = company.TotalResult
+
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b">
@@ -40,7 +42,7 @@ export function DashboardCharts({ company }: DashboardChartsProps) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.category} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+              <tr key={row.category} className="border-b hover:bg-muted/30 transition-colors">
                 <td className="px-4 py-3 font-medium">{row.category}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{row.totalRentalsApartments}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{fmt.format(row.totalValue)}</td>
@@ -51,6 +53,18 @@ export function DashboardCharts({ company }: DashboardChartsProps) {
                 <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{row.averageOccupationTime}</td>
               </tr>
             ))}
+            {total && (
+              <tr className="bg-muted/40 border-t-2 border-border font-semibold">
+                <td className="px-4 py-3">Total</td>
+                <td className="px-4 py-3 text-right tabular-nums">{total.totalAllRentalsApartments}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(total.totalAllValue)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(total.totalAllTicketAverage)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{total.totalGiro.toFixed(2)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(total.totalRevpar)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{total.totalOccupancyRate.toFixed(1)}%</td>
+                <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{total.totalAverageOccupationTime}</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

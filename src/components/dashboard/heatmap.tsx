@@ -208,16 +208,26 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
                 </div>
                 {HOURS.map((h) => {
                   const val = matrix.get(`${day}-${h}`)
+                  const label = val !== undefined
+                    ? (metric === 'giro' ? val.toFixed(1) : `${val.toFixed(0)}%`)
+                    : '–'
                   return (
                     <div
                       key={h}
                       title={`${DAY_LABELS[day]} ${h}h — ${formatValue(val, metric)}`}
                       className={cn(
-                        'flex-1 rounded-sm h-6 cursor-default transition-opacity hover:opacity-80',
+                        'flex-1 rounded-sm h-6 cursor-default transition-opacity hover:opacity-80 flex items-center justify-center',
                         getColor(val, metric)
                       )}
                       style={{ minWidth: 0 }}
-                    />
+                    >
+                      <span className={cn(
+                        'text-[8px] leading-none font-medium select-none tabular-nums',
+                        val === undefined ? 'text-muted-foreground/40' : 'text-foreground/80'
+                      )}>
+                        {label}
+                      </span>
+                    </div>
                   )
                 })}
               </div>
