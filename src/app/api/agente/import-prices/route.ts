@@ -62,6 +62,48 @@ function getAdminClient() {
   )
 }
 
+// GET /api/agente/import-prices?unitSlug=xxx
+// Lista todos os imports de uma unidade, do mais recente ao mais antigo
+export async function GET(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return new Response('Não autorizado', { status: 401 })
+
+  const unitSlug = req.nextUrl.searchParams.get('unitSlug')
+  if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
+
+  const admin = getAdminClient()
+  const { data: unit } = await admin
+    .from('units')
+    .select('id')
+    .eq('slug', unitSlug)
+    .eq('is_active', true)
+    .single()
+
+  if (!unit) return new Response('Unidade não encontrada', { status: 404 })
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, unit_id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!profile) return new Response('Perfil não encontrado', { status: 403 })
+  if (profile.role !== 'super_admin' && profile.unit_id !== unit.id) {
+    return new Response('Sem acesso a essa unidade', { status: 403 })
+  }
+
+  const { data: imports, error } = await supabase
+    .from('price_imports')
+    .select('id, imported_at, canals, is_active, valid_from, valid_until, parsed_data')
+    .eq('unit_id', unit.id)
+    .order('valid_from', { ascending: false })
+
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  return Response.json(imports ?? [])
+}
+
 // POST /api/agente/import-prices
 // Body: { csvContent: string; unitSlug: string; action: 'parse' | 'confirm'; parsedData?: ParsedPriceRow[] }
 export async function POST(req: NextRequest) {
@@ -84,9 +126,11 @@ export async function POST(req: NextRequest) {
     csvContent?: string
     unitSlug: string
     parsedData?: ParsedPriceRow[]
+    validFrom?: string
+    validUntil?: string | null
   }
 
-  const { action, csvContent, unitSlug, parsedData } = body
+  const { action, csvContent, unitSlug, parsedData, validFrom, validUntil } = body
 
   if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
 
@@ -163,6 +207,7 @@ ${csvContent.slice(0, 8000)}`
     if (!csvContent) return new Response('csvContent obrigatório', { status: 400 })
 
     const canais = [...new Set(parsedData.map((r) => r.canal))]
+    const today = new Date().toISOString().slice(0, 10)
 
     // Salvar no Supabase (o trigger desativa imports anteriores automaticamente)
     const { data: importRecord, error } = await supabase
@@ -174,8 +219,10 @@ ${csvContent.slice(0, 8000)}`
         parsed_data: parsedData as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
         canals: canais,
         is_active: true,
+        valid_from: validFrom ?? today,
+        valid_until: validUntil ?? null,
       })
-      .select('id, imported_at')
+      .select('id, imported_at, valid_from, valid_until')
       .single()
 
     if (error) {
@@ -183,7 +230,7 @@ ${csvContent.slice(0, 8000)}`
       return Response.json({ error: error.message }, { status: 500 })
     }
 
-    return Response.json({ success: true, id: importRecord.id, imported_at: importRecord.imported_at })
+    return Response.json({ success: true, id: importRecord.id, imported_at: importRecord.imported_at, valid_from: importRecord.valid_from, valid_until: importRecord.valid_until })
   }
 
   return new Response('action inválido', { status: 400 })

@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
   }
 
   // 3. Payload
-  const body = await req.json() as { messages: unknown[]; unitSlug?: string; startDate?: string; endDate?: string }
-  const { messages, unitSlug, startDate, endDate } = body
+  const body = await req.json() as { messages: unknown[]; unitSlug?: string; startDate?: string; endDate?: string; priceImportId?: string }
+  const { messages, unitSlug, startDate, endDate, priceImportId } = body
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response('messages inválido', { status: 400 })
@@ -93,21 +93,34 @@ export async function POST(req: NextRequest) {
   const kpiParams = (startDate && endDate) ? { startDate, endDate } : trailingYear()
   const lhgUnit = { slug: unit.slug, apiBaseUrl: unit.api_base_url ?? '' }
 
+  // Buscar import específico se priceImportId fornecido; caso contrário, usa o ativo
+  const priceImportQuery = priceImportId
+    ? admin.from('price_imports').select('parsed_data, valid_from, valid_until').eq('id', priceImportId).single()
+    : admin.from('price_imports').select('parsed_data, valid_from, valid_until').eq('unit_id', unit.id).eq('is_active', true).single()
+
   const [companyResult, bookingsResult, priceImportResult] = await Promise.allSettled([
     unit.api_base_url ? fetchCompanyKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
     unit.api_base_url ? fetchBookingsKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
-    admin.from('price_imports').select('parsed_data').eq('unit_id', unit.id).eq('is_active', true).single(),
+    priceImportQuery,
   ])
 
   const company = companyResult.status === 'fulfilled' ? companyResult.value : null
   const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : null
-  const priceRows: ParsedPriceRow[] =
-    priceImportResult.status === 'fulfilled' && priceImportResult.value.data?.parsed_data
-      ? (priceImportResult.value.data.parsed_data as unknown as ParsedPriceRow[])
-      : []
+  const priceImportData = priceImportResult.status === 'fulfilled' ? priceImportResult.value.data : null
+  const priceRows: ParsedPriceRow[] = priceImportData?.parsed_data
+    ? (priceImportData.parsed_data as unknown as ParsedPriceRow[])
+    : []
 
-  // 6. Montar system prompt com contexto de KPIs + tabela de preços
-  const systemPrompt = buildSystemPrompt(unit.name, kpiParams, company, bookings, priceRows)
+  // 6. Montar system prompt com contexto de KPIs + tabela de preços (inclui vigência)
+  const systemPrompt = buildSystemPrompt(
+    unit.name,
+    kpiParams,
+    company,
+    bookings,
+    priceRows,
+    priceImportData?.valid_from ?? null,
+    priceImportData?.valid_until ?? null
+  )
 
   // 7. Stream via AI Gateway (Claude primário, Gemini como fallback automático)
   const result = streamText({

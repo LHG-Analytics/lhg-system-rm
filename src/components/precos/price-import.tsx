@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Upload, CheckCircle, AlertCircle, Loader2, FileText, X } from 'lucide-react'
+import { Upload, CheckCircle, AlertCircle, Loader2, FileText, X, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -33,11 +33,15 @@ interface PriceImportProps {
 }
 
 export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
+  const today = new Date().toISOString().slice(0, 10)
+
   const [phase, setPhase] = useState<'idle' | 'parsing' | 'preview' | 'saving' | 'done' | 'error'>('idle')
   const [csvContent, setCsvContent] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [preview, setPreview] = useState<ParseResponse | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [validFrom, setValidFrom] = useState<string>(today)
+  const [validUntil, setValidUntil] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -95,6 +99,8 @@ export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
           csvContent,
           unitSlug,
           parsedData: preview.rows,
+          validFrom,
+          validUntil,
         }),
       })
 
@@ -116,6 +122,8 @@ export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
     setFileName(null)
     setPreview(null)
     setErrorMsg(null)
+    setValidFrom(today)
+    setValidUntil(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -248,6 +256,47 @@ export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
                 {preview.observacoes}
               </p>
             )}
+
+            {/* Período de vigência */}
+            <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t">
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
+                <Calendar className="size-3.5" />
+                <span>Vigência:</span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs text-muted-foreground whitespace-nowrap">De</label>
+                  <input
+                    type="date"
+                    value={validFrom}
+                    max={validUntil ?? undefined}
+                    onChange={(e) => e.target.value && setValidFrom(e.target.value)}
+                    className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs text-muted-foreground whitespace-nowrap">Até</label>
+                  <input
+                    type="date"
+                    value={validUntil ?? ''}
+                    min={validFrom}
+                    onChange={(e) => setValidUntil(e.target.value || null)}
+                    className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  {validUntil && (
+                    <button
+                      onClick={() => setValidUntil(null)}
+                      className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                    >
+                      Atualmente
+                    </button>
+                  )}
+                  {!validUntil && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">atualmente ativa</span>
+                  )}
+                </div>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border overflow-auto">

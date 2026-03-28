@@ -4,12 +4,23 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Calendar, RefreshCw } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, Calendar, RefreshCw, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { MessageResponse } from '@/components/ai-elements/message'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface PriceImportSummary {
+  id: string
+  imported_at: string
+  canals: string[]
+  is_active: boolean
+  valid_from: string
+  valid_until: string | null
+}
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -51,13 +62,14 @@ interface AgenteChatInnerProps {
   unitSlug: string
   startDate: string
   endDate: string
+  priceImportId?: string
 }
 
-function AgenteChatInner({ unitSlug, startDate, endDate }: AgenteChatInnerProps) {
+function AgenteChatInner({ unitSlug, startDate, endDate, priceImportId }: AgenteChatInnerProps) {
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/agente/chat',
-      body: { unitSlug, startDate, endDate },
+      body: { unitSlug, startDate, endDate, priceImportId },
     }),
   })
 
@@ -221,25 +233,54 @@ function AgenteChatInner({ unitSlug, startDate, endDate }: AgenteChatInnerProps)
   )
 }
 
-// ─── Outer component (gerencia seletor de período) ────────────────────────────
+// ─── Formatadores para o seletor de tabelas ───────────────────────────────────
+
+function fmtDate(iso: string) {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+
+// ─── Outer component (gerencia seletor de período + tabela de preços) ─────────
 
 interface AgenteChatProps {
   unitSlug: string
+  priceImports?: PriceImportSummary[]
 }
 
-export function AgenteChat({ unitSlug }: AgenteChatProps) {
+export function AgenteChat({ unitSlug, priceImports = [] }: AgenteChatProps) {
   const searchParams = useSearchParams()
   const activeSlug = searchParams.get('unit') ?? unitSlug
 
   const defaults = getDefaultDateRange()
 
+  // Tabela de preços selecionada (null = mais recente ativa por padrão)
+  const activeImport = priceImports.find((i) => i.is_active) ?? priceImports[0] ?? null
+  const [selectedImportId, setSelectedImportId] = useState<string | null>(activeImport?.id ?? null)
+
+  const selectedImport = priceImports.find((i) => i.id === selectedImportId) ?? null
+
+  // Derivar datas padrão: se há tabela selecionada, usar vigência; senão trailing year
+  function datesFromImport(imp: PriceImportSummary | null): { startDate: string; endDate: string } {
+    if (!imp) return defaults
+    // API usa DD/MM/YYYY
+    const pad = (s: string) => s.padStart(2, '0')
+    const isoToApi = (iso: string) => {
+      const [y, m, d] = iso.split('-')
+      return `${pad(d)}/${pad(m)}/${y}`
+    }
+    const endIso = imp.valid_until ?? new Date().toISOString().slice(0, 10)
+    return { startDate: isoToApi(imp.valid_from), endDate: isoToApi(endIso) }
+  }
+
+  const importDates = datesFromImport(selectedImport)
+
   // Datas aplicadas ao chat atual
-  const [startDate, setStartDate] = useState(defaults.startDate)
-  const [endDate, setEndDate] = useState(defaults.endDate)
+  const [startDate, setStartDate] = useState(importDates.startDate)
+  const [endDate, setEndDate] = useState(importDates.endDate)
 
   // Datas pendentes (ainda não aplicadas)
-  const [pendingStart, setPendingStart] = useState(defaults.startDate)
-  const [pendingEnd, setPendingEnd] = useState(defaults.endDate)
+  const [pendingStart, setPendingStart] = useState(importDates.startDate)
+  const [pendingEnd, setPendingEnd] = useState(importDates.endDate)
 
   // Incrementar essa key força remount do AgenteChatInner com novo transport
   const [chatKey, setChatKey] = useState(0)
@@ -252,10 +293,48 @@ export function AgenteChat({ unitSlug }: AgenteChatProps) {
     setChatKey((k) => k + 1) // reseta a conversa com o novo período
   }
 
+  function handleImportChange(id: string) {
+    setSelectedImportId(id)
+    const imp = priceImports.find((i) => i.id === id) ?? null
+    const newDates = datesFromImport(imp)
+    setPendingStart(newDates.startDate)
+    setPendingEnd(newDates.endDate)
+    setStartDate(newDates.startDate)
+    setEndDate(newDates.endDate)
+    setChatKey((k) => k + 1) // reinicia o chat com a nova tabela
+  }
+
+  const showImportSelector = priceImports.length >= 2
+
   return (
     <div className="flex flex-1 flex-col rounded-xl border bg-card overflow-hidden min-h-0">
-      {/* Seletor de período */}
+      {/* Barra de contexto */}
       <div className="flex items-center gap-2 border-b px-3 py-2 bg-muted/30 flex-wrap">
+        {/* Seletor de tabela de preços (apenas se houver 2+) */}
+        {showImportSelector && (
+          <>
+            <span className="text-xs text-muted-foreground shrink-0">Tabela:</span>
+            <div className="relative">
+              <select
+                value={selectedImportId ?? ''}
+                onChange={(e) => handleImportChange(e.target.value)}
+                className="h-7 appearance-none rounded-md border bg-background pl-2 pr-6 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {priceImports.map((imp) => (
+                  <option key={imp.id} value={imp.id}>
+                    {fmtDate(imp.valid_from)}
+                    {imp.valid_until ? ` → ${fmtDate(imp.valid_until)}` : ' → atualmente'}
+                    {imp.is_active ? ' ●' : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 size-3 text-muted-foreground pointer-events-none" />
+            </div>
+            <span className="text-xs text-muted-foreground/40">·</span>
+          </>
+        )}
+
+        {/* Seletor de período */}
         <Calendar className="size-3.5 text-muted-foreground shrink-0" />
         <span className="text-xs text-muted-foreground shrink-0">Período de análise:</span>
         <Input
@@ -293,12 +372,13 @@ export function AgenteChat({ unitSlug }: AgenteChatProps) {
         )}
       </div>
 
-      {/* Inner chat — remontado quando chatKey muda (novo período aplicado) */}
+      {/* Inner chat — remontado quando chatKey muda */}
       <AgenteChatInner
         key={chatKey}
         unitSlug={activeSlug}
         startDate={startDate}
         endDate={endDate}
+        priceImportId={selectedImportId ?? undefined}
       />
     </div>
   )

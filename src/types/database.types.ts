@@ -231,6 +231,8 @@ export type Database = {
           parsed_data: Json
           raw_content: string
           unit_id: string
+          valid_from: string
+          valid_until: string | null
         }
         Insert: {
           canals?: string[]
@@ -241,6 +243,8 @@ export type Database = {
           parsed_data?: Json
           raw_content: string
           unit_id: string
+          valid_from?: string
+          valid_until?: string | null
         }
         Update: {
           canals?: string[]
@@ -251,6 +255,8 @@ export type Database = {
           parsed_data?: Json
           raw_content?: string
           unit_id?: string
+          valid_from?: string
+          valid_until?: string | null
         }
         Relationships: [
           {

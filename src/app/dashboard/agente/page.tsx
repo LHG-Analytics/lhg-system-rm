@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BotMessageSquare, ClipboardCheck } from 'lucide-react'
 import type { Database } from '@/types/database.types'
 import type { PriceProposal } from '@/app/api/agente/proposals/route'
+import type { PriceImportSummary } from '@/components/agente/agente-chat'
 
 function getAdminClient() {
   return createAdminClient<Database>(
@@ -69,17 +70,27 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
     activeUnit = data
   }
 
-  // Buscar propostas existentes para a unidade
-  const proposalsResult = activeUnit
-    ? await supabase
-        .from('price_proposals')
-        .select('*')
-        .eq('unit_id', activeUnit.id)
-        .order('created_at', { ascending: false })
-        .limit(20)
-    : { data: [] }
+  // Buscar propostas e imports em paralelo
+  const [proposalsResult, importsResult] = await Promise.all([
+    activeUnit
+      ? supabase
+          .from('price_proposals')
+          .select('*')
+          .eq('unit_id', activeUnit.id)
+          .order('created_at', { ascending: false })
+          .limit(20)
+      : Promise.resolve({ data: [] }),
+    activeUnit
+      ? supabase
+          .from('price_imports')
+          .select('id, imported_at, canals, is_active, valid_from, valid_until')
+          .eq('unit_id', activeUnit.id)
+          .order('valid_from', { ascending: false })
+      : Promise.resolve({ data: [] }),
+  ])
 
   const initialProposals = (proposalsResult.data ?? []) as unknown as PriceProposal[]
+  const priceImports = (importsResult.data ?? []) as PriceImportSummary[]
 
   return (
     <div className="flex flex-1 flex-col gap-4 h-full min-h-0">
@@ -109,7 +120,7 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
 
         <TabsContent value="chat" className="flex flex-col flex-1 min-h-0 mt-0 pt-4">
           <Suspense fallback={null}>
-            <AgenteChat unitSlug={activeUnit?.slug ?? ''} />
+            <AgenteChat unitSlug={activeUnit?.slug ?? ''} priceImports={priceImports} />
           </Suspense>
         </TabsContent>
 
