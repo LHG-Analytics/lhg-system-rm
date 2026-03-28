@@ -12,10 +12,17 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat('pt-BR').format(Math.round(value))
 }
 
-function formatTime(hours: number) {
-  const h = Math.floor(hours)
-  const m = Math.round((hours - h) * 60)
-  return `${h}h${m > 0 ? `${m}m` : ''}`
+// API returns "HH:MM:SS" — strip seconds for display
+function formatTime(hhmmss: string) {
+  if (!hhmmss) return '—'
+  const parts = hhmmss.split(':')
+  return `${parts[0]}h${parts[1]}m`
+}
+
+// Parse "HH:MM:SS" to total seconds for delta comparison
+function timeToSeconds(hhmmss: string): number {
+  const [h, m, s] = hhmmss.split(':').map(Number)
+  return h * 3600 + m * 60 + (s ?? 0)
 }
 
 function delta(current: number, previous: number) {
@@ -117,7 +124,7 @@ export function DashboardKPICards({ company, bookings }: DashboardKPICardsProps)
     {
       label: 'Tempo Médio',
       value: formatTime(r.totalAverageOccupationTime),
-      deltaPct: prev ? delta(cur.totalAverageOccupationTime, prev.totalAverageOccupationTimePreviousData) : null,
+      deltaPct: prev ? delta(timeToSeconds(cur.totalAverageOccupationTime), timeToSeconds(prev.totalAverageOccupationTimePreviousData)) : null,
     },
   ]
 

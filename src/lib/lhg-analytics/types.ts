@@ -6,7 +6,7 @@ export interface CompanyBigNumbersCurrentDate {
   totalAllTicketAverage: number
   totalAllTrevpar: number
   totalAllGiro: number
-  totalAverageOccupationTime: number
+  totalAverageOccupationTime: string // "HH:MM:SS"
 }
 
 export interface CompanyBigNumbersPreviousDate {
@@ -15,7 +15,7 @@ export interface CompanyBigNumbersPreviousDate {
   totalAllTicketAveragePreviousData: number
   totalAllTrevparPreviousData: number
   totalAllGiroPreviousData: number
-  totalAverageOccupationTimePreviousData: number
+  totalAverageOccupationTimePreviousData: string // "HH:MM:SS"
 }
 
 export interface CompanyBigNumbersMonthlyForecast {
@@ -24,7 +24,7 @@ export interface CompanyBigNumbersMonthlyForecast {
   totalAllTicketAverageForecast: number
   totalAllTrevparForecast: number
   totalAllGiroForecast: number
-  totalAverageOccupationTimeForecast: number
+  totalAverageOccupationTimeForecast: string // "HH:MM:SS"
 }
 
 export interface CompanyBigNumbers {
@@ -40,7 +40,7 @@ export interface CompanyTotalResult {
   totalGiro: number
   totalRevpar: number
   totalTrevpar: number
-  totalAverageOccupationTime: number
+  totalAverageOccupationTime: string // "HH:MM:SS"
   totalOccupancyRate: number
 }
 
@@ -63,17 +63,19 @@ export interface SuiteCategoryDataPoint {
   [key: string]: unknown
 }
 
-export interface DataTableSuiteCategory {
-  suiteCategory: string
-  rentals: number
-  revenue: number
-  ticketAverage: number
+// API returns an array of single-key objects: [{ "SUITE NAME": { ...kpis } }, ...]
+export interface SuiteCategoryKPI {
+  totalRentalsApartments: number
+  totalValue: number
+  totalTicketAverage: number
   giro: number
   revpar: number
   trevpar: number
   occupancyRate: number
-  averageOccupationTime: number
+  averageOccupationTime: string // "HH:MM:SS"
 }
+
+export type DataTableSuiteCategory = Record<string, SuiteCategoryKPI>
 
 export interface DataTableByWeek {
   weekDay: string
@@ -93,7 +95,7 @@ export interface CompanyKPIResponse {
   GiroByDate: ChartDataPoint[]
   OccupancyRateByDate: ChartDataPoint[]
   OccupancyRateBySuiteCategory: SuiteCategoryDataPoint[]
-  DataTableSuiteCategory: DataTableSuiteCategory[]
+  DataTableSuiteCategory: DataTableSuiteCategory[]  // Array<{ [categoryName]: SuiteCategoryKPI }>
   DataTableOccupancyRateByWeek: DataTableByWeek[]
   DataTableGiroByWeek: DataTableByWeek[]
   DataTableRevparByWeek: DataTableByWeek[]

@@ -1,6 +1,7 @@
 import type { CompanyKPIResponse } from '@/lib/lhg-analytics/types'
 
-// Placeholder for charts — will be implemented with Recharts in LHG-21
+const fmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
+
 interface DashboardChartsProps {
   company: CompanyKPIResponse | null
 }
@@ -9,8 +10,14 @@ export function DashboardCharts({ company }: DashboardChartsProps) {
   if (!company) return null
 
   const suiteTable = company.DataTableSuiteCategory
-
   if (!suiteTable?.length) return null
+
+  // API format: Array<{ [categoryName]: SuiteCategoryKPI }>
+  const rows = suiteTable.flatMap((item) =>
+    Object.entries(item).map(([category, kpi]) => ({ category, ...kpi }))
+  )
+
+  if (!rows.length) return null
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -28,24 +35,20 @@ export function DashboardCharts({ company }: DashboardChartsProps) {
               <th className="text-right px-4 py-3 font-medium text-muted-foreground">Giro</th>
               <th className="text-right px-4 py-3 font-medium text-muted-foreground">RevPAR</th>
               <th className="text-right px-4 py-3 font-medium text-muted-foreground">Ocupação</th>
+              <th className="text-right px-4 py-3 font-medium text-muted-foreground">TMO</th>
             </tr>
           </thead>
           <tbody>
-            {suiteTable.map((row) => (
-              <tr key={row.suiteCategory} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3 font-medium">{row.suiteCategory}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{Math.round(row.rentals)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(row.revenue)}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(row.ticketAverage)}
-                </td>
+            {rows.map((row) => (
+              <tr key={row.category} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                <td className="px-4 py-3 font-medium">{row.category}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{row.totalRentalsApartments}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(row.totalValue)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(row.totalTicketAverage)}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{row.giro.toFixed(2)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(row.revpar)}
-                </td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(row.revpar)}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{row.occupancyRate.toFixed(1)}%</td>
+                <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{row.averageOccupationTime}</td>
               </tr>
             ))}
           </tbody>
