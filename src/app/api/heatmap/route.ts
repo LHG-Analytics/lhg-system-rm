@@ -11,7 +11,8 @@ function getAdminClient() {
   )
 }
 
-export type HeatmapMetric = 'giro' | 'ocupacao'
+export type HeatmapMetric   = 'giro' | 'ocupacao'
+export type HeatmapDateType = 'all' | 'checkin' | 'checkout'
 
 export interface HeatmapCategory {
   id: number
@@ -27,8 +28,150 @@ export interface HeatmapCell {
 export interface HeatmapResponse {
   rows: HeatmapCell[]
   metric: HeatmapMetric
+  dateType: HeatmapDateType
   categories: HeatmapCategory[]
 }
+
+// ─── SQL helpers ──────────────────────────────────────────────────────────────
+
+/** CASE expression que mapeia DOW de um timestamp para nome do dia */
+function dowCase(col: string) {
+  return `CASE EXTRACT(DOW FROM
+      CASE WHEN EXTRACT(HOUR FROM ${col}) < 6
+        THEN ${col} - INTERVAL '1 day'
+        ELSE ${col}
+      END
+    )
+      WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
+      WHEN 3 THEN 'Quarta'  WHEN 4 THEN 'Quinta'  WHEN 5 THEN 'Sexta'
+      WHEN 6 THEN 'Sabado'
+    END`
+}
+
+/** ORDER BY para dia da semana */
+const ORDER_DAY = `CASE day_name
+  WHEN 'Segunda' THEN 1 WHEN 'Terca' THEN 2 WHEN 'Quarta' THEN 3
+  WHEN 'Quinta'  THEN 4 WHEN 'Sexta' THEN 5 WHEN 'Sabado' THEN 6
+  WHEN 'Domingo' THEN 7
+END`
+
+/**
+ * Gera o bloco SELECT interno para giro, parametrizado pelo coluna de data.
+ * Retorna rentals+suites por categoria+dia+hora.
+ */
+function giroEventsSelect(col: string, idList: string, extraWhere = '') {
+  return `
+    SELECT
+      ca.id  AS category_id,
+      cs.suites,
+      ${dowCase(col)} AS day_name,
+      EXTRACT(HOUR FROM ${col})::INT AS hour_of_day,
+      COUNT(*) AS rentals
+    FROM locacaoapartamento la
+    INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+    INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
+    INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+    INNER JOIN category_suites cs ON ca.id = cs.id
+    WHERE ${col} >= CURRENT_DATE - INTERVAL '7 days'
+      AND ${col} < CURRENT_DATE
+      AND la.fimocupacaotipo = 'FINALIZADA'
+      ${extraWhere}
+      AND ca.id IN (${idList})
+    GROUP BY ca.id, cs.suites, day_name, hour_of_day`
+}
+
+function buildGiroQuery(idList: string, dateType: HeatmapDateType): string {
+  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList)
+  const checkoutSel = giroEventsSelect(
+    'la.datafinaldaocupacao', idList,
+    'AND la.datafinaldaocupacao IS NOT NULL'
+  )
+
+  const eventsCTE =
+    dateType === 'checkin'  ? checkinSel  :
+    dateType === 'checkout' ? checkoutSel :
+    `${checkinSel}\n        UNION ALL\n${checkoutSel}`
+
+  return `
+    WITH category_suites AS (
+      SELECT ca.id, COUNT(a.id) AS suites
+      FROM apartamento a
+      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
+      GROUP BY ca.id
+    ),
+    events AS (${eventsCTE}
+    )
+    SELECT
+      day_name,
+      hour_of_day,
+      ROUND(SUM(rentals::DECIMAL / suites), 2)::float AS value
+    FROM events
+    GROUP BY day_name, hour_of_day
+    ORDER BY ${ORDER_DAY}, hour_of_day`
+}
+
+/**
+ * Gera o bloco SELECT interno para ocupação, parametrizado pela coluna de data
+ * que define o horário de referência no heatmap.
+ */
+function ocupacaoEventsSelect(col: string, idList: string, extraWhere = '') {
+  return `
+    SELECT
+      ${dowCase(col)} AS day_name,
+      EXTRACT(HOUR FROM ${col})::INT AS hour_of_day,
+      EXTRACT(EPOCH FROM (
+        COALESCE(la.datafinaldaocupacao, la.datainicialdaocupacao + INTERVAL '6 hours')
+        - la.datainicialdaocupacao
+      )) / 3600 AS hours_occupied
+    FROM locacaoapartamento la
+    INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+    INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
+    INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+    WHERE ${col} >= CURRENT_DATE - INTERVAL '7 days'
+      AND ${col} < CURRENT_DATE
+      AND la.datafinaldaocupacao IS NOT NULL
+      AND la.fimocupacaotipo = 'FINALIZADA'
+      ${extraWhere}
+      AND ca.id IN (${idList})`
+}
+
+function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType): string {
+  const checkinSel  = ocupacaoEventsSelect('la.datainicialdaocupacao', idList)
+  const checkoutSel = ocupacaoEventsSelect('la.datafinaldaocupacao',   idList)
+
+  const eventsCTE =
+    dateType === 'checkin'  ? checkinSel  :
+    dateType === 'checkout' ? checkoutSel :
+    `${checkinSel}\n        UNION ALL\n${checkoutSel}`
+
+  return `
+    WITH events AS (${eventsCTE}
+    ),
+    capacity AS (
+      SELECT COUNT(*) AS total_suites
+      FROM apartamento a
+      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
+    ),
+    hourly AS (
+      SELECT
+        day_name,
+        hour_of_day,
+        SUM(hours_occupied) AS total_hours,
+        COUNT(*)            AS cnt
+      FROM events
+      GROUP BY day_name, hour_of_day
+    )
+    SELECT
+      h.day_name,
+      h.hour_of_day,
+      ROUND((h.total_hours::DECIMAL / (c.total_suites * h.cnt)) * 100, 2)::float AS value
+    FROM hourly h, capacity c
+    ORDER BY ${ORDER_DAY}, h.hour_of_day`
+}
+
+// ─── Handler ──────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
   // Auth
@@ -37,8 +180,9 @@ export async function GET(req: NextRequest) {
   if (!user) return new Response('Não autorizado', { status: 401 })
 
   const unitSlug   = req.nextUrl.searchParams.get('unitSlug')
-  const metric     = (req.nextUrl.searchParams.get('metric') ?? 'giro') as HeatmapMetric
-  const categoryId = req.nextUrl.searchParams.get('categoryId')  // null = total geral
+  const metric     = (req.nextUrl.searchParams.get('metric')   ?? 'giro')    as HeatmapMetric
+  const dateType   = (req.nextUrl.searchParams.get('dateType') ?? 'all')     as HeatmapDateType
+  const categoryId = req.nextUrl.searchParams.get('categoryId')
 
   if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
 
@@ -68,7 +212,7 @@ export async function GET(req: NextRequest) {
   const pool = getAutomPool(unitSlug)
   if (!pool) {
     return Response.json(
-      { error: `Conexão Automo não configurada para ${unitSlug}. Verifique DATABASE_URL_LOCAL_${unitSlug.toUpperCase()}.` },
+      { error: `Conexão Automo não configurada para ${unitSlug}.` },
       { status: 422 }
     )
   }
@@ -78,7 +222,6 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'IDs de categoria não configurados.' }, { status: 422 })
   }
 
-  // Filtra por categoria selecionada ou usa todas
   const selectedIds = categoryId
     ? allCategoryIds.filter((id) => id === parseInt(categoryId, 10))
     : allCategoryIds
@@ -87,145 +230,26 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Categoria inválida para esta unidade.' }, { status: 400 })
   }
 
-  const idList = selectedIds.join(',')
+  const idList    = selectedIds.join(',')
   const allIdList = allCategoryIds.join(',')
 
   try {
-    // Busca nomes das categorias (sempre todas as da unidade)
+    // Nomes das categorias (sempre todas da unidade)
     const catResult = await pool.query<{ id: number; nome: string }>(`
-      SELECT ca.id, ca.descricao as nome
+      SELECT ca.id, ca.descricao AS nome
       FROM categoriaapartamento ca
       WHERE ca.id IN (${allIdList})
       ORDER BY ca.descricao
     `)
     const categories: HeatmapCategory[] = catResult.rows
 
-    let rows: HeatmapCell[]
+    const sql = metric === 'giro'
+      ? buildGiroQuery(idList, dateType)
+      : buildOcupacaoQuery(idList, dateType)
 
-    if (metric === 'giro') {
-      const result = await pool.query<HeatmapCell>(`
-        WITH category_suites AS (
-          SELECT ca.id, COUNT(a.id) as suites
-          FROM apartamento a
-          INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-          WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
-          GROUP BY ca.id
-        ),
-        rentals_by_category_day_hour AS (
-          SELECT
-            ca.id as category_id,
-            cs.suites,
-            CASE EXTRACT(DOW FROM
-              CASE WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 6
-                THEN la.datainicialdaocupacao - INTERVAL '1 day'
-                ELSE la.datainicialdaocupacao
-              END
-            )
-              WHEN 0 THEN 'Domingo'
-              WHEN 1 THEN 'Segunda'
-              WHEN 2 THEN 'Terca'
-              WHEN 3 THEN 'Quarta'
-              WHEN 4 THEN 'Quinta'
-              WHEN 5 THEN 'Sexta'
-              WHEN 6 THEN 'Sabado'
-            END as day_name,
-            EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT as hour_of_day,
-            COUNT(*) as rentals
-          FROM locacaoapartamento la
-          INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
-          INNER JOIN apartamento a ON aps.id_apartamento = a.id
-          INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-          INNER JOIN category_suites cs ON ca.id = cs.id
-          WHERE la.datainicialdaocupacao >= CURRENT_DATE - INTERVAL '7 days'
-            AND la.datainicialdaocupacao < CURRENT_DATE
-            AND la.fimocupacaotipo = 'FINALIZADA'
-            AND ca.id IN (${idList})
-          GROUP BY ca.id, cs.suites, day_name, hour_of_day
-        )
-        SELECT
-          day_name,
-          hour_of_day,
-          ROUND(SUM(rentals::DECIMAL / suites), 2)::float as value
-        FROM rentals_by_category_day_hour
-        GROUP BY day_name, hour_of_day
-        ORDER BY
-          CASE day_name
-            WHEN 'Segunda' THEN 1 WHEN 'Terca' THEN 2 WHEN 'Quarta' THEN 3
-            WHEN 'Quinta' THEN 4 WHEN 'Sexta' THEN 5 WHEN 'Sabado' THEN 6
-            WHEN 'Domingo' THEN 7
-          END,
-          hour_of_day
-      `)
-      rows = result.rows
-    } else {
-      const result = await pool.query<HeatmapCell>(`
-        WITH checkin_times AS (
-          SELECT
-            CASE
-              WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 6
-              THEN la.datainicialdaocupacao - INTERVAL '1 day'
-              ELSE la.datainicialdaocupacao
-            END as occupation_date,
-            CASE EXTRACT(DOW FROM
-              CASE
-                WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 6
-                THEN la.datainicialdaocupacao - INTERVAL '1 day'
-                ELSE la.datainicialdaocupacao
-              END
-            )
-              WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
-              WHEN 3 THEN 'Quarta'  WHEN 4 THEN 'Quinta'  WHEN 5 THEN 'Sexta'
-              WHEN 6 THEN 'Sabado'
-            END as day_name,
-            EXTRACT(HOUR FROM la.datainicialdaocupacao) as hour_of_day,
-            EXTRACT(EPOCH FROM (
-              COALESCE(la.datafinaldaocupacao, la.datainicialdaocupacao + INTERVAL '6 hours') - la.datainicialdaocupacao
-            ))/3600 as hours_occupied
-          FROM locacaoapartamento la
-          INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
-          INNER JOIN apartamento a ON aps.id_apartamento = a.id
-          INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-          WHERE la.datainicialdaocupacao >= CURRENT_DATE - INTERVAL '7 days'
-            AND la.datainicialdaocupacao < CURRENT_DATE
-            AND la.datafinaldaocupacao IS NOT NULL
-            AND la.fimocupacaotipo = 'FINALIZADA'
-            AND ca.id IN (${idList})
-        ),
-        capacity AS (
-          SELECT COUNT(*) as total_suites
-          FROM apartamento a
-          INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-          WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
-        ),
-        hourly_occupancy AS (
-          SELECT
-            day_name,
-            hour_of_day::INT as hour_of_day,
-            SUM(hours_occupied) as total_hours_occupied,
-            COUNT(*) as day_count
-          FROM checkin_times
-          GROUP BY day_name, hour_of_day
-        )
-        SELECT
-          ho.day_name,
-          ho.hour_of_day,
-          ROUND(
-            (ho.total_hours_occupied::DECIMAL / (c.total_suites * ho.day_count)) * 100,
-            2
-          )::float as value
-        FROM hourly_occupancy ho, capacity c
-        ORDER BY
-          CASE ho.day_name
-            WHEN 'Segunda' THEN 1 WHEN 'Terca' THEN 2 WHEN 'Quarta' THEN 3
-            WHEN 'Quinta' THEN 4 WHEN 'Sexta' THEN 5 WHEN 'Sabado' THEN 6
-            WHEN 'Domingo' THEN 7
-          END,
-          ho.hour_of_day
-      `)
-      rows = result.rows
-    }
+    const result = await pool.query<HeatmapCell>(sql)
 
-    return Response.json({ rows, metric, categories } satisfies HeatmapResponse)
+    return Response.json({ rows: result.rows, metric, dateType, categories } satisfies HeatmapResponse)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[heatmap] Erro Automo (${unitSlug}):`, msg)

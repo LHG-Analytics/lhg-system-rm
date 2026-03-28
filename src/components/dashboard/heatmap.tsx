@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { HeatmapCell, HeatmapMetric, HeatmapCategory } from '@/app/api/heatmap/route'
+import type { HeatmapCell, HeatmapMetric, HeatmapDateType, HeatmapCategory } from '@/app/api/heatmap/route'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -13,6 +13,12 @@ const DAY_LABELS: Record<string, string> = {
   Sexta: 'Sex', Sabado: 'Sáb', Domingo: 'Dom',
 }
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
+
+const DATE_TYPE_LABELS: Record<HeatmapDateType, string> = {
+  all:      'Todas',
+  checkin:  'Entrada',
+  checkout: 'Saída',
+}
 
 // ─── Utilitários ──────────────────────────────────────────────────────────────
 
@@ -54,18 +60,23 @@ interface HeatmapProps {
 }
 
 export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
-  const [metric, setMetric]         = useState<HeatmapMetric>('giro')
-  const [categoryId, setCategoryId] = useState<string | null>(null) // null = Total Geral
-  const [rows, setRows]             = useState<HeatmapCell[]>([])
+  const [metric,     setMetric]     = useState<HeatmapMetric>('giro')
+  const [dateType,   setDateType]   = useState<HeatmapDateType>('all')
+  const [categoryId, setCategoryId] = useState<string | null>(null)
+  const [rows,       setRows]       = useState<HeatmapCell[]>([])
   const [categories, setCategories] = useState<HeatmapCategory[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState<string | null>(null)
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState<string | null>(null)
 
-  const fetchData = useCallback(async (m: HeatmapMetric, catId: string | null) => {
+  const fetchData = useCallback(async (
+    m: HeatmapMetric,
+    dt: HeatmapDateType,
+    catId: string | null,
+  ) => {
     setLoading(true)
     setError(null)
     try {
-      const params = new URLSearchParams({ unitSlug, metric: m })
+      const params = new URLSearchParams({ unitSlug, metric: m, dateType: dt })
       if (catId) params.set('categoryId', catId)
 
       const res = await fetch(`/api/heatmap?${params}`)
@@ -83,11 +94,17 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
     }
   }, [unitSlug])
 
-  useEffect(() => { fetchData(metric, categoryId) }, [metric, categoryId, fetchData])
+  useEffect(() => {
+    fetchData(metric, dateType, categoryId)
+  }, [metric, dateType, categoryId, fetchData])
 
-  const matrix = buildMatrix(rows)
+  const matrix    = buildMatrix(rows)
   const allValues = rows.map((r) => r.value).filter((v) => v > 0)
-  const maxVal = allValues.length ? Math.max(...allValues) : 1
+  const maxVal    = allValues.length ? Math.max(...allValues) : 1
+
+  const subtitle = dateType === 'all'
+    ? 'Dia da semana × hora · entradas e saídas'
+    : `Dia da semana × hora · por data de ${DATE_TYPE_LABELS[dateType].toLowerCase()}`
 
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3">
@@ -95,7 +112,7 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h3 className="font-semibold text-sm">Mapa de calor — últimos 7 dias</h3>
-          <p className="text-xs text-muted-foreground">Dia da semana × hora do check-in</p>
+          <p className="text-xs text-muted-foreground">{subtitle}</p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -114,6 +131,17 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
               ))}
             </select>
           )}
+
+          {/* Filtro de tipo de data */}
+          <select
+            value={dateType}
+            onChange={(e) => setDateType(e.target.value as HeatmapDateType)}
+            className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            {(Object.keys(DATE_TYPE_LABELS) as HeatmapDateType[]).map((dt) => (
+              <option key={dt} value={dt}>{DATE_TYPE_LABELS[dt]}</option>
+            ))}
+          </select>
 
           {/* Toggle métrica */}
           <div className="flex gap-1 rounded-lg border p-0.5 text-xs">
