@@ -174,14 +174,13 @@ const CANAL_LABELS: Record<string, string> = {
   guia_moteis: 'Guia de Motéis',
 }
 
-function buildPriceTableContext(
-  rows: ParsedPriceRow[],
-  validFrom?: string | null,
-  validUntil?: string | null
-): string {
-  if (!rows.length) return ''
+export interface PriceImportForPrompt {
+  rows: ParsedPriceRow[]
+  valid_from: string
+  valid_until: string | null
+}
 
-  // Agrupar por canal
+function buildSinglePriceTable(rows: ParsedPriceRow[], validFrom: string, validUntil: string | null): string {
   const byCanal = new Map<string, ParsedPriceRow[]>()
   for (const row of rows) {
     const list = byCanal.get(row.canal) ?? []
@@ -199,15 +198,23 @@ function buildPriceTableContext(
     sections.push(`**${label}**\n  | Categoria | Período | Dia | Preço |\n  |-----------|---------|-----|-------|\n${lines.join('\n')}`)
   }
 
-  const vigencia = validFrom
-    ? `Vigente de ${validFrom}${validUntil ? ` até ${validUntil}` : ' até hoje (tabela atual)'}`
-    : null
+  const vigencia = `${validFrom}${validUntil ? ` → ${validUntil}` : ' → atualmente'}`
+  return `#### Tabela vigente ${vigencia}\n${sections.join('\n\n')}`
+}
 
-  const header = vigencia
-    ? `### Tabela de preços (${vigencia})`
-    : `### Tabela de preços atual (importada pelo gestor)`
+function buildPriceTablesContext(imports: PriceImportForPrompt[]): string {
+  const valid = imports.filter((i) => i.rows.length > 0)
+  if (!valid.length) return ''
 
-  return `${header}\n${sections.join('\n\n')}`
+  if (valid.length === 1) {
+    const imp = valid[0]
+    const vigencia = `${imp.valid_from}${imp.valid_until ? ` → ${imp.valid_until}` : ' → atualmente'}`
+    return `### Tabela de preços (${vigencia})\n${buildSinglePriceTable(imp.rows, imp.valid_from, imp.valid_until).replace(/^####.*\n/, '')}`
+  }
+
+  // Múltiplas tabelas — renderizar todas para comparação
+  const blocks = valid.map((imp) => buildSinglePriceTable(imp.rows, imp.valid_from, imp.valid_until))
+  return `### Histórico de tabelas de preços (${valid.length} versões — use para comparação e análise de evolução)\n\n${blocks.join('\n\n---\n\n')}`
 }
 
 // ─── System Prompt ─────────────────────────────────────────────────────────────
@@ -217,12 +224,10 @@ export function buildSystemPrompt(
   period: { startDate: string; endDate: string },
   company: CompanyKPIResponse | null,
   bookings: BookingsKPIResponse | null,
-  priceRows: ParsedPriceRow[] = [],
-  priceValidFrom?: string | null,
-  priceValidUntil?: string | null
+  priceImports: PriceImportForPrompt[] = []
 ): string {
   const kpiContext = buildKPIContext(unitName, period, company, bookings)
-  const priceContext = buildPriceTableContext(priceRows, priceValidFrom, priceValidUntil)
+  const priceContext = buildPriceTablesContext(priceImports)
 
   return `Você é o Agente de Revenue Management sênior da LHG Motéis — especialista em yield management para o setor moteleiro brasileiro com mais de 10 anos de experiência.
 

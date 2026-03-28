@@ -10,7 +10,7 @@ import {
   fetchBookingsKPIs,
   trailingYear,
 } from '@/lib/lhg-analytics/client'
-import { buildSystemPrompt } from '@/lib/agente/system-prompt'
+import { buildSystemPrompt, type PriceImportForPrompt } from '@/lib/agente/system-prompt'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -140,20 +140,24 @@ export async function POST(req: NextRequest) {
   const kpiParams = trailingYear()
   const lhgUnit = { slug: unit.slug, apiBaseUrl: unit.api_base_url ?? '' }
 
-  const [companyResult, bookingsResult, priceImportResult] = await Promise.allSettled([
+  const [companyResult, bookingsResult, priceImportsResult] = await Promise.allSettled([
     unit.api_base_url ? fetchCompanyKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
     unit.api_base_url ? fetchBookingsKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
-    admin.from('price_imports').select('parsed_data').eq('unit_id', unit.id).eq('is_active', true).single(),
+    admin.from('price_imports').select('parsed_data, valid_from, valid_until').eq('unit_id', unit.id).order('valid_from', { ascending: false }),
   ])
 
   const company = companyResult.status === 'fulfilled' ? companyResult.value : null
   const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : null
-  const priceRows: ParsedPriceRow[] =
-    priceImportResult.status === 'fulfilled' && priceImportResult.value.data?.parsed_data
-      ? (priceImportResult.value.data.parsed_data as unknown as ParsedPriceRow[])
+  const priceImports: PriceImportForPrompt[] =
+    priceImportsResult.status === 'fulfilled' && priceImportsResult.value.data
+      ? priceImportsResult.value.data.map((imp) => ({
+          rows: imp.parsed_data ? (imp.parsed_data as unknown as ParsedPriceRow[]) : [],
+          valid_from: imp.valid_from,
+          valid_until: imp.valid_until,
+        }))
       : []
 
-  if (!priceRows.length) {
+  if (!priceImports.some((i) => i.rows.length > 0)) {
     return Response.json(
       { error: 'Nenhuma tabela de preços importada. Importe uma tabela de preços antes de gerar propostas.' },
       { status: 422 }
@@ -161,7 +165,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Montar contexto resumido para geração de proposta
-  const kpiContext = buildSystemPrompt(unit.name, kpiParams, company, bookings, priceRows)
+  const kpiContext = buildSystemPrompt(unit.name, kpiParams, company, bookings, priceImports)
 
   const prompt = `${kpiContext}
 

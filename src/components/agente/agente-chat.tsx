@@ -4,7 +4,7 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Calendar, RefreshCw, ChevronDown } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, Calendar, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
@@ -62,14 +62,15 @@ interface AgenteChatInnerProps {
   unitSlug: string
   startDate: string
   endDate: string
-  priceImportId?: string
+  priceImportIds?: string[]
+  priceAnalysisPeriods?: { startDate: string; endDate: string }[]
 }
 
-function AgenteChatInner({ unitSlug, startDate, endDate, priceImportId }: AgenteChatInnerProps) {
+function AgenteChatInner({ unitSlug, startDate, endDate, priceImportIds, priceAnalysisPeriods }: AgenteChatInnerProps) {
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/agente/chat',
-      body: { unitSlug, startDate, endDate, priceImportId },
+      body: { unitSlug, startDate, endDate, priceImportIds, priceAnalysisPeriods },
     }),
   })
 
@@ -233,14 +234,77 @@ function AgenteChatInner({ unitSlug, startDate, endDate, priceImportId }: Agente
   )
 }
 
-// ─── Formatadores para o seletor de tabelas ───────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtDate(iso: string) {
+function isoToApi(iso: string): string {
+  const [y, m, d] = iso.split('-')
+  return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`
+}
+
+function fmtIso(iso: string) {
   const [y, m, d] = iso.split('-')
   return `${d}/${m}/${y}`
 }
 
-// ─── Outer component (gerencia seletor de período + tabela de preços) ─────────
+function periodFromImport(imp: PriceImportSummary): { startDate: string; endDate: string } {
+  const todayIso = new Date().toISOString().slice(0, 10)
+  return {
+    startDate: isoToApi(imp.valid_from),
+    endDate: isoToApi(imp.valid_until ?? todayIso),
+  }
+}
+
+// ─── Seletor de tabela + período (usado em cada lado do comparativo) ───────────
+
+interface TableSelectorProps {
+  label: string
+  imports: PriceImportSummary[]
+  selectedId: string
+  onSelect: (id: string) => void
+  start: string
+  end: string
+  onStartChange: (v: string) => void
+  onEndChange: (v: string) => void
+}
+
+function TablePeriodSelector({ label, imports, selectedId, onSelect, start, end, onStartChange, onEndChange }: TableSelectorProps) {
+  return (
+    <div className="flex flex-col gap-1 min-w-0">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+      <select
+        value={selectedId}
+        onChange={(e) => onSelect(e.target.value)}
+        className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring w-full"
+      >
+        {imports.map((imp) => (
+          <option key={imp.id} value={imp.id}>
+            {fmtIso(imp.valid_from)} → {imp.valid_until ? fmtIso(imp.valid_until) : 'atualmente'}
+            {imp.is_active ? ' ●' : ''}
+          </option>
+        ))}
+      </select>
+      <div className="flex items-center gap-1">
+        <input
+          type="date"
+          value={toInputDate(start)}
+          max={toInputDate(end)}
+          onChange={(e) => e.target.value && onStartChange(fromInputDate(e.target.value))}
+          className="h-6 flex-1 min-w-0 rounded border bg-background px-1.5 text-[11px] text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+        <span className="text-[10px] text-muted-foreground shrink-0">→</span>
+        <input
+          type="date"
+          value={toInputDate(end)}
+          min={toInputDate(start)}
+          onChange={(e) => e.target.value && onEndChange(fromInputDate(e.target.value))}
+          className="h-6 flex-1 min-w-0 rounded border bg-background px-1.5 text-[11px] text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+      </div>
+    </div>
+  )
+}
+
+// ─── Outer component ──────────────────────────────────────────────────────────
 
 interface AgenteChatProps {
   unitSlug: string
@@ -251,134 +315,160 @@ export function AgenteChat({ unitSlug, priceImports = [] }: AgenteChatProps) {
   const searchParams = useSearchParams()
   const activeSlug = searchParams.get('unit') ?? unitSlug
 
-  const defaults = getDefaultDateRange()
+  const hasComparison = priceImports.length >= 2
 
-  // Tabela de preços selecionada (null = mais recente ativa por padrão)
-  const activeImport = priceImports.find((i) => i.is_active) ?? priceImports[0] ?? null
-  const [selectedImportId, setSelectedImportId] = useState<string | null>(activeImport?.id ?? null)
+  // ── Modo comparativo (2+ tabelas) ─────────────────────────────────────────
+  // Padrão: esquerda = tabela mais antiga, direita = tabela mais recente (is_active)
+  // priceImports vem ordenado por valid_from DESC → índice 0 = mais recente
+  const newestImport  = priceImports[0]
+  const previousImport = priceImports[1] ?? priceImports[0]
 
-  const selectedImport = priceImports.find((i) => i.id === selectedImportId) ?? null
+  const [leftId,  setLeftId]  = useState(previousImport?.id ?? '')
+  const [rightId, setRightId] = useState(newestImport?.id  ?? '')
 
-  // Derivar datas padrão: se há tabela selecionada, usar vigência; senão trailing year
-  function datesFromImport(imp: PriceImportSummary | null): { startDate: string; endDate: string } {
-    if (!imp) return defaults
-    // API usa DD/MM/YYYY
-    const pad = (s: string) => s.padStart(2, '0')
-    const isoToApi = (iso: string) => {
-      const [y, m, d] = iso.split('-')
-      return `${pad(d)}/${pad(m)}/${y}`
-    }
-    const endIso = imp.valid_until ?? new Date().toISOString().slice(0, 10)
-    return { startDate: isoToApi(imp.valid_from), endDate: isoToApi(endIso) }
+  const leftImp  = priceImports.find((i) => i.id === leftId)  ?? previousImport
+  const rightImp = priceImports.find((i) => i.id === rightId) ?? newestImport
+
+  const [leftPeriod,  setLeftPeriod]  = useState(() => leftImp  ? periodFromImport(leftImp)  : getDefaultDateRange())
+  const [rightPeriod, setRightPeriod] = useState(() => rightImp ? periodFromImport(rightImp) : getDefaultDateRange())
+
+  function handleLeftSelect(id: string) {
+    setLeftId(id)
+    const imp = priceImports.find((i) => i.id === id)
+    if (imp) setLeftPeriod(periodFromImport(imp))
   }
 
-  const importDates = datesFromImport(selectedImport)
+  function handleRightSelect(id: string) {
+    setRightId(id)
+    const imp = priceImports.find((i) => i.id === id)
+    if (imp) setRightPeriod(periodFromImport(imp))
+  }
 
-  // Datas aplicadas ao chat atual
-  const [startDate, setStartDate] = useState(importDates.startDate)
-  const [endDate, setEndDate] = useState(importDates.endDate)
+  // ── Modo simples (0–1 tabela) ──────────────────────────────────────────────
+  const singleImport = priceImports[0]
+  const singleDefaults = singleImport ? periodFromImport(singleImport) : getDefaultDateRange()
+  const [singleStart, setSingleStart] = useState(singleDefaults.startDate)
+  const [singleEnd,   setSingleEnd]   = useState(singleDefaults.endDate)
+  const [singlePendingStart, setSinglePendingStart] = useState(singleDefaults.startDate)
+  const [singlePendingEnd,   setSinglePendingEnd]   = useState(singleDefaults.endDate)
+  const singleDirty = singlePendingStart !== singleStart || singlePendingEnd !== singleEnd
 
-  // Datas pendentes (ainda não aplicadas)
-  const [pendingStart, setPendingStart] = useState(importDates.startDate)
-  const [pendingEnd, setPendingEnd] = useState(importDates.endDate)
-
-  // Incrementar essa key força remount do AgenteChatInner com novo transport
+  // ── Estado compartilhado ───────────────────────────────────────────────────
   const [chatKey, setChatKey] = useState(0)
+  const [applied, setApplied] = useState({
+    leftId, rightId,
+    leftPeriod, rightPeriod,
+    singleStart, singleEnd,
+  })
 
-  const isDirty = pendingStart !== startDate || pendingEnd !== endDate
-
-  function applyDates() {
-    setStartDate(pendingStart)
-    setEndDate(pendingEnd)
-    setChatKey((k) => k + 1) // reseta a conversa com o novo período
+  function apply() {
+    setApplied({ leftId, rightId, leftPeriod, rightPeriod, singleStart: singlePendingStart, singleEnd: singlePendingEnd })
+    setSingleStart(singlePendingStart)
+    setSingleEnd(singlePendingEnd)
+    setChatKey((k) => k + 1)
   }
 
-  function handleImportChange(id: string) {
-    setSelectedImportId(id)
-    const imp = priceImports.find((i) => i.id === id) ?? null
-    const newDates = datesFromImport(imp)
-    setPendingStart(newDates.startDate)
-    setPendingEnd(newDates.endDate)
-    setStartDate(newDates.startDate)
-    setEndDate(newDates.endDate)
-    setChatKey((k) => k + 1) // reinicia o chat com a nova tabela
-  }
+  const comparisonDirty = hasComparison && (
+    applied.leftId !== leftId || applied.rightId !== rightId ||
+    applied.leftPeriod.startDate !== leftPeriod.startDate ||
+    applied.leftPeriod.endDate   !== leftPeriod.endDate   ||
+    applied.rightPeriod.startDate !== rightPeriod.startDate ||
+    applied.rightPeriod.endDate   !== rightPeriod.endDate
+  )
 
-  const showImportSelector = priceImports.length >= 2
+  // Para o chat: KPI usa o período combinado (do mais antigo ao mais recente)
+  const combinedStart = hasComparison
+    ? (leftPeriod.startDate < rightPeriod.startDate ? leftPeriod.startDate : rightPeriod.startDate)
+    : applied.singleStart
+  const combinedEnd = hasComparison
+    ? (leftPeriod.endDate > rightPeriod.endDate ? leftPeriod.endDate : rightPeriod.endDate)
+    : applied.singleEnd
 
   return (
     <div className="flex flex-1 flex-col rounded-xl border bg-card overflow-hidden min-h-0">
       {/* Barra de contexto */}
-      <div className="flex items-center gap-2 border-b px-3 py-2 bg-muted/30 flex-wrap">
-        {/* Seletor de tabela de preços (apenas se houver 2+) */}
-        {showImportSelector && (
-          <>
-            <span className="text-xs text-muted-foreground shrink-0">Tabela:</span>
-            <div className="relative">
-              <select
-                value={selectedImportId ?? ''}
-                onChange={(e) => handleImportChange(e.target.value)}
-                className="h-7 appearance-none rounded-md border bg-background pl-2 pr-6 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                {priceImports.map((imp) => (
-                  <option key={imp.id} value={imp.id}>
-                    {fmtDate(imp.valid_from)}
-                    {imp.valid_until ? ` → ${fmtDate(imp.valid_until)}` : ' → atualmente'}
-                    {imp.is_active ? ' ●' : ''}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 size-3 text-muted-foreground pointer-events-none" />
+      <div className="border-b px-3 py-2 bg-muted/30">
+        {hasComparison ? (
+          /* ── Modo comparativo ─────────────────────────────────────────── */
+          <div className="flex items-end gap-2 flex-wrap">
+            <div className="flex-1 min-w-[160px]">
+              <TablePeriodSelector
+                label="Tabela A"
+                imports={priceImports}
+                selectedId={leftId}
+                onSelect={handleLeftSelect}
+                start={leftPeriod.startDate}
+                end={leftPeriod.endDate}
+                onStartChange={(v) => setLeftPeriod((p) => ({ ...p, startDate: v }))}
+                onEndChange={(v)   => setLeftPeriod((p) => ({ ...p, endDate: v }))}
+              />
             </div>
-            <span className="text-xs text-muted-foreground/40">·</span>
-          </>
-        )}
 
-        {/* Seletor de período */}
-        <Calendar className="size-3.5 text-muted-foreground shrink-0" />
-        <span className="text-xs text-muted-foreground shrink-0">Período de análise:</span>
-        <Input
-          type="date"
-          value={toInputDate(pendingStart)}
-          max={toInputDate(pendingEnd)}
-          onChange={(e) => e.target.value && setPendingStart(fromInputDate(e.target.value))}
-          onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-          className="h-7 text-xs w-36 px-2 cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer"
-        />
-        <span className="text-xs text-muted-foreground">até</span>
-        <Input
-          type="date"
-          value={toInputDate(pendingEnd)}
-          min={toInputDate(pendingStart)}
-          onChange={(e) => e.target.value && setPendingEnd(fromInputDate(e.target.value))}
-          onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-          className="h-7 text-xs w-36 px-2 cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer"
-        />
-        {isDirty && (
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-7 text-xs gap-1.5"
-            onClick={applyDates}
-          >
-            <RefreshCw className="size-3" />
-            Aplicar
-          </Button>
-        )}
-        {!isDirty && (
-          <span className="text-xs text-muted-foreground/60">
-            ({startDate} — {endDate})
-          </span>
+            <div className="flex flex-col items-center pb-1 shrink-0">
+              <span className="text-xs font-semibold text-muted-foreground">vs</span>
+            </div>
+
+            <div className="flex-1 min-w-[160px]">
+              <TablePeriodSelector
+                label="Tabela B"
+                imports={priceImports}
+                selectedId={rightId}
+                onSelect={handleRightSelect}
+                start={rightPeriod.startDate}
+                end={rightPeriod.endDate}
+                onStartChange={(v) => setRightPeriod((p) => ({ ...p, startDate: v }))}
+                onEndChange={(v)   => setRightPeriod((p) => ({ ...p, endDate: v }))}
+              />
+            </div>
+
+            {comparisonDirty && (
+              <Button size="sm" variant="secondary" className="h-7 text-xs gap-1.5 shrink-0 self-end" onClick={apply}>
+                <RefreshCw className="size-3" />
+                Aplicar
+              </Button>
+            )}
+          </div>
+        ) : (
+          /* ── Modo simples ─────────────────────────────────────────────── */
+          <div className="flex items-center gap-2 flex-wrap">
+            <Calendar className="size-3.5 text-muted-foreground shrink-0" />
+            <span className="text-xs text-muted-foreground shrink-0">Período de análise:</span>
+            <Input
+              type="date"
+              value={toInputDate(singlePendingStart)}
+              max={toInputDate(singlePendingEnd)}
+              onChange={(e) => e.target.value && setSinglePendingStart(fromInputDate(e.target.value))}
+              onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
+              className="h-7 text-xs w-36 px-2 cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+            />
+            <span className="text-xs text-muted-foreground">até</span>
+            <Input
+              type="date"
+              value={toInputDate(singlePendingEnd)}
+              min={toInputDate(singlePendingStart)}
+              onChange={(e) => e.target.value && setSinglePendingEnd(fromInputDate(e.target.value))}
+              onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
+              className="h-7 text-xs w-36 px-2 cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+            />
+            {singleDirty ? (
+              <Button size="sm" variant="secondary" className="h-7 text-xs gap-1.5" onClick={apply}>
+                <RefreshCw className="size-3" />
+                Aplicar
+              </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground/60">({singleStart} — {singleEnd})</span>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Inner chat — remontado quando chatKey muda */}
       <AgenteChatInner
         key={chatKey}
         unitSlug={activeSlug}
-        startDate={startDate}
-        endDate={endDate}
-        priceImportId={selectedImportId ?? undefined}
+        startDate={combinedStart}
+        endDate={combinedEnd}
+        priceImportIds={hasComparison ? [leftId, rightId] : undefined}
+        priceAnalysisPeriods={hasComparison ? [leftPeriod, rightPeriod] : undefined}
       />
     </div>
   )

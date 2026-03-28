@@ -11,6 +11,7 @@ import { buildSystemPrompt } from '@/lib/agente/system-prompt'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
+import type { PriceImportForPrompt } from '@/lib/agente/system-prompt'
 
 function getAdminClient() {
   return createAdminClient<Database>(
@@ -39,8 +40,15 @@ export async function POST(req: NextRequest) {
   }
 
   // 3. Payload
-  const body = await req.json() as { messages: unknown[]; unitSlug?: string; startDate?: string; endDate?: string; priceImportId?: string }
-  const { messages, unitSlug, startDate, endDate, priceImportId } = body
+  const body = await req.json() as {
+    messages: unknown[]
+    unitSlug?: string
+    startDate?: string
+    endDate?: string
+    priceImportIds?: string[]
+    priceAnalysisPeriods?: { startDate: string; endDate: string }[]
+  }
+  const { messages, unitSlug, startDate, endDate, priceImportIds, priceAnalysisPeriods } = body
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response('messages inválido', { status: 400 })
@@ -93,34 +101,35 @@ export async function POST(req: NextRequest) {
   const kpiParams = (startDate && endDate) ? { startDate, endDate } : trailingYear()
   const lhgUnit = { slug: unit.slug, apiBaseUrl: unit.api_base_url ?? '' }
 
-  // Buscar import específico se priceImportId fornecido; caso contrário, usa o ativo
-  const priceImportQuery = priceImportId
-    ? admin.from('price_imports').select('parsed_data, valid_from, valid_until').eq('id', priceImportId).single()
-    : admin.from('price_imports').select('parsed_data, valid_from, valid_until').eq('unit_id', unit.id).eq('is_active', true).single()
+  // Buscar imports: se vieram IDs específicos (modo comparativo), busca por ID; senão busca todos
+  const importsQuery = priceImportIds?.length
+    ? admin.from('price_imports').select('id, parsed_data, valid_from, valid_until').in('id', priceImportIds)
+    : admin.from('price_imports').select('id, parsed_data, valid_from, valid_until').eq('unit_id', unit.id).order('valid_from', { ascending: false })
 
-  const [companyResult, bookingsResult, priceImportResult] = await Promise.allSettled([
+  const [companyResult, bookingsResult, priceImportsResult] = await Promise.allSettled([
     unit.api_base_url ? fetchCompanyKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
     unit.api_base_url ? fetchBookingsKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
-    priceImportQuery,
+    importsQuery,
   ])
 
   const company = companyResult.status === 'fulfilled' ? companyResult.value : null
   const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : null
-  const priceImportData = priceImportResult.status === 'fulfilled' ? priceImportResult.value.data : null
-  const priceRows: ParsedPriceRow[] = priceImportData?.parsed_data
-    ? (priceImportData.parsed_data as unknown as ParsedPriceRow[])
-    : []
 
-  // 6. Montar system prompt com contexto de KPIs + tabela de preços (inclui vigência)
-  const systemPrompt = buildSystemPrompt(
-    unit.name,
-    kpiParams,
-    company,
-    bookings,
-    priceRows,
-    priceImportData?.valid_from ?? null,
-    priceImportData?.valid_until ?? null
-  )
+  // Montar PriceImportForPrompt: se modo comparativo, usar priceAnalysisPeriods como período de referência
+  const rawImports = priceImportsResult.status === 'fulfilled' ? (priceImportsResult.value.data ?? []) : []
+  const priceImports: PriceImportForPrompt[] = rawImports.map((imp, idx) => {
+    const analysisPeriod = priceImportIds?.length && priceAnalysisPeriods?.[
+      priceImportIds.indexOf(imp.id)
+    ]
+    return {
+      rows: imp.parsed_data ? (imp.parsed_data as unknown as ParsedPriceRow[]) : [],
+      valid_from: analysisPeriod ? analysisPeriod.startDate : imp.valid_from,
+      valid_until: analysisPeriod ? analysisPeriod.endDate : imp.valid_until,
+    }
+  })
+
+  // 6. Montar system prompt com KPIs + tabelas (1 ou 2, com períodos de referência)
+  const systemPrompt = buildSystemPrompt(unit.name, kpiParams, company, bookings, priceImports)
 
   // 7. Stream via AI Gateway (Claude primário, Gemini como fallback automático)
   const result = streamText({
