@@ -129,8 +129,8 @@ function WeeklyTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row) => (
-              <tr key={row.weekDay} className="border-b hover:bg-muted/30 transition-colors">
+            {sorted.map((row, i) => (
+              <tr key={`${row.weekDay ?? i}-${i}`} className="border-b hover:bg-muted/30 transition-colors">
                 <td className="px-4 py-3 font-medium whitespace-nowrap">{row.weekDay}</td>
                 {categories.map((cat) => {
                   const v = row[cat]

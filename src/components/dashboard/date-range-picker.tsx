@@ -5,12 +5,11 @@ import { useState, useEffect } from 'react'
 import { Calendar } from 'lucide-react'
 import type { DatePreset } from '@/lib/date-range'
 
-const PRESETS: { value: DatePreset | ''; label: string }[] = [
-  { value: '',             label: 'Últimos 12 meses' },
-  { value: '7d',          label: 'Últimos 7 dias'   },
-  { value: 'this-month',  label: 'Este mês'         },
+const PRESETS: { value: DatePreset; label: string }[] = [
+  { value: '7d',          label: 'Últimos 7 dias'     },
+  { value: 'this-month',  label: 'Este mês'           },
   { value: 'last-month',  label: 'Último mês fechado' },
-  { value: 'custom',      label: 'Personalizada'    },
+  { value: 'custom',      label: 'Personalizada'      },
 ]
 
 export function DateRangePicker() {
@@ -18,7 +17,7 @@ export function DateRangePicker() {
   const router       = useRouter()
   const pathname     = usePathname()
 
-  const preset   = searchParams.get('preset') ?? ''
+  const preset   = searchParams.get('preset') ?? 'this-month'
   const urlStart = searchParams.get('start')  ?? ''
   const urlEnd   = searchParams.get('end')    ?? ''
 
@@ -48,10 +47,8 @@ export function DateRangePicker() {
   function handlePresetChange(value: string) {
     if (value === 'custom') {
       navigate({ preset: 'custom', ...(localStart && localEnd ? { start: localStart, end: localEnd } : {}) })
-    } else if (value) {
-      navigate({ preset: value })
     } else {
-      navigate({})
+      navigate({ preset: value })
     }
   }
 

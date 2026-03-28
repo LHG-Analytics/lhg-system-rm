@@ -3,7 +3,7 @@ export type DatePreset = '7d' | 'this-month' | 'last-month' | 'custom'
 export interface DateRange {
   startDate: string   // YYYY-MM-DD
   endDate: string     // YYYY-MM-DD
-  preset: DatePreset | null
+  preset: DatePreset
   label: string
 }
 
@@ -64,10 +64,9 @@ export function resolvePreset(
     }
   }
 
-  // Default: trailing 12 months
-  const start = new Date(today)
-  start.setFullYear(start.getFullYear() - 1)
-  return { startDate: fmt(start), endDate: fmt(yest), preset: null, label: 'Últimos 12 meses' }
+  // Default: este mês
+  const start = new Date(today.getFullYear(), today.getMonth(), 1)
+  return { startDate: fmt(start), endDate: fmt(yest), preset: 'this-month', label: 'Este mês' }
 }
 
 /** YYYY-MM-DD → DD/MM/YYYY (LHG Analytics API format) */
