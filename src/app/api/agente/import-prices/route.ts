@@ -20,6 +20,41 @@ export interface ParseResponse {
   observacoes?: string
 }
 
+// Extrai JSON da resposta do modelo de forma robusta:
+// 1. Tenta extrair de bloco ```json ... ```
+// 2. Tenta extrair de bloco ``` ... ```
+// 3. Usa busca balanceada de chaves para encontrar o objeto JSON raiz
+function extractJSON(text: string): ParseResponse | null {
+  // Remover BOM e espaços extras
+  const clean = text.trim()
+
+  // Tenta code block ```json ... ``` ou ``` ... ```
+  const codeBlock = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+  const candidate = codeBlock ? codeBlock[1] : clean
+
+  // Busca balanceada: localiza o primeiro { e acha o } correspondente
+  const start = candidate.indexOf('{')
+  if (start === -1) return null
+
+  let depth = 0
+  let end = -1
+  for (let i = start; i < candidate.length; i++) {
+    if (candidate[i] === '{') depth++
+    else if (candidate[i] === '}') {
+      depth--
+      if (depth === 0) { end = i; break }
+    }
+  }
+
+  if (end === -1) return null
+
+  try {
+    return JSON.parse(candidate.slice(start, end + 1)) as ParseResponse
+  } catch {
+    return null
+  }
+}
+
 function getAdminClient() {
   return createAdminClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -105,22 +140,21 @@ ${csvContent.slice(0, 8000)}`
       model: PRIMARY_MODEL,
       providerOptions: gatewayOptions,
       prompt,
-      maxOutputTokens: 2000,
+      maxOutputTokens: 4000,
       temperature: 0,
     })
 
-    // Extrair JSON da resposta (pode vir com markdown code block)
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      return Response.json({ error: 'Claude não retornou JSON válido', raw: text }, { status: 422 })
+    // Extrair JSON robusto: tenta code block primeiro, depois busca balanceada
+    const parsed = extractJSON(text)
+    if (!parsed) {
+      console.error('[import-prices] Resposta do modelo não parseável:', text.slice(0, 500))
+      return Response.json(
+        { error: 'O modelo não retornou JSON válido. Tente novamente.', preview: text.slice(0, 300) },
+        { status: 422 }
+      )
     }
 
-    try {
-      const parsed = JSON.parse(jsonMatch[0]) as ParseResponse
-      return Response.json(parsed)
-    } catch {
-      return Response.json({ error: 'Falha ao parsear resposta do Claude', raw: text }, { status: 422 })
-    }
+    return Response.json(parsed)
   }
 
   // ── CONFIRM: Salva no banco após aprovação do usuário ─────────────────────
