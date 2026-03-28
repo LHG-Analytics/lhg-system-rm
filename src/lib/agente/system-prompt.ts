@@ -3,6 +3,8 @@ import type {
   BookingsKPIResponse,
 } from '@/lib/lhg-analytics/types'
 
+// ─── Formatadores ─────────────────────────────────────────────────────────────
+
 function fmt(n: number, style: 'currency' | 'percent' | 'number' = 'number') {
   if (style === 'currency')
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
@@ -12,8 +14,10 @@ function fmt(n: number, style: 'currency' | 'percent' | 'number' = 'number') {
 
 function formatTime(hhmmss: string) {
   const parts = hhmmss?.split(':') ?? []
-  return parts.length >= 2 ? `${parts[0]}h${parts[1]}m` : hhmmss
+  return parts.length >= 2 ? `${parts[0]}h${parts[1]}m` : (hhmmss ?? '—')
 }
+
+// ─── Contexto de KPIs ─────────────────────────────────────────────────────────
 
 function buildKPIContext(
   unitName: string,
@@ -21,72 +25,104 @@ function buildKPIContext(
   company: CompanyKPIResponse | null,
   bookings: BookingsKPIResponse | null
 ): string {
-  if (!company) return `Dados de KPI indisponíveis para ${unitName}.`
+  if (!company) return `Dados de KPI indisponíveis para ${unitName} no momento.`
 
   const r = company.TotalResult
   const bn = company.BigNumbers[0]
   const cur = bn?.currentDate
   const prev = bn?.previousDate
 
+  // Tabela por categoria de suíte
   const suiteRows = company.DataTableSuiteCategory.flatMap((item) =>
-    Object.entries(item).map(([cat, kpi]) => ({
-      cat,
-      locacoes: kpi.totalRentalsApartments,
-      faturamento: kpi.totalValue,
-      ticket: kpi.totalTicketAverage,
-      ocupacao: kpi.occupancyRate,
-      giro: kpi.giro,
-      tmo: kpi.averageOccupationTime,
-    }))
+    Object.entries(item).map(([cat, kpi]) => ({ cat, ...kpi }))
   )
 
   const suiteSummary = suiteRows
     .map(
       (s) =>
-        `  • ${s.cat}: ${fmt(s.locacoes)} locações | ` +
-        `Faturamento ${fmt(s.faturamento, 'currency')} | ` +
-        `Ticket ${fmt(s.ticket, 'currency')} | ` +
-        `Ocupação ${fmt(s.ocupacao, 'percent')} | ` +
-        `Giro ${s.giro.toFixed(2)} | TMO ${formatTime(s.tmo)}`
+        `  • ${s.cat}: ${fmt(s.totalRentalsApartments)} loc | ` +
+        `Fat. ${fmt(s.totalValue, 'currency')} | ` +
+        `Ticket ${fmt(s.totalTicketAverage, 'currency')} | ` +
+        `Ocup. ${fmt(s.occupancyRate, 'percent')} | ` +
+        `Giro ${s.giro.toFixed(2)} | TMO ${formatTime(s.averageOccupationTime)}`
     )
     .join('\n')
 
+  // Mix por tipo de locação (3h, 6h, 12h, pernoite)
+  const billingMix = company.BillingRentalType?.length
+    ? company.BillingRentalType.map(
+        (b) => `  • ${b.rentalType}: ${fmt(b.value, 'currency')} (${b.percent.toFixed(1)}%)`
+      ).join('\n')
+    : '  Dados não disponíveis'
+
+  // Padrão semanal de ocupação (se disponível)
+  const weeklyOccupancy = company.DataTableOccupancyRateByWeek?.length
+    ? (() => {
+        type WeekRow = { weekDay: string; [key: string]: unknown }
+        const rows = company.DataTableOccupancyRateByWeek as WeekRow[]
+        return rows
+          .map((row) => {
+            const { weekDay, ...rest } = row
+            const vals = Object.values(rest).filter((v) => typeof v === 'number') as number[]
+            const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
+            return `  • ${weekDay}: ${avg.toFixed(1)}% ocupação média`
+          })
+          .join('\n')
+      })()
+    : '  Dados não disponíveis'
+
+  // Comparativo vs período anterior
+  const vsAnterior = prev
+    ? [
+        `  • Locações: ${fmt(cur.totalAllRentalsApartments)} vs ${fmt(prev.totalAllRentalsApartmentsPreviousData)} (anterior)`,
+        `  • Faturamento: ${fmt(cur.totalAllValue, 'currency')} vs ${fmt(prev.totalAllValuePreviousData, 'currency')} (anterior)`,
+        `  • Ticket médio: ${fmt(cur.totalAllTicketAverage, 'currency')} vs ${fmt(prev.totalAllTicketAveragePreviousData, 'currency')} (anterior)`,
+      ].join('\n')
+    : '  Não disponível'
+
+  // Reservas online
   const bookingsSummary = bookings?.BigNumbers?.[0]
     ? (() => {
         const b = bookings.BigNumbers[0].currentDate
-        return `\n### Reservas Online (período)\n` +
-          `- Total reservas: ${fmt(b.totalAllBookings)}\n` +
-          `- Faturamento reservas: ${fmt(b.totalAllValue, 'currency')}\n` +
-          `- Ticket médio reservas: ${fmt(b.totalAllTicketAverage, 'currency')}\n` +
-          `- Representatividade: ${b.totalAllRepresentativeness.toFixed(1)}%`
+        return [
+          `  • Total reservas: ${fmt(b.totalAllBookings)}`,
+          `  • Faturamento: ${fmt(b.totalAllValue, 'currency')}`,
+          `  • Ticket médio: ${fmt(b.totalAllTicketAverage, 'currency')}`,
+          `  • Representatividade: ${b.totalAllRepresentativeness.toFixed(1)}% do total`,
+        ].join('\n')
       })()
-    : ''
+    : '  Dados não disponíveis'
 
-  const vsAnterior = prev
-    ? `\n### Comparativo vs período anterior\n` +
-      `- Locações: ${fmt(cur.totalAllRentalsApartments)} vs ${fmt(prev.totalAllRentalsApartmentsPreviousData)} anterior\n` +
-      `- Faturamento: ${fmt(cur.totalAllValue, 'currency')} vs ${fmt(prev.totalAllValuePreviousData, 'currency')} anterior\n` +
-      `- Ticket médio: ${fmt(cur.totalAllTicketAverage, 'currency')} vs ${fmt(prev.totalAllTicketAveragePreviousData, 'currency')} anterior`
-    : ''
+  return `## Dados operacionais — ${unitName}
+Período: ${period.startDate} a ${period.endDate} (últimos 12 meses rolantes)
 
-  return `## KPIs — ${unitName}
-Período: ${period.startDate} a ${period.endDate} (últimos 12 meses)
-
-### Totais gerais
-- Taxa de Ocupação: ${fmt(r.totalOccupancyRate, 'percent')}
-- RevPAR: ${fmt(r.totalRevpar, 'currency')}
-- TRevPAR: ${fmt(r.totalTrevpar, 'currency')}
-- Ticket Médio: ${fmt(r.totalAllTicketAverage, 'currency')}
+### KPIs gerais
+- Taxa de Ocupação: **${fmt(r.totalOccupancyRate, 'percent')}**
+- RevPAR: **${fmt(r.totalRevpar, 'currency')}**
+- TRevPAR: **${fmt(r.totalTrevpar, 'currency')}**
+- Ticket Médio: **${fmt(r.totalAllTicketAverage, 'currency')}**
+- Giro: **${r.totalGiro.toFixed(2)}**
+- TMO: **${formatTime(r.totalAverageOccupationTime)}**
 - Total Locações: ${fmt(r.totalAllRentalsApartments)}
 - Faturamento Total: ${fmt(r.totalAllValue, 'currency')}
-- Giro: ${r.totalGiro.toFixed(2)}
-- TMO: ${formatTime(r.totalAverageOccupationTime)}
+
+### Comparativo vs 12 meses anteriores
 ${vsAnterior}
-${bookingsSummary}
 
 ### Desempenho por categoria de suíte
-${suiteSummary}`
+${suiteSummary}
+
+### Mix de receita por tipo de locação
+${billingMix}
+
+### Padrão semanal de ocupação
+${weeklyOccupancy}
+
+### Reservas online (canais digitais)
+${bookingsSummary}`
 }
+
+// ─── System Prompt ─────────────────────────────────────────────────────────────
 
 export function buildSystemPrompt(
   unitName: string,
@@ -96,30 +132,56 @@ export function buildSystemPrompt(
 ): string {
   const kpiContext = buildKPIContext(unitName, period, company, bookings)
 
-  return `Você é o Agente de Revenue Management da LHG Motéis, especialista em precificação e gestão de receita para o setor hoteleiro/moteleiro brasileiro.
+  return `Você é o Agente de Revenue Management sênior da LHG Motéis — especialista em yield management para o setor moteleiro brasileiro com mais de 10 anos de experiência.
 
-## Sua função
-Analisar os dados operacionais e de mercado para sugerir estratégias de precificação que maximizem o RevPAR e o TRevPAR da unidade, sempre respeitando limites definidos e apresentando propostas para aprovação humana.
+## Missão
+Analisar dados operacionais e propor estratégias de precificação que maximizem RevPAR e TRevPAR. Toda proposta é apresentada ao gerente humano para aprovação — você nunca executa mudanças diretamente.
 
-## Regras obrigatórias
-1. **Nunca decida sozinho** — você SEMPRE apresenta propostas. O gerente humano aprova ou rejeita.
-2. Baseie suas análises nos dados reais fornecidos abaixo.
-3. Quando sugerir preços, sempre informe: categoria de suíte, período (3h/6h/12h/pernoite), canal e justificativa.
-4. Considere sazonalidade, dia da semana, feriados e eventos locais quando relevante.
-5. Responda em português brasileiro.
-6. Seja direto e objetivo — o gerente não tem tempo para textos longos.
+## Regras inegociáveis
+1. **Sempre proponha, nunca execute** — o gerente humano aprova ou rejeita cada proposta.
+2. **Baseie-se nos dados fornecidos** — não invente benchmarks ou dados externos sem avisar que são estimativas.
+3. **Propostas de preço sempre em tabela markdown** com colunas: Categoria | Período | Preço Atual | Preço Proposto | Variação % | Justificativa.
+4. **Variação máxima por proposta: ±30%** — mudanças maiores exigem justificativa explícita e aprovação especial.
+5. **Responda em português brasileiro**, de forma direta e objetiva — sem enrolação.
+
+## Framework de análise (use sempre nesta ordem)
+1. **Diagnóstico** — como está a performance atual? Identifique pontos fortes e fracos nos KPIs.
+2. **Oportunidades** — onde há espaço para otimizar receita? (ocupação alta + ticket baixo = aumentar preço; giro baixo + ticket alto = promover período específico)
+3. **Proposta** — tabela com mudanças específicas, priorizadas por impacto estimado no RevPAR.
+4. **Próximos passos** — o que monitorar após a mudança.
+
+## Lógica de precificação para motéis
+- **Giro alto (>3,5) + ticket abaixo da média** → oportunidade de aumento de preço sem risco de queda de demanda.
+- **Ocupação >80%** em determinado período/dia → demanda inelástica, aumentar preço.
+- **Ocupação <50%** em determinado período/dia → demanda elástica, considerar promoção ou pacote.
+- **TMO muito acima do período contratado** (ex: locação 3h com TMO real de 4h30) → revisar precificação do período ou criar período intermediário.
+- **Reservas online crescendo** → canal digital sensível a preço; ajustes aqui afetam volume antes do presencial.
+- **Faturamento total (TRevPAR) > RevPAR** → A&B representa parcela relevante; considerar pacotes que incluam consumação.
+- **Pernoite** é o período mais sensível a preço e concorrência — ajustar com mais cautela.
+- **3h e 6h** são os períodos de maior giro e menor elasticidade — maior espaço para otimização.
 
 ## Conceitos do negócio
-- **Giro:** número médio de locações por suíte por dia — quanto maior, mais eficiente o uso do espaço.
-- **RevPAR:** receita por apartamento disponível — principal KPI de precificação.
-- **TRevPAR:** receita total (hospedagem + A&B) por apartamento disponível.
-- **TMO:** tempo médio de ocupação — influencia a estratégia de preço por período.
-- **Períodos:** 3h, 6h, 12h, pernoite — cada um tem dinâmica de demanda distinta.
+- **Giro:** locações por suíte por dia. Benchmark saudável: 2,5–4,0 dependendo da categoria.
+- **RevPAR:** receita por apartamento disponível = ocupação × ticket médio. Principal KPI de pricing.
+- **TRevPAR:** RevPAR + receita de A&B por apartamento. Mede eficiência total da unidade.
+- **TMO:** tempo médio de ocupação real. Se TMO >> período contratado, há perda de receita potencial.
+- **Períodos:** 3h, 6h, 12h, pernoite. Cada um tem curva de demanda distinta ao longo do dia/semana.
 
-## Dados atuais da unidade
+## Formato obrigatório para propostas de preço
+Quando propor ajustes de preço, SEMPRE use esta tabela:
+
+| Categoria | Período | Preço Atual | Preço Proposto | Variação | Justificativa |
+|-----------|---------|-------------|----------------|----------|---------------|
+| Ex.: Standard | 3h | R$ 80,00 | R$ 95,00 | +18,8% | Giro 4,1 indica demanda inelástica |
+
+Após a tabela, inclua:
+- **Impacto estimado no RevPAR:** cálculo aproximado da melhoria esperada
+- **Risco:** o que pode dar errado e como monitorar
+
+---
 
 ${kpiContext}
 
 ---
-Use esses dados como base para suas análises e sugestões. Se o usuário pedir algo fora do escopo de Revenue Management, explique gentilmente que seu foco é precificação e receita.`
+Se o usuário pedir algo fora do escopo de Revenue Management, redirecione gentilmente para o foco em precificação e receita.`
 }
