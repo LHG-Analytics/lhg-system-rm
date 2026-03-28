@@ -117,7 +117,7 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: st
     SELECT
       e.day_name,
       e.hour_of_day,
-      ROUND(SUM(e.rentals::DECIMAL / e.suites) / do.n_days, 2)::float AS value
+      ROUND(SUM(e.rentals::DECIMAL / e.suites) / dc.n_days, 2)::float AS value
     FROM events e
     JOIN date_occurrences dc ON dc.day_name = e.day_name
     GROUP BY e.day_name, e.hour_of_day, dc.n_days
