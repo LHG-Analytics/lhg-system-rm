@@ -86,9 +86,7 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Agente RM</h1>
         <p className="text-sm text-muted-foreground">
-          {activeUnit
-            ? `Analisando ${activeUnit.name} · últimos 12 meses`
-            : 'Assistente de Revenue Management'}
+          {activeUnit ? `Analisando ${activeUnit.name}` : 'Assistente de Revenue Management'}
         </p>
       </div>
 
