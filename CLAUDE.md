@@ -150,7 +150,7 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 
 **RLS:** funções `current_user_role()` e `current_user_unit_id()` como `SECURITY DEFINER` são a base de todas as policies.
 
-## Issues Linear (status atual — 2026-03-28)
+## Issues Linear (status atual — 2026-03-29)
 
 ### ✅ Concluídos
 - **LHG-8:** Setup Next.js + Supabase + Tailwind + shadcn/ui
@@ -176,29 +176,38 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - API `/api/agente/proposals` (GET/POST/PATCH) — gera, lista e aprova/rejeita propostas
   - `ProposalsListcomponent` com expand/collapse, aprovação inline, badge de pendentes
   - Agente com seletor de período customizável (não fixo em 12 meses)
-  - Tabelas semanais injetadas no contexto: DataTableRevparByWeek/GiroByWeek/OccupancyRateByWeek
+  - Tabelas semanais injetadas no contexto: DataTableRevparByWeek/GiroByWeek
   - BigNumbers com comparativo 3 colunas: período atual | mesmo período ano anterior | previsão fechamento
   - Regra: agente pergunta ao usuário quando precisar de info não disponível (ex: total de suítes)
+- **LHG-73:** Integração Automo PostgreSQL (read-only) — conexão direta ao banco do ERP Automo
+  - Pool de conexões por unidade via variáveis de ambiente (`AUTOMO_DB_*`)
+  - `UNIT_CATEGORY_IDS` mapeia slug → IDs de categoria Automo
+  - `ssl: false` para servidores internos sem suporte a SSL
+- **LHG-30:** Dashboard: Heatmap ocupação × hora × dia da semana
+  - Mapa de calor com giro e taxa de ocupação por hora × dia da semana
+  - Filtros: categoria de suíte, tipo de data (entrada/saída/todas), KPI (giro/ocupação)
+  - Seletor de período global no dashboard (Últimos 7 dias / Este mês / Último mês fechado / Personalizada)
+  - Cálculo de giro: `SUM(rentals/suites) / n_ocorrências_do_dia` (média correta por dia da semana)
+  - Cálculo de ocupação: `generate_series` distribui cada locação pelos slots de 1h que ela ocupa
+  - `date_occurrences` CTE via `generate_series` para contar ocorrências reais de cada dia da semana
+  - Tabelas semanais: RevPAR por Dia da Semana e Giro por Dia da Semana (estrutura correta do payload)
+  - Favicon substituído pelo logo LHG (`src/app/icon.png`)
 
 ### 🔲 Backlog MVP (por prioridade)
 
-#### 🗄️ Integração ERP
-1. **LHG-73:** Integração Automo PostgreSQL (read-only) — locações/reservas para heatmap e análise avançada
+#### ✨ Polish e UX
+1. **LHG-72:** Ajustes de layout e polish geral
+2. **LHG-71:** Logo de cada unidade no seletor da sidebar
 
 #### 🚀 Deploy e CI/CD
-2. **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations
-3. **LHG-50:** Deploy produção + onboarding unidades piloto
+3. **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations
+4. **LHG-50:** Deploy produção + onboarding unidades piloto
 
 #### 📊 Dashboard — enriquecimento
-4. **LHG-30:** Dashboard: Heatmap ocupação × hora × dia da semana (depende de LHG-73)
 5. **LHG-31:** Dashboard: Visão de canais
 
 #### 🔔 Notificações
 6. **LHG-32:** Notificações push + email (Resend)
-
-#### ✨ Polish
-7. **LHG-72:** Ajustes de layout e polish geral
-8. **LHG-71:** Logo de cada unidade no seletor da sidebar
 
 ### 📅 Pós-MVP (Backlog)
 LHG-51 a LHG-63: guardrails, clima, eventos, trânsito, aprendizado autônomo, dynamic pricing loop.
