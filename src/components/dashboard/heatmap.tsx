@@ -115,58 +115,73 @@ export function OccupancyHeatmap({ unitSlug }: HeatmapProps) {
           <p className="text-xs text-muted-foreground">{subtitle}</p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-end gap-3 flex-wrap">
           {/* Filtro de categoria */}
           {categories.length > 0 && (
-            <select
-              value={categoryId ?? ''}
-              onChange={(e) => setCategoryId(e.target.value || null)}
-              className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-            >
-              <option value="">Total Geral</option>
-              {categories.map((cat) => (
-                <option key={cat.id} value={String(cat.id)}>
-                  {cat.nome}
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                Categoria
+              </span>
+              <select
+                value={categoryId ?? ''}
+                onChange={(e) => setCategoryId(e.target.value || null)}
+                className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">Total Geral</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={String(cat.id)}>
+                    {cat.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
 
           {/* Filtro de tipo de data */}
-          <select
-            value={dateType}
-            onChange={(e) => setDateType(e.target.value as HeatmapDateType)}
-            className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-          >
-            {(Object.keys(DATE_TYPE_LABELS) as HeatmapDateType[]).map((dt) => (
-              <option key={dt} value={dt}>{DATE_TYPE_LABELS[dt]}</option>
-            ))}
-          </select>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+              Data
+            </span>
+            <select
+              value={dateType}
+              onChange={(e) => setDateType(e.target.value as HeatmapDateType)}
+              className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              {(Object.keys(DATE_TYPE_LABELS) as HeatmapDateType[]).map((dt) => (
+                <option key={dt} value={dt}>{DATE_TYPE_LABELS[dt]}</option>
+              ))}
+            </select>
+          </div>
 
           {/* Toggle métrica */}
-          <div className="flex gap-1 rounded-lg border p-0.5 text-xs">
-            <button
-              onClick={() => setMetric('giro')}
-              className={cn(
-                'px-3 py-1 rounded-md transition-colors',
-                metric === 'giro'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              Giro
-            </button>
-            <button
-              onClick={() => setMetric('ocupacao')}
-              className={cn(
-                'px-3 py-1 rounded-md transition-colors',
-                metric === 'ocupacao'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              Ocupação
-            </button>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+              KPI
+            </span>
+            <div className="flex gap-1 rounded-lg border p-0.5 text-xs">
+              <button
+                onClick={() => setMetric('giro')}
+                className={cn(
+                  'px-3 py-1 rounded-md transition-colors',
+                  metric === 'giro'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                Giro
+              </button>
+              <button
+                onClick={() => setMetric('ocupacao')}
+                className={cn(
+                  'px-3 py-1 rounded-md transition-colors',
+                  metric === 'ocupacao'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                Ocupação
+              </button>
+            </div>
           </div>
         </div>
       </div>
