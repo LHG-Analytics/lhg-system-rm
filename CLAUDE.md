@@ -18,6 +18,8 @@
 - `cookies()` é **async** — sempre `await cookies()`
 - **Server Components por padrão** — só `'use client'` para interatividade/hooks
 - App Router only — não usar Pages Router
+- **`useSearchParams()`** em Client Components exige `<Suspense>` boundary no Next.js App Router (React 19). Envolver o componente com `<Suspense fallback={null}>` no layout pai.
+- **Layouts não recebem `searchParams`** — apenas `page.tsx` recebe. Para unit switcher, usar `useSearchParams` no client + Suspense.
 
 ### Supabase
 - Clientes: `src/lib/supabase/client.ts` (browser) e `src/lib/supabase/server.ts` (server)
@@ -37,8 +39,43 @@ Sempre executar os dois passos abaixo antes de qualquer commit:
 
 Só commitar se ambos passarem sem erros.
 
+### Git
+- **Sempre fazer `git push` após cada commit** — nunca deixar commits locais pendentes.
+
 ### shadcn/ui
 - Adicionar componentes: `npx shadcn@latest add [componente]`
+- **`next-themes` substituído** — não usar. O projeto usa implementação própria em `src/components/theme-provider.tsx` com `useEffect` + `localStorage` + `classList.toggle('dark')`. O `next-themes` injeta `<script>` inline que React 19 não executa no cliente.
+
+### React 19 / Compatibilidade
+- `<script>` inline dentro de componentes React não é executado no cliente no React 19 — usar `useEffect` para lógica de inicialização.
+- `useSearchParams()` sem `<Suspense>` causa "Can't perform a React state update on a component that hasn't mounted yet" no React 19 concurrent mode.
+
+## LHG Analytics API
+
+Base URL por unidade: `https://analytics.lhgmoteis.com.br/{unit_slug}/{unit_name}/api`
+
+| Unidade | api_base_url |
+|---------|-------------|
+| Lush Ipiranga | `https://analytics.lhgmoteis.com.br/lush_ipiranga/ipiranga/api` |
+| Lush Lapa | `https://analytics.lhgmoteis.com.br/lush_lapa/lapa/api` |
+| Altana | `https://analytics.lhgmoteis.com.br/altana/altana/api` |
+| Andar de Cima | `https://analytics.lhgmoteis.com.br/andar_de_cima/andar_de_cima/api` |
+| Tout | `https://analytics.lhgmoteis.com.br/tout/tout/api` |
+
+**Auth:** `POST https://analytics.lhgmoteis.com.br/auth/api/login` com `{email, password}`. Resposta define `Set-Cookie: access_token=JWT` (HttpOnly, 1h). Ler com `res.headers.get('set-cookie')` no server-side. Reenviar como `Cookie: access_token=VALUE`. Tokens armazenados em `lhg_analytics_tokens` no Supabase.
+
+**Endpoints de dados** (autenticação via Cookie):
+- `GET /Company/kpis/date-range?startDate=DD%2FMM%2YYYY&endDate=DD%2FMM%2YYYY`
+- `GET /Restaurants/restaurants/date-range?startDate=...&endDate=...`
+- `GET /Bookings/bookings/date-range?startDate=...&endDate=...`
+
+**Formatos importantes:**
+- Datas: `DD/MM/YYYY` (URL-encoded: `%2F` para `/`)
+- `totalAverageOccupationTime`: string `"HH:MM:SS"`, não número
+- `DataTableSuiteCategory`: `Array<{ [categoryName: string]: SuiteCategoryKPI }>` (objeto com chave dinâmica, não array plano)
+- Campos da suíte: `totalRentalsApartments`, `totalValue`, `totalTicketAverage` (não `rentals`, `revenue`, `ticketAverage`)
+
+**Período padrão:** "acumulado do ano" (`yearToDate()`) — Jan 1 até hoje operacional (06:00 cutoff). Evita sazonalidade para o agente RM. Pós-MVP: usar janela de 1 ano completo (`hoje - 1 ano` até `hoje`).
 
 ## Contexto de negócio
 
@@ -56,7 +93,7 @@ Sistema para gestão de preços e disponibilidade de suítes de motéis da LHG.
 
 | Tabela | Descrição |
 |--------|-----------|
-| `units` | Unidades/motéis |
+| `units` | Unidades/motéis (com `api_base_url` para LHG Analytics) |
 | `profiles` | Usuários com roles (super_admin/admin/manager/viewer) |
 | `suite_categories` | Categorias de suíte por unidade |
 | `suite_periods` | Períodos (3h/6h/12h/pernoite) com preço base |
@@ -71,14 +108,42 @@ Sistema para gestão de preços e disponibilidade de suítes de motéis da LHG.
 | `rm_agent_overrides` | Cancelamentos e reversões de decisões |
 | `rm_weather_demand_patterns` | Padrões aprendidos clima × demanda |
 | `kpi_snapshots` | Cache de KPIs do ERP |
+| `lhg_analytics_tokens` | Tokens de auth da LHG Analytics API por unidade |
 | `channel_sync_log` | Log de sincronização com canais |
 | `notifications` | Notificações para usuários |
 
 **RLS:** funções `current_user_role()` e `current_user_unit_id()` como `SECURITY DEFINER` são a base de todas as policies.
 
-## Issues Linear em progresso
+## Issues Linear (status atual — 2026-03-28)
 
+### ✅ Concluídos
+- **LHG-8:** Setup Next.js + Supabase + Tailwind + shadcn/ui
 - **LHG-9:** Auth Google SSO + email/senha
-- **LHG-10:** DB Schema completo + migrations ✅ Done
-- **LHG-11:** RLS Policies ✅ Done
-- **LHG-14:** Layout base (sidebar + navegação)
+- **LHG-10:** DB Schema completo + migrations
+- **LHG-11:** RLS Policies
+- **LHG-14:** Sidebar + Navegação + Layout base
+- **LHG-21:** Integração LHG Analytics API — KPIs em tempo real
+- **LHG-5:** SPIKE — Mapear banco Automo
+- **LHG-64:** Supabase local + vínculo remoto
+- **LHG-65:** Google OAuth configurado
+- **LHG-66:** Logo LHG na tela de login
+- **LHG-67:** Fix cursor pointer
+- **LHG-68:** Toggle dark/light mode
+- **LHG-70:** Cadastro de unidades reais no banco
+
+### 🔲 Backlog MVP
+- **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations
+- **LHG-50:** Deploy produção + onboarding unidades piloto
+- **LHG-71:** Logo de cada unidade no seletor da sidebar
+- **LHG-72:** Ajustes de layout e polish geral
+- **LHG-30:** Dashboard: Heatmap ocupação × hora × dia da semana
+- **LHG-31:** Dashboard: Visão de canais
+- **LHG-32:** Notificações push + email (Resend)
+- **LHG-36:** Agente RM: Interface de chat com streaming
+- **LHG-37:** Agente RM: Injeção automática de KPIs
+- **LHG-40:** Agente RM: Prompt engineering e estratégia de precificação
+- **LHG-41:** Agente RM: Interface de aprovação (humano sempre aprova no MVP)
+- **LHG-35:** Edge Function: Endpoint seguro para Claude API
+
+### 📅 Pós-MVP (Backlog)
+LHG-51 a LHG-63: guardrails, clima, eventos, trânsito, aprendizado autônomo, dynamic pricing loop.
