@@ -122,7 +122,7 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 - Queries apenas SELECT — nunca INSERT/UPDATE/DELETE
 - Usar `pg` ou `@neondatabase/serverless` como driver se necessário
 
-## Arquitetura do banco (schema v1 — 2026-03-28)
+## Arquitetura do banco (schema v2 — 2026-03-29)
 
 18 tabelas + 5 ENUMs + RLS em todas as tabelas (inclui `price_proposals` adicionada em 2026-03-28):
 
@@ -148,9 +148,13 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 | `notifications` | Notificações para usuários |
 | `price_proposals` | Propostas de preço do agente (JSONB rows, pending/approved/rejected) — sem FK para tabelas de categorias/períodos/canais |
 
+**Campos de vigência em `price_imports`** (adicionados em 2026-03-29):
+- `valid_from DATE NOT NULL DEFAULT CURRENT_DATE` — início da vigência da tabela
+- `valid_until DATE` (nullable) — fim da vigência; NULL = atualmente ativa
+
 **RLS:** funções `current_user_role()` e `current_user_unit_id()` como `SECURITY DEFINER` são a base de todas as policies.
 
-## Issues Linear (status atual — 2026-03-29)
+## Issues Linear (status atual — 2026-03-29 tarde)
 
 ### ✅ Concluídos
 - **LHG-8:** Setup Next.js + Supabase + Tailwind + shadcn/ui
@@ -170,6 +174,12 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 - **LHG-36:** Agente RM: Interface de chat com streaming
 - **LHG-37:** Agente RM: Injeção automática de KPIs no contexto do agente
 - **LHG-38:** Agente RM: Import de tabela de preços via CSV (Claude/Gemini parseia, preview, confirmação)
+  - Campos de vigência: `valid_from` (obrigatório, padrão hoje) + `valid_until` (nullable = atualmente ativa)
+  - UI exibe campos "De / Até" logo após selecionar o arquivo (antes de analisar)
+  - GET `/api/agente/import-prices?unitSlug=` lista todos os imports por `valid_from DESC`
+  - Agente RM: dropdown de seleção de tabela (aparece quando há 2+ imports); datas de análise preenchidas automaticamente pela vigência; editável pelo usuário
+  - System prompt inclui período de vigência no cabeçalho da tabela de preços
+  - **Armadilha:** migração precisa ser aplicada no banco **remoto** via MCP (`mcp__supabase__apply_migration`), não apenas `supabase db push --local`
 - **LHG-40:** Agente RM: Prompt engineering e estratégia de precificação (framework Diagnóstico→Proposta, KPIs + tabela de preços injetados)
 - **LHG-41:** Agente RM: Interface de aprovação de propostas (humano sempre aprova no MVP)
   - Tabela `price_proposals` com JSONB rows (sem FK — independente de suite_categories/periods/channels)
