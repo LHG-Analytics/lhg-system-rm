@@ -204,6 +204,48 @@ export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
             />
           </div>
 
+          {/* Vigência — aparece logo após selecionar o arquivo */}
+          {csvContent && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
+                <Calendar className="size-3.5" />
+                <span className="font-medium text-foreground">Vigência da tabela:</span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs text-muted-foreground whitespace-nowrap">De</label>
+                  <input
+                    type="date"
+                    value={validFrom}
+                    max={validUntil ?? undefined}
+                    onChange={(e) => e.target.value && setValidFrom(e.target.value)}
+                    className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs text-muted-foreground whitespace-nowrap">Até</label>
+                  <input
+                    type="date"
+                    value={validUntil ?? ''}
+                    min={validFrom}
+                    onChange={(e) => setValidUntil(e.target.value || null)}
+                    className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  {validUntil ? (
+                    <button
+                      onClick={() => setValidUntil(null)}
+                      className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                    >
+                      Atualmente
+                    </button>
+                  ) : (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">atualmente ativa</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <Button
               onClick={handleParse}
@@ -256,47 +298,13 @@ export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
                 {preview.observacoes}
               </p>
             )}
-
-            {/* Período de vigência */}
-            <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t">
-              <div className="flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
-                <Calendar className="size-3.5" />
-                <span>Vigência:</span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5">
-                  <label className="text-xs text-muted-foreground whitespace-nowrap">De</label>
-                  <input
-                    type="date"
-                    value={validFrom}
-                    max={validUntil ?? undefined}
-                    onChange={(e) => e.target.value && setValidFrom(e.target.value)}
-                    className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <label className="text-xs text-muted-foreground whitespace-nowrap">Até</label>
-                  <input
-                    type="date"
-                    value={validUntil ?? ''}
-                    min={validFrom}
-                    onChange={(e) => setValidUntil(e.target.value || null)}
-                    className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                  {validUntil && (
-                    <button
-                      onClick={() => setValidUntil(null)}
-                      className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-                    >
-                      Atualmente
-                    </button>
-                  )}
-                  {!validUntil && (
-                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">atualmente ativa</span>
-                  )}
-                </div>
-              </div>
-            </div>
+            {/* Vigência confirmada (read-only no preview) */}
+            <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+              <Calendar className="size-3" />
+              Vigência: <strong>{validFrom.split('-').reverse().join('/')}</strong>
+              {' → '}
+              {validUntil ? <strong>{validUntil.split('-').reverse().join('/')}</strong> : <span className="text-emerald-600 dark:text-emerald-400">atualmente ativa</span>}
+            </p>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border overflow-auto">
