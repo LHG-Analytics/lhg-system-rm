@@ -1,12 +1,3 @@
-// ─── Auth ────────────────────────────────────────────────────────────────────
-
-export interface LHGAuthResponse {
-  access_token: string
-  token_type: string
-  expires_in: number // seconds (typically 3600)
-  refresh_token?: string
-}
-
 // ─── Company KPIs ─────────────────────────────────────────────────────────────
 
 export interface CompanyBigNumbersCurrentDate {

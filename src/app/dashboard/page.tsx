@@ -3,25 +3,13 @@ import { redirect } from 'next/navigation'
 import {
   fetchCompanyKPIs,
   fetchBookingsKPIs,
-  toApiDate,
+  yearToDate,
 } from '@/lib/lhg-analytics/client'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
 
 interface DashboardPageProps {
   searchParams: Promise<{ unit?: string }>
-}
-
-function getCurrentMonthParams() {
-  const now = new Date()
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
-  const today = now.getHours() < 6
-    ? new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
-    : now
-  return {
-    startDate: toApiDate(firstDay),
-    endDate: toApiDate(today),
-  }
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
@@ -71,7 +59,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     )
   }
 
-  const kpiParams = getCurrentMonthParams()
+  const kpiParams = yearToDate() // acumulado do ano — evita sazonalidade para o agente RM
   const lhgUnit = { slug: activeUnit.slug, apiBaseUrl: activeUnit.api_base_url ?? '' }
 
   const [companyResult, bookingsResult] = await Promise.allSettled([
