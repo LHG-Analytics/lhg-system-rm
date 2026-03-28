@@ -29,7 +29,13 @@
 
 ### Segurança
 - Nunca expor API keys no cliente — chamadas externas via Server Actions ou Edge Functions
-- Verificar TypeScript: `npx tsc --noEmit`
+
+### Verificação obrigatória antes de commitar
+Sempre executar os dois passos abaixo antes de qualquer commit:
+1. `npx tsc --noEmit` — garante que não há erros de tipo
+2. `npm run build` — garante que o Next.js compila sem erros de SSR/SSG
+
+Só commitar se ambos passarem sem erros.
 
 ### shadcn/ui
 - Adicionar componentes: `npx shadcn@latest add [componente]`
