@@ -90,13 +90,23 @@ function buildKPIContext(
       ).join('\n')
     : '  Dados não disponíveis'
 
-  // Comparativo vs período anterior
-  const vsAnterior = prev
-    ? [
-        `  • Locações: ${fmt(cur.totalAllRentalsApartments)} vs ${fmt(prev.totalAllRentalsApartmentsPreviousData)} (anterior)`,
-        `  • Faturamento: ${fmt(cur.totalAllValue, 'currency')} vs ${fmt(prev.totalAllValuePreviousData, 'currency')} (anterior)`,
-        `  • Ticket médio: ${fmt(cur.totalAllTicketAverage, 'currency')} vs ${fmt(prev.totalAllTicketAveragePreviousData, 'currency')} (anterior)`,
-      ].join('\n')
+  // BigNumbers — comparativo três colunas: período atual | mesmo período ano passado | previsão mês
+  const forecast = bn?.monthlyForecast
+  function delta(a: number, b: number) {
+    if (!b) return ''
+    const pct = ((a - b) / b) * 100
+    return ` (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`
+  }
+
+  const bigNumbers = cur && prev
+    ? `| Métrica | Período atual | Mesmo período ano anterior | Δ a/a | Previsão fechamento do mês |
+|---------|--------------|---------------------------|-------|---------------------------|
+| Faturamento | ${fmt(cur.totalAllValue, 'currency')} | ${fmt(prev.totalAllValuePreviousData, 'currency')} | ${delta(cur.totalAllValue, prev.totalAllValuePreviousData)} | ${forecast ? fmt(forecast.totalAllValueForecast, 'currency') : '—'} |
+| Locações | ${fmt(cur.totalAllRentalsApartments)} | ${fmt(prev.totalAllRentalsApartmentsPreviousData)} | ${delta(cur.totalAllRentalsApartments, prev.totalAllRentalsApartmentsPreviousData)} | ${forecast ? fmt(forecast.totalAllRentalsApartmentsForecast) : '—'} |
+| Ticket Médio | ${fmt(cur.totalAllTicketAverage, 'currency')} | ${fmt(prev.totalAllTicketAveragePreviousData, 'currency')} | ${delta(cur.totalAllTicketAverage, prev.totalAllTicketAveragePreviousData)} | ${forecast ? fmt(forecast.totalAllTicketAverageForecast, 'currency') : '—'} |
+| TRevPAR | ${fmt(cur.totalAllTrevpar, 'currency')} | ${fmt(prev.totalAllTrevparPreviousData, 'currency')} | ${delta(cur.totalAllTrevpar, prev.totalAllTrevparPreviousData)} | ${forecast ? fmt(forecast.totalAllTrevparForecast, 'currency') : '—'} |
+| Giro | ${cur.totalAllGiro.toFixed(2)} | ${prev.totalAllGiroPreviousData.toFixed(2)} | ${delta(cur.totalAllGiro, prev.totalAllGiroPreviousData)} | ${forecast ? forecast.totalAllGiroForecast.toFixed(2) : '—'} |
+| TMO | ${formatTime(cur.totalAverageOccupationTime)} | ${formatTime(prev.totalAverageOccupationTimePreviousData)} | — | ${forecast ? formatTime(forecast.totalAverageOccupationTimeForecast) : '—'} |`
     : '  Não disponível'
 
   // Reservas online
@@ -146,8 +156,8 @@ Período: ${period.startDate} a ${period.endDate}
 - Total Locações: ${fmt(r.totalAllRentalsApartments)}
 - Faturamento Total: ${fmt(r.totalAllValue, 'currency')}
 
-### Comparativo vs período anterior
-${vsAnterior}
+### Comparativo: período atual × ano anterior × previsão de fechamento do mês
+${bigNumbers}
 
 ### Desempenho por categoria de suíte
 ${suiteSummary}
