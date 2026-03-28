@@ -1,0 +1,116 @@
+import { anthropic } from '@ai-sdk/anthropic'
+import { streamText, convertToModelMessages } from 'ai'
+import { NextRequest } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import {
+  fetchCompanyKPIs,
+  fetchBookingsKPIs,
+  trailingYear,
+} from '@/lib/lhg-analytics/client'
+import { buildSystemPrompt } from '@/lib/agente/system-prompt'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/database.types'
+
+function getAdminClient() {
+  return createAdminClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
+
+export async function POST(req: NextRequest) {
+  // 1. Autenticação
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return new Response('Não autorizado', { status: 401 })
+  }
+
+  // 2. Perfil e permissões
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, unit_id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!profile) {
+    return new Response('Perfil não encontrado', { status: 403 })
+  }
+
+  // 3. Payload
+  const body = await req.json() as { messages: unknown[]; unitSlug?: string }
+  const { messages, unitSlug } = body
+
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+    return new Response('messages inválido', { status: 400 })
+  }
+
+  // 4. Resolver unidade
+  const admin = getAdminClient()
+  let unit: { id: string; name: string; slug: string; api_base_url: string | null } | null = null
+
+  if (unitSlug) {
+    const { data } = await admin
+      .from('units')
+      .select('id, name, slug, api_base_url')
+      .eq('slug', unitSlug)
+      .eq('is_active', true)
+      .single()
+    unit = data
+
+    // Verificar se o usuário tem acesso a essa unidade
+    if (unit && profile.role !== 'super_admin' && profile.unit_id !== unit.id) {
+      return new Response('Sem acesso a essa unidade', { status: 403 })
+    }
+  }
+
+  if (!unit && profile.unit_id) {
+    const { data } = await admin
+      .from('units')
+      .select('id, name, slug, api_base_url')
+      .eq('id', profile.unit_id)
+      .single()
+    unit = data
+  }
+
+  if (!unit && profile.role === 'super_admin') {
+    const { data } = await admin
+      .from('units')
+      .select('id, name, slug, api_base_url')
+      .eq('is_active', true)
+      .order('name')
+      .limit(1)
+      .single()
+    unit = data
+  }
+
+  if (!unit) {
+    return new Response('Nenhuma unidade disponível', { status: 400 })
+  }
+
+  // 5. Buscar KPIs para contexto (não bloqueia se falhar)
+  const kpiParams = trailingYear()
+  const lhgUnit = { slug: unit.slug, apiBaseUrl: unit.api_base_url ?? '' }
+
+  const [companyResult, bookingsResult] = await Promise.allSettled([
+    unit.api_base_url ? fetchCompanyKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
+    unit.api_base_url ? fetchBookingsKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
+  ])
+
+  const company = companyResult.status === 'fulfilled' ? companyResult.value : null
+  const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : null
+
+  // 6. Montar system prompt com contexto de KPIs
+  const systemPrompt = buildSystemPrompt(unit.name, kpiParams, company, bookings)
+
+  // 7. Stream com Claude
+  const result = streamText({
+    model: anthropic('claude-sonnet-4.6'),
+    system: systemPrompt,
+    messages: await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]),
+    maxOutputTokens: 2048,
+    temperature: 0.3, // mais determinístico para análises financeiras
+  })
+
+  return result.toUIMessageStreamResponse()
+}
