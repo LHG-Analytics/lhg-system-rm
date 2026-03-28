@@ -3,20 +3,20 @@ import { Pool } from 'pg'
 // ─── Mapeamento slug → variável de ambiente ────────────────────────────────
 
 const UNIT_ENV_MAP: Record<string, string | undefined> = {
-  lush_ipiranga: process.env.DATABASE_URL_LOCAL_IPIRANGA,
-  lush_lapa:     process.env.DATABASE_URL_LOCAL_LAPA,
-  tout:          process.env.DATABASE_URL_LOCAL_TOUT,
-  andar_de_cima: process.env.DATABASE_URL_LOCAL_ANDAR_DE_CIMA,
-  altana:        process.env.DATABASE_URL_LOCAL_ALTANA,
+  'lush-ipiranga': process.env.DATABASE_URL_LOCAL_IPIRANGA,
+  'lush-lapa':     process.env.DATABASE_URL_LOCAL_LAPA,
+  'tout':          process.env.DATABASE_URL_LOCAL_TOUT,
+  'andar-de-cima': process.env.DATABASE_URL_LOCAL_ANDAR_DE_CIMA,
+  'altana':        process.env.DATABASE_URL_LOCAL_ALTANA,
 }
 
 // IDs de categoria por unidade (para filtrar queries no Automo)
 export const UNIT_CATEGORY_IDS: Record<string, number[]> = {
-  lush_ipiranga: [10, 11, 12, 15, 16, 17, 18, 19, 24],
-  lush_lapa:     [7, 8, 9, 10, 11, 12],
-  tout:          [6, 7, 8, 9, 10, 12],
-  andar_de_cima: [2, 3, 4, 5, 6, 7, 12],
-  altana:        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  'lush-ipiranga': [10, 11, 12, 15, 16, 17, 18, 19, 24],
+  'lush-lapa':     [7, 8, 9, 10, 11, 12],
+  'tout':          [6, 7, 8, 9, 10, 12],
+  'andar-de-cima': [2, 3, 4, 5, 6, 7, 12],
+  'altana':        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
 }
 
 /**
@@ -84,8 +84,8 @@ export function getAutomPool(unitSlug: string): Pool | null {
     max: 3,
     idleTimeoutMillis:    30_000,
     connectionTimeoutMillis: 8_000,
-    // Aceita SSL auto-negociado sem validar certificado (servidores internos)
-    ssl: { rejectUnauthorized: false },
+    // Servidores Automo internos não usam SSL
+    ssl: false,
   })
 
   // Log de erros de conexão em background

@@ -57,11 +57,11 @@ interface AppSidebarProps {
 // StaticImageData importada — .src é a URL com hash gerada pelo bundler
 // Usamos <img> nativo para evitar qualquer pipeline de otimização do next/image
 const UNIT_LOGO_CONFIG: Record<string, { src: string; darkBg?: boolean }> = {
-  lush_ipiranga: { src: lushLogoSrc.src },
-  lush_lapa:     { src: lushLogoSrc.src },
-  altana:        { src: altanaLogoSrc.src, darkBg: true },
-  andar_de_cima: { src: andarLogoSrc.src },
-  tout:          { src: toutLogoSrc.src },
+  'lush-ipiranga': { src: lushLogoSrc.src },
+  'lush-lapa':     { src: lushLogoSrc.src },
+  'altana':        { src: altanaLogoSrc.src, darkBg: true },
+  'andar-de-cima': { src: andarLogoSrc.src },
+  'tout':          { src: toutLogoSrc.src },
 }
 
 function UnitLogo({ slug, name, size = 32 }: { slug: string; name: string; size?: number }) {
