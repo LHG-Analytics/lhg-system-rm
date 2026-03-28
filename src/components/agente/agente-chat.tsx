@@ -263,7 +263,8 @@ export function AgenteChat({ unitSlug }: AgenteChatProps) {
           value={toInputDate(pendingStart)}
           max={toInputDate(pendingEnd)}
           onChange={(e) => e.target.value && setPendingStart(fromInputDate(e.target.value))}
-          className="h-7 text-xs w-36 px-2"
+          onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
+          className="h-7 text-xs w-36 px-2 cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer"
         />
         <span className="text-xs text-muted-foreground">até</span>
         <Input
@@ -271,7 +272,8 @@ export function AgenteChat({ unitSlug }: AgenteChatProps) {
           value={toInputDate(pendingEnd)}
           min={toInputDate(pendingStart)}
           onChange={(e) => e.target.value && setPendingEnd(fromInputDate(e.target.value))}
-          className="h-7 text-xs w-36 px-2"
+          onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
+          className="h-7 text-xs w-36 px-2 cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer"
         />
         {isDirty && (
           <Button
