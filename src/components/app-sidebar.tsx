@@ -1,8 +1,13 @@
 'use client'
 
 import Link from 'next/link'
+import Image, { type StaticImageData } from 'next/image'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
+import lushLogoSrc from '../../public/lush-logo.png'
+import altanaLogoSrc from '../../public/altana - logo.webp'
+import andarLogoSrc from '../../public/logo andar de cima.png'
+import toutLogoSrc from '../../public/tout-logo.png'
 import {
   BarChart3,
   BotMessageSquare,
@@ -50,14 +55,13 @@ interface AppSidebarProps {
   userRole: UserRole
 }
 
-// Configuração por slug: src da logo e classe de fundo do container
-// bg: 'dark' para logos brancas (precisam de fundo escuro), 'light' para logos escuras/coloridas
-const UNIT_LOGO_CONFIG: Record<string, { src: string; darkBg?: boolean }> = {
-  lush_ipiranga: { src: '/lush-logo.png' },
-  lush_lapa:     { src: '/lush-logo.png' },
-  altana:        { src: '/altana - logo.webp', darkBg: true },
-  andar_de_cima: { src: '/logo andar de cima.png' },
-  tout:          { src: '/tout-logo.png' },
+// Importações estáticas garantem URLs com hash geradas pelo bundler (mais confiável que caminhos públicos)
+const UNIT_LOGO_CONFIG: Record<string, { src: StaticImageData; darkBg?: boolean }> = {
+  lush_ipiranga: { src: lushLogoSrc },
+  lush_lapa:     { src: lushLogoSrc },
+  altana:        { src: altanaLogoSrc, darkBg: true },
+  andar_de_cima: { src: andarLogoSrc },
+  tout:          { src: toutLogoSrc },
 }
 
 function UnitLogo({ slug, name, size = 32 }: { slug: string; name: string; size?: number }) {
@@ -71,12 +75,14 @@ function UnitLogo({ slug, name, size = 32 }: { slug: string; name: string; size?
         className={`flex items-center justify-center rounded-lg overflow-hidden shrink-0 ${bgClass}`}
         style={{ width: size, height: size, minWidth: size }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <Image
           src={config.src}
           alt={name}
+          width={size}
+          height={size}
           onError={() => setImgError(true)}
-          className="object-contain w-full h-full"
+          className="object-contain"
+          style={{ width: size, height: size }}
         />
       </div>
     )
