@@ -1,7 +1,8 @@
 import type {
   CompanyKPIResponse,
   BookingsKPIResponse,
-  DataTableByWeek,
+  DataTableGiroByWeek,
+  DataTableRevparByWeek,
 } from '@/lib/lhg-analytics/types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 
@@ -19,37 +20,43 @@ function formatTime(hhmmss: string) {
   return parts.length >= 2 ? `${parts[0]}h${parts[1]}m` : (hhmmss ?? '—')
 }
 
-// ─── Tabelas semanais (RevPAR / Giro / Ocupação por categoria × dia) ──────────
+// ─── Tabelas semanais (RevPAR / Giro por categoria × dia) ────────────────────
+// Estrutura real da API: Array<{ [categoria]: { [dia]: { giro, totalGiro } } }>
 
-/**
- * Formata um DataTableByWeek em tabela markdown.
- * Estrutura: [{ weekDay: "Segunda-feira", "Standard": 45.5, "Master": 78.2, ... }]
- */
-function buildWeekTable(
-  rows: DataTableByWeek[],
-  title: string,
-  valueFormatter: (v: number) => string
-): string {
-  if (!rows.length) return ''
+const DAY_ORDER_PT = ['segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado', 'domingo']
+const DAY_ABBR: Record<string, string> = {
+  'segunda-feira': 'Seg', 'terça-feira': 'Ter', 'quarta-feira': 'Qua',
+  'quinta-feira':  'Qui', 'sexta-feira':  'Sex', 'sábado':       'Sáb', 'domingo': 'Dom',
+}
 
-  // Extrai nomes de categoria (chaves exceto weekDay)
-  const categories = [...new Set(
-    rows.flatMap((row) => Object.keys(row).filter((k) => k !== 'weekDay'))
-  )]
+function buildGiroWeekTable(data: DataTableGiroByWeek[]): string {
+  if (!data?.length) return ''
+  const rows = data.map((item) => { const [cat, days] = Object.entries(item)[0]; return { cat, days } })
+  const dayCols = DAY_ORDER_PT.filter((d) => d in rows[0].days)
+  const header = `| Categoria | ${dayCols.map((d) => DAY_ABBR[d]).join(' | ')} |`
+  const sep    = `|-----------|${dayCols.map(() => '------').join('|')}|`
+  const dataRows = rows.map(({ cat, days }) =>
+    `| ${cat} | ${dayCols.map((d) => days[d]?.giro.toFixed(2) ?? '—').join(' | ')} |`
+  )
+  // Total vem do totalGiro de qualquer entrada
+  const totals = dayCols.map((d) => rows.find((r) => r.days[d])?.days[d]?.totalGiro.toFixed(2) ?? '—')
+  const totalRow = `| **Total** | ${totals.join(' | ')} |`
+  return `**Giro por categoria × dia da semana**\n${header}\n${sep}\n${dataRows.join('\n')}\n${totalRow}`
+}
 
-  if (!categories.length) return ''
-
-  const header = `| Dia | ${categories.join(' | ')} |`
-  const sep    = `|-----|${categories.map(() => '------').join('|')}|`
-  const dataRows = rows.map((row) => {
-    const cols = categories.map((cat) => {
-      const val = row[cat]
-      return typeof val === 'number' ? valueFormatter(val) : '—'
-    })
-    return `| ${row.weekDay} | ${cols.join(' | ')} |`
-  })
-
-  return `**${title}**\n${header}\n${sep}\n${dataRows.join('\n')}`
+function buildRevparWeekTable(data: DataTableRevparByWeek[]): string {
+  if (!data?.length) return ''
+  const rows = data.map((item) => { const [cat, days] = Object.entries(item)[0]; return { cat, days } })
+  const dayCols = DAY_ORDER_PT.filter((d) => d in rows[0].days)
+  const fmtCur = (v: number) => fmt(v, 'currency')
+  const header = `| Categoria | ${dayCols.map((d) => DAY_ABBR[d]).join(' | ')} |`
+  const sep    = `|-----------|${dayCols.map(() => '------').join('|')}|`
+  const dataRows = rows.map(({ cat, days }) =>
+    `| ${cat} | ${dayCols.map((d) => days[d] ? fmtCur(days[d].revpar) : '—').join(' | ')} |`
+  )
+  const totals = dayCols.map((d) => { const v = rows.find((r) => r.days[d])?.days[d]?.totalRevpar; return v !== undefined ? fmtCur(v) : '—' })
+  const totalRow = `| **Total** | ${totals.join(' | ')} |`
+  return `**RevPAR por categoria × dia da semana**\n${header}\n${sep}\n${dataRows.join('\n')}\n${totalRow}`
 }
 
 // ─── Contexto de KPIs ─────────────────────────────────────────────────────────
@@ -123,23 +130,10 @@ function buildKPIContext(
     : '  Dados não disponíveis'
 
   // ── Tabelas semanais por categoria ─────────────────────────────────────────
-  const revparWeek = buildWeekTable(
-    company.DataTableRevparByWeek ?? [],
-    'RevPAR por categoria × dia da semana',
-    (v) => fmt(v, 'currency')
-  )
-  const giroWeek = buildWeekTable(
-    company.DataTableGiroByWeek ?? [],
-    'Giro por categoria × dia da semana',
-    (v) => v.toFixed(2)
-  )
-  const ocupWeek = buildWeekTable(
-    company.DataTableOccupancyRateByWeek ?? [],
-    'Taxa de ocupação por categoria × dia da semana',
-    (v) => fmt(v, 'percent')
-  )
+  const revparWeek = buildRevparWeekTable(company.DataTableRevparByWeek ?? [])
+  const giroWeek   = buildGiroWeekTable(company.DataTableGiroByWeek ?? [])
 
-  const weeklySection = [revparWeek, giroWeek, ocupWeek]
+  const weeklySection = [revparWeek, giroWeek]
     .filter(Boolean)
     .join('\n\n')
 

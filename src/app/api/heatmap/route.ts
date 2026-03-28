@@ -119,8 +119,8 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: st
       e.hour_of_day,
       ROUND(SUM(e.rentals::DECIMAL / e.suites) / do.n_days, 2)::float AS value
     FROM events e
-    JOIN date_occurrences do ON do.day_name = e.day_name
-    GROUP BY e.day_name, e.hour_of_day, do.n_days
+    JOIN date_occurrences dc ON dc.day_name = e.day_name
+    GROUP BY e.day_name, e.hour_of_day, dc.n_days
     ORDER BY ${ORDER_DAY}, e.hour_of_day`
 }
 
@@ -189,9 +189,9 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
     SELECT
       h.day_name,
       h.hour_of_day,
-      ROUND((h.total_hours::DECIMAL / (c.total_suites * do.n_days)) * 100, 2)::float AS value
+      ROUND((h.total_hours::DECIMAL / (c.total_suites * dc.n_days)) * 100, 2)::float AS value
     FROM hourly h
-    JOIN date_occurrences do ON do.day_name = h.day_name
+    JOIN date_occurrences dc ON dc.day_name = h.day_name
     CROSS JOIN capacity c
     ORDER BY ${ORDER_DAY}, h.hour_of_day`
 }

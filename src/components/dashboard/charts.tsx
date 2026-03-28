@@ -1,4 +1,4 @@
-import type { CompanyKPIResponse, DataTableByWeek } from '@/lib/lhg-analytics/types'
+import type { CompanyKPIResponse, DataTableGiroByWeek, DataTableRevparByWeek } from '@/lib/lhg-analytics/types'
 
 const fmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -70,41 +70,36 @@ function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
   )
 }
 
-// ─── Tabela Semanal Genérica ───────────────────────────────────────────────────
-// Estrutura do payload: weekDay = nome da categoria, demais chaves = dias da semana.
-// A API já inclui uma linha "Total ..." ao final.
+// ─── Tabela Semanal — Giro por Dia da Semana ──────────────────────────────────
+// Payload: Array<{ [categoria]: { [dia]: { giro, totalGiro } } }>
+// Dias (chaves): "domingo" | "segunda-feira" | "terça-feira" | ... | "sábado"
 
-const WEEK_COL_ORDER: Record<string, number> = {
-  'Domingo': 1,
-  'Segunda-Feira': 2, 'Segunda-feira': 2,
-  'Terça-Feira':   3, 'Terça-feira':   3,
-  'Quarta-Feira':  4, 'Quarta-feira':  4,
-  'Quinta-Feira':  5, 'Quinta-feira':  5,
-  'Sexta-Feira':   6, 'Sexta-feira':   6,
-  'Sábado':        7,
+const DAY_ORDER = ['segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado', 'domingo']
+const DAY_LABEL: Record<string, string> = {
+  'segunda-feira': 'Seg', 'terça-feira': 'Ter', 'quarta-feira': 'Qua',
+  'quinta-feira':  'Qui', 'sexta-feira':  'Sex', 'sábado':       'Sáb',
+  'domingo':       'Dom',
 }
 
-function WeeklyTable({
-  title,
-  data,
-  formatVal,
-}: {
-  title:     string
-  data:      DataTableByWeek[]
-  formatVal: (v: number) => string
-}) {
+function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWeek[] }) {
   if (!data?.length) return null
 
-  // Colunas = dias da semana (tudo exceto weekDay), ordenados
-  const firstRow = data[0]
-  const dayCols = Object.keys(firstRow)
-    .filter((k) => k !== 'weekDay')
-    .sort((a, b) => (WEEK_COL_ORDER[a] ?? 99) - (WEEK_COL_ORDER[b] ?? 99))
-  if (!dayCols.length) return null
+  // Cada item do array = { [categoria]: { [dia]: { giro, totalGiro } } }
+  const rows = data.map((item) => {
+    const [cat, days] = Object.entries(item)[0]
+    return { cat, days }
+  })
+  if (!rows.length) return null
 
-  // Separa linhas normais das linhas de total (weekDay começa com "Total")
-  const dataRows  = data.filter((r) => !String(r.weekDay ?? '').toLowerCase().startsWith('total'))
-  const totalRows = data.filter((r) =>  String(r.weekDay ?? '').toLowerCase().startsWith('total'))
+  // Dias disponíveis, ordenados
+  const dayCols = DAY_ORDER.filter((d) => d in rows[0].days)
+
+  // Linha de total: totalGiro é o mesmo em todos (vem da API por coluna)
+  const totalByDay: Record<string, number> = {}
+  for (const d of dayCols) {
+    const firstVal = rows.find((r) => r.days[d] !== undefined)?.days[d]
+    if (firstVal !== undefined) totalByDay[d] = firstVal.totalGiro
+  }
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -115,43 +110,96 @@ function WeeklyTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                Categorias
-              </th>
-              {dayCols.map((col) => (
-                <th key={col} className="text-right px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                  {col}
+              <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Categorias</th>
+              {dayCols.map((d) => (
+                <th key={d} className="text-right px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
+                  {DAY_LABEL[d] ?? d}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {dataRows.map((row, i) => (
-              <tr key={`${String(row.weekDay)}-${i}`} className="border-b hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3 font-medium whitespace-nowrap">{String(row.weekDay ?? '–')}</td>
-                {dayCols.map((col) => {
-                  const v = row[col]
-                  return (
-                    <td key={col} className="px-4 py-3 text-right tabular-nums">
-                      {typeof v === 'number' ? formatVal(v) : '–'}
-                    </td>
-                  )
-                })}
+            {rows.map(({ cat, days }) => (
+              <tr key={cat} className="border-b hover:bg-muted/30 transition-colors">
+                <td className="px-4 py-3 font-medium whitespace-nowrap">{cat}</td>
+                {dayCols.map((d) => (
+                  <td key={d} className="px-4 py-3 text-right tabular-nums">
+                    {days[d] !== undefined ? days[d].giro.toFixed(2) : '–'}
+                  </td>
+                ))}
               </tr>
             ))}
-            {totalRows.map((row, i) => (
-              <tr key={`total-${i}`} className="bg-muted/40 border-t-2 border-border font-semibold">
-                <td className="px-4 py-3 whitespace-nowrap">{String(row.weekDay ?? 'Total')}</td>
-                {dayCols.map((col) => {
-                  const v = row[col]
-                  return (
-                    <td key={col} className="px-4 py-3 text-right tabular-nums">
-                      {typeof v === 'number' ? formatVal(v) : '–'}
-                    </td>
-                  )
-                })}
+            <tr className="bg-muted/40 border-t-2 border-border font-semibold">
+              <td className="px-4 py-3 whitespace-nowrap">Total</td>
+              {dayCols.map((d) => (
+                <td key={d} className="px-4 py-3 text-right tabular-nums">
+                  {totalByDay[d] !== undefined ? totalByDay[d].toFixed(2) : '–'}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ─── Tabela Semanal — RevPAR por Dia da Semana ────────────────────────────────
+// Payload: Array<{ [categoria]: { [dia]: { revpar, totalRevpar } } }>
+
+function RevparWeekTable({ title, data }: { title: string; data: DataTableRevparByWeek[] }) {
+  if (!data?.length) return null
+
+  const rows = data.map((item) => {
+    const [cat, days] = Object.entries(item)[0]
+    return { cat, days }
+  })
+  if (!rows.length) return null
+
+  const dayCols = DAY_ORDER.filter((d) => d in rows[0].days)
+
+  const totalByDay: Record<string, number> = {}
+  for (const d of dayCols) {
+    const firstVal = rows.find((r) => r.days[d] !== undefined)?.days[d]
+    if (firstVal !== undefined) totalByDay[d] = firstVal.totalRevpar
+  }
+
+  return (
+    <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b">
+        <h2 className="text-sm font-semibold">{title}</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Categorias</th>
+              {dayCols.map((d) => (
+                <th key={d} className="text-right px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
+                  {DAY_LABEL[d] ?? d}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ cat, days }) => (
+              <tr key={cat} className="border-b hover:bg-muted/30 transition-colors">
+                <td className="px-4 py-3 font-medium whitespace-nowrap">{cat}</td>
+                {dayCols.map((d) => (
+                  <td key={d} className="px-4 py-3 text-right tabular-nums">
+                    {days[d] !== undefined ? fmt.format(days[d].revpar) : '–'}
+                  </td>
+                ))}
               </tr>
             ))}
+            <tr className="bg-muted/40 border-t-2 border-border font-semibold">
+              <td className="px-4 py-3 whitespace-nowrap">Total</td>
+              {dayCols.map((d) => (
+                <td key={d} className="px-4 py-3 text-right tabular-nums">
+                  {totalByDay[d] !== undefined ? fmt.format(totalByDay[d]) : '–'}
+                </td>
+              ))}
+            </tr>
           </tbody>
         </table>
       </div>
@@ -168,16 +216,14 @@ export function DashboardCharts({ company }: DashboardChartsProps) {
     <div className="flex flex-col gap-6">
       <SuiteCategoryTable company={company} />
 
-      <WeeklyTable
+      <RevparWeekTable
         title="RevPAR por Dia da Semana"
         data={company.DataTableRevparByWeek ?? []}
-        formatVal={(v) => fmt.format(v)}
       />
 
-      <WeeklyTable
+      <GiroWeekTable
         title="Giro por Dia da Semana"
         data={company.DataTableGiroByWeek ?? []}
-        formatVal={(v) => v.toFixed(2)}
       />
     </div>
   )

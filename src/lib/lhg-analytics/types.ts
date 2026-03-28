@@ -77,10 +77,10 @@ export interface SuiteCategoryKPI {
 
 export type DataTableSuiteCategory = Record<string, SuiteCategoryKPI>
 
-export interface DataTableByWeek {
-  weekDay: string
-  [key: string]: unknown
-}
+// { [categoryName]: { [dayName]: { giro, totalGiro } } }
+export type DataTableGiroByWeek = Record<string, Record<string, { giro: number; totalGiro: number }>>
+// { [categoryName]: { [dayName]: { revpar, totalRevpar } } }
+export type DataTableRevparByWeek = Record<string, Record<string, { revpar: number; totalRevpar: number }>>
 
 export interface CompanyKPIResponse {
   BigNumbers: CompanyBigNumbers[]
@@ -96,9 +96,8 @@ export interface CompanyKPIResponse {
   OccupancyRateByDate: ChartDataPoint[]
   OccupancyRateBySuiteCategory: SuiteCategoryDataPoint[]
   DataTableSuiteCategory: DataTableSuiteCategory[]  // Array<{ [categoryName]: SuiteCategoryKPI }>
-  DataTableOccupancyRateByWeek: DataTableByWeek[]
-  DataTableGiroByWeek: DataTableByWeek[]
-  DataTableRevparByWeek: DataTableByWeek[]
+  DataTableGiroByWeek: DataTableGiroByWeek[]
+  DataTableRevparByWeek: DataTableRevparByWeek[]
 }
 
 // ─── Restaurant (A&B) ─────────────────────────────────────────────────────────
