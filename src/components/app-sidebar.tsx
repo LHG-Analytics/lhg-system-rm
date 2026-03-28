@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   BarChart3,
@@ -47,6 +48,41 @@ interface AppSidebarProps {
   activeUnit: Unit
   userEmail: string
   userRole: UserRole
+}
+
+// Mapeamento slug → logo pública
+const UNIT_LOGOS: Record<string, string> = {
+  lush_ipiranga: '/lush-logo.png',
+  lush_lapa:     '/lush-logo.png',
+  altana:        '/altana - logo.webp',
+  andar_de_cima: '/logo andar de cima.png',
+  tout:          '/tout-logo.png',
+}
+
+function UnitLogo({ slug, name, size = 32 }: { slug: string; name: string; size?: number }) {
+  const src = UNIT_LOGOS[slug]
+  if (src) {
+    return (
+      <div
+        className="flex items-center justify-center rounded-lg overflow-hidden bg-white"
+        style={{ width: size, height: size, minWidth: size }}
+      >
+        <Image
+          src={src}
+          alt={name}
+          width={size}
+          height={size}
+          className="object-contain"
+          style={{ width: size, height: size }}
+        />
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground" style={{ width: size, height: size, minWidth: size }}>
+      <Hotel className="size-4" />
+    </div>
+  )
 }
 
 const navItems = [
@@ -104,9 +140,7 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
                   size="lg"
                   className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                 >
-                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                    <Hotel className="size-4" />
-                  </div>
+                  <UnitLogo slug={activeUnit.slug} name={activeUnit.name} size={32} />
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-semibold">{activeUnit.name}</span>
                     <span className="truncate text-xs text-muted-foreground">
@@ -131,9 +165,7 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
                     onClick={() => handleUnitChange(unit)}
                     className="gap-2 p-2"
                   >
-                    <div className="flex size-6 items-center justify-center rounded-sm border">
-                      <Hotel className="size-3 shrink-0" />
-                    </div>
+                    <UnitLogo slug={unit.slug} name={unit.name} size={20} />
                     {unit.name}
                   </DropdownMenuItem>
                 ))}

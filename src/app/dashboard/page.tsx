@@ -7,6 +7,7 @@ import {
 } from '@/lib/lhg-analytics/client'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
+import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
 
 interface DashboardPageProps {
   searchParams: Promise<{ unit?: string }>
@@ -96,6 +97,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <DashboardKPICards company={company} bookings={bookings} />
       <DashboardCharts company={company} />
+      <OccupancyHeatmap unitSlug={activeUnit.slug} />
     </div>
   )
 }
