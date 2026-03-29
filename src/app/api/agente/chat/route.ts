@@ -267,6 +267,37 @@ export async function POST(req: NextRequest) {
       execute: async ({ opcoes }) => ({ opcoes }),
     }),
 
+    agendar_revisao: tool({
+      description:
+        'Agenda uma revisão automática de Revenue Management para uma data futura. ' +
+        'O agente será executado automaticamente nessa data, gerará uma análise completa e salvará no histórico de conversas. ' +
+        'Use quando o usuário pedir "agende uma revisão", "me lembre de verificar em X dias", ' +
+        '"quero acompanhar os resultados em [data]", ou quando você mesmo quiser propor um monitoramento futuro. ' +
+        'SEMPRE use este tool — nunca apenas diga que agendou sem chamar o tool.',
+      inputSchema: z.object({
+        scheduled_at: z.string().describe('Data da revisão no formato YYYY-MM-DD, ex: "2026-04-07"'),
+        note: z.string().optional().describe('O que monitorar nessa revisão — contexto para o agente futuro, ex: "Monitorar impacto da tabela nova no giro de FDS"'),
+      }),
+      execute: async ({ scheduled_at, note }) => {
+        const { data, error } = await supabase
+          .from('scheduled_reviews')
+          .insert({
+            unit_id:      unit.id,
+            created_by:   user.id,
+            scheduled_at,
+            note:         note ?? null,
+            status:       'pending',
+          })
+          .select('id')
+          .single()
+        if (error) return { success: false, error: error.message }
+        const [day, month, year] = new Date(scheduled_at + 'T12:00:00')
+          .toLocaleDateString('pt-BR').split('/')
+        const dateLabel = `${day}/${month}/${year}`
+        return { success: true, reviewId: data.id, dateLabel, scheduled_at }
+      },
+    }),
+
     buscar_dados_automo: tool({
       description:
         'Consulta diretamente o ERP Automo para obter giro, total de locações e número de suítes por categoria ' +

@@ -270,37 +270,37 @@ export type Database = {
       }
       price_proposals: {
         Row: {
-          id: string
-          unit_id: string
-          created_by: string
           context: string | null
-          rows: Json
-          status: 'pending' | 'approved' | 'rejected'
-          reviewed_by: string | null
-          reviewed_at: string | null
           created_at: string
+          created_by: string
+          id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          rows: Json
+          status: string
+          unit_id: string
         }
         Insert: {
-          id?: string
-          unit_id: string
-          created_by: string
           context?: string | null
-          rows?: Json
-          status?: 'pending' | 'approved' | 'rejected'
-          reviewed_by?: string | null
-          reviewed_at?: string | null
           created_at?: string
+          created_by: string
+          id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          rows?: Json
+          status?: string
+          unit_id: string
         }
         Update: {
-          id?: string
-          unit_id?: string
-          created_by?: string
           context?: string | null
-          rows?: Json
-          status?: 'pending' | 'approved' | 'rejected'
-          reviewed_by?: string | null
-          reviewed_at?: string | null
           created_at?: string
+          created_by?: string
+          id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          rows?: Json
+          status?: string
+          unit_id?: string
         }
         Relationships: [
           {
@@ -446,7 +446,7 @@ export type Database = {
           {
             foreignKeyName: "rm_agent_config_unit_id_fkey"
             columns: ["unit_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "units"
             referencedColumns: ["id"]
           },
@@ -838,6 +838,57 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "sales_channels_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scheduled_reviews: {
+        Row: {
+          conv_id: string | null
+          created_at: string
+          created_by: string
+          executed_at: string | null
+          id: string
+          note: string | null
+          scheduled_at: string
+          status: string
+          unit_id: string
+        }
+        Insert: {
+          conv_id?: string | null
+          created_at?: string
+          created_by: string
+          executed_at?: string | null
+          id?: string
+          note?: string | null
+          scheduled_at: string
+          status?: string
+          unit_id: string
+        }
+        Update: {
+          conv_id?: string | null
+          created_at?: string
+          created_by?: string
+          executed_at?: string | null
+          id?: string
+          note?: string | null
+          scheduled_at?: string
+          status?: string
+          unit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_reviews_conv_id_fkey"
+            columns: ["conv_id"]
+            isOneToOne: false
+            referencedRelation: "rm_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_reviews_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "units"
