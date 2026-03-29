@@ -202,12 +202,15 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `date_occurrences` CTE via `generate_series` para contar ocorrências reais de cada dia da semana
   - Tabelas semanais: RevPAR por Dia da Semana e Giro por Dia da Semana (estrutura correta do payload)
   - Favicon substituído pelo logo LHG (`src/app/icon.png`)
+- **LHG-72:** Ajustes de layout e polish — página do Agente RM
+  - Sidebar de histórico extraída do `TabsContent` para o nível da página (alinha com o topo do card)
+  - Header "Agente RM / Analisando..." + TabsList (Chat|Propostas) consolidados dentro do card principal
+  - Arquitetura: `agente-page-client.tsx` (client component com estado de conversas + layout), `agente-chat.tsx` (só renderiza conteúdo do chat, sem card wrapper nem estado de conversas), `page.tsx` (server, só fetch + render do `AgenteChatPage`)
 
 ### 🔲 Backlog MVP (por prioridade)
 
 #### ✨ Polish e UX
-1. **LHG-72:** Ajustes de layout e polish geral
-2. **LHG-71:** Logo de cada unidade no seletor da sidebar
+1. **LHG-71:** Logo de cada unidade no seletor da sidebar
 
 #### 🚀 Deploy e CI/CD
 3. **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations
