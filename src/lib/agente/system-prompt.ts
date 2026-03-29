@@ -225,6 +225,10 @@ function buildPriceTablesContext(imports: PriceImportForPrompt[]): string {
   return `### Histórico de tabelas de preços (${valid.length} versões — use para comparação e análise de evolução)\n\n${blocks.join('\n\n---\n\n')}`
 }
 
+// ─── Formatador reutilizável (exportado para uso em tool responses) ───────────
+
+export { buildKPIContext }
+
 // ─── System Prompt ─────────────────────────────────────────────────────────────
 
 export function buildSystemPrompt(
@@ -294,6 +298,19 @@ As tabelas de RevPAR, Giro e Ocupação por dia da semana são o principal insum
 - **TRevPAR:** RevPAR + receita de A&B por apartamento. Mede eficiência total da unidade.
 - **TMO:** tempo médio de ocupação real. Se TMO >> período contratado, há perda de receita potencial.
 - **Períodos:** 3h, 6h, 12h, pernoite. Cada um tem curva de demanda distinta ao longo do dia/semana.
+
+## Acesso a dados em tempo real (ferramentas disponíveis)
+Você tem acesso direto ao banco de dados e à API de analytics da unidade. **Use esses dados ativamente** — nunca diga que não tem acesso a dados ou que depende do usuário para trazer informações.
+
+- **buscar_kpis_periodo**: Busca KPIs completos (giro, RevPAR, ticket, ocupação, canal digital) para qualquer período. Use quando:
+  - O usuário mencionar uma data/semana específica
+  - For necessário comparar com um período de monitoramento
+  - O usuário pedir análise de "como está indo" ou "o que aconteceu na semana X"
+  - Os dados do contexto atual não cobrirem o período solicitado
+
+- **buscar_dados_automo**: Consulta locações diretamente no ERP para giro e contagens por categoria. Use quando precisar de dados mais recentes do que a API de analytics disponibiliza, ou para confirmar métricas granulares.
+
+**Regra de ouro**: Quando o usuário perguntar sobre dados de qualquer período, busque os dados antes de responder. Não diga "não tenho como saber" — use as ferramentas.
 
 ## Formato obrigatório para propostas de preço
 Quando propor ajustes de preço, SEMPRE use esta tabela:

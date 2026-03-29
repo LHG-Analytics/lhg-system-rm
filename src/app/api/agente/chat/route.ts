@@ -1,4 +1,5 @@
-import { streamText, convertToModelMessages } from 'ai'
+import { streamText, convertToModelMessages, tool } from 'ai'
+import { z } from 'zod'
 import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
@@ -7,8 +8,9 @@ import {
   fetchBookingsKPIs,
   trailingYear,
 } from '@/lib/lhg-analytics/client'
-import { buildSystemPrompt } from '@/lib/agente/system-prompt'
+import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 import type { PriceImportForPrompt, KPIPeriod } from '@/lib/agente/system-prompt'
@@ -164,11 +166,127 @@ export async function POST(req: NextRequest) {
   // 6. Montar system prompt com KPIs (por período) + tabelas
   const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports)
 
-  // 7. Stream via AI Gateway (Claude primário, Gemini como fallback automático)
+  // 7. Definir tools (fecham sobre `unit` e `lhgUnit`)
+  const lhgUnitForTools = { slug: unit.slug, apiBaseUrl: unit.api_base_url ?? '' }
+
+  const agentTools = {
+    buscar_kpis_periodo: tool({
+      description:
+        'Busca KPIs operacionais completos (giro, RevPAR, ticket médio, ocupação, canal digital, tabelas semanais) ' +
+        'para qualquer período específico via LHG Analytics. ' +
+        'Use sempre que o usuário mencionar datas específicas, pedir monitoramento de uma semana, ' +
+        'ou quando os dados do contexto não cobrirem o período solicitado. ' +
+        'Nunca diga que não tem acesso — use este tool.',
+      inputSchema: z.object({
+        startDate: z.string().describe('Data inicial no formato DD/MM/YYYY, ex: "01/04/2026"'),
+        endDate:   z.string().describe('Data final no formato DD/MM/YYYY, ex: "07/04/2026"'),
+      }),
+      execute: async ({ startDate, endDate }) => {
+        if (!unit.api_base_url) {
+          return 'API de analytics não configurada para esta unidade. Solicite ao administrador que configure api_base_url.'
+        }
+        const [companyResult, bookingsResult] = await Promise.allSettled([
+          fetchCompanyKPIs(lhgUnitForTools, { startDate, endDate }),
+          fetchBookingsKPIs(lhgUnitForTools, { startDate, endDate }),
+        ])
+        const company  = companyResult.status  === 'fulfilled' ? companyResult.value  : null
+        const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : null
+        if (!company) return `Falha ao buscar KPIs para ${startDate} a ${endDate}. Verifique se o período é válido.`
+        return buildKPIContext(unit.name, { startDate, endDate }, company, bookings)
+      },
+    }),
+
+    buscar_dados_automo: tool({
+      description:
+        'Consulta diretamente o ERP Automo para obter giro, total de locações e número de suítes por categoria ' +
+        'em qualquer período. Use quando precisar de dados granulares por categoria ou quando a API de analytics ' +
+        'não estiver disponível.',
+      inputSchema: z.object({
+        startDate: z.string().describe('Data inicial no formato YYYY-MM-DD, ex: "2026-04-01"'),
+        endDate:   z.string().describe('Data final no formato YYYY-MM-DD, ex: "2026-04-07"'),
+      }),
+      execute: async ({ startDate, endDate }) => {
+        const pool = getAutomPool(unit.slug)
+        if (!pool) return `Conexão Automo não configurada para ${unit.slug}.`
+
+        const categoryIds = UNIT_CATEGORY_IDS[unit.slug]
+        if (!categoryIds?.length) return 'IDs de categoria não configurados para esta unidade.'
+
+        const idList = categoryIds.join(',')
+        const sql = `
+          WITH category_suites AS (
+            SELECT ca.id, ca.descricao AS nome, COUNT(a.id) AS suites
+            FROM apartamento a
+            INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+            WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
+            GROUP BY ca.id, ca.descricao
+          ),
+          period_info AS (
+            SELECT ('${endDate}'::date - '${startDate}'::date + 1) AS n_days
+          ),
+          locacoes AS (
+            SELECT ca.id, COUNT(*) AS total_locacoes
+            FROM locacaoapartamento la
+            INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+            INNER JOIN apartamento a ON aps.id_apartamento = a.id
+            INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+            WHERE la.datainicialdaocupacao >= '${startDate}'::date
+              AND la.datainicialdaocupacao < ('${endDate}'::date + INTERVAL '1 day')
+              AND la.fimocupacaotipo = 'FINALIZADA'
+              AND ca.id IN (${idList})
+            GROUP BY ca.id
+          )
+          SELECT
+            cs.nome AS categoria,
+            COALESCE(l.total_locacoes, 0) AS total_locacoes,
+            cs.suites::int AS suites,
+            pi.n_days::int AS dias_periodo,
+            ROUND(COALESCE(l.total_locacoes, 0)::numeric / cs.suites / pi.n_days, 3) AS giro_diario
+          FROM category_suites cs
+          LEFT JOIN locacoes l ON l.id = cs.id
+          CROSS JOIN period_info pi
+          ORDER BY cs.nome
+        `
+
+        try {
+          const result = await pool.query<{
+            categoria: string; total_locacoes: number; suites: number
+            dias_periodo: number; giro_diario: number
+          }>(sql)
+
+          if (!result.rows.length) return 'Nenhuma locação encontrada no período informado.'
+
+          const header = `Dados Automo — ${unit.name} | ${startDate} a ${endDate}\n\n`
+          const table = [
+            '| Categoria | Locações | Suítes | Giro diário |',
+            '|-----------|----------|--------|-------------|',
+            ...result.rows.map((r) =>
+              `| ${r.categoria} | ${r.total_locacoes} | ${r.suites} | ${r.giro_diario.toFixed(3)} |`
+            ),
+          ].join('\n')
+
+          const total = result.rows.reduce((acc, r) => acc + r.total_locacoes, 0)
+          const totalSuites = result.rows.reduce((acc, r) => acc + r.suites, 0)
+          const days = result.rows[0]?.dias_periodo ?? 1
+          const giroGeral = (total / totalSuites / days).toFixed(3)
+          const summary = `\n\n**Total**: ${total} locações | ${totalSuites} suítes | Giro geral: ${giroGeral}`
+
+          return header + table + summary
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          console.error(`[agente/automo] Erro query (${unit.slug}):`, msg)
+          return `Erro ao consultar Automo: ${msg}`
+        }
+      },
+    }),
+  }
+
+  // 8. Stream via AI Gateway com tools
   const result = streamText({
     model: PRIMARY_MODEL,
     system: systemPrompt,
     messages: await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]),
+    tools: agentTools,
     maxOutputTokens: 8192,
     temperature: 0.3,
     providerOptions: gatewayOptions,
