@@ -4,12 +4,15 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Calendar, RefreshCw } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, CalendarIcon, RefreshCw, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+
 import { MessageResponse } from '@/components/ai-elements/message'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,16 +27,36 @@ export interface PriceImportSummary {
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
-// DD/MM/YYYY → YYYY-MM-DD (formato do input type="date")
-function toInputDate(ddmmyyyy: string): string {
+// DD/MM/YYYY → YYYY-MM-DD
+function toIso(ddmmyyyy: string): string {
   const [d, m, y] = ddmmyyyy.split('/')
   return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
 }
 
-// YYYY-MM-DD → DD/MM/YYYY (formato da API LHG Analytics)
-function fromInputDate(yyyymmdd: string): string {
+// YYYY-MM-DD → DD/MM/YYYY
+function fromIso(yyyymmdd: string): string {
   const [y, m, d] = yyyymmdd.split('-')
   return `${d}/${m}/${y}`
+}
+
+// Date → YYYY-MM-DD
+function dateToIso(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// YYYY-MM-DD → Date (local, sem timezone shift)
+function isoToDate(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+// DD/MM/YYYY → "19 Nov 2025" (label legível)
+function fmtLabel(ddmmyyyy: string): string {
+  const iso = toIso(ddmmyyyy)
+  return isoToDate(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 // Espelha trailingYear() do servidor para pré-preencher os seletores
@@ -246,6 +269,53 @@ function fmtIso(iso: string) {
   return `${d}/${m}/${y}`
 }
 
+// ─── DateChip: botão que abre Calendar num Popover ────────────────────────────
+
+interface DateChipProps {
+  value: string   // DD/MM/YYYY
+  onChange: (v: string) => void
+  min?: string    // DD/MM/YYYY
+  max?: string    // DD/MM/YYYY
+  placeholder?: string
+}
+
+function DateChip({ value, onChange, min, max, placeholder }: DateChipProps) {
+  const [open, setOpen] = useState(false)
+  const selected = value ? isoToDate(toIso(value)) : undefined
+  const fromDate = min ? isoToDate(toIso(min)) : undefined
+  const toDate   = max ? isoToDate(toIso(max)) : undefined
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className={cn(
+          'flex items-center gap-1.5 h-7 rounded-md border bg-background px-2.5 text-xs font-medium',
+          'text-foreground cursor-pointer transition-colors hover:bg-accent hover:border-accent-foreground/20',
+          'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring'
+        )}>
+          <CalendarIcon className="size-3 text-muted-foreground shrink-0" />
+          <span>{value ? fmtLabel(value) : (placeholder ?? 'Selecionar')}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={selected}
+          onSelect={(date) => {
+            if (date) { onChange(fromIso(dateToIso(date))); setOpen(false) }
+          }}
+          disabled={(date) => {
+            if (fromDate && date < fromDate) return true
+            if (toDate   && date > toDate)   return true
+            return false
+          }}
+          initialFocus
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function periodFromImport(imp: PriceImportSummary): { startDate: string; endDate: string } {
   const todayIso = new Date().toISOString().slice(0, 10)
   return {
@@ -269,38 +339,31 @@ interface TableSelectorProps {
 
 function TablePeriodSelector({ label, imports, selectedId, onSelect, start, end, onStartChange, onEndChange }: TableSelectorProps) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
-      <select
-        value={selectedId}
-        onChange={(e) => onSelect(e.target.value)}
-        className="h-7 w-auto max-w-[200px] rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-      >
-        {imports.map((imp) => (
-          <option key={imp.id} value={imp.id}>
-            {fmtIso(imp.valid_from)} → {imp.valid_until ? fmtIso(imp.valid_until) : 'atualmente'}
-            {imp.is_active ? ' ●' : ''}
-          </option>
-        ))}
-      </select>
-      <div className="flex items-center gap-1">
-        <input
-          type="date"
-          value={toInputDate(start)}
-          max={toInputDate(end)}
-          onChange={(e) => e.target.value && onStartChange(fromInputDate(e.target.value))}
-          onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-          className="h-6 w-[108px] rounded border bg-background px-1.5 text-[11px] text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-calendar-picker-indicator]:cursor-pointer"
-        />
-        <span className="text-[10px] text-muted-foreground shrink-0">→</span>
-        <input
-          type="date"
-          value={toInputDate(end)}
-          min={toInputDate(start)}
-          onChange={(e) => e.target.value && onEndChange(fromInputDate(e.target.value))}
-          onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-          className="h-6 w-[108px] rounded border bg-background px-1.5 text-[11px] text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-calendar-picker-indicator]:cursor-pointer"
-        />
+    <div className="flex flex-col gap-2 min-w-0">
+      {/* Badge identificadora */}
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">{label}</span>
+
+      {/* Dropdown de tabela */}
+      <Select value={selectedId} onValueChange={onSelect}>
+        <SelectTrigger className="h-8 text-xs w-auto max-w-[220px] gap-1">
+          <SelectValue />
+          <ChevronDown className="size-3 opacity-50 shrink-0" />
+        </SelectTrigger>
+        <SelectContent>
+          {imports.map((imp) => (
+            <SelectItem key={imp.id} value={imp.id} className="text-xs">
+              {fmtIso(imp.valid_from)} → {imp.valid_until ? fmtIso(imp.valid_until) : 'atualmente'}
+              {imp.is_active ? '  ●' : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* Range de datas de análise */}
+      <div className="flex items-center gap-1.5">
+        <DateChip value={start} onChange={onStartChange} max={end} />
+        <span className="text-[10px] text-muted-foreground/50">→</span>
+        <DateChip value={end} onChange={onEndChange} min={start} />
       </div>
     </div>
   )
@@ -389,10 +452,10 @@ export function AgenteChat({ unitSlug, priceImports = [] }: AgenteChatProps) {
   return (
     <div className="flex flex-1 flex-col rounded-xl border bg-card overflow-hidden min-h-0">
       {/* Barra de contexto */}
-      <div className="border-b px-3 py-2 bg-muted/30">
+      <div className="border-b px-4 py-3 bg-muted/20">
         {hasComparison ? (
           /* ── Modo comparativo ─────────────────────────────────────────── */
-          <div className="flex items-end gap-3 flex-wrap">
+          <div className="flex items-center justify-center gap-4 flex-wrap">
             <TablePeriodSelector
               label="Tabela A"
               imports={priceImports}
@@ -404,7 +467,9 @@ export function AgenteChat({ unitSlug, priceImports = [] }: AgenteChatProps) {
               onEndChange={(v)   => setLeftPeriod((p) => ({ ...p, endDate: v }))}
             />
 
-            <span className="text-xs font-semibold text-muted-foreground pb-1 shrink-0">vs</span>
+            <div className="flex flex-col items-center gap-0.5 shrink-0">
+              <span className="text-[11px] font-bold tracking-wider text-muted-foreground/40 uppercase">vs</span>
+            </div>
 
             <TablePeriodSelector
               label="Tabela B"
@@ -418,7 +483,7 @@ export function AgenteChat({ unitSlug, priceImports = [] }: AgenteChatProps) {
             />
 
             {comparisonDirty && (
-              <Button size="sm" variant="secondary" className="h-7 text-xs gap-1.5 shrink-0 self-end" onClick={apply}>
+              <Button size="sm" variant="default" className="h-8 text-xs gap-1.5 shrink-0" onClick={apply}>
                 <RefreshCw className="size-3" />
                 Aplicar
               </Button>
@@ -426,33 +491,24 @@ export function AgenteChat({ unitSlug, priceImports = [] }: AgenteChatProps) {
           </div>
         ) : (
           /* ── Modo simples ─────────────────────────────────────────────── */
-          <div className="flex items-center gap-2 flex-wrap">
-            <Calendar className="size-3.5 text-muted-foreground shrink-0" />
+          <div className="flex items-center justify-center gap-2 flex-wrap">
             <span className="text-xs text-muted-foreground shrink-0">Período de análise:</span>
-            <Input
-              type="date"
-              value={toInputDate(singlePendingStart)}
-              max={toInputDate(singlePendingEnd)}
-              onChange={(e) => e.target.value && setSinglePendingStart(fromInputDate(e.target.value))}
-              onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-              className="h-7 text-xs w-36 px-2 cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+            <DateChip
+              value={singlePendingStart}
+              onChange={setSinglePendingStart}
+              max={singlePendingEnd}
             />
-            <span className="text-xs text-muted-foreground">até</span>
-            <Input
-              type="date"
-              value={toInputDate(singlePendingEnd)}
-              min={toInputDate(singlePendingStart)}
-              onChange={(e) => e.target.value && setSinglePendingEnd(fromInputDate(e.target.value))}
-              onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-              className="h-7 text-xs w-36 px-2 cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+            <span className="text-xs text-muted-foreground/50">→</span>
+            <DateChip
+              value={singlePendingEnd}
+              onChange={setSinglePendingEnd}
+              min={singlePendingStart}
             />
-            {singleDirty ? (
-              <Button size="sm" variant="secondary" className="h-7 text-xs gap-1.5" onClick={apply}>
+            {singleDirty && (
+              <Button size="sm" variant="default" className="h-7 text-xs gap-1.5" onClick={apply}>
                 <RefreshCw className="size-3" />
                 Aplicar
               </Button>
-            ) : (
-              <span className="text-xs text-muted-foreground/60">({singleStart} — {singleEnd})</span>
             )}
           </div>
         )}
