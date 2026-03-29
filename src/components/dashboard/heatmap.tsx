@@ -30,27 +30,40 @@ function buildMatrix(rows: HeatmapCell[]): Map<string, number> {
   return map
 }
 
-function getColor(value: number | undefined, metric: HeatmapMetric): string {
-  if (value === undefined) return 'bg-muted/30'
+function getColor(value: number | undefined, metric: HeatmapMetric, maxVal: number): string {
+  if (value === undefined || value === 0) return 'bg-muted/30'
+
+  // Normaliza 0–1 relativo ao máximo do período
+  const ratio = maxVal > 0 ? value / maxVal : 0
 
   if (metric === 'giro') {
-    if (value < 0.5) return 'bg-muted/40'
-    if (value < 1.5) return 'bg-yellow-900/30'
-    if (value < 2.5) return 'bg-yellow-600/50'
-    if (value < 3.5) return 'bg-green-600/50'
+    if (ratio < 0.15) return 'bg-muted/40'
+    if (ratio < 0.35) return 'bg-yellow-900/30'
+    if (ratio < 0.60) return 'bg-yellow-600/50'
+    if (ratio < 0.80) return 'bg-green-600/50'
     return 'bg-green-500/80'
-  } else {
-    if (value < 10) return 'bg-muted/40'
-    if (value < 30) return 'bg-blue-900/30'
-    if (value < 50) return 'bg-blue-700/40'
-    if (value < 70) return 'bg-blue-500/60'
+  }
+  if (metric === 'ocupacao') {
+    if (ratio < 0.15) return 'bg-muted/40'
+    if (ratio < 0.35) return 'bg-blue-900/30'
+    if (ratio < 0.60) return 'bg-blue-700/40'
+    if (ratio < 0.80) return 'bg-blue-500/60'
     return 'bg-blue-400/80'
   }
+  // revpar e trevpar: escala laranja/âmbar → vermelho quente
+  if (ratio < 0.15) return 'bg-muted/40'
+  if (ratio < 0.35) return 'bg-amber-900/30'
+  if (ratio < 0.60) return 'bg-amber-600/50'
+  if (ratio < 0.80) return 'bg-orange-500/60'
+  return 'bg-orange-400/80'
 }
 
 function formatValue(value: number | undefined, metric: HeatmapMetric): string {
   if (value === undefined) return '–'
-  return metric === 'giro' ? value.toFixed(2) : `${value.toFixed(0)}%`
+  if (metric === 'ocupacao') return `${value.toFixed(0)}%`
+  if (metric === 'revpar' || metric === 'trevpar')
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value)
+  return value.toFixed(2)
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -111,9 +124,14 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: H
   const allValues = rows.map((r) => r.value).filter((v) => v > 0)
   const maxVal    = allValues.length ? Math.max(...allValues) : 1
 
-  const subtitle = dateType === 'all'
-    ? 'Dia da semana × hora · entradas e saídas'
-    : `Dia da semana × hora · por data de ${DATE_TYPE_LABELS[dateType].toLowerCase()}`
+  const metricLabel: Record<HeatmapMetric, string> = {
+    giro: 'Giro', ocupacao: 'Tx. Ocupação', revpar: 'RevPAR', trevpar: 'TRevPAR',
+  }
+  const subtitle = (metric === 'revpar' || metric === 'trevpar')
+    ? `${metricLabel[metric]} por hora × dia da semana (R$)`
+    : dateType === 'all'
+      ? 'Dia da semana × hora · entradas e saídas'
+      : `Dia da semana × hora · por data de ${DATE_TYPE_LABELS[dateType].toLowerCase()}`
 
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3">
@@ -168,28 +186,20 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: H
               KPI
             </span>
             <div className="flex gap-1 rounded-lg border p-0.5 text-xs">
-              <button
-                onClick={() => setMetric('giro')}
-                className={cn(
-                  'px-3 py-1 rounded-md transition-colors',
-                  metric === 'giro'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                Giro
-              </button>
-              <button
-                onClick={() => setMetric('ocupacao')}
-                className={cn(
-                  'px-3 py-1 rounded-md transition-colors',
-                  metric === 'ocupacao'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                Ocupação
-              </button>
+              {(['giro', 'ocupacao', 'revpar', 'trevpar'] as HeatmapMetric[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMetric(m)}
+                  className={cn(
+                    'px-3 py-1 rounded-md transition-colors capitalize',
+                    metric === m
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {m === 'ocupacao' ? 'Ocup.' : m.charAt(0).toUpperCase() + m.slice(1)}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -198,23 +208,27 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: H
       {/* Legenda */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span>Baixo</span>
-        {metric === 'giro' ? (
-          <>
-            <div className="h-3 w-8 rounded-sm bg-muted/40" />
-            <div className="h-3 w-8 rounded-sm bg-yellow-900/30" />
-            <div className="h-3 w-8 rounded-sm bg-yellow-600/50" />
-            <div className="h-3 w-8 rounded-sm bg-green-600/50" />
-            <div className="h-3 w-8 rounded-sm bg-green-500/80" />
-          </>
-        ) : (
-          <>
-            <div className="h-3 w-8 rounded-sm bg-muted/40" />
-            <div className="h-3 w-8 rounded-sm bg-blue-900/30" />
-            <div className="h-3 w-8 rounded-sm bg-blue-700/40" />
-            <div className="h-3 w-8 rounded-sm bg-blue-500/60" />
-            <div className="h-3 w-8 rounded-sm bg-blue-400/80" />
-          </>
-        )}
+        {metric === 'giro' && <>
+          <div className="h-3 w-8 rounded-sm bg-muted/40" />
+          <div className="h-3 w-8 rounded-sm bg-yellow-900/30" />
+          <div className="h-3 w-8 rounded-sm bg-yellow-600/50" />
+          <div className="h-3 w-8 rounded-sm bg-green-600/50" />
+          <div className="h-3 w-8 rounded-sm bg-green-500/80" />
+        </>}
+        {metric === 'ocupacao' && <>
+          <div className="h-3 w-8 rounded-sm bg-muted/40" />
+          <div className="h-3 w-8 rounded-sm bg-blue-900/30" />
+          <div className="h-3 w-8 rounded-sm bg-blue-700/40" />
+          <div className="h-3 w-8 rounded-sm bg-blue-500/60" />
+          <div className="h-3 w-8 rounded-sm bg-blue-400/80" />
+        </>}
+        {(metric === 'revpar' || metric === 'trevpar') && <>
+          <div className="h-3 w-8 rounded-sm bg-muted/40" />
+          <div className="h-3 w-8 rounded-sm bg-amber-900/30" />
+          <div className="h-3 w-8 rounded-sm bg-amber-600/50" />
+          <div className="h-3 w-8 rounded-sm bg-orange-500/60" />
+          <div className="h-3 w-8 rounded-sm bg-orange-400/80" />
+        </>}
         <span>Alto</span>
         {!loading && !error && (
           <span className="ml-auto">
@@ -269,7 +283,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: H
                       title={`${DAY_LABELS[day]} ${h}h — ${formatValue(val, metric)}`}
                       className={cn(
                         'flex-1 rounded-sm h-6 cursor-default transition-opacity hover:opacity-80 flex items-center justify-center',
-                        getColor(val, metric)
+                        getColor(val, metric, maxVal)
                       )}
                       style={{ minWidth: 0 }}
                     >

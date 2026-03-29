@@ -12,7 +12,7 @@ function getAdminClient() {
   )
 }
 
-export type HeatmapMetric   = 'giro' | 'ocupacao'
+export type HeatmapMetric   = 'giro' | 'ocupacao' | 'revpar' | 'trevpar'
 export type HeatmapDateType = 'all' | 'checkin' | 'checkout'
 
 export interface HeatmapCategory {
@@ -183,6 +183,106 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
     ORDER BY ${orderDay('oh')}, oh.hour_of_day`
 }
 
+// ─── RevPAR por hora × dia ────────────────────────────────────────────────────
+// RevPAR = receita de locações / total de suítes disponíveis (por dia da semana)
+
+function buildRevparQuery(idList: string, startDate: string, endDate: string): string {
+  return `
+    WITH date_occurrences AS (
+      SELECT
+        CASE EXTRACT(DOW FROM d::date)
+          WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
+          WHEN 3 THEN 'Quarta'  WHEN 4 THEN 'Quinta'  WHEN 5 THEN 'Sexta'
+          WHEN 6 THEN 'Sabado'
+        END AS day_name,
+        COUNT(*) AS n_days
+      FROM generate_series('${startDate}'::date, '${endDate}'::date, '1 day'::interval) AS d
+      GROUP BY day_name
+    ),
+    category_suites AS (
+      SELECT COUNT(a.id) AS total_suites
+      FROM apartamento a
+      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
+    ),
+    revenue_hours AS (
+      SELECT
+        ${dowCase('la.datainicialdaocupacao')} AS day_name,
+        EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
+        SUM(la.valortotal) AS receita
+      FROM locacaoapartamento la
+      INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+      INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
+      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      WHERE la.datainicialdaocupacao >= '${startDate}'::date
+        AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
+        AND la.fimocupacaotipo = 'FINALIZADA'
+        AND ca.id IN (${idList})
+      GROUP BY day_name, hour_of_day
+    )
+    SELECT
+      rh.day_name,
+      rh.hour_of_day,
+      ROUND((rh.receita / (cs.total_suites * dc.n_days)), 2)::float AS value
+    FROM revenue_hours rh
+    JOIN date_occurrences dc ON dc.day_name = rh.day_name
+    CROSS JOIN category_suites cs
+    ORDER BY ${orderDay('rh')}, rh.hour_of_day`
+}
+
+// ─── TRevPAR por hora × dia ───────────────────────────────────────────────────
+// TRevPAR = (receita de locações + receita A&B vinculada) / total de suítes
+
+function buildTrevparQuery(idList: string, startDate: string, endDate: string): string {
+  return `
+    WITH date_occurrences AS (
+      SELECT
+        CASE EXTRACT(DOW FROM d::date)
+          WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
+          WHEN 3 THEN 'Quarta'  WHEN 4 THEN 'Quinta'  WHEN 5 THEN 'Sexta'
+          WHEN 6 THEN 'Sabado'
+        END AS day_name,
+        COUNT(*) AS n_days
+      FROM generate_series('${startDate}'::date, '${endDate}'::date, '1 day'::interval) AS d
+      GROUP BY day_name
+    ),
+    category_suites AS (
+      SELECT COUNT(a.id) AS total_suites
+      FROM apartamento a
+      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
+    ),
+    ab_por_locacao AS (
+      SELECT vl.id_locacaoapartamento, SUM(vl.valortotal) AS receita_ab
+      FROM vendalocacao vl
+      GROUP BY vl.id_locacaoapartamento
+    ),
+    revenue_hours AS (
+      SELECT
+        ${dowCase('la.datainicialdaocupacao')} AS day_name,
+        EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
+        SUM(la.valortotal + COALESCE(ab.receita_ab, 0)) AS receita_total
+      FROM locacaoapartamento la
+      INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+      INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
+      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      LEFT JOIN ab_por_locacao ab ON ab.id_locacaoapartamento = la.id
+      WHERE la.datainicialdaocupacao >= '${startDate}'::date
+        AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
+        AND la.fimocupacaotipo = 'FINALIZADA'
+        AND ca.id IN (${idList})
+      GROUP BY day_name, hour_of_day
+    )
+    SELECT
+      rh.day_name,
+      rh.hour_of_day,
+      ROUND((rh.receita_total / (cs.total_suites * dc.n_days)), 2)::float AS value
+    FROM revenue_hours rh
+    JOIN date_occurrences dc ON dc.day_name = rh.day_name
+    CROSS JOIN category_suites cs
+    ORDER BY ${orderDay('rh')}, rh.hour_of_day`
+}
+
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
@@ -261,9 +361,11 @@ export async function GET(req: NextRequest) {
     `)
     const categories: HeatmapCategory[] = catResult.rows
 
-    const sql = metric === 'giro'
-      ? buildGiroQuery(idList, dateType, startDate, endDate)
-      : buildOcupacaoQuery(idList, dateType, startDate, endDate)
+    const sql =
+      metric === 'giro'     ? buildGiroQuery(idList, dateType, startDate, endDate) :
+      metric === 'ocupacao' ? buildOcupacaoQuery(idList, dateType, startDate, endDate) :
+      metric === 'revpar'   ? buildRevparQuery(idList, startDate, endDate) :
+      buildTrevparQuery(idList, startDate, endDate)
 
     const result = await pool.query<HeatmapCell>(sql)
 

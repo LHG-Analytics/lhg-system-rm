@@ -205,7 +205,7 @@ export async function POST(req: NextRequest) {
       inputSchema: z.object({
         startDate: z.string().describe('Data inicial no formato YYYY-MM-DD, ex: "2026-03-23"'),
         endDate:   z.string().describe('Data final no formato YYYY-MM-DD, ex: "2026-03-29"'),
-        metric: z.enum(['giro', 'ocupacao']).optional().describe('Métrica do heatmap: "giro" (padrão) ou "ocupacao"'),
+        metric: z.enum(['giro', 'ocupacao', 'revpar', 'trevpar']).optional().describe('Métrica: "giro" (padrão), "ocupacao", "revpar" ou "trevpar"'),
         label: z.string().optional().describe('Rótulo descritivo do período, ex: "últimos 7 dias"'),
       }),
       execute: async ({ startDate, endDate, metric = 'giro', label }) => {
