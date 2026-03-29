@@ -601,9 +601,9 @@ export function AgenteChat({
     : applied.singleEnd
 
   return (
-      <div className="flex flex-1 flex-col rounded-xl border bg-card overflow-hidden min-h-0">
+    <>
       {/* Barra de contexto */}
-      <div className="border-b px-4 py-3 bg-muted/20">
+      <div className="border-b px-4 py-3 bg-muted/20 shrink-0">
         {hasComparison ? (
           /* ── Modo comparativo ─────────────────────────────────────────── */
           <div className="flex flex-col items-center gap-1.5">
@@ -683,7 +683,7 @@ export function AgenteChat({
         onConversationCreated={externalOnCreated}
         onMessagesUpdate={externalOnUpdate}
       />
-    </div>
+    </>
   )
 }
 

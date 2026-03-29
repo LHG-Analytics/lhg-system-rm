@@ -165,25 +165,24 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
         </div>
       </div>
 
-      {/* ── Coluna direita: header + tabs ───────────────────────────────── */}
-      <div className="flex flex-1 flex-col gap-4 min-h-0">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Agente RM</h1>
-          <p className="text-sm text-muted-foreground">
-            {activeUnit ? `Analisando ${activeUnit.name}` : 'Assistente de Revenue Management'}
-          </p>
-        </div>
+      {/* ── Card principal: header + tabs ───────────────────────────────── */}
+      <Tabs defaultValue="chat" className="flex flex-1 flex-col rounded-xl border bg-card overflow-hidden min-h-0">
 
-        {/* Tabs */}
-        <Tabs defaultValue="chat" className="flex flex-col flex-1 min-h-0">
-          <TabsList className="w-fit">
-            <TabsTrigger value="chat" className="gap-2">
-              <BotMessageSquare className="size-4" />
+        {/* Cabeçalho do card: título + TabsList */}
+        <div className="flex items-center justify-between gap-4 px-4 py-3 border-b shrink-0">
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold tracking-tight leading-tight">Agente RM</h1>
+            <p className="text-xs text-muted-foreground truncate">
+              {activeUnit ? `Analisando ${activeUnit.name}` : 'Assistente de Revenue Management'}
+            </p>
+          </div>
+          <TabsList className="h-8 shrink-0">
+            <TabsTrigger value="chat" className="gap-1.5 text-xs h-7 px-3">
+              <BotMessageSquare className="size-3.5" />
               Chat
             </TabsTrigger>
-            <TabsTrigger value="propostas" className="gap-2">
-              <ClipboardCheck className="size-4" />
+            <TabsTrigger value="propostas" className="gap-1.5 text-xs h-7 px-3">
+              <ClipboardCheck className="size-3.5" />
               Propostas
               {pendingCount > 0 && (
                 <span className="ml-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium px-1.5 py-0.5 leading-none">
@@ -192,28 +191,28 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
               )}
             </TabsTrigger>
           </TabsList>
+        </div>
 
-          <TabsContent value="chat" className="flex flex-col flex-1 min-h-0 mt-0 pt-4">
-            <AgenteChat
-              key={chatKey}
-              unitSlug={unitSlug}
-              unitId={unitId}
-              priceImports={priceImports}
-              selectedConvId={selectedConvId}
-              selectedMessages={selectedMessages}
-              onConversationCreated={handleConversationCreated}
-              onMessagesUpdate={handleMessagesUpdate}
-            />
-          </TabsContent>
+        <TabsContent value="chat" className="flex flex-col flex-1 min-h-0 mt-0">
+          <AgenteChat
+            key={chatKey}
+            unitSlug={unitSlug}
+            unitId={unitId}
+            priceImports={priceImports}
+            selectedConvId={selectedConvId}
+            selectedMessages={selectedMessages}
+            onConversationCreated={handleConversationCreated}
+            onMessagesUpdate={handleMessagesUpdate}
+          />
+        </TabsContent>
 
-          <TabsContent value="propostas" className="mt-0 pt-4 overflow-y-auto">
-            <ProposalsList
-              unitSlug={activeUnit?.slug ?? ''}
-              initialProposals={initialProposals}
-            />
-          </TabsContent>
-        </Tabs>
-      </div>
+        <TabsContent value="propostas" className="mt-0 overflow-y-auto p-4">
+          <ProposalsList
+            unitSlug={activeUnit?.slug ?? ''}
+            initialProposals={initialProposals}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
