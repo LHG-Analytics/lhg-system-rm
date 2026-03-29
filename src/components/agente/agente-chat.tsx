@@ -269,12 +269,12 @@ interface TableSelectorProps {
 
 function TablePeriodSelector({ label, imports, selectedId, onSelect, start, end, onStartChange, onEndChange }: TableSelectorProps) {
   return (
-    <div className="flex flex-col gap-1 min-w-0">
+    <div className="flex flex-col gap-1.5">
       <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
       <select
         value={selectedId}
         onChange={(e) => onSelect(e.target.value)}
-        className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring w-full"
+        className="h-7 w-auto max-w-[200px] rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
       >
         {imports.map((imp) => (
           <option key={imp.id} value={imp.id}>
@@ -289,7 +289,8 @@ function TablePeriodSelector({ label, imports, selectedId, onSelect, start, end,
           value={toInputDate(start)}
           max={toInputDate(end)}
           onChange={(e) => e.target.value && onStartChange(fromInputDate(e.target.value))}
-          className="h-6 flex-1 min-w-0 rounded border bg-background px-1.5 text-[11px] text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+          onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
+          className="h-6 w-[108px] rounded border bg-background px-1.5 text-[11px] text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-calendar-picker-indicator]:cursor-pointer"
         />
         <span className="text-[10px] text-muted-foreground shrink-0">→</span>
         <input
@@ -297,7 +298,8 @@ function TablePeriodSelector({ label, imports, selectedId, onSelect, start, end,
           value={toInputDate(end)}
           min={toInputDate(start)}
           onChange={(e) => e.target.value && onEndChange(fromInputDate(e.target.value))}
-          className="h-6 flex-1 min-w-0 rounded border bg-background px-1.5 text-[11px] text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+          onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
+          className="h-6 w-[108px] rounded border bg-background px-1.5 text-[11px] text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-calendar-picker-indicator]:cursor-pointer"
         />
       </div>
     </div>
@@ -390,36 +392,30 @@ export function AgenteChat({ unitSlug, priceImports = [] }: AgenteChatProps) {
       <div className="border-b px-3 py-2 bg-muted/30">
         {hasComparison ? (
           /* ── Modo comparativo ─────────────────────────────────────────── */
-          <div className="flex items-end gap-2 flex-wrap">
-            <div className="flex-1 min-w-[160px]">
-              <TablePeriodSelector
-                label="Tabela A"
-                imports={priceImports}
-                selectedId={leftId}
-                onSelect={handleLeftSelect}
-                start={leftPeriod.startDate}
-                end={leftPeriod.endDate}
-                onStartChange={(v) => setLeftPeriod((p) => ({ ...p, startDate: v }))}
-                onEndChange={(v)   => setLeftPeriod((p) => ({ ...p, endDate: v }))}
-              />
-            </div>
+          <div className="flex items-end gap-3 flex-wrap">
+            <TablePeriodSelector
+              label="Tabela A"
+              imports={priceImports}
+              selectedId={leftId}
+              onSelect={handleLeftSelect}
+              start={leftPeriod.startDate}
+              end={leftPeriod.endDate}
+              onStartChange={(v) => setLeftPeriod((p) => ({ ...p, startDate: v }))}
+              onEndChange={(v)   => setLeftPeriod((p) => ({ ...p, endDate: v }))}
+            />
 
-            <div className="flex flex-col items-center pb-1 shrink-0">
-              <span className="text-xs font-semibold text-muted-foreground">vs</span>
-            </div>
+            <span className="text-xs font-semibold text-muted-foreground pb-1 shrink-0">vs</span>
 
-            <div className="flex-1 min-w-[160px]">
-              <TablePeriodSelector
-                label="Tabela B"
-                imports={priceImports}
-                selectedId={rightId}
-                onSelect={handleRightSelect}
-                start={rightPeriod.startDate}
-                end={rightPeriod.endDate}
-                onStartChange={(v) => setRightPeriod((p) => ({ ...p, startDate: v }))}
-                onEndChange={(v)   => setRightPeriod((p) => ({ ...p, endDate: v }))}
-              />
-            </div>
+            <TablePeriodSelector
+              label="Tabela B"
+              imports={priceImports}
+              selectedId={rightId}
+              onSelect={handleRightSelect}
+              start={rightPeriod.startDate}
+              end={rightPeriod.endDate}
+              onStartChange={(v) => setRightPeriod((p) => ({ ...p, startDate: v }))}
+              onEndChange={(v)   => setRightPeriod((p) => ({ ...p, endDate: v }))}
+            />
 
             {comparisonDirty && (
               <Button size="sm" variant="secondary" className="h-7 text-xs gap-1.5 shrink-0 self-end" onClick={apply}>
