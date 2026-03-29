@@ -1,4 +1,4 @@
-import { streamText, convertToModelMessages, tool } from 'ai'
+import { streamText, convertToModelMessages, tool, stepCountIs } from 'ai'
 import { z } from 'zod'
 import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
@@ -307,6 +307,7 @@ export async function POST(req: NextRequest) {
     system: systemPrompt,
     messages: await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]),
     tools: agentTools,
+    stopWhen: stepCountIs(5),
     maxOutputTokens: 8192,
     temperature: 0.3,
     providerOptions: gatewayOptions,
