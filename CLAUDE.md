@@ -124,7 +124,7 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 
 ## Arquitetura do banco (schema v2 — 2026-03-29)
 
-18 tabelas + 5 ENUMs + RLS em todas as tabelas (inclui `price_proposals` adicionada em 2026-03-28):
+19 tabelas + 5 ENUMs + RLS em todas as tabelas:
 
 | Tabela | Descrição |
 |--------|-----------|
@@ -147,6 +147,7 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 | `channel_sync_log` | Log de sincronização com canais |
 | `notifications` | Notificações para usuários |
 | `price_proposals` | Propostas de preço do agente (JSONB rows, pending/approved/rejected) — sem FK para tabelas de categorias/períodos/canais |
+| `scheduled_reviews` | Revisões automáticas agendadas (unit_id, scheduled_at, note, status, conv_id) — executadas via Vercel Cron |
 
 **Campos de vigência em `price_imports`** (adicionados em 2026-03-29):
 - `valid_from DATE NOT NULL DEFAULT CURRENT_DATE` — início da vigência da tabela
@@ -206,6 +207,12 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Sidebar de histórico extraída do `TabsContent` para o nível da página (alinha com o topo do card)
   - Header "Agente RM / Analisando..." + TabsList (Chat|Propostas) consolidados dentro do card principal
   - Arquitetura: `agente-page-client.tsx` (client component com estado de conversas + layout), `agente-chat.tsx` (só renderiza conteúdo do chat, sem card wrapper nem estado de conversas), `page.tsx` (server, só fetch + render do `AgenteChatPage`)
+- **LHG-74:** Agente RM: Revisões automáticas agendadas (Vercel Cron)
+  - Tabela `scheduled_reviews` com RLS por unidade
+  - Tool `agendar_revisao` persiste no banco — agente nunca mais só "promete" agendar
+  - Rota `/api/cron/revisoes` (auth `CRON_SECRET`): executa revisões do dia, gera análise via AI Gateway, salva em `rm_conversations` com título `"Revisão agendada — DD/MM/YYYY · Nome da Unidade"`, cria notificação in-app
+  - `vercel.json` com cron `0 10 * * *` (10:00 UTC = 7h BRT) — 1 dos 2 slots gratuitos do Hobby
+  - **Variável necessária em produção:** `CRON_SECRET` (adicionar via `vercel env add CRON_SECRET production`)
 
 ### 🔲 Backlog MVP (por prioridade)
 
@@ -213,8 +220,8 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 1. **LHG-71:** Logo de cada unidade no seletor da sidebar
 
 #### 🚀 Deploy e CI/CD
-3. **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations
-4. **LHG-50:** Deploy produção + onboarding unidades piloto
+2. **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations
+3. **LHG-50:** Deploy produção + onboarding unidades piloto
 
 #### 📊 Dashboard — enriquecimento
 5. **LHG-31:** Dashboard: Visão de canais
