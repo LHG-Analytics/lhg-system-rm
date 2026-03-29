@@ -4,7 +4,7 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, CalendarIcon, RefreshCw, ChevronDown } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, CalendarIcon, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -53,10 +53,11 @@ function isoToDate(iso: string): Date {
   return new Date(y, m - 1, d)
 }
 
-// DD/MM/YYYY → "19 Nov 2025" (label legível)
-function fmtLabel(ddmmyyyy: string): string {
-  const iso = toIso(ddmmyyyy)
-  return isoToDate(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
+// DD/MM/YYYY → "19 nov 25" (label compacto para chip)
+const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
+function fmtChip(ddmmyyyy: string): string {
+  const [d, m, y] = ddmmyyyy.split('/')
+  return `${parseInt(d)} ${MESES[parseInt(m) - 1]} ${y.slice(2)}`
 }
 
 // Espelha trailingYear() do servidor para pré-preencher os seletores
@@ -289,12 +290,12 @@ function DateChip({ value, onChange, min, max, placeholder }: DateChipProps) {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button className={cn(
-          'flex items-center gap-1.5 h-7 rounded-md border bg-background px-2.5 text-xs font-medium',
+          'flex items-center gap-1.5 h-7 flex-1 rounded-md border bg-background px-2 text-xs',
           'text-foreground cursor-pointer transition-colors hover:bg-accent hover:border-accent-foreground/20',
           'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring'
         )}>
           <CalendarIcon className="size-3 text-muted-foreground shrink-0" />
-          <span>{value ? fmtLabel(value) : (placeholder ?? 'Selecionar')}</span>
+          <span className="truncate">{value ? fmtChip(value) : (placeholder ?? '—')}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
@@ -337,17 +338,13 @@ interface TableSelectorProps {
   onEndChange: (v: string) => void
 }
 
-function TablePeriodSelector({ label, imports, selectedId, onSelect, start, end, onStartChange, onEndChange }: TableSelectorProps) {
+// Corpo do seletor sem label (label fica no grid externo)
+function TableSelectorBody({ imports, selectedId, onSelect, start, end, onStartChange, onEndChange }: Omit<TableSelectorProps, 'label'>) {
   return (
-    <div className="flex flex-col gap-2 min-w-0">
-      {/* Badge identificadora */}
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">{label}</span>
-
-      {/* Dropdown de tabela */}
+    <div className="flex flex-col gap-2 w-[220px]">
       <Select value={selectedId} onValueChange={onSelect}>
-        <SelectTrigger className="h-8 text-xs w-auto max-w-[220px] gap-1">
+        <SelectTrigger className="h-8 text-xs w-full">
           <SelectValue />
-          <ChevronDown className="size-3 opacity-50 shrink-0" />
         </SelectTrigger>
         <SelectContent>
           {imports.map((imp) => (
@@ -358,13 +355,21 @@ function TablePeriodSelector({ label, imports, selectedId, onSelect, start, end,
           ))}
         </SelectContent>
       </Select>
-
-      {/* Range de datas de análise */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 w-full">
         <DateChip value={start} onChange={onStartChange} max={end} />
-        <span className="text-[10px] text-muted-foreground/50">→</span>
+        <span className="text-[10px] text-muted-foreground/40 shrink-0">→</span>
         <DateChip value={end} onChange={onEndChange} min={start} />
       </div>
+    </div>
+  )
+}
+
+// Mantido para compatibilidade de tipo (não usado no comparativo direto)
+function TablePeriodSelector(props: TableSelectorProps) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">{props.label}</span>
+      <TableSelectorBody {...props} />
     </div>
   )
 }
@@ -455,35 +460,40 @@ export function AgenteChat({ unitSlug, priceImports = [] }: AgenteChatProps) {
       <div className="border-b px-4 py-3 bg-muted/20">
         {hasComparison ? (
           /* ── Modo comparativo ─────────────────────────────────────────── */
-          <div className="flex items-center justify-center gap-4 flex-wrap">
-            <TablePeriodSelector
-              label="Tabela A"
-              imports={priceImports}
-              selectedId={leftId}
-              onSelect={handleLeftSelect}
-              start={leftPeriod.startDate}
-              end={leftPeriod.endDate}
-              onStartChange={(v) => setLeftPeriod((p) => ({ ...p, startDate: v }))}
-              onEndChange={(v)   => setLeftPeriod((p) => ({ ...p, endDate: v }))}
-            />
-
-            <div className="flex flex-col items-center gap-0.5 shrink-0">
-              <span className="text-[11px] font-bold tracking-wider text-muted-foreground/40 uppercase">vs</span>
+          <div className="flex flex-col items-center gap-1.5">
+            {/* Grid 3 colunas: label A | vazio | label B */}
+            <div className="grid grid-cols-[220px_48px_220px] items-end">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">Tabela A</span>
+              <div />
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">Tabela B</span>
             </div>
-
-            <TablePeriodSelector
-              label="Tabela B"
-              imports={priceImports}
-              selectedId={rightId}
-              onSelect={handleRightSelect}
-              start={rightPeriod.startDate}
-              end={rightPeriod.endDate}
-              onStartChange={(v) => setRightPeriod((p) => ({ ...p, startDate: v }))}
-              onEndChange={(v)   => setRightPeriod((p) => ({ ...p, endDate: v }))}
-            />
-
+            {/* Grid 3 colunas: body A | vs (centrado no Select) | body B */}
+            <div className="grid grid-cols-[220px_48px_220px] items-start">
+              <TableSelectorBody
+                imports={priceImports}
+                selectedId={leftId}
+                onSelect={handleLeftSelect}
+                start={leftPeriod.startDate}
+                end={leftPeriod.endDate}
+                onStartChange={(v) => setLeftPeriod((p) => ({ ...p, startDate: v }))}
+                onEndChange={(v)   => setLeftPeriod((p) => ({ ...p, endDate: v }))}
+              />
+              {/* h-8 = altura do Select, flex centra o "vs" verticalmente nele */}
+              <div className="flex items-center justify-center h-8">
+                <span className="text-[11px] font-bold tracking-widest text-muted-foreground/30 uppercase">vs</span>
+              </div>
+              <TableSelectorBody
+                imports={priceImports}
+                selectedId={rightId}
+                onSelect={handleRightSelect}
+                start={rightPeriod.startDate}
+                end={rightPeriod.endDate}
+                onStartChange={(v) => setRightPeriod((p) => ({ ...p, startDate: v }))}
+                onEndChange={(v)   => setRightPeriod((p) => ({ ...p, endDate: v }))}
+              />
+            </div>
             {comparisonDirty && (
-              <Button size="sm" variant="default" className="h-8 text-xs gap-1.5 shrink-0" onClick={apply}>
+              <Button size="sm" variant="default" className="h-7 text-xs gap-1.5 mt-0.5" onClick={apply}>
                 <RefreshCw className="size-3" />
                 Aplicar
               </Button>
