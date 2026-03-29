@@ -604,11 +604,14 @@ export function AgenteChat({ unitSlug, unitId, priceImports = [] }: AgenteChatPr
             </p>
           ) : (
             conversations.map((conv) => (
-              <button
+              <div
                 key={conv.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleSelectConversation(conv)}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleSelectConversation(conv)}
                 className={cn(
-                  'group w-full text-left px-3 py-2 flex flex-col gap-0.5 hover:bg-accent transition-colors',
+                  'group w-full text-left px-3 py-2 flex flex-col gap-0.5 hover:bg-accent transition-colors cursor-pointer',
                   selectedConvId === conv.id && 'bg-accent'
                 )}
               >
@@ -631,7 +634,7 @@ export function AgenteChat({ unitSlug, unitId, priceImports = [] }: AgenteChatPr
                 <span className="text-[10px] text-muted-foreground/60">
                   {fmtDate(conv.updated_at)}
                 </span>
-              </button>
+              </div>
             ))
           )}
         </div>
