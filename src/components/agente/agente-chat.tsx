@@ -137,9 +137,9 @@ function AgenteChatInner({ unitSlug, startDate, endDate, priceImportIds, priceAn
   return (
     <>
       {/* Área de mensagens */}
-      <div ref={scrollAreaRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+      <div ref={scrollAreaRef} onScroll={handleScroll} className="flex flex-col flex-1 overflow-y-auto p-4 gap-4 min-h-0">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-16">
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <div className="rounded-full bg-primary/10 p-4">
               <Bot className="size-8 text-primary" />
             </div>
