@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Montar contexto resumido para geração de proposta
-  const kpiContext = buildSystemPrompt(unit.name, kpiParams, company, bookings, priceImports)
+  const kpiContext = buildSystemPrompt(unit.name, { period: kpiParams, company, bookings }, priceImports)
 
   const prompt = `${kpiContext}
 

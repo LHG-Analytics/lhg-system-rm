@@ -180,6 +180,14 @@ export interface PriceImportForPrompt {
   valid_until: string | null
 }
 
+export interface KPIPeriod {
+  /** Label exibido no system prompt — ex: "Período A — Tabela anterior" */
+  label?: string
+  period: { startDate: string; endDate: string }
+  company: CompanyKPIResponse | null
+  bookings: BookingsKPIResponse | null
+}
+
 function buildSinglePriceTable(rows: ParsedPriceRow[], validFrom: string, validUntil: string | null): string {
   const byCanal = new Map<string, ParsedPriceRow[]>()
   for (const row of rows) {
@@ -221,12 +229,26 @@ function buildPriceTablesContext(imports: PriceImportForPrompt[]): string {
 
 export function buildSystemPrompt(
   unitName: string,
-  period: { startDate: string; endDate: string },
-  company: CompanyKPIResponse | null,
-  bookings: BookingsKPIResponse | null,
+  kpiData: KPIPeriod | KPIPeriod[],
   priceImports: PriceImportForPrompt[] = []
 ): string {
-  const kpiContext = buildKPIContext(unitName, period, company, bookings)
+  // ── Montar contexto de KPIs (1 ou N períodos) ─────────────────────────────
+  const periods = Array.isArray(kpiData) ? kpiData : [kpiData]
+
+  let kpiContext: string
+  if (periods.length === 1) {
+    kpiContext = buildKPIContext(unitName, periods[0].period, periods[0].company, periods[0].bookings)
+  } else {
+    // Modo comparativo: cada período tem seu bloco com label
+    const blocks = periods.map((p, i) => {
+      const label = p.label ?? `Período ${String.fromCharCode(65 + i)}`
+      const ctx = buildKPIContext(unitName, p.period, p.company, p.bookings)
+      // Substitui o "## Dados operacionais — {nome}" pelo label do período
+      return ctx.replace(/^## Dados operacionais[^\n]*\n/, `### ${label}\n`)
+    })
+    kpiContext = `## Dados operacionais comparativos — ${unitName}\n\n${blocks.join('\n\n---\n\n')}`
+  }
+
   const priceContext = buildPriceTablesContext(priceImports)
 
   return `Você é o Agente de Revenue Management sênior da LHG Motéis — especialista em yield management para o setor moteleiro brasileiro com mais de 10 anos de experiência.
