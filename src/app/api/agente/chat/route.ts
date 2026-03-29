@@ -216,6 +216,57 @@ export async function POST(req: NextRequest) {
       },
     }),
 
+    salvar_proposta: tool({
+      description:
+        'Salva a proposta de ajuste de preços no sistema para registro formal e aprovação. ' +
+        'Chame IMEDIATAMENTE quando o usuário aprovar uma proposta — qualquer variação de ' +
+        '"aprovado", "pode salvar", "sim", "estão todos aprovados", "faz isso", etc. ' +
+        'Passe exatamente os dados apresentados na tabela de proposta no chat.',
+      inputSchema: z.object({
+        context: z.string().describe('Resumo em 2–3 frases da lógica geral da proposta'),
+        rows: z.array(z.object({
+          canal:          z.enum(['balcao_site', 'site_programada', 'guia_moteis']),
+          categoria:      z.string(),
+          periodo:        z.string(),
+          dia_tipo:       z.enum(['semana', 'fds_feriado', 'todos']),
+          preco_atual:    z.number(),
+          preco_proposto: z.number(),
+          variacao_pct:   z.number(),
+          justificativa:  z.string(),
+        })).describe('Linhas da proposta exatamente como apresentadas na tabela'),
+      }),
+      execute: async ({ context, rows }) => {
+        const { data, error } = await supabase
+          .from('price_proposals')
+          .insert({
+            unit_id:    unit.id,
+            created_by: user.id,
+            context,
+            rows: rows as unknown as Database['public']['Tables']['price_proposals']['Insert']['rows'],
+            status:     'pending',
+          })
+          .select('id')
+          .single()
+        if (error) return { success: false, error: error.message }
+        return { success: true, proposalId: data.id }
+      },
+    }),
+
+    sugerir_respostas: tool({
+      description:
+        'Exibe botões de resposta rápida clicáveis para o usuário no chat. ' +
+        'Use SEMPRE após: (1) apresentar uma proposta de preços — inclua "✅ Aprovar tudo", "✏️ Ajustar um item", "❌ Rejeitar" e "Outra"; ' +
+        '(2) fazer uma pergunta de sim/não; (3) oferecer opções de análise adicional. ' +
+        'Sempre inclua uma opção com texto vazio (label "Outra resposta") para o usuário digitar livremente.',
+      inputSchema: z.object({
+        opcoes: z.array(z.object({
+          label: z.string().describe('Rótulo curto do botão (≤ 35 chars)'),
+          texto: z.string().describe('Texto completo enviado ao clicar. String vazia = abre campo para digitar livremente.'),
+        })).min(2).max(6),
+      }),
+      execute: async ({ opcoes }) => ({ opcoes }),
+    }),
+
     buscar_dados_automo: tool({
       description:
         'Consulta diretamente o ERP Automo para obter giro, total de locações e número de suítes por categoria ' +

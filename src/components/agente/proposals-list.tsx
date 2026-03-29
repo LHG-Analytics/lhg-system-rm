@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -18,6 +18,7 @@ import type { PriceProposal } from '@/app/api/agente/proposals/route'
 interface ProposalsListProps {
   unitSlug: string
   initialProposals: PriceProposal[]
+  refreshKey?: number
 }
 
 const STATUS_CONFIG = {
@@ -48,8 +49,16 @@ function VariacaoBadge({ pct }: { pct: number }) {
   )
 }
 
-export function ProposalsList({ unitSlug, initialProposals }: ProposalsListProps) {
+export function ProposalsList({ unitSlug, initialProposals, refreshKey }: ProposalsListProps) {
   const [proposals, setProposals] = useState<PriceProposal[]>(initialProposals)
+
+  useEffect(() => {
+    if (!refreshKey) return
+    fetch(`/api/agente/proposals?unitSlug=${unitSlug}`)
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setProposals(data as PriceProposal[]) })
+      .catch(() => {})
+  }, [refreshKey, unitSlug])
   const [generating, setGenerating] = useState(false)
   const [reviewing, setReviewing] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())

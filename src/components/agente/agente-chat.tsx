@@ -104,6 +104,10 @@ const TOOL_META: Record<string, { loadingText: string; doneText: string }> = {
     loadingText: 'Gerando mapa de calor…',
     doneText: 'Mapa de calor gerado',
   },
+  salvar_proposta: {
+    loadingText: 'Salvando proposta…',
+    doneText:    'Proposta salva — confira na aba Propostas',
+  },
 }
 
 function ToolCallChip({ toolName, state }: { toolName: string; state: string }) {
@@ -137,13 +141,14 @@ interface AgenteChatInnerProps {
   conversationId?: string | null
   onConversationCreated?: (id: string, title: string) => void
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
+  onProposalSaved?: () => void
 }
 
 function AgenteChatInner({
   unitSlug, unitId, startDate, endDate,
   priceImportIds, priceAnalysisPeriods,
   initialMessages, conversationId,
-  onConversationCreated, onMessagesUpdate,
+  onConversationCreated, onMessagesUpdate, onProposalSaved,
 }: AgenteChatInnerProps) {
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
@@ -163,6 +168,22 @@ function AgenteChatInner({
       onMessagesUpdate?.(convIdRef.current, messages as UIMessage[])
     }
     prevStatusRef.current = status
+  }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dispara onProposalSaved quando salvar_proposta termina com sucesso
+  useEffect(() => {
+    if (status !== 'ready') return
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')
+    if (!lastAssistant) return
+    const saved = lastAssistant.parts
+      .filter(isToolUIPart)
+      .some(
+        (p) =>
+          getToolName(p) === 'salvar_proposta' &&
+          (p as { state: string }).state === 'output-available' &&
+          ((p as { output: unknown }).output as { success?: boolean })?.success === true
+      )
+    if (saved) onProposalSaved?.()
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -186,6 +207,19 @@ function AgenteChatInner({
   }, [messages])
 
   const isStreaming = status === 'streaming' || status === 'submitted'
+
+  // Deriva quick replies da última mensagem do assistant
+  const lastAssistantMsg = [...messages].reverse().find((m) => m.role === 'assistant')
+  const quickReplies: Array<{ label: string; texto: string }> = (() => {
+    if (!lastAssistantMsg) return []
+    const sugerirPart = lastAssistantMsg.parts
+      .filter(isToolUIPart)
+      .filter((p) => getToolName(p) === 'sugerir_respostas' && (p as { state: string }).state === 'output-available')
+      .at(-1)
+    if (!sugerirPart) return []
+    const out = (sugerirPart as { output: unknown }).output as { opcoes: Array<{ label: string; texto: string }> } | undefined
+    return out?.opcoes ?? []
+  })()
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -311,6 +345,9 @@ function AgenteChatInner({
                       )
                     }
 
+                    // sugerir_respostas é renderizado como quick replies, não como chip
+                    if (toolName === 'sugerir_respostas') return null
+
                     // Outros tools: chip animado
                     return <ToolCallChip key={i} toolName={toolName} state={state} />
                   })
@@ -366,6 +403,28 @@ function AgenteChatInner({
 
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Quick replies */}
+      {!isStreaming && quickReplies.length > 0 && (
+        <div className="px-3 pt-2 pb-1 flex flex-wrap gap-2 border-t">
+          {quickReplies.map((opt, i) => (
+            <button
+              key={i}
+              className="text-xs rounded-full border px-3 py-1.5 bg-background hover:bg-accent transition-colors text-foreground"
+              onClick={() => {
+                if (opt.texto) {
+                  if (textareaRef.current) textareaRef.current.value = opt.texto
+                  submit()
+                } else {
+                  textareaRef.current?.focus()
+                }
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Input */}
       <div className="border-t p-3 flex gap-2 items-end">
@@ -519,6 +578,7 @@ interface AgenteChatProps {
   selectedMessages?: UIMessage[]
   onConversationCreated?: (id: string, title: string) => void
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
+  onProposalSaved?: () => void
 }
 
 export function AgenteChat({
@@ -527,6 +587,7 @@ export function AgenteChat({
   selectedMessages: externalMessages,
   onConversationCreated: externalOnCreated,
   onMessagesUpdate: externalOnUpdate,
+  onProposalSaved,
 }: AgenteChatProps) {
   const searchParams = useSearchParams()
   const activeSlug = searchParams.get('unit') ?? unitSlug
@@ -682,6 +743,7 @@ export function AgenteChat({
         conversationId={externalConvId}
         onConversationCreated={externalOnCreated}
         onMessagesUpdate={externalOnUpdate}
+        onProposalSaved={onProposalSaved}
       />
     </>
   )

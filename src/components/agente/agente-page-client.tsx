@@ -33,6 +33,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
   const [selectedConvId,  setSelectedConvId]  = useState<string | null>(null)
   const [selectedMessages, setSelectedMessages] = useState<UIMessage[]>([])
   const [chatKey, setChatKey] = useState(0)
+  const [proposalsRefreshKey, setProposalsRefreshKey] = useState(0)
 
   useEffect(() => {
     if (!unitId) return
@@ -73,6 +74,10 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
       { id, title, updated_at: new Date().toISOString(), messages: [] },
       ...prev,
     ])
+  }
+
+  function handleProposalSaved() {
+    setProposalsRefreshKey((k) => k + 1)
   }
 
   async function handleMessagesUpdate(id: string, msgs: UIMessage[]) {
@@ -203,6 +208,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
             selectedMessages={selectedMessages}
             onConversationCreated={handleConversationCreated}
             onMessagesUpdate={handleMessagesUpdate}
+            onProposalSaved={handleProposalSaved}
           />
         </TabsContent>
 
@@ -210,6 +216,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
           <ProposalsList
             unitSlug={activeUnit?.slug ?? ''}
             initialProposals={initialProposals}
+            refreshKey={proposalsRefreshKey}
           />
         </TabsContent>
       </Tabs>
