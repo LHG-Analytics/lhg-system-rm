@@ -2,19 +2,27 @@
 
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
+import type { UIMessage } from 'ai'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, CalendarIcon, RefreshCw } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, CalendarIcon, RefreshCw, Plus, MessageSquare, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-
+import { createClient } from '@/lib/supabase/client'
 import { MessageResponse } from '@/components/ai-elements/message'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface ConversationSummary {
+  id: string
+  title: string | null
+  updated_at: string
+  messages: UIMessage[]
+}
 
 export interface PriceImportSummary {
   id: string
@@ -84,19 +92,42 @@ function getDefaultDateRange(): { startDate: string; endDate: string } {
 
 interface AgenteChatInnerProps {
   unitSlug: string
+  unitId: string
   startDate: string
   endDate: string
   priceImportIds?: string[]
   priceAnalysisPeriods?: { startDate: string; endDate: string }[]
+  initialMessages?: UIMessage[]
+  conversationId?: string | null
+  onConversationCreated?: (id: string, title: string) => void
+  onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
 }
 
-function AgenteChatInner({ unitSlug, startDate, endDate, priceImportIds, priceAnalysisPeriods }: AgenteChatInnerProps) {
+function AgenteChatInner({
+  unitSlug, unitId, startDate, endDate,
+  priceImportIds, priceAnalysisPeriods,
+  initialMessages, conversationId,
+  onConversationCreated, onMessagesUpdate,
+}: AgenteChatInnerProps) {
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/agente/chat',
       body: { unitSlug, startDate, endDate, priceImportIds, priceAnalysisPeriods },
     }),
+    messages: initialMessages,
   })
+
+  // Ref para o ID da conversa ativa (não precisa triggerar re-render)
+  const convIdRef = useRef<string | null>(conversationId ?? null)
+
+  // Salva mensagens sempre que o streaming termina
+  const prevStatusRef = useRef(status)
+  useEffect(() => {
+    if (prevStatusRef.current !== 'ready' && status === 'ready' && messages.length > 0 && convIdRef.current) {
+      onMessagesUpdate?.(convIdRef.current, messages as UIMessage[])
+    }
+    prevStatusRef.current = status
+  }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -127,9 +158,28 @@ function AgenteChatInner({ unitSlug, startDate, endDate, priceImportIds, priceAn
     }
   }
 
-  function submit() {
+  async function submit() {
     const text = textareaRef.current?.value.trim()
     if (!text || isStreaming) return
+
+    // Cria a conversa no Supabase ao enviar a primeira mensagem
+    if (!convIdRef.current && unitId) {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const title = text.slice(0, 80)
+        const { data } = await supabase
+          .from('rm_conversations')
+          .insert({ unit_id: unitId, user_id: user.id, title, messages: [] })
+          .select('id')
+          .single()
+        if (data) {
+          convIdRef.current = data.id
+          onConversationCreated?.(data.id, title)
+        }
+      }
+    }
+
     sendMessage({ text })
     if (textareaRef.current) textareaRef.current.value = ''
   }
@@ -378,12 +428,89 @@ function TablePeriodSelector(props: TableSelectorProps) {
 
 interface AgenteChatProps {
   unitSlug: string
+  unitId: string
   priceImports?: PriceImportSummary[]
 }
 
-export function AgenteChat({ unitSlug, priceImports = [] }: AgenteChatProps) {
+export function AgenteChat({ unitSlug, unitId, priceImports = [] }: AgenteChatProps) {
   const searchParams = useSearchParams()
   const activeSlug = searchParams.get('unit') ?? unitSlug
+
+  // ── Histórico de conversas ─────────────────────────────────────────────────
+  const [conversations, setConversations] = useState<ConversationSummary[]>([])
+  const [selectedConvId, setSelectedConvId] = useState<string | null>(null)
+  const [selectedMessages, setSelectedMessages] = useState<UIMessage[]>([])
+
+  useEffect(() => {
+    if (!unitId) return
+    loadConversations()
+  }, [unitId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadConversations() {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('rm_conversations')
+      .select('id, title, updated_at, messages')
+      .eq('unit_id', unitId)
+      .order('updated_at', { ascending: false })
+      .limit(30)
+    setConversations((data ?? []).map((c) => ({
+      id: c.id,
+      title: c.title,
+      updated_at: c.updated_at,
+      messages: (c.messages as unknown as UIMessage[]) ?? [],
+    })))
+  }
+
+  function handleSelectConversation(conv: ConversationSummary) {
+    setSelectedConvId(conv.id)
+    setSelectedMessages(conv.messages)
+    setChatKey((k) => k + 1)
+  }
+
+  function handleNewConversation() {
+    setSelectedConvId(null)
+    setSelectedMessages([])
+    setChatKey((k) => k + 1)
+  }
+
+  function handleConversationCreated(id: string, title: string) {
+    setSelectedConvId(id)
+    setConversations((prev) => [
+      { id, title, updated_at: new Date().toISOString(), messages: [] },
+      ...prev,
+    ])
+  }
+
+  async function handleMessagesUpdate(id: string, msgs: UIMessage[]) {
+    const supabase = createClient()
+    await supabase
+      .from('rm_conversations')
+      .update({ messages: JSON.parse(JSON.stringify(msgs)) })
+      .eq('id', id)
+    // Atualiza lista local
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, messages: msgs, updated_at: new Date().toISOString() } : c))
+    )
+  }
+
+  async function handleDeleteConversation(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    const supabase = createClient()
+    await supabase.from('rm_conversations').delete().eq('id', id)
+    setConversations((prev) => prev.filter((c) => c.id !== id))
+    if (selectedConvId === id) handleNewConversation()
+  }
+
+  function fmtDate(iso: string) {
+    const d = new Date(iso)
+    const now = new Date()
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000)
+    if (diffDays === 0) return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    if (diffDays === 1) return 'Ontem'
+    if (diffDays < 7) return d.toLocaleDateString('pt-BR', { weekday: 'short' })
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+  }
 
   const hasComparison = priceImports.length >= 2
 
@@ -455,7 +582,63 @@ export function AgenteChat({ unitSlug, priceImports = [] }: AgenteChatProps) {
     : applied.singleEnd
 
   return (
-    <div className="flex flex-1 flex-col rounded-xl border bg-card overflow-hidden min-h-0">
+    <div className="flex flex-1 min-h-0 gap-3">
+
+      {/* ── Painel de histórico ─────────────────────────────────────────── */}
+      <div className="w-52 shrink-0 flex flex-col rounded-xl border bg-card overflow-hidden">
+        <div className="px-3 pt-3 pb-2 border-b">
+          <Button
+            variant="default"
+            size="sm"
+            className="w-full h-7 text-xs gap-1.5"
+            onClick={handleNewConversation}
+          >
+            <Plus className="size-3" />
+            Nova conversa
+          </Button>
+        </div>
+        <div className="flex-1 overflow-y-auto py-1">
+          {conversations.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground text-center py-6 px-3">
+              Nenhuma conversa ainda
+            </p>
+          ) : (
+            conversations.map((conv) => (
+              <button
+                key={conv.id}
+                onClick={() => handleSelectConversation(conv)}
+                className={cn(
+                  'group w-full text-left px-3 py-2 flex flex-col gap-0.5 hover:bg-accent transition-colors',
+                  selectedConvId === conv.id && 'bg-accent'
+                )}
+              >
+                <div className="flex items-start justify-between gap-1">
+                  <span className="text-[11px] font-medium leading-snug line-clamp-2 flex-1 text-foreground">
+                    {conv.title ?? (
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        <MessageSquare className="size-3 shrink-0" />
+                        Conversa
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    onClick={(e) => handleDeleteConversation(conv.id, e)}
+                    className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 rounded hover:text-destructive transition-all"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                </div>
+                <span className="text-[10px] text-muted-foreground/60">
+                  {fmtDate(conv.updated_at)}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* ── Chat card ───────────────────────────────────────────────────── */}
+      <div className="flex flex-1 flex-col rounded-xl border bg-card overflow-hidden min-h-0">
       {/* Barra de contexto */}
       <div className="border-b px-4 py-3 bg-muted/20">
         {hasComparison ? (
@@ -527,11 +710,17 @@ export function AgenteChat({ unitSlug, priceImports = [] }: AgenteChatProps) {
       <AgenteChatInner
         key={chatKey}
         unitSlug={activeSlug}
+        unitId={activeSlug ? unitId : ''}
         startDate={combinedStart}
         endDate={combinedEnd}
         priceImportIds={hasComparison ? [leftId, rightId] : undefined}
         priceAnalysisPeriods={hasComparison ? [leftPeriod, rightPeriod] : undefined}
+        initialMessages={selectedMessages}
+        conversationId={selectedConvId}
+        onConversationCreated={handleConversationCreated}
+        onMessagesUpdate={handleMessagesUpdate}
       />
+      </div>
     </div>
   )
 }

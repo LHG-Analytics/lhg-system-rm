@@ -503,7 +503,9 @@ export type Database = {
           id: string
           messages: Json
           status: Database["public"]["Enums"]["conversation_status"]
+          title: string | null
           unit_id: string
+          updated_at: string
           user_id: string
         }
         Insert: {
@@ -511,7 +513,9 @@ export type Database = {
           id?: string
           messages?: Json
           status?: Database["public"]["Enums"]["conversation_status"]
+          title?: string | null
           unit_id: string
+          updated_at?: string
           user_id: string
         }
         Update: {
@@ -519,7 +523,9 @@ export type Database = {
           id?: string
           messages?: Json
           status?: Database["public"]["Enums"]["conversation_status"]
+          title?: string | null
           unit_id?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: [

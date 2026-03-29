@@ -120,7 +120,7 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
 
         <TabsContent value="chat" className="flex flex-col flex-1 min-h-0 mt-0 pt-4">
           <Suspense fallback={null}>
-            <AgenteChat unitSlug={activeUnit?.slug ?? ''} priceImports={priceImports} />
+            <AgenteChat unitSlug={activeUnit?.slug ?? ''} unitId={activeUnit?.id ?? ''} priceImports={priceImports} />
           </Suspense>
         </TabsContent>
 
