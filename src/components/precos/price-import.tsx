@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Upload, CheckCircle, AlertCircle, Loader2, FileText, X, Calendar } from 'lucide-react'
+import { Upload, CheckCircle, AlertCircle, Loader2, FileText, X, CalendarIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -13,7 +13,82 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
+import { cn } from '@/lib/utils'
 import type { ParsedPriceRow, ParseResponse } from '@/app/api/agente/import-prices/route'
+
+// ─── DatePicker helper ────────────────────────────────────────────────────────
+
+function isoToDate(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+function dateToIso(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function fmtIso(iso: string) {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+
+interface DatePickerProps {
+  value: string | null
+  onChange: (v: string | null) => void
+  min?: string
+  max?: string
+  placeholder?: string
+  clearable?: boolean
+}
+
+function DatePicker({ value, onChange, min, max, placeholder = 'Selecionar', clearable }: DatePickerProps) {
+  const [open, setOpen] = useState(false)
+  const selected = value ? isoToDate(value) : undefined
+  const fromDate = min ? isoToDate(min) : undefined
+  const toDate   = max ? isoToDate(max) : undefined
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className={cn(
+          'flex items-center gap-1.5 h-7 rounded-md border bg-background px-2 text-xs',
+          'text-foreground cursor-pointer transition-colors hover:bg-accent hover:border-accent-foreground/20',
+          'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring'
+        )}>
+          <CalendarIcon className="size-3 text-muted-foreground shrink-0" />
+          <span>{value ? fmtIso(value) : <span className="text-muted-foreground">{placeholder}</span>}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={selected}
+          onSelect={(date) => {
+            if (date) { onChange(dateToIso(date)); setOpen(false) }
+          }}
+          disabled={(date) => {
+            if (fromDate && date < fromDate) return true
+            if (toDate   && date > toDate)   return true
+            return false
+          }}
+          initialFocus
+        />
+        {clearable && value && (
+          <div className="border-t p-2">
+            <button
+              onClick={() => { onChange(null); setOpen(false) }}
+              className="w-full text-xs text-center text-muted-foreground hover:text-foreground transition-colors py-1"
+            >
+              Limpar (atualmente ativa)
+            </button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 const CANAL_LABELS: Record<string, string> = {
   balcao_site: 'Balcão / Site Imediato',
@@ -208,37 +283,29 @@ export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
           {csvContent && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
               <div className="flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
-                <Calendar className="size-3.5" />
+                <CalendarIcon className="size-3.5" />
                 <span className="font-medium text-foreground">Vigência da tabela:</span>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-1.5">
-                  <label className="text-xs text-muted-foreground whitespace-nowrap">De</label>
-                  <input
-                    type="date"
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">De</span>
+                  <DatePicker
                     value={validFrom}
+                    onChange={(v) => v && setValidFrom(v)}
                     max={validUntil ?? undefined}
-                    onChange={(e) => e.target.value && setValidFrom(e.target.value)}
-                    className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
                   />
                 </div>
+                <span className="text-xs text-muted-foreground/40">→</span>
                 <div className="flex items-center gap-1.5">
-                  <label className="text-xs text-muted-foreground whitespace-nowrap">Até</label>
-                  <input
-                    type="date"
-                    value={validUntil ?? ''}
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">Até</span>
+                  <DatePicker
+                    value={validUntil}
+                    onChange={setValidUntil}
                     min={validFrom}
-                    onChange={(e) => setValidUntil(e.target.value || null)}
-                    className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                    placeholder="atualmente ativa"
+                    clearable
                   />
-                  {validUntil ? (
-                    <button
-                      onClick={() => setValidUntil(null)}
-                      className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-                    >
-                      Atualmente
-                    </button>
-                  ) : (
+                  {!validUntil && (
                     <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">atualmente ativa</span>
                   )}
                 </div>
@@ -300,7 +367,7 @@ export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
             )}
             {/* Vigência confirmada (read-only no preview) */}
             <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-              <Calendar className="size-3" />
+              <CalendarIcon className="size-3" />
               Vigência: <strong>{validFrom.split('-').reverse().join('/')}</strong>
               {' → '}
               {validUntil ? <strong>{validUntil.split('-').reverse().join('/')}</strong> : <span className="text-emerald-600 dark:text-emerald-400">atualmente ativa</span>}
