@@ -196,6 +196,26 @@ export async function POST(req: NextRequest) {
       },
     }),
 
+    gerar_heatmap: tool({
+      description:
+        'Gera um mapa de calor de ocupação ou giro por hora × dia da semana diretamente no chat. ' +
+        'Use quando o usuário pedir "mapa de calor", "heatmap", "calor de giro", ' +
+        '"como está a ocupação por hora" ou variações. ' +
+        'Retorna os parâmetros para renderização visual — NÃO tente descrever os dados em texto.',
+      inputSchema: z.object({
+        startDate: z.string().describe('Data inicial no formato YYYY-MM-DD, ex: "2026-03-23"'),
+        endDate:   z.string().describe('Data final no formato YYYY-MM-DD, ex: "2026-03-29"'),
+        metric: z.enum(['giro', 'ocupacao']).optional().describe('Métrica do heatmap: "giro" (padrão) ou "ocupacao"'),
+        label: z.string().optional().describe('Rótulo descritivo do período, ex: "últimos 7 dias"'),
+      }),
+      execute: async ({ startDate, endDate, metric = 'giro', label }) => {
+        const pool = getAutomPool(unit.slug)
+        if (!pool) return { error: `Conexão Automo não configurada para ${unit.slug}.` }
+        const rangeLabel = label ?? `${startDate} a ${endDate}`
+        return { startDate, endDate, metric, rangeLabel, unitSlug: unit.slug }
+      },
+    }),
+
     buscar_dados_automo: tool({
       description:
         'Consulta diretamente o ERP Automo para obter giro, total de locações e número de suítes por categoria ' +

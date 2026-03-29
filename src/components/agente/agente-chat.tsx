@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { MessageResponse } from '@/components/ai-elements/message'
+import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
@@ -98,6 +99,10 @@ const TOOL_META: Record<string, { loadingText: string; doneText: string }> = {
   buscar_dados_automo: {
     loadingText: 'Consultando ERP…',
     doneText: 'ERP consultado',
+  },
+  gerar_heatmap: {
+    loadingText: 'Gerando mapa de calor…',
+    doneText: 'Mapa de calor gerado',
   },
 }
 
@@ -268,13 +273,45 @@ function AgenteChatInner({
                 )}
               </div>
             ) : (
-              <div className="flex flex-col gap-1.5 max-w-[80%]">
-                {/* Tool call chips — v6: type é 'tool-<toolName>', state direto na part */}
+              <div className={cn(
+                'flex flex-col gap-2',
+                // Se tem heatmap, ocupa largura total; senão, limita a 80%
+                msg.parts.some((p) => isToolUIPart(p) && getToolName(p) === 'gerar_heatmap' && (p as { state: string }).state === 'output-available')
+                  ? 'w-full'
+                  : 'max-w-[80%]'
+              )}>
+                {/* Tool parts: chips de loading/done + heatmap inline */}
                 {msg.parts
                   .filter(isToolUIPart)
                   .map((p, i) => {
                     const toolName = getToolName(p)
                     const state = (p as { state: string }).state
+
+                    // Heatmap com output disponível: renderiza componente visual
+                    if (toolName === 'gerar_heatmap' && state === 'output-available') {
+                      const output = (p as { output: unknown }).output as
+                        | { startDate: string; endDate: string; metric: 'giro' | 'ocupacao'; rangeLabel: string; unitSlug: string }
+                        | { error: string }
+                      if ('error' in output) {
+                        return (
+                          <div key={i} className="flex gap-2 items-center text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+                            <AlertCircle className="size-4 shrink-0" />
+                            <span>{output.error}</span>
+                          </div>
+                        )
+                      }
+                      return (
+                        <OccupancyHeatmap
+                          key={i}
+                          unitSlug={output.unitSlug}
+                          startDate={output.startDate}
+                          endDate={output.endDate}
+                          rangeLabel={output.rangeLabel}
+                        />
+                      )
+                    }
+
+                    // Outros tools: chip animado
                     return <ToolCallChip key={i} toolName={toolName} state={state} />
                   })
                 }

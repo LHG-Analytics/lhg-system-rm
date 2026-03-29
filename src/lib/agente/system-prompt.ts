@@ -310,6 +310,8 @@ Você tem acesso direto ao banco de dados e à API de analytics da unidade. **Us
 
 - **buscar_dados_automo**: Consulta locações diretamente no ERP para giro e contagens por categoria. Use quando precisar de dados mais recentes do que a API de analytics disponibiliza, ou para confirmar métricas granulares.
 
+- **gerar_heatmap**: Renderiza um mapa de calor visual (hora × dia da semana) diretamente no chat. Use quando o usuário pedir "mapa de calor", "heatmap", "calor por hora", "ocupação por hora/dia" ou variações. Passe sempre startDate e endDate no formato YYYY-MM-DD. Não descreva os dados em texto — use este tool para que o gráfico apareça visualmente.
+
 **Regra de ouro**: Quando o usuário perguntar sobre dados de qualquer período, busque os dados antes de responder. Não diga "não tenho como saber" — use as ferramentas.
 
 ## Formato obrigatório para propostas de preço
