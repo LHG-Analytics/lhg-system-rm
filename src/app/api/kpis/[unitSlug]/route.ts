@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
-import {
-  fetchCompanyKPIs,
-  fetchRestaurantKPIs,
-  fetchBookingsKPIs,
-  todayOperational,
-  toApiDate,
-} from '@/lib/lhg-analytics/client'
+import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
+import { todayOperational, toApiDate } from '@/lib/lhg-analytics/client'
 import type { Database } from '@/types/database.types'
-import type { UnitKPIData, KPIQueryParams } from '@/lib/lhg-analytics/types'
+import type { UnitKPIData } from '@/lib/lhg-analytics/types'
 
 function getAdminClient() {
   return createSupabaseAdminClient<Database>(
@@ -23,77 +18,64 @@ export async function GET(
 ) {
   const { unitSlug } = await params
 
-  // Resolve unit from DB
+  // Valida que a unidade existe e está ativa
   const supabase = getAdminClient()
   const { data: unit, error } = await supabase
     .from('units')
-    .select('slug, api_base_url')
+    .select('slug')
     .eq('slug', unitSlug)
     .eq('is_active', true)
     .single()
 
-  if (error || !unit?.api_base_url) {
+  if (error || !unit) {
     return NextResponse.json(
-      { error: `Unit not found or has no API URL: ${unitSlug}` },
+      { error: `Unidade não encontrada ou inativa: ${unitSlug}` },
       { status: 404 }
     )
   }
 
-  // Date params: use query string or default to today's operational day
+  // Determina o período de consulta
   const searchParams = request.nextUrl.searchParams
-  let kpiParams: KPIQueryParams
+  let startDate: string
+  let endDate: string
 
-  const startDate = searchParams.get('startDate')
-  const endDate = searchParams.get('endDate')
+  const qs = searchParams.get('startDate')
+  const qe = searchParams.get('endDate')
 
-  if (startDate && endDate) {
-    kpiParams = { startDate, endDate }
+  if (qs && qe) {
+    startDate = qs
+    endDate   = qe
   } else {
     const month = searchParams.get('month') // YYYY-MM
     if (month) {
       const [year, m] = month.split('-').map(Number)
-      const firstDay = new Date(year, m - 1, 1)
-      const lastDay = new Date(year, m, 0)
-      kpiParams = { startDate: toApiDate(firstDay), endDate: toApiDate(lastDay) }
+      startDate = toApiDate(new Date(year, m - 1, 1))
+      endDate   = toApiDate(new Date(year, m, 0))
     } else {
-      kpiParams = todayOperational()
+      const today = todayOperational()
+      startDate   = today.startDate
+      endDate     = today.endDate
     }
   }
 
-  const lhgUnit = { slug: unit.slug, apiBaseUrl: unit.api_base_url }
+  try {
+    const company = await fetchCompanyKPIsFromAutomo(unitSlug, startDate, endDate)
 
-  // Fetch all three endpoints in parallel — restaurant and bookings failures are non-fatal
-  const [companyResult, restaurantResult, bookingsResult] = await Promise.allSettled([
-    fetchCompanyKPIs(lhgUnit, kpiParams),
-    fetchRestaurantKPIs(lhgUnit, kpiParams),
-    fetchBookingsKPIs(lhgUnit, kpiParams),
-  ])
+    const data: UnitKPIData = {
+      company,
+      restaurant: null,  // não usa LHG Analytics para restaurant
+      bookings:   null,  // não usa LHG Analytics para bookings
+      fetchedAt:  new Date().toISOString(),
+    }
 
-  if (companyResult.status === 'rejected') {
-    console.error(`[KPIs] Company fetch failed for ${unitSlug}:`, companyResult.reason)
+    return NextResponse.json(data, {
+      headers: { 'Cache-Control': 'no-store' },
+    })
+  } catch (err) {
+    console.error(`[KPIs/Automo] Erro para ${unitSlug}:`, err)
     return NextResponse.json(
-      { error: 'Failed to fetch company KPIs', detail: String(companyResult.reason) },
+      { error: 'Falha ao buscar KPIs do Automo', detail: String(err) },
       { status: 502 }
     )
   }
-
-  const data: UnitKPIData = {
-    company: companyResult.value,
-    restaurant: restaurantResult.status === 'fulfilled' ? restaurantResult.value : null,
-    bookings: bookingsResult.status === 'fulfilled' ? bookingsResult.value : null,
-    fetchedAt: new Date().toISOString(),
-  }
-
-  if (restaurantResult.status === 'rejected') {
-    console.warn(`[KPIs] Restaurant fetch failed for ${unitSlug}:`, restaurantResult.reason)
-  }
-  if (bookingsResult.status === 'rejected') {
-    console.warn(`[KPIs] Bookings fetch failed for ${unitSlug}:`, bookingsResult.reason)
-  }
-
-  return NextResponse.json(data, {
-    headers: {
-      'Cache-Control': 'no-store', // real-time data
-    },
-  })
 }
