@@ -1,11 +1,11 @@
 'use client'
 
 import { useChat } from '@ai-sdk/react'
-import { DefaultChatTransport } from 'ai'
+import { DefaultChatTransport, isToolUIPart, getToolName } from 'ai'
 import type { UIMessage } from 'ai'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, CalendarIcon, RefreshCw, Plus, MessageSquare, Trash2 } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, CalendarIcon, RefreshCw, Plus, MessageSquare, Trash2, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -86,6 +86,37 @@ function getDefaultDateRange(): { startDate: string; endDate: string } {
   const apiDate = (dt: Date) => `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`
 
   return { startDate: apiDate(start), endDate: apiDate(end) }
+}
+
+// ─── Tool call chip (feedback visual durante execução de ferramentas) ────────
+
+const TOOL_META: Record<string, { loadingText: string; doneText: string }> = {
+  buscar_kpis_periodo: {
+    loadingText: 'Buscando dados do período…',
+    doneText: 'Dados do período carregados',
+  },
+  buscar_dados_automo: {
+    loadingText: 'Consultando ERP…',
+    doneText: 'ERP consultado',
+  },
+}
+
+function ToolCallChip({ toolName, state }: { toolName: string; state: string }) {
+  const meta = TOOL_META[toolName]
+  const isLoading = state === 'call' || state === 'partial-call'
+  return (
+    <div className={cn(
+      'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium w-fit',
+      isLoading
+        ? 'bg-primary/10 text-primary'
+        : 'bg-green-500/10 text-green-600 dark:text-green-400'
+    )}>
+      {isLoading
+        ? <Loader2 className="size-3 animate-spin" />
+        : <CheckCircle2 className="size-3" />}
+      <span>{isLoading ? (meta?.loadingText ?? 'Processando…') : (meta?.doneText ?? 'Concluído')}</span>
+    </div>
+  )
 }
 
 // ─── Inner chat (recriado quando key muda) ────────────────────────────────────
@@ -230,28 +261,37 @@ function AgenteChatInner({
               </div>
             )}
 
-            <div
-              className={cn(
-                'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm',
-                msg.role === 'user'
-                  ? 'bg-primary text-primary-foreground rounded-br-sm whitespace-pre-wrap'
-                  : 'bg-muted rounded-bl-sm'
-              )}
-            >
-              {msg.role === 'user'
-                ? msg.parts.map((part, i) =>
-                    part.type === 'text' ? <span key={i}>{part.text}</span> : null
-                  )
-                : (
-                  <MessageResponse>
-                    {msg.parts
-                      .filter((p) => p.type === 'text')
-                      .map((p) => (p as { type: 'text'; text: string }).text)
-                      .join('')}
-                  </MessageResponse>
-                )
-              }
-            </div>
+            {msg.role === 'user' ? (
+              <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm bg-primary text-primary-foreground rounded-br-sm whitespace-pre-wrap">
+                {msg.parts.map((part, i) =>
+                  part.type === 'text' ? <span key={i}>{part.text}</span> : null
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5 max-w-[80%]">
+                {/* Tool call chips — v6: type é 'tool-<toolName>', state direto na part */}
+                {msg.parts
+                  .filter(isToolUIPart)
+                  .map((p, i) => {
+                    const toolName = getToolName(p)
+                    const state = (p as { state: string }).state
+                    return <ToolCallChip key={i} toolName={toolName} state={state} />
+                  })
+                }
+                {/* Text bubble */}
+                {(() => {
+                  const text = msg.parts
+                    .filter((p) => p.type === 'text')
+                    .map((p) => (p as { type: 'text'; text: string }).text)
+                    .join('')
+                  return text ? (
+                    <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 text-sm">
+                      <MessageResponse>{text}</MessageResponse>
+                    </div>
+                  ) : null
+                })()}
+              </div>
+            )}
 
             {msg.role === 'user' && (
               <div className="shrink-0 rounded-full bg-secondary p-1.5 h-7 w-7 flex items-center justify-center mt-0.5">
@@ -261,7 +301,15 @@ function AgenteChatInner({
           </div>
         ))}
 
-        {isStreaming && messages[messages.length - 1]?.role === 'user' && (
+        {isStreaming && (() => {
+          const last = messages[messages.length - 1]
+          if (!last || last.role === 'user') return true
+          // Mostra spinner enquanto mensagem do assistant não tem texto nem tool chips
+          const hasContent = last.parts.some(
+            (p) => (p.type === 'text' && (p as { type: 'text'; text: string }).text.length > 0) || isToolUIPart(p)
+          )
+          return !hasContent
+        })() && (
           <div className="flex gap-3 justify-start">
             <div className="shrink-0 rounded-full bg-primary/10 p-1.5 h-7 w-7 flex items-center justify-center">
               <Bot className="size-4 text-primary" />
