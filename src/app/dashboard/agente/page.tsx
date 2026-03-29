@@ -81,7 +81,7 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
           .limit(20)
       : Promise.resolve({ data: [] }),
     activeUnit
-      ? supabase
+      ? admin
           .from('price_imports')
           .select('id, imported_at, canals, is_active, valid_from, valid_until')
           .eq('unit_id', activeUnit.id)
