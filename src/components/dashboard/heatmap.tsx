@@ -279,7 +279,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: H
                     metric === 'giro'
                       ? val.toFixed(1)
                       : metric === 'revpar'
-                        ? `R$${val.toFixed(0)}`
+                        ? `R$ ${val.toFixed(0)}`
                         : `${val.toFixed(0)}%`
                   )
                 : '–'
