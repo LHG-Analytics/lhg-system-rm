@@ -132,7 +132,7 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 
 **RLS:** funções `current_user_role()` e `current_user_unit_id()` como `SECURITY DEFINER` são a base de todas as policies.
 
-## Issues Linear (status atual — 2026-03-29 tarde)
+## Issues Linear (status atual — 2026-04-04)
 
 ### ✅ Concluídos
 - **LHG-8:** Setup Next.js + Supabase + Tailwind + shadcn/ui
@@ -142,6 +142,7 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 - **LHG-14:** Sidebar + Navegação + Layout base (incl. hover expand/collapse, unit switcher com Suspense)
 - **LHG-21:** KPIs em tempo real via Automo (substitui integração Analytics legada)
 - **LHG-5:** SPIKE — Mapear banco Automo
+- **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations automáticas
 - **LHG-64:** Supabase local + vínculo remoto
 - **LHG-65:** Google OAuth configurado
 - **LHG-66:** Logo LHG na tela de login
@@ -171,14 +172,15 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Pool de conexões por unidade via variáveis de ambiente (`AUTOMO_DB_*`)
   - `UNIT_CATEGORY_IDS` mapeia slug → IDs de categoria Automo
   - `ssl: false` para servidores internos sem suporte a SSL
+- **LHG-29:** Dashboard: KPIs RevPAR, TRevPAR, Giro, TMO, Faturamento, Ticket Médio, Locações e Taxa de Ocupação
+  - 8 cards com valor atual, delta % colorido (Badge + ícone TrendingUp/Down) e valor anterior absoluto
+  - Calculados via `fetchCompanyKPIsFromAutomo()` com 10 queries paralelas
 - **LHG-30:** Dashboard: Heatmap ocupação × hora × dia da semana
-  - Mapa de calor com giro e taxa de ocupação por hora × dia da semana
-  - Filtros: categoria de suíte, tipo de data (entrada/saída/todas), KPI (giro/ocupação)
+  - Mapa de calor com giro, taxa de ocupação, RevPAR e TRevPAR por hora × dia da semana
+  - Filtros: categoria de suíte, tipo de data (entrada/saída/todas), KPI (giro/ocupação/revpar/trevpar)
   - Seletor de período global no dashboard (Últimos 7 dias / Este mês / Último mês fechado / Personalizada)
   - Cálculo de giro: `SUM(rentals/suites) / n_ocorrências_do_dia` (média correta por dia da semana)
   - Cálculo de ocupação: `generate_series` distribui cada locação pelos slots de 1h que ela ocupa
-  - `date_occurrences` CTE via `generate_series` para contar ocorrências reais de cada dia da semana
-  - Tabelas semanais: RevPAR por Dia da Semana e Giro por Dia da Semana (estrutura correta do payload)
   - Favicon substituído pelo logo LHG (`src/app/icon.png`)
 - **LHG-72:** Ajustes de layout e polish — página do Agente RM
   - Sidebar de histórico extraída do `TabsContent` para o nível da página (alinha com o topo do card)
@@ -190,6 +192,22 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Rota `/api/cron/revisoes` (auth `CRON_SECRET`): executa revisões do dia, gera análise via AI Gateway, salva em `rm_conversations` com título `"Revisão agendada — DD/MM/YYYY · Nome da Unidade"`, cria notificação in-app
   - `vercel.json` com cron `0 10 * * *` (10:00 UTC = 7h BRT) — 1 dos 2 slots gratuitos do Hobby
   - **Variável necessária em produção:** `CRON_SECRET` (adicionar via `vercel env add CRON_SECRET production`)
+- **LHG-75:** Dashboard: Filtros avançados — hora, status de locação e tipo de data
+  - Filtro de hora: `HH:00:00 → HH:59:59`; default `06:00:00 → 05:59:59` (dia operacional completo)
+  - Filtro de status: Finalizadas / Transferidas / Canceladas / Em aberto / Todas (`fimocupacaotipo`)
+  - Filtro de tipo de data: Entrada / Saída / Todas (troca coluna entre `datainicialdaocupacao` e `datafinaldaocupacao`)
+  - Helpers: `buildTimeFilter()`, `buildStatusFilter()`, `buildDateRangeFilter()` em `company-kpis.ts`
+  - Todos os filtros persistem na URL como search params e afetam KPIs + heatmap
+- **LHG-76:** Dashboard: BigNumbers com comparativo a/a e m/m + previsão de fechamento
+  - Toggle a/a ↔ m/m global para todos os 8 cards
+  - Valor anterior absoluto em cada card (não só percentual)
+  - Previsão de fechamento do mês para todos os KPIs incluindo Taxa de Ocupação e RevPAR
+  - 10 queries paralelas: currentBN, prevBN (a/a), prevMonBN (m/m), monthBN, revOcc, prevRevOcc, prevMonRevOcc, monthRevOcc, suiteCatTable, weekTables
+  - Novos campos em tipos: `prevMonthDate`, `totalAllOccupancyRate*` em todos os períodos, `totalAllRevparForecast`
+- **LHG-77:** UI: Redesign dashboard com componentes shadcn — KPI cards e filtros
+  - KPI cards: `Card/CardHeader/CardContent`, `Badge` com ícone TrendingUp/Down, `Separator`, `ToggleGroup`
+  - DateRangePicker: `Select`, `ToggleGroup` segmentado, `Button`, `Input`, `Label`, `Separator` vertical
+  - Novos componentes instalados: `toggle.tsx`, `toggle-group.tsx`
 
 ### 🔲 Backlog MVP (por prioridade)
 
@@ -197,14 +215,13 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 1. **LHG-71:** Logo de cada unidade no seletor da sidebar
 
 #### 🚀 Deploy e CI/CD
-2. **LHG-49:** CI/CD GitHub Actions → Vercel + Supabase migrations
-3. **LHG-50:** Deploy produção + onboarding unidades piloto
+2. **LHG-50:** Deploy produção + onboarding unidades piloto
 
 #### 📊 Dashboard — enriquecimento
-5. **LHG-31:** Dashboard: Visão de canais
+3. **LHG-31:** Dashboard: Visão de canais
 
 #### 🔔 Notificações
-6. **LHG-32:** Notificações push + email (Resend)
+4. **LHG-32:** Notificações push + email (Resend)
 
 ### 📅 Pós-MVP (Backlog)
 LHG-51 a LHG-63: guardrails, clima, eventos, trânsito, aprendizado autônomo, dynamic pricing loop.
