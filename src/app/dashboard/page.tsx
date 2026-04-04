@@ -10,15 +10,20 @@ import { DateRangePicker } from '@/components/dashboard/date-range-picker'
 
 interface DashboardPageProps {
   searchParams: Promise<{
-    unit?:   string
-    preset?: string
-    start?:  string
-    end?:    string
+    unit?:       string
+    preset?:     string
+    start?:      string
+    end?:        string
+    startHour?:  string
+    endHour?:    string
   }>
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-  const { unit: unitSlug, preset, start, end } = await searchParams
+  const { unit: unitSlug, preset, start, end, startHour: shParam, endHour: ehParam } = await searchParams
+
+  const startHour = Math.min(23, Math.max(0, parseInt(shParam ?? '0')  || 0))
+  const endHour   = Math.min(23, Math.max(0, parseInt(ehParam ?? '23') || 23))
 
   const supabase = await createClient()
   const { data: profile } = await supabase
@@ -83,9 +88,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const company = await fetchCompanyKPIsFromAutomo(
     activeUnit.slug,
     startDDMMYYYY,
-    endDDMMYYYY
+    endDDMMYYYY,
+    startHour,
+    endHour,
   ).catch((e) => {
-    console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY}):`, e)
+    console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h):`, e)
     return null
   })
 
