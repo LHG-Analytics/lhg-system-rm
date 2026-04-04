@@ -360,21 +360,21 @@ async function queryWeekTables(
     -- CROSS JOIN: toda categoria × todo DOW do período, LEFT JOIN nos dados reais
     SELECT
       c.category,
-      do.dow::int                           AS dow,
+      occ.dow::int                          AS dow,
       COALESCE(r.total_rentals,  0)         AS total_rentals,
       COALESCE(r.rental_revenue, 0)         AS rental_revenue,
       COALESCE(sc.total_suites,  1)         AS total_suites,
-      do.n                                  AS dow_occurrences,
+      occ.n                                 AS dow_occurrences,
       COALESCE(td.total_rentals,  0)        AS total_rentals_dow,
       COALESCE(td.rental_revenue, 0)        AS total_revenue_dow,
       al.n                                  AS all_suites
     FROM categories_in_period c
-    CROSS JOIN dow_occurrences do
+    CROSS JOIN dow_occurrences occ
     LEFT JOIN suites_por_cat  sc ON c.category = sc.descricao
-    LEFT JOIN rentals_cat_dow  r ON c.category = r.category AND do.dow = r.dow
-    LEFT JOIN totals_by_dow   td ON do.dow = td.dow
+    LEFT JOIN rentals_cat_dow  r ON c.category = r.category AND occ.dow = r.dow
+    LEFT JOIN totals_by_dow   td ON occ.dow = td.dow
     CROSS JOIN all_suites al
-    ORDER BY c.category, do.dow
+    ORDER BY c.category, occ.dow
   `
 
   const { rows } = await pool.query<WeekRow>(sql, [isoStart, isoEnd])
