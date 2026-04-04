@@ -275,14 +275,8 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: H
                 {HOURS.map((h) => {
                   const val = matrix.get(`${day}-${h}`)
                   const label = val !== undefined
-                ? (
-                    metric === 'giro'
-                      ? val.toFixed(1)
-                      : metric === 'revpar'
-                        ? `R$ ${val.toFixed(0)}`
-                        : `${val.toFixed(0)}%`
-                  )
-                : '–'
+                    ? formatValue(val, metric)
+                    : '–'
                   return (
                     <div
                       key={h}
