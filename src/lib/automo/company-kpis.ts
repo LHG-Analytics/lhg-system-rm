@@ -40,6 +40,16 @@ function secondsToHMS(totalSec: number): string {
 }
 
 /**
+ * Gera fragmento SQL para filtrar por fimocupacaotipo.
+ * 'TODAS' → sem filtro; 'ABERTA' → IS NULL; outros → = 'VALOR'
+ */
+function buildStatusFilter(status: string): string {
+  if (status === 'TODAS')  return ''
+  if (status === 'ABERTA') return 'AND la.fimocupacaotipo IS NULL'
+  return `AND la.fimocupacaotipo = '${status}'`
+}
+
+/**
  * Gera fragmento SQL para filtrar por hora de início da locação.
  * startHour=0 + endHour=23 → sem filtro (todos os horários).
  * Suporta wrap-around: ex. startHour=22, endHour=6 → OR condition.
@@ -82,6 +92,7 @@ async function queryBigNumbers(
   isoEnd: string,          // exclusive upper bound (D+1 midnight)
   daysDiff: number,
   timeFilter = '',
+  statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
 ) {
   if (!pool) throw new Error('pool is null')
 
@@ -101,7 +112,7 @@ async function queryBigNumbers(
       INNER JOIN saidaestoqueitem sei ON se.id = sei.id_saidaestoque
       WHERE la.datainicialdaocupacao >= $1
         AND la.datainicialdaocupacao <  $2
-        AND la.fimocupacaotipo = 'FINALIZADA'
+        ${statusFilter}
         AND sei.cancelado IS NULL
         AND ca_apt.id IN (${catIds})
         ${timeFilter}
@@ -154,7 +165,7 @@ async function queryBigNumbers(
     LEFT JOIN  receita_consumo rc   ON la.id_apartamentostate = rc.id_locacao
     WHERE la.datainicialdaocupacao >= $1
       AND la.datainicialdaocupacao <  $2
-      AND la.fimocupacaotipo = 'FINALIZADA'
+      ${statusFilter}
       AND ca.id IN (${catIds})
       ${timeFilter}
   `
@@ -196,6 +207,7 @@ async function queryDataTableSuiteCategory(
   isoEnd: string,
   daysDiff: number,
   timeFilter = '',
+  statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
 ): Promise<DataTableSuiteCategory[]> {
   const sql = `
     WITH receita_consumo AS (
@@ -213,7 +225,7 @@ async function queryDataTableSuiteCategory(
       INNER JOIN saidaestoqueitem sei ON se.id = sei.id_saidaestoque
       WHERE la.datainicialdaocupacao >= $1
         AND la.datainicialdaocupacao <  $2
-        AND la.fimocupacaotipo = 'FINALIZADA'
+        ${statusFilter}
         AND sei.cancelado IS NULL
         AND ca_apt.id IN (${catIds})
         ${timeFilter}
@@ -317,6 +329,7 @@ async function queryWeekTables(
   isoStart: string,
   isoEnd: string,
   timeFilter = '',
+  statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
 ): Promise<{ giro: DataTableGiroByWeek[]; revpar: DataTableRevparByWeek[] }> {
   // CROSS JOIN entre categorias ativas × todos os DOW do período.
   // LEFT JOIN nos dados reais → dias sem locação aparecem com 0 (comportamento original).
@@ -330,7 +343,7 @@ async function queryWeekTables(
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
       WHERE la.datainicialdaocupacao >= $1
         AND la.datainicialdaocupacao <  $2
-        AND la.fimocupacaotipo = 'FINALIZADA'
+        ${statusFilter}
         AND ca.id IN (${catIds})
         ${timeFilter}
     ),
@@ -360,7 +373,7 @@ async function queryWeekTables(
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
       WHERE la.datainicialdaocupacao >= $1
         AND la.datainicialdaocupacao <  $2
-        AND la.fimocupacaotipo = 'FINALIZADA'
+        ${statusFilter}
         AND ca.id IN (${catIds})
         ${timeFilter}
       GROUP BY ca.descricao, dow
@@ -452,6 +465,7 @@ async function queryTotalRevOcc(
   isoEnd: string,
   daysDiff: number,
   timeFilter = '',
+  statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
 ): Promise<{ totalRevpar: number; totalOccupancyRate: number }> {
   const sql = `
     SELECT
@@ -466,7 +480,7 @@ async function queryTotalRevOcc(
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
     WHERE la.datainicialdaocupacao >= $1
       AND la.datainicialdaocupacao <  $2
-      AND la.fimocupacaotipo = 'FINALIZADA'
+      ${statusFilter}
       AND ca.id IN (${catIds})
       ${timeFilter}
   `
@@ -496,6 +510,7 @@ export async function fetchCompanyKPIsFromAutomo(
   endDateDDMMYYYY:   string,   // DD/MM/YYYY
   startHour = 0,               // 0–23, inclusive
   endHour   = 23,              // 0–23, inclusive; 0+23 = sem filtro
+  rentalStatus = 'FINALIZADA', // FINALIZADA | TRANSFERIDA | CANCELADA | ABERTA | TODAS
 ): Promise<CompanyKPIResponse> {
   const pool = getAutomPool(unitSlug)
   if (!pool) throw new Error(`Automo pool indisponível para ${unitSlug}`)
@@ -525,8 +540,9 @@ export async function fetchCompanyKPIsFromAutomo(
   const totalDaysInMonth = new Date(nowBR.getFullYear(), nowBR.getMonth() + 1, 0).getDate()
   const remainingDays = totalDaysInMonth - daysElapsed
 
-  // Filtro de hora (aplicado a todas as queries de locação)
-  const timeFilter = buildTimeFilter(startHour, endHour)
+  // Filtros dinâmicos (aplicados a todas as queries de locação)
+  const timeFilter   = buildTimeFilter(startHour, endHour)
+  const statusFilter = buildStatusFilter(rentalStatus)
 
   // Executa queries em paralelo — cada uma loga o próprio erro para diagnóstico
   const tag = `[KPIs/${unitSlug}]`
@@ -540,12 +556,12 @@ export async function fetchCompanyKPIsFromAutomo(
   }
 
   const [currentBN, prevBN, monthBN, revOcc, suiteCatTable, weekTables] = await Promise.all([
-    queryBigNumbers(pool, catIds, isoStart,    isoEnd,    daysDiff,       timeFilter).catch(tagError('BigNumbers/current')),
-    queryBigNumbers(pool, catIds, prevIsoStart, prevIsoEnd, daysDiff,     timeFilter).catch(tagError('BigNumbers/prev')),
-    queryBigNumbers(pool, catIds, monIsoStart,  monIsoEnd,  daysElapsed || 1, timeFilter).catch(tagError('BigNumbers/month')),
-    queryTotalRevOcc(pool, catIds, isoStart, isoEnd, daysDiff,            timeFilter).catch(tagError('TotalRevOcc')),
-    queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff, timeFilter).catch(tagError('DataTableSuiteCategory')),
-    queryWeekTables(pool, catIds, isoStart, isoEnd,                        timeFilter).catch(tagError('WeekTables')),
+    queryBigNumbers(pool, catIds, isoStart,    isoEnd,    daysDiff,           timeFilter, statusFilter).catch(tagError('BigNumbers/current')),
+    queryBigNumbers(pool, catIds, prevIsoStart, prevIsoEnd, daysDiff,         timeFilter, statusFilter).catch(tagError('BigNumbers/prev')),
+    queryBigNumbers(pool, catIds, monIsoStart,  monIsoEnd,  daysElapsed || 1, timeFilter, statusFilter).catch(tagError('BigNumbers/month')),
+    queryTotalRevOcc(pool, catIds, isoStart, isoEnd, daysDiff,                timeFilter, statusFilter).catch(tagError('TotalRevOcc')),
+    queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff,     timeFilter, statusFilter).catch(tagError('DataTableSuiteCategory')),
+    queryWeekTables(pool, catIds, isoStart, isoEnd,                           timeFilter, statusFilter).catch(tagError('WeekTables')),
   ])
 
   // Previsão de fechamento do mês

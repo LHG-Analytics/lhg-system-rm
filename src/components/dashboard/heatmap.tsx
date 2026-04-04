@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { HeatmapCell, HeatmapMetric, HeatmapDateType, HeatmapCategory } from '@/app/api/heatmap/route'
@@ -76,6 +77,9 @@ interface HeatmapProps {
 }
 
 export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: HeatmapProps) {
+  const searchParams = useSearchParams()
+  const rentalStatus = searchParams.get('status') ?? 'FINALIZADA'
+
   const [metric,     setMetric]     = useState<HeatmapMetric>('giro')
   const [dateType,   setDateType]   = useState<HeatmapDateType>('all')
   const [categoryId, setCategoryId] = useState<string | null>(null)
@@ -98,6 +102,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: H
         dateType:  dt,
         startDate,
         endDate,
+        status:    rentalStatus,
       })
       if (catId) params.set('categoryId', catId)
 
@@ -114,7 +119,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: H
     } finally {
       setLoading(false)
     }
-  }, [unitSlug, startDate, endDate])
+  }, [unitSlug, startDate, endDate, rentalStatus])
 
   useEffect(() => {
     fetchData(metric, dateType, categoryId)

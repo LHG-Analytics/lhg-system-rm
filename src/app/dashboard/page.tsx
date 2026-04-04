@@ -16,14 +16,21 @@ interface DashboardPageProps {
     end?:        string
     startHour?:  string
     endHour?:    string
+    status?:     string
   }>
 }
 
-export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-  const { unit: unitSlug, preset, start, end, startHour: shParam, endHour: ehParam } = await searchParams
+const VALID_STATUSES = ['FINALIZADA', 'TRANSFERIDA', 'CANCELADA', 'ABERTA', 'TODAS'] as const
+type RentalStatus = typeof VALID_STATUSES[number]
 
-  const startHour = Math.min(23, Math.max(0, parseInt(shParam ?? '0')  || 0))
-  const endHour   = Math.min(23, Math.max(0, parseInt(ehParam ?? '23') || 23))
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const { unit: unitSlug, preset, start, end, startHour: shParam, endHour: ehParam, status: statusParam } = await searchParams
+
+  const startHour    = Math.min(23, Math.max(0, parseInt(shParam ?? '0')  || 0))
+  const endHour      = Math.min(23, Math.max(0, parseInt(ehParam ?? '23') || 23))
+  const rentalStatus: RentalStatus = VALID_STATUSES.includes(statusParam as RentalStatus)
+    ? (statusParam as RentalStatus)
+    : 'FINALIZADA'
 
   const supabase = await createClient()
   const { data: profile } = await supabase
@@ -91,8 +98,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     endDDMMYYYY,
     startHour,
     endHour,
+    rentalStatus,
   ).catch((e) => {
-    console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h):`, e)
+    console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h status=${rentalStatus}):`, e)
     return null
   })
 
@@ -113,12 +121,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <DashboardKPICards company={company} />
       <DashboardCharts company={company} />
-      <OccupancyHeatmap
-        unitSlug={activeUnit.slug}
-        startDate={dateRange.startDate}
-        endDate={dateRange.endDate}
-        rangeLabel={dateRange.label}
-      />
+      <Suspense fallback={null}>
+        <OccupancyHeatmap
+          unitSlug={activeUnit.slug}
+          startDate={dateRange.startDate}
+          endDate={dateRange.endDate}
+          rangeLabel={dateRange.label}
+        />
+      </Suspense>
     </div>
   )
 }
