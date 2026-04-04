@@ -23,6 +23,7 @@ export interface CompanyBigNumbersMonthlyForecast {
   totalAllRentalsApartmentsForecast: number
   totalAllTicketAverageForecast: number
   totalAllTrevparForecast: number
+  totalAllRevparForecast: number
   totalAllGiroForecast: number
   totalAverageOccupationTimeForecast: string // "HH:MM:SS"
 }

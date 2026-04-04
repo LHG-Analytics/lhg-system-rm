@@ -603,12 +603,13 @@ export async function fetchCompanyKPIsFromAutomo(
     }
   }
 
-  const [currentBN, prevBN, prevMonBN, monthBN, revOcc, suiteCatTable, weekTables] = await Promise.all([
+  const [currentBN, prevBN, prevMonBN, monthBN, revOcc, monthRevOcc, suiteCatTable, weekTables] = await Promise.all([
     queryBigNumbers(pool, catIds, isoStart,      isoEnd,      daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/current')),
     queryBigNumbers(pool, catIds, prevIsoStart,  prevIsoEnd,  daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prev')),
     queryBigNumbers(pool, catIds, prevMonIsoStart, prevMonIsoEnd, daysDiff,       timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prevMonth')),
     queryBigNumbers(pool, catIds, monIsoStart,   monIsoEnd,   daysElapsed || 1,   timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/month')),
-    queryTotalRevOcc(pool, catIds, isoStart, isoEnd, daysDiff,                    timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc')),
+    queryTotalRevOcc(pool, catIds, isoStart,     isoEnd,      daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc')),
+    queryTotalRevOcc(pool, catIds, monIsoStart,  monIsoEnd,   daysElapsed || 1,   timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc/month')),
     queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff,         timeFilter, statusFilter, dateCol).catch(tagError('DataTableSuiteCategory')),
     queryWeekTables(pool, catIds, isoStart, isoEnd,                               timeFilter, statusFilter, dateCol).catch(tagError('WeekTables')),
   ])
@@ -619,12 +620,16 @@ export async function fetchCompanyKPIsFromAutomo(
   const dailyAvgRentals = monthBN.totalRentals     / safeElapsed
   const forecastValue   = monthBN.totalAllValue   + dailyAvgValue   * remainingDays
   const forecastRentals = monthBN.totalRentals     + dailyAvgRentals * remainingDays
+  // RevPAR forecast: taxa diária atual projetada para o mês completo
+  // monthRevOcc.totalRevpar = receita_locacao / suites / daysElapsed → mesma taxa para o mês inteiro
+  const revparForecast  = +monthRevOcc.totalRevpar.toFixed(2)
 
   const monthlyForecast: CompanyBigNumbers['monthlyForecast'] = {
     totalAllValueForecast:              +forecastValue.toFixed(2),
     totalAllRentalsApartmentsForecast:  Math.round(forecastRentals),
     totalAllTicketAverageForecast:      forecastRentals > 0 ? +(forecastValue / forecastRentals).toFixed(2) : 0,
     totalAllTrevparForecast:            currentBN.totalSuites > 0 ? +(forecastValue / currentBN.totalSuites / totalDaysInMonth).toFixed(2) : 0,
+    totalAllRevparForecast:             revparForecast,
     totalAllGiroForecast:               currentBN.totalSuites > 0 ? +(forecastRentals / currentBN.totalSuites / totalDaysInMonth).toFixed(2) : 0,
     totalAverageOccupationTimeForecast: monthBN.avgOccTime,
   }
