@@ -2,45 +2,57 @@
 
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
-import { Calendar } from 'lucide-react'
+import { CalendarIcon } from 'lucide-react'
 import type { DatePreset } from '@/lib/date-range'
 import { resolvePreset } from '@/lib/date-range'
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+
+// ─── Dados estáticos ──────────────────────────────────────────────────────────
 
 const PRESETS: { value: Exclude<DatePreset, 'custom'>; label: string }[] = [
-  { value: '7d',          label: 'Últimos 7 dias'     },
-  { value: 'this-month',  label: 'Este mês'           },
-  { value: 'last-month',  label: 'Último mês fechado' },
+  { value: '7d',         label: 'Últimos 7 dias'     },
+  { value: 'this-month', label: 'Este mês'           },
+  { value: 'last-month', label: 'Último mês fechado' },
 ]
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 
-/** Formata hora de início: 06 → "06:00:00" */
 function fmtStartHour(h: number) { return `${String(h).padStart(2, '0')}:00:00` }
-/** Formata hora de fim:   05 → "05:59:59" */
 function fmtEndHour(h: number)   { return `${String(h).padStart(2, '0')}:59:59` }
-
 function clampHour(v: string | null, fallback: number): number {
   const n = parseInt(v ?? '')
   return isNaN(n) || n < 0 || n > 23 ? fallback : n
 }
 
-export type DateType = 'all' | 'checkin' | 'checkout'
-
-const DATE_TYPE_OPTIONS: { value: DateType; label: string; description: string }[] = [
-  { value: 'checkin',  label: 'Entrada', description: 'Filtrar pela data de entrada na suíte' },
-  { value: 'checkout', label: 'Saída',   description: 'Filtrar pela data de saída da suíte'   },
-  { value: 'all',      label: 'Todas',   description: 'Considerar entradas e saídas'          },
-]
-
+export type DateType    = 'all' | 'checkin' | 'checkout'
 export type RentalStatus = 'FINALIZADA' | 'TRANSFERIDA' | 'CANCELADA' | 'ABERTA' | 'TODAS'
 
-const STATUS_OPTIONS: { value: RentalStatus; label: string; description: string }[] = [
-  { value: 'FINALIZADA',  label: 'Finalizadas',   description: 'Locações encerradas normalmente' },
-  { value: 'TRANSFERIDA', label: 'Transferidas',  description: 'Transferidas para outra suíte'   },
-  { value: 'CANCELADA',   label: 'Canceladas',    description: 'Canceladas antes do fim'         },
-  { value: 'ABERTA',      label: 'Em aberto',     description: 'Locações ainda em andamento'     },
-  { value: 'TODAS',       label: 'Todas',         description: 'Sem filtro de status'            },
+const DATE_TYPE_OPTIONS: { value: DateType; label: string }[] = [
+  { value: 'checkin',  label: 'Entrada' },
+  { value: 'checkout', label: 'Saída'   },
+  { value: 'all',      label: 'Todas'   },
 ]
+
+const STATUS_OPTIONS: { value: RentalStatus; label: string }[] = [
+  { value: 'FINALIZADA',  label: 'Finalizadas'  },
+  { value: 'TRANSFERIDA', label: 'Transferidas' },
+  { value: 'CANCELADA',   label: 'Canceladas'   },
+  { value: 'ABERTA',      label: 'Em aberto'    },
+  { value: 'TODAS',       label: 'Todas'        },
+]
+
+// ─── Componente ───────────────────────────────────────────────────────────────
 
 export function DateRangePicker() {
   const searchParams = useSearchParams()
@@ -51,11 +63,8 @@ export function DateRangePicker() {
   const urlStart = searchParams.get('start') ?? ''
   const urlEnd   = searchParams.get('end')   ?? ''
 
-  function getResolved(p: DatePreset, s: string, e: string) {
-    return resolvePreset(p, s || null, e || null)
-  }
+  const initial = resolvePreset(preset, urlStart || null, urlEnd || null)
 
-  const initial = getResolved(preset, urlStart, urlEnd)
   const [localStart,     setLocalStart]     = useState(initial.startDate)
   const [localEnd,       setLocalEnd]       = useState(initial.endDate)
   const [localStartHour, setLocalStartHour] = useState(() => clampHour(searchParams.get('startHour'), 6))
@@ -63,20 +72,19 @@ export function DateRangePicker() {
   const [localDateType,  setLocalDateType]  = useState<DateType>(
     () => (searchParams.get('dateType') as DateType) ?? 'checkin'
   )
-  const [localStatus,    setLocalStatus]    = useState<RentalStatus>(
+  const [localStatus, setLocalStatus] = useState<RentalStatus>(
     () => (searchParams.get('status') as RentalStatus) ?? 'FINALIZADA'
   )
 
-  // Sync when URL changes (unit switch, back/forward)
   useEffect(() => {
     const p = (searchParams.get('preset') ?? 'this-month') as DatePreset
     const s = searchParams.get('start') ?? ''
     const e = searchParams.get('end')   ?? ''
-    const r = getResolved(p, s, e)
+    const r = resolvePreset(p, s || null, e || null)
     setLocalStart(r.startDate)
     setLocalEnd(r.endDate)
     setLocalStartHour(clampHour(searchParams.get('startHour'), 6))
-    setLocalEndHour(clampHour(searchParams.get('endHour'),   5))
+    setLocalEndHour(clampHour(searchParams.get('endHour'),     5))
     setLocalDateType((searchParams.get('dateType') as DateType) ?? 'checkin')
     setLocalStatus((searchParams.get('status') as RentalStatus) ?? 'FINALIZADA')
   }, [searchParams])
@@ -121,107 +129,121 @@ export function DateRangePicker() {
     })
   }
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today        = new Date().toISOString().slice(0, 10)
   const displayPreset = PRESETS.find((p) => p.value === preset)?.value ?? 'this-month'
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <Calendar className="size-3.5 text-foreground shrink-0 cursor-pointer" />
+    <div className="flex items-end gap-3 flex-wrap">
 
-      <select
-        value={displayPreset}
-        onChange={(e) => handlePresetChange(e.target.value)}
-        className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-      >
-        {PRESETS.map((opt) => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
-
-      <div className="flex items-center gap-1.5">
-        <input
-          type="date"
-          value={localStart}
-          max={localEnd || today}
-          onChange={(e) => setLocalStart(e.target.value)}
-          className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-        />
-        <span className="text-xs text-muted-foreground">→</span>
-        <input
-          type="date"
-          value={localEnd}
-          min={localStart}
-          max={today}
-          onChange={(e) => setLocalEnd(e.target.value)}
-          className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-        />
+      {/* Período */}
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Período</Label>
+        <div className="flex items-center gap-2">
+          <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
+          <Select value={displayPreset} onValueChange={handlePresetChange}>
+            <SelectTrigger size="sm" className="w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PRESETS.map((p) => (
+                <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            type="date"
+            value={localStart}
+            max={localEnd || today}
+            onChange={(e) => setLocalStart(e.target.value)}
+            className="h-7 w-[130px] text-xs px-2"
+          />
+          <span className="text-xs text-muted-foreground">→</span>
+          <Input
+            type="date"
+            value={localEnd}
+            min={localStart}
+            max={today}
+            onChange={(e) => setLocalEnd(e.target.value)}
+            className="h-7 w-[130px] text-xs px-2"
+          />
+        </div>
       </div>
 
-      {/* Filtro de horas */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-muted-foreground">das</span>
-        <select
-          value={localStartHour}
-          onChange={(e) => setLocalStartHour(Number(e.target.value))}
-          className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-        >
-          {HOURS.map((h) => (
-            <option key={h} value={h}>{fmtStartHour(h)}</option>
-          ))}
-        </select>
-        <span className="text-xs text-muted-foreground">às</span>
-        <select
-          value={localEndHour}
-          onChange={(e) => setLocalEndHour(Number(e.target.value))}
-          className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-        >
-          {HOURS.map((h) => (
-            <option key={h} value={h}>{fmtEndHour(h)}</option>
-          ))}
-        </select>
+      <Separator orientation="vertical" className="h-8 hidden sm:block" />
+
+      {/* Horas */}
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Horário</Label>
+        <div className="flex items-center gap-2">
+          <Select
+            value={String(localStartHour)}
+            onValueChange={(v) => setLocalStartHour(Number(v))}
+          >
+            <SelectTrigger size="sm" className="w-[108px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-48">
+              {HOURS.map((h) => (
+                <SelectItem key={h} value={String(h)}>{fmtStartHour(h)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground">→</span>
+          <Select
+            value={String(localEndHour)}
+            onValueChange={(v) => setLocalEndHour(Number(v))}
+          >
+            <SelectTrigger size="sm" className="w-[108px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-48">
+              {HOURS.map((h) => (
+                <SelectItem key={h} value={String(h)}>{fmtEndHour(h)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {/* Filtro de tipo de data */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-muted-foreground">Data</span>
-        <select
-          value={localDateType}
-          onChange={(e) => setLocalDateType(e.target.value as DateType)}
-          title={DATE_TYPE_OPTIONS.find(o => o.value === localDateType)?.description}
-          className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-        >
-          {DATE_TYPE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value} title={opt.description}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+      <Separator orientation="vertical" className="h-8 hidden sm:block" />
+
+      {/* Data tipo + Status */}
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Filtros</Label>
+        <div className="flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            value={localDateType}
+            onValueChange={(v) => v && setLocalDateType(v as DateType)}
+            variant="outline"
+            size="sm"
+          >
+            {DATE_TYPE_OPTIONS.map((o) => (
+              <ToggleGroupItem key={o.value} value={o.value}>{o.label}</ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+
+          <Select value={localStatus} onValueChange={(v) => setLocalStatus(v as RentalStatus)}>
+            <SelectTrigger size="sm" className="w-[130px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {/* Filtro de status de locação */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-muted-foreground">Status</span>
-        <select
-          value={localStatus}
-          onChange={(e) => setLocalStatus(e.target.value as RentalStatus)}
-          title={STATUS_OPTIONS.find(o => o.value === localStatus)?.description}
-          className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-        >
-          {STATUS_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value} title={opt.description}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <button
+      <Button
+        size="sm"
         onClick={handleApply}
         disabled={!localStart || !localEnd}
-        className="h-7 px-2 rounded-md text-xs bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="self-end"
       >
         Aplicar
-      </button>
+      </Button>
     </div>
   )
 }

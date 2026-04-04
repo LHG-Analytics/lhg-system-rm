@@ -1,36 +1,40 @@
 'use client'
 
 import { useState } from 'react'
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
+
+// ─── Formatadores ─────────────────────────────────────────────────────────────
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
 }
-
 function formatPercent(value: number) {
   return `${value.toFixed(1)}%`
 }
-
 function formatNumber(value: number) {
   return new Intl.NumberFormat('pt-BR').format(Math.round(value))
 }
-
 function formatTime(hhmmss: string) {
   if (!hhmmss) return '—'
-  const parts = hhmmss.split(':')
-  return `${parts[0]}h${parts[1]}m`
+  const [h, m] = hhmmss.split(':')
+  return `${h}h${m}m`
 }
-
 function timeToSeconds(hhmmss: string): number {
   const [h, m, s] = (hhmmss ?? '00:00:00').split(':').map(Number)
   return h * 3600 + m * 60 + (s ?? 0)
 }
-
 function delta(current: number, previous: number) {
   if (previous === 0) return null
   return ((current - previous) / previous) * 100
 }
+
+// ─── Componente de card individual ───────────────────────────────────────────
 
 type CompareMode = 'aa' | 'mm'
 
@@ -38,45 +42,76 @@ interface KPICardProps {
   label: string
   value: string
   deltaPct?: number | null
-  previousValue?: string   // valor absoluto do período anterior
+  previousValue?: string
   compareMode: CompareMode
   forecast?: string
 }
 
-function KPICard({ label, value, deltaPct, previousValue, compareMode, forecast }: KPICardProps) {
-  const isPositive = deltaPct != null && deltaPct > 0
-  const isNegative = deltaPct != null && deltaPct < 0
-
+function DeltaBadge({ pct, mode }: { pct: number; mode: CompareMode }) {
+  const isPositive = pct > 0
+  const isNegative = pct < 0
   return (
-    <div className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm flex flex-col gap-1">
-      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
-      <p className="mt-1 text-2xl font-bold tabular-nums">{value}</p>
-
-      {deltaPct != null && (
-        <p className={cn(
-          'text-xs tabular-nums',
-          isPositive ? 'text-emerald-500' : isNegative ? 'text-rose-500' : 'text-muted-foreground'
-        )}>
-          {isPositive ? '▲' : isNegative ? '▼' : ''}
-          {' '}{Math.abs(deltaPct).toFixed(1)}%{' '}
-          <span className="text-muted-foreground">vs {compareMode === 'aa' ? 'a/a' : 'm/m'}</span>
-        </p>
+    <Badge
+      variant="outline"
+      className={cn(
+        'gap-1 px-1.5 py-0.5 text-[11px] font-medium border-0',
+        isPositive && 'bg-emerald-500/10 text-emerald-400',
+        isNegative && 'bg-rose-500/10 text-rose-400',
+        !isPositive && !isNegative && 'bg-muted text-muted-foreground',
       )}
-
-      {previousValue && (
-        <p className="text-xs text-muted-foreground">
-          Ant.: <span className="font-medium text-foreground/80">{previousValue}</span>
-        </p>
-      )}
-
-      {forecast && (
-        <p className="text-xs text-muted-foreground">
-          Prev. mês: <span className="font-medium text-foreground">{forecast}</span>
-        </p>
-      )}
-    </div>
+    >
+      {isPositive
+        ? <TrendingUp className="size-3" />
+        : isNegative
+          ? <TrendingDown className="size-3" />
+          : <Minus className="size-3" />
+      }
+      {Math.abs(pct).toFixed(1)}% {mode === 'aa' ? 'a/a' : 'm/m'}
+    </Badge>
   )
 }
+
+function KPICard({ label, value, deltaPct, previousValue, compareMode, forecast }: KPICardProps) {
+  return (
+    <Card className="flex flex-col gap-0 py-0 overflow-hidden">
+      <CardHeader className="px-5 pt-5 pb-3 space-y-0">
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
+          {label}
+        </p>
+      </CardHeader>
+
+      <CardContent className="px-5 pb-5 flex flex-col gap-3">
+        <p className="text-3xl font-bold tabular-nums tracking-tight leading-none">
+          {value}
+        </p>
+
+        {/* Comparação */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {deltaPct != null && (
+            <DeltaBadge pct={deltaPct} mode={compareMode} />
+          )}
+          {previousValue && (
+            <span className="text-xs text-muted-foreground">
+              Ant.: <span className="text-foreground/70 font-medium">{previousValue}</span>
+            </span>
+          )}
+        </div>
+
+        {forecast && (
+          <>
+            <Separator className="opacity-50" />
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-muted-foreground uppercase tracking-wide">Prev. mês</span>
+              <span className="text-sm font-semibold tabular-nums">{forecast}</span>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── Container principal ──────────────────────────────────────────────────────
 
 interface DashboardKPICardsProps {
   company: CompanyKPIResponse | null
@@ -87,13 +122,17 @@ export function DashboardKPICards({ company }: DashboardKPICardsProps) {
 
   if (!company) {
     return (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {['Ocupação', 'RevPAR', 'Ticket Médio', 'TRevPAR'].map((label) => (
-          <div key={label} className="rounded-xl border bg-card p-5 shadow-sm">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
-            <p className="mt-2 text-2xl font-bold text-muted-foreground">—</p>
-            <p className="text-xs text-muted-foreground mt-1">Dados indisponíveis</p>
-          </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {['Taxa de Ocupação', 'RevPAR', 'Ticket Médio', 'TRevPAR', 'Locações', 'Faturamento', 'Giro', 'Tempo Médio'].map((label) => (
+          <Card key={label} className="py-0 overflow-hidden">
+            <CardHeader className="px-5 pt-5 pb-3">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">{label}</p>
+            </CardHeader>
+            <CardContent className="px-5 pb-5 flex flex-col gap-3">
+              <p className="text-3xl font-bold text-muted-foreground">—</p>
+              <p className="text-xs text-muted-foreground">Dados indisponíveis</p>
+            </CardContent>
+          </Card>
         ))}
       </div>
     )
@@ -106,7 +145,6 @@ export function DashboardKPICards({ company }: DashboardKPICardsProps) {
   const prevM = bn?.prevMonthDate
   const fc   = bn?.monthlyForecast
 
-  // Seleciona valores de comparação conforme o modo
   const cmpOccRate = compareMode === 'aa' ? prev?.totalAllOccupancyRatePreviousData      : prevM?.totalAllOccupancyRatePrevMonth
   const cmpRentals = compareMode === 'aa' ? prev?.totalAllRentalsApartmentsPreviousData  : prevM?.totalAllRentalsApartmentsPrevMonth
   const cmpValue   = compareMode === 'aa' ? prev?.totalAllValuePreviousData              : prevM?.totalAllValuePrevMonth
@@ -183,25 +221,19 @@ export function DashboardKPICards({ company }: DashboardKPICardsProps) {
   ]
 
   return (
-    <div className="space-y-2">
-      {/* Toggle a/a vs m/m */}
-      <div className="flex justify-end">
-        <div className="flex gap-1 rounded-lg border p-0.5 text-xs">
-          {(['aa', 'mm'] as CompareMode[]).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setCompareMode(mode)}
-              className={cn(
-                'px-3 py-1 rounded-md transition-colors',
-                compareMode === mode
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {mode === 'aa' ? 'a/a' : 'm/m'}
-            </button>
-          ))}
-        </div>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">Comparar com</p>
+        <ToggleGroup
+          type="single"
+          value={compareMode}
+          onValueChange={(v) => v && setCompareMode(v as CompareMode)}
+          variant="outline"
+          size="sm"
+        >
+          <ToggleGroupItem value="aa">a/a</ToggleGroupItem>
+          <ToggleGroupItem value="mm">m/m</ToggleGroupItem>
+        </ToggleGroup>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
