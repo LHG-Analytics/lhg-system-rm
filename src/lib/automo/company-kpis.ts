@@ -2,6 +2,7 @@ import type {
   CompanyKPIResponse,
   CompanyBigNumbers,
   CompanyTotalResult,
+  CompanyBigNumbersPrevMonthDate,
   DataTableSuiteCategory,
   SuiteCategoryKPI,
   DataTableGiroByWeek,
@@ -22,6 +23,17 @@ function addDays(iso: string, n: number): string {
   const d = new Date(iso.replace(' ', 'T') + 'Z')
   d.setUTCDate(d.getUTCDate() + n)
   return d.toISOString().slice(0, 10) + ' 00:00:00'
+}
+
+/** Desloca N meses em uma string ISO 'YYYY-MM-DD 00:00:00' (clampeia dia ao último do mês destino) */
+function shiftMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
+  const dt = new Date(y, m - 1 + months, d)
+  // Se o dia ultrapassar o último dia do mês destino, vai para o último
+  if (dt.getMonth() !== ((m - 1 + months + 12) % 12)) {
+    dt.setDate(0) // volta para o último dia do mês anterior ao overflow
+  }
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 00:00:00`
 }
 
 /** Número de dias entre duas strings ISO */
@@ -554,9 +566,13 @@ export async function fetchCompanyKPIsFromAutomo(
   const isoEnd    = addDays(ddmmyyyyToIso(endDateDDMMYYYY), 1) // exclusive upper bound
   const daysDiff  = daysBetween(isoStart, isoEnd)
 
-  // Período anterior (mesmo período do ano passado)
+  // Período anterior a/a (mesmo período do ano passado)
   const prevIsoStart = isoStart.replace(/^(\d{4})/, (y) => String(Number(y) - 1))
   const prevIsoEnd   = isoEnd.replace(/^(\d{4})/, (y) => String(Number(y) - 1))
+
+  // Período anterior m/m (mesmo período deslocado 1 mês atrás)
+  const prevMonIsoStart = shiftMonths(isoStart, -1)
+  const prevMonIsoEnd   = shiftMonths(isoEnd,   -1)
 
   // Dados do mês atual até ontem (para previsão de fechamento)
   const nowBR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
@@ -587,13 +603,14 @@ export async function fetchCompanyKPIsFromAutomo(
     }
   }
 
-  const [currentBN, prevBN, monthBN, revOcc, suiteCatTable, weekTables] = await Promise.all([
-    queryBigNumbers(pool, catIds, isoStart,    isoEnd,    daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/current')),
-    queryBigNumbers(pool, catIds, prevIsoStart, prevIsoEnd, daysDiff,         timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prev')),
-    queryBigNumbers(pool, catIds, monIsoStart,  monIsoEnd,  daysElapsed || 1, timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/month')),
-    queryTotalRevOcc(pool, catIds, isoStart, isoEnd, daysDiff,                timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc')),
-    queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff,     timeFilter, statusFilter, dateCol).catch(tagError('DataTableSuiteCategory')),
-    queryWeekTables(pool, catIds, isoStart, isoEnd,                           timeFilter, statusFilter, dateCol).catch(tagError('WeekTables')),
+  const [currentBN, prevBN, prevMonBN, monthBN, revOcc, suiteCatTable, weekTables] = await Promise.all([
+    queryBigNumbers(pool, catIds, isoStart,      isoEnd,      daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/current')),
+    queryBigNumbers(pool, catIds, prevIsoStart,  prevIsoEnd,  daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prev')),
+    queryBigNumbers(pool, catIds, prevMonIsoStart, prevMonIsoEnd, daysDiff,       timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prevMonth')),
+    queryBigNumbers(pool, catIds, monIsoStart,   monIsoEnd,   daysElapsed || 1,   timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/month')),
+    queryTotalRevOcc(pool, catIds, isoStart, isoEnd, daysDiff,                    timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc')),
+    queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff,         timeFilter, statusFilter, dateCol).catch(tagError('DataTableSuiteCategory')),
+    queryWeekTables(pool, catIds, isoStart, isoEnd,                               timeFilter, statusFilter, dateCol).catch(tagError('WeekTables')),
   ])
 
   // Previsão de fechamento do mês
@@ -610,6 +627,15 @@ export async function fetchCompanyKPIsFromAutomo(
     totalAllTrevparForecast:            currentBN.totalSuites > 0 ? +(forecastValue / currentBN.totalSuites / totalDaysInMonth).toFixed(2) : 0,
     totalAllGiroForecast:               currentBN.totalSuites > 0 ? +(forecastRentals / currentBN.totalSuites / totalDaysInMonth).toFixed(2) : 0,
     totalAverageOccupationTimeForecast: monthBN.avgOccTime,
+  }
+
+  const prevMonthDate: CompanyBigNumbersPrevMonthDate = {
+    totalAllValuePrevMonth:              prevMonBN.totalAllValue,
+    totalAllRentalsApartmentsPrevMonth:  prevMonBN.totalRentals,
+    totalAllTicketAveragePrevMonth:      prevMonBN.avgTicket,
+    totalAllTrevparPrevMonth:            prevMonBN.trevpar,
+    totalAllGiroPrevMonth:               prevMonBN.giro,
+    totalAverageOccupationTimePrevMonth: prevMonBN.avgOccTime,
   }
 
   const bigNumbers: CompanyBigNumbers = {
@@ -629,6 +655,7 @@ export async function fetchCompanyKPIsFromAutomo(
       totalAllGiroPreviousData:               prevBN.giro,
       totalAverageOccupationTimePreviousData: prevBN.avgOccTime,
     },
+    prevMonthDate,
     monthlyForecast,
   }
 

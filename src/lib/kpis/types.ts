@@ -27,9 +27,19 @@ export interface CompanyBigNumbersMonthlyForecast {
   totalAverageOccupationTimeForecast: string // "HH:MM:SS"
 }
 
+export interface CompanyBigNumbersPrevMonthDate {
+  totalAllValuePrevMonth: number
+  totalAllRentalsApartmentsPrevMonth: number
+  totalAllTicketAveragePrevMonth: number
+  totalAllTrevparPrevMonth: number
+  totalAllGiroPrevMonth: number
+  totalAverageOccupationTimePrevMonth: string
+}
+
 export interface CompanyBigNumbers {
   currentDate: CompanyBigNumbersCurrentDate
   previousDate: CompanyBigNumbersPreviousDate
+  prevMonthDate: CompanyBigNumbersPrevMonthDate
   monthlyForecast: CompanyBigNumbersMonthlyForecast
 }
 
