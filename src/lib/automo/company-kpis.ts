@@ -603,15 +603,17 @@ export async function fetchCompanyKPIsFromAutomo(
     }
   }
 
-  const [currentBN, prevBN, prevMonBN, monthBN, revOcc, monthRevOcc, suiteCatTable, weekTables] = await Promise.all([
-    queryBigNumbers(pool, catIds, isoStart,      isoEnd,      daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/current')),
-    queryBigNumbers(pool, catIds, prevIsoStart,  prevIsoEnd,  daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prev')),
-    queryBigNumbers(pool, catIds, prevMonIsoStart, prevMonIsoEnd, daysDiff,       timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prevMonth')),
-    queryBigNumbers(pool, catIds, monIsoStart,   monIsoEnd,   daysElapsed || 1,   timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/month')),
-    queryTotalRevOcc(pool, catIds, isoStart,     isoEnd,      daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc')),
-    queryTotalRevOcc(pool, catIds, monIsoStart,  monIsoEnd,   daysElapsed || 1,   timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc/month')),
-    queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff,         timeFilter, statusFilter, dateCol).catch(tagError('DataTableSuiteCategory')),
-    queryWeekTables(pool, catIds, isoStart, isoEnd,                               timeFilter, statusFilter, dateCol).catch(tagError('WeekTables')),
+  const [currentBN, prevBN, prevMonBN, monthBN, revOcc, prevRevOcc, prevMonRevOcc, monthRevOcc, suiteCatTable, weekTables] = await Promise.all([
+    queryBigNumbers(pool, catIds, isoStart,         isoEnd,         daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/current')),
+    queryBigNumbers(pool, catIds, prevIsoStart,     prevIsoEnd,     daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prev')),
+    queryBigNumbers(pool, catIds, prevMonIsoStart,  prevMonIsoEnd,  daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prevMonth')),
+    queryBigNumbers(pool, catIds, monIsoStart,      monIsoEnd,      daysElapsed || 1,   timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/month')),
+    queryTotalRevOcc(pool, catIds, isoStart,        isoEnd,         daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc')),
+    queryTotalRevOcc(pool, catIds, prevIsoStart,    prevIsoEnd,     daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc/prev')),
+    queryTotalRevOcc(pool, catIds, prevMonIsoStart, prevMonIsoEnd,  daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc/prevMonth')),
+    queryTotalRevOcc(pool, catIds, monIsoStart,     monIsoEnd,      daysElapsed || 1,   timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc/month')),
+    queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff,              timeFilter, statusFilter, dateCol).catch(tagError('DataTableSuiteCategory')),
+    queryWeekTables(pool, catIds, isoStart, isoEnd,                                     timeFilter, statusFilter, dateCol).catch(tagError('WeekTables')),
   ])
 
   // Previsão de fechamento do mês
@@ -620,9 +622,9 @@ export async function fetchCompanyKPIsFromAutomo(
   const dailyAvgRentals = monthBN.totalRentals     / safeElapsed
   const forecastValue   = monthBN.totalAllValue   + dailyAvgValue   * remainingDays
   const forecastRentals = monthBN.totalRentals     + dailyAvgRentals * remainingDays
-  // RevPAR forecast: taxa diária atual projetada para o mês completo
-  // monthRevOcc.totalRevpar = receita_locacao / suites / daysElapsed → mesma taxa para o mês inteiro
-  const revparForecast  = +monthRevOcc.totalRevpar.toFixed(2)
+  // RevPAR/Ocupação forecast: taxa diária do mês atual (já normalizada por suites×dias) → projetada para o mês inteiro
+  const revparForecast     = +monthRevOcc.totalRevpar.toFixed(2)
+  const occupancyForecast  = +monthRevOcc.totalOccupancyRate.toFixed(2)
 
   const monthlyForecast: CompanyBigNumbers['monthlyForecast'] = {
     totalAllValueForecast:              +forecastValue.toFixed(2),
@@ -632,6 +634,7 @@ export async function fetchCompanyKPIsFromAutomo(
     totalAllRevparForecast:             revparForecast,
     totalAllGiroForecast:               currentBN.totalSuites > 0 ? +(forecastRentals / currentBN.totalSuites / totalDaysInMonth).toFixed(2) : 0,
     totalAverageOccupationTimeForecast: monthBN.avgOccTime,
+    totalAllOccupancyRateForecast:      occupancyForecast,
   }
 
   const prevMonthDate: CompanyBigNumbersPrevMonthDate = {
@@ -641,6 +644,7 @@ export async function fetchCompanyKPIsFromAutomo(
     totalAllTrevparPrevMonth:            prevMonBN.trevpar,
     totalAllGiroPrevMonth:               prevMonBN.giro,
     totalAverageOccupationTimePrevMonth: prevMonBN.avgOccTime,
+    totalAllOccupancyRatePrevMonth:      prevMonRevOcc.totalOccupancyRate,
   }
 
   const bigNumbers: CompanyBigNumbers = {
@@ -659,6 +663,7 @@ export async function fetchCompanyKPIsFromAutomo(
       totalAllTrevparPreviousData:            prevBN.trevpar,
       totalAllGiroPreviousData:               prevBN.giro,
       totalAverageOccupationTimePreviousData: prevBN.avgOccTime,
+      totalAllOccupancyRatePreviousData:      prevRevOcc.totalOccupancyRate,
     },
     prevMonthDate,
     monthlyForecast,

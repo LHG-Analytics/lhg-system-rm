@@ -107,6 +107,7 @@ export function DashboardKPICards({ company }: DashboardKPICardsProps) {
   const fc   = bn?.monthlyForecast
 
   // Seleciona valores de comparação conforme o modo
+  const cmpOccRate = compareMode === 'aa' ? prev?.totalAllOccupancyRatePreviousData      : prevM?.totalAllOccupancyRatePrevMonth
   const cmpRentals = compareMode === 'aa' ? prev?.totalAllRentalsApartmentsPreviousData  : prevM?.totalAllRentalsApartmentsPrevMonth
   const cmpValue   = compareMode === 'aa' ? prev?.totalAllValuePreviousData              : prevM?.totalAllValuePrevMonth
   const cmpTicket  = compareMode === 'aa' ? prev?.totalAllTicketAveragePreviousData      : prevM?.totalAllTicketAveragePrevMonth
@@ -118,9 +119,10 @@ export function DashboardKPICards({ company }: DashboardKPICardsProps) {
     {
       label:         'Taxa de Ocupação',
       value:         formatPercent(r.totalOccupancyRate),
-      deltaPct:      cmpRentals != null ? delta(cur.totalAllRentalsApartments, cmpRentals) : null,
-      previousValue: cmpRentals != null ? `${formatNumber(cmpRentals)} loc.` : undefined,
+      deltaPct:      cmpOccRate != null ? delta(r.totalOccupancyRate, cmpOccRate) : null,
+      previousValue: cmpOccRate != null ? formatPercent(cmpOccRate) : undefined,
       compareMode,
+      forecast:      fc ? formatPercent(fc.totalAllOccupancyRateForecast) : undefined,
     },
     {
       label:         'RevPAR',

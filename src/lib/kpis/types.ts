@@ -16,6 +16,7 @@ export interface CompanyBigNumbersPreviousDate {
   totalAllTrevparPreviousData: number
   totalAllGiroPreviousData: number
   totalAverageOccupationTimePreviousData: string // "HH:MM:SS"
+  totalAllOccupancyRatePreviousData: number
 }
 
 export interface CompanyBigNumbersMonthlyForecast {
@@ -26,6 +27,7 @@ export interface CompanyBigNumbersMonthlyForecast {
   totalAllRevparForecast: number
   totalAllGiroForecast: number
   totalAverageOccupationTimeForecast: string // "HH:MM:SS"
+  totalAllOccupancyRateForecast: number
 }
 
 export interface CompanyBigNumbersPrevMonthDate {
@@ -35,6 +37,7 @@ export interface CompanyBigNumbersPrevMonthDate {
   totalAllTrevparPrevMonth: number
   totalAllGiroPrevMonth: number
   totalAverageOccupationTimePrevMonth: string
+  totalAllOccupancyRatePrevMonth: number
 }
 
 export interface CompanyBigNumbers {
