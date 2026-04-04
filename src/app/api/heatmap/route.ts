@@ -279,7 +279,7 @@ function buildTrevparQuery(idList: string, startDate: string, endDate: string): 
       INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
       INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      LEFT JOIN ab_por_locacao ab ON ab.id_locacaoapartamento = la.id
+      LEFT JOIN ab_por_locacao ab ON ab.id_locacaoapartamento = la.id_apartamentostate
       WHERE la.datainicialdaocupacao >= '${startDate}'::date
         AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
         AND la.fimocupacaotipo = 'FINALIZADA'
