@@ -209,7 +209,7 @@ function buildRevparQuery(idList: string, startDate: string, endDate: string): s
       SELECT
         ${dowCase('la.datainicialdaocupacao')} AS day_name,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
-        SUM(la.valortotal) AS receita
+        SUM(CAST(la.valorliquidolocacao AS DECIMAL(15,4))) AS receita
       FROM locacaoapartamento la
       INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
       INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
@@ -253,15 +253,28 @@ function buildTrevparQuery(idList: string, startDate: string, endDate: string): 
       WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
     ),
     ab_por_locacao AS (
-      SELECT vl.id_locacaoapartamento, SUM(vl.valortotal) AS receita_ab
+      -- Consumo A&B vinculado à locação via vendalocacao → saidaestoque → saidaestoqueitem
+      SELECT
+        vl.id_locacaoapartamento,
+        COALESCE(SUM(
+          CAST(sei.precovenda AS DECIMAL(15,4)) * CAST(sei.quantidade AS DECIMAL(15,4))
+        ), 0) AS receita_ab
       FROM vendalocacao vl
+      INNER JOIN saidaestoque     se  ON se.id  = vl.id_saidaestoque
+      INNER JOIN saidaestoqueitem sei ON sei.id_saidaestoque = se.id
+      WHERE sei.cancelado IS NULL
       GROUP BY vl.id_locacaoapartamento
     ),
     revenue_hours AS (
       SELECT
         ${dowCase('la.datainicialdaocupacao')} AS day_name,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
-        SUM(la.valortotal + COALESCE(ab.receita_ab, 0)) AS receita_total
+        SUM(
+          COALESCE(CAST(la.valortotalpermanencia   AS DECIMAL(15,4)), 0) +
+          COALESCE(CAST(la.valortotalocupadicional AS DECIMAL(15,4)), 0) +
+          COALESCE(ab.receita_ab, 0) -
+          COALESCE(CAST(la.desconto                AS DECIMAL(15,4)), 0)
+        ) AS receita_total
       FROM locacaoapartamento la
       INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
       INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
