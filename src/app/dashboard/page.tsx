@@ -27,8 +27,8 @@ type RentalStatus = typeof VALID_STATUSES[number]
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const { unit: unitSlug, preset, start, end, startHour: shParam, endHour: ehParam, dateType: dtParam, status: statusParam } = await searchParams
 
-  const startHour    = Math.min(23, Math.max(0, parseInt(shParam ?? '0')  || 0))
-  const endHour      = Math.min(23, Math.max(0, parseInt(ehParam ?? '23') || 23))
+  const startHour    = Math.min(23, Math.max(0, shParam !== undefined ? (parseInt(shParam) || 0) : 6))
+  const endHour      = Math.min(23, Math.max(0, ehParam !== undefined ? (parseInt(ehParam) || 0) : 5))
   const dateType     = (['all', 'checkin', 'checkout'] as const).includes(dtParam as 'all' | 'checkin' | 'checkout')
     ? (dtParam as 'all' | 'checkin' | 'checkout')
     : 'checkin'

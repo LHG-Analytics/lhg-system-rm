@@ -74,13 +74,20 @@ function buildStatusFilter(status: string): string {
  * Suporta wrap-around: ex. startHour=22, endHour=6 → OR condition.
  */
 function buildTimeFilter(startHour: number, endHour: number, col = 'la.datainicialdaocupacao'): string {
+  // 06:00:00 → 05:59:59 = dia operacional completo = sem filtro adicional
+  if (startHour === 6 && endHour === 5) return ''
+  // 00:00:00 → 23:59:59 = sem filtro (legado)
   if (startHour === 0 && endHour === 23) return ''
-  const h = `EXTRACT(HOUR FROM ${col})::int`
+
+  const sh = `'${String(startHour).padStart(2, '0')}:00:00'`
+  const eh = `'${String(endHour).padStart(2, '0')}:59:59'`
+  const t  = `${col}::time`
+
   if (startHour <= endHour) {
-    return `AND ${h} >= ${startHour} AND ${h} <= ${endHour}`
+    return `AND ${t} >= ${sh} AND ${t} <= ${eh}`
   }
-  // Wrap-around (ex: 22h até 06h, passa da meia-noite)
-  return `AND (${h} >= ${startHour} OR ${h} <= ${endHour})`
+  // Wrap-around (ex: 22:00:00 → 05:59:59, passa da meia-noite)
+  return `AND (${t} >= ${sh} OR ${t} <= ${eh})`
 }
 
 /** Mapeamento DOW (0=domingo) → nome completo em pt-BR */

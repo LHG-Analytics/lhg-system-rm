@@ -13,7 +13,11 @@ const PRESETS: { value: Exclude<DatePreset, 'custom'>; label: string }[] = [
 ]
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
-function fmtHour(h: number) { return `${String(h).padStart(2, '0')}h` }
+
+/** Formata hora de início: 06 → "06:00:00" */
+function fmtStartHour(h: number) { return `${String(h).padStart(2, '0')}:00:00` }
+/** Formata hora de fim:   05 → "05:59:59" */
+function fmtEndHour(h: number)   { return `${String(h).padStart(2, '0')}:59:59` }
 
 function clampHour(v: string | null, fallback: number): number {
   const n = parseInt(v ?? '')
@@ -54,8 +58,8 @@ export function DateRangePicker() {
   const initial = getResolved(preset, urlStart, urlEnd)
   const [localStart,     setLocalStart]     = useState(initial.startDate)
   const [localEnd,       setLocalEnd]       = useState(initial.endDate)
-  const [localStartHour, setLocalStartHour] = useState(() => clampHour(searchParams.get('startHour'), 0))
-  const [localEndHour,   setLocalEndHour]   = useState(() => clampHour(searchParams.get('endHour'), 23))
+  const [localStartHour, setLocalStartHour] = useState(() => clampHour(searchParams.get('startHour'), 6))
+  const [localEndHour,   setLocalEndHour]   = useState(() => clampHour(searchParams.get('endHour'),   5))
   const [localDateType,  setLocalDateType]  = useState<DateType>(
     () => (searchParams.get('dateType') as DateType) ?? 'checkin'
   )
@@ -71,8 +75,8 @@ export function DateRangePicker() {
     const r = getResolved(p, s, e)
     setLocalStart(r.startDate)
     setLocalEnd(r.endDate)
-    setLocalStartHour(clampHour(searchParams.get('startHour'), 0))
-    setLocalEndHour(clampHour(searchParams.get('endHour'), 23))
+    setLocalStartHour(clampHour(searchParams.get('startHour'), 6))
+    setLocalEndHour(clampHour(searchParams.get('endHour'),   5))
     setLocalDateType((searchParams.get('dateType') as DateType) ?? 'checkin')
     setLocalStatus((searchParams.get('status') as RentalStatus) ?? 'FINALIZADA')
   }, [searchParams])
@@ -162,7 +166,7 @@ export function DateRangePicker() {
           className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
         >
           {HOURS.map((h) => (
-            <option key={h} value={h}>{fmtHour(h)}</option>
+            <option key={h} value={h}>{fmtStartHour(h)}</option>
           ))}
         </select>
         <span className="text-xs text-muted-foreground">às</span>
@@ -172,7 +176,7 @@ export function DateRangePicker() {
           className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
         >
           {HOURS.map((h) => (
-            <option key={h} value={h}>{fmtHour(h)}</option>
+            <option key={h} value={h}>{fmtEndHour(h)}</option>
           ))}
         </select>
       </div>
