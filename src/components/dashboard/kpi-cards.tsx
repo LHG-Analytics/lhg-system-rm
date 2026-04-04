@@ -1,4 +1,4 @@
-import type { CompanyKPIResponse } from '@/lib/lhg-analytics/types'
+import type { CompanyKPIResponse } from '@/lib/kpis/types'
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)

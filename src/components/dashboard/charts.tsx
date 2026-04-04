@@ -1,4 +1,4 @@
-import type { CompanyKPIResponse, DataTableGiroByWeek, DataTableRevparByWeek } from '@/lib/lhg-analytics/types'
+import type { CompanyKPIResponse, DataTableGiroByWeek, DataTableRevparByWeek } from '@/lib/kpis/types'
 
 const fmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 

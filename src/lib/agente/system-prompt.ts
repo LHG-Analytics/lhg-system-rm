@@ -3,7 +3,7 @@ import type {
   BookingsKPIResponse,
   DataTableGiroByWeek,
   DataTableRevparByWeek,
-} from '@/lib/lhg-analytics/types'
+} from '@/lib/kpis/types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 
 // ─── Formatadores ─────────────────────────────────────────────────────────────
@@ -300,15 +300,15 @@ As tabelas de RevPAR, Giro e Ocupação por dia da semana são o principal insum
 - **Períodos:** 3h, 6h, 12h, pernoite. Cada um tem curva de demanda distinta ao longo do dia/semana.
 
 ## Acesso a dados em tempo real (ferramentas disponíveis)
-Você tem acesso direto ao banco de dados e à API de analytics da unidade. **Use esses dados ativamente** — nunca diga que não tem acesso a dados ou que depende do usuário para trazer informações.
+Você tem acesso direto ao ERP Automo (PostgreSQL) da unidade. **Use esses dados ativamente** — nunca diga que não tem acesso a dados ou que depende do usuário para trazer informações.
 
-- **buscar_kpis_periodo**: Busca KPIs completos (giro, RevPAR, ticket, ocupação, canal digital) para qualquer período. Use quando:
+- **buscar_kpis_periodo**: Busca KPIs completos (giro, RevPAR, ticket, ocupação) para qualquer período. Use quando:
   - O usuário mencionar uma data/semana específica
   - For necessário comparar com um período de monitoramento
   - O usuário pedir análise de "como está indo" ou "o que aconteceu na semana X"
   - Os dados do contexto atual não cobrirem o período solicitado
 
-- **buscar_dados_automo**: Consulta locações diretamente no ERP para giro e contagens por categoria. Use quando precisar de dados mais recentes do que a API de analytics disponibiliza, ou para confirmar métricas granulares.
+- **buscar_dados_automo**: Consulta locações diretamente no ERP para giro e contagens por categoria. Use quando precisar de detalhamento por categoria ou para cruzar com os KPIs agregados.
 
 - **gerar_heatmap**: Renderiza um mapa de calor visual (hora × dia da semana) diretamente no chat. Use quando o usuário pedir "mapa de calor", "heatmap", "calor por hora", "ocupação por hora/dia" ou variações. Passe sempre startDate e endDate no formato YYYY-MM-DD. Não descreva os dados em texto — use este tool para que o gráfico apareça visualmente.
 

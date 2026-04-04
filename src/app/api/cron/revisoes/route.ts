@@ -3,7 +3,8 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { generateText, tool } from 'ai'
 import { z } from 'zod'
 import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
-import { fetchCompanyKPIs, fetchBookingsKPIs, trailingYear } from '@/lib/lhg-analytics/client'
+import { trailingYear } from '@/lib/kpis/period'
+import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt } from '@/lib/agente/system-prompt'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
       // ── 4. Resolver unidade ────────────────────────────────────────────
       const { data: unit } = await admin
         .from('units')
-        .select('id, name, slug, api_base_url')
+        .select('id, name, slug')
         .eq('id', review.unit_id)
         .single()
 
@@ -76,7 +77,6 @@ export async function GET(request: NextRequest) {
       }))
 
       // ── 6. Buscar KPIs dos últimos 7 dias (monitoramento pós-mudança) ──
-      const lhgUnit = { slug: unit.slug, apiBaseUrl: unit.api_base_url ?? '' }
       const kpiPeriod7d = (() => {
         const end = new Date()
         end.setDate(end.getDate() - 1)
@@ -89,35 +89,25 @@ export async function GET(request: NextRequest) {
       })()
       const kpiPeriodTrailing = trailingYear()
 
-      let kpiPeriods: KPIPeriod[]
-      if (unit.api_base_url) {
-        const [c7d, b7d, cTrail, bTrail] = await Promise.allSettled([
-          fetchCompanyKPIs(lhgUnit, kpiPeriod7d),
-          fetchBookingsKPIs(lhgUnit, kpiPeriod7d),
-          fetchCompanyKPIs(lhgUnit, kpiPeriodTrailing),
-          fetchBookingsKPIs(lhgUnit, kpiPeriodTrailing),
-        ])
-        kpiPeriods = [
-          {
-            label: `Últimos 7 dias — monitoramento (${kpiPeriod7d.startDate} a ${kpiPeriod7d.endDate})`,
-            period: kpiPeriod7d,
-            company:  c7d.status  === 'fulfilled' ? c7d.value  : null,
-            bookings: b7d.status  === 'fulfilled' ? b7d.value  : null,
-          },
-          {
-            label: `Trailing 12 meses — contexto histórico (${kpiPeriodTrailing.startDate} a ${kpiPeriodTrailing.endDate})`,
-            period: kpiPeriodTrailing,
-            company:  cTrail.status  === 'fulfilled' ? cTrail.value  : null,
-            bookings: bTrail.status  === 'fulfilled' ? bTrail.value  : null,
-          },
-        ]
-      } else {
-        kpiPeriods = [{
-          period: kpiPeriodTrailing,
-          company: null,
+      const [c7d, cTrail] = await Promise.allSettled([
+        fetchCompanyKPIsFromAutomo(unit.slug, kpiPeriod7d.startDate, kpiPeriod7d.endDate),
+        fetchCompanyKPIsFromAutomo(unit.slug, kpiPeriodTrailing.startDate, kpiPeriodTrailing.endDate),
+      ])
+
+      const kpiPeriods: KPIPeriod[] = [
+        {
+          label: `Últimos 7 dias — monitoramento (${kpiPeriod7d.startDate} a ${kpiPeriod7d.endDate})`,
+          period: kpiPeriod7d,
+          company:  c7d.status  === 'fulfilled' ? c7d.value  : null,
           bookings: null,
-        }]
-      }
+        },
+        {
+          label: `Trailing 12 meses — contexto histórico (${kpiPeriodTrailing.startDate} a ${kpiPeriodTrailing.endDate})`,
+          period: kpiPeriodTrailing,
+          company:  cTrail.status  === 'fulfilled' ? cTrail.value  : null,
+          bookings: null,
+        },
+      ]
 
       // ── 7. Montar system prompt + mensagem de revisão ──────────────────
       const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports)

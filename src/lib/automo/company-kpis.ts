@@ -6,7 +6,7 @@ import type {
   SuiteCategoryKPI,
   DataTableGiroByWeek,
   DataTableRevparByWeek,
-} from '@/lib/lhg-analytics/types'
+} from '@/lib/kpis/types'
 import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
@@ -296,9 +296,30 @@ async function queryWeekTables(
   isoStart: string,
   isoEnd: string,
 ): Promise<{ giro: DataTableGiroByWeek[]; revpar: DataTableRevparByWeek[] }> {
-  // generate_series range: from startDate to (endDate - 1 day), counting DOW occurrences
+  // CROSS JOIN entre categorias ativas × todos os DOW do período.
+  // LEFT JOIN nos dados reais → dias sem locação aparecem com 0 (comportamento original).
   const sql = `
-    WITH rentals_cat_dow AS (
+    WITH categories_in_period AS (
+      -- Apenas categorias que tiveram ao menos 1 locação no período
+      SELECT DISTINCT ca.descricao AS category
+      FROM locacaoapartamento la
+      INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+      INNER JOIN apartamento a        ON aps.id_apartamento = a.id
+      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      WHERE la.datainicialdaocupacao >= $1
+        AND la.datainicialdaocupacao <  $2
+        AND la.fimocupacaotipo = 'FINALIZADA'
+        AND ca.id IN (${catIds})
+    ),
+    dow_occurrences AS (
+      -- Quantidade de ocorrências de cada dia da semana no período
+      SELECT
+        EXTRACT(DOW FROM gs::date) AS dow,
+        COUNT(*) AS n
+      FROM generate_series($1::date, $2::date - INTERVAL '1 day', '1 day'::interval) gs
+      GROUP BY EXTRACT(DOW FROM gs::date)
+    ),
+    rentals_cat_dow AS (
       SELECT
         ca.descricao AS category,
         EXTRACT(DOW FROM (
@@ -328,13 +349,6 @@ async function queryWeekTables(
       GROUP BY ca.descricao
     ),
     all_suites AS (SELECT COALESCE(SUM(total_suites), 1) AS n FROM suites_por_cat),
-    dow_occurrences AS (
-      SELECT
-        EXTRACT(DOW FROM gs::date) AS dow,
-        COUNT(*) AS n
-      FROM generate_series($1::date, $2::date - INTERVAL '1 day', '1 day'::interval) gs
-      GROUP BY EXTRACT(DOW FROM gs::date)
-    ),
     totals_by_dow AS (
       SELECT
         dow,
@@ -343,56 +357,57 @@ async function queryWeekTables(
       FROM rentals_cat_dow
       GROUP BY dow
     )
+    -- CROSS JOIN: toda categoria × todo DOW do período, LEFT JOIN nos dados reais
     SELECT
-      r.category,
-      r.dow::int                   AS dow,
-      r.total_rentals,
-      r.rental_revenue,
-      sc.total_suites,
-      do.n                         AS dow_occurrences,
-      td.total_rentals             AS total_rentals_dow,
-      td.rental_revenue            AS total_revenue_dow,
-      al.n                         AS all_suites
-    FROM rentals_cat_dow r
-    INNER JOIN suites_por_cat sc ON r.category = sc.descricao
-    INNER JOIN dow_occurrences do ON r.dow = do.dow
-    INNER JOIN totals_by_dow td  ON r.dow = td.dow
+      c.category,
+      do.dow::int                           AS dow,
+      COALESCE(r.total_rentals,  0)         AS total_rentals,
+      COALESCE(r.rental_revenue, 0)         AS rental_revenue,
+      COALESCE(sc.total_suites,  1)         AS total_suites,
+      do.n                                  AS dow_occurrences,
+      COALESCE(td.total_rentals,  0)        AS total_rentals_dow,
+      COALESCE(td.rental_revenue, 0)        AS total_revenue_dow,
+      al.n                                  AS all_suites
+    FROM categories_in_period c
+    CROSS JOIN dow_occurrences do
+    LEFT JOIN suites_por_cat  sc ON c.category = sc.descricao
+    LEFT JOIN rentals_cat_dow  r ON c.category = r.category AND do.dow = r.dow
+    LEFT JOIN totals_by_dow   td ON do.dow = td.dow
     CROSS JOIN all_suites al
-    ORDER BY r.category, r.dow
+    ORDER BY c.category, do.dow
   `
 
   const { rows } = await pool.query<WeekRow>(sql, [isoStart, isoEnd])
 
-  // Build maps: category → { dayName → { giro, totalGiro } }
   const giroMap  = new Map<string, Record<string, { giro: number; totalGiro: number }>>()
   const revparMap = new Map<string, Record<string, { revpar: number; totalRevpar: number }>>()
 
   for (const r of rows) {
-    const dow      = Number(r.dow)
-    const dayName  = DOW_TO_PT[dow]
+    const dow        = Number(r.dow)
+    const dayName    = DOW_TO_PT[dow]
     if (!dayName) continue
 
-    const catRentals    = Number(r.total_rentals)     || 0
-    const catRevenue    = Number(r.rental_revenue)    || 0
-    const suitesInCat   = Number(r.total_suites)      || 1
-    const occurrences   = Number(r.dow_occurrences)   || 1
-    const totalRentals  = Number(r.total_rentals_dow) || 0
-    const totalRevenue  = Number(r.total_revenue_dow) || 0
-    const allSuites     = Number(r.all_suites)        || 1
+    const catRentals  = Number(r.total_rentals)     || 0
+    const catRevenue  = Number(r.rental_revenue)    || 0
+    const suitesInCat = Number(r.total_suites)      || 1
+    const occurrences = Number(r.dow_occurrences)   || 1
+    const totRentals  = Number(r.total_rentals_dow) || 0
+    const totRevenue  = Number(r.total_revenue_dow) || 0
+    const allSuites   = Number(r.all_suites)        || 1
 
-    const giro      = +(catRentals  / suitesInCat / occurrences).toFixed(2)
-    const totalGiro = +(totalRentals / allSuites   / occurrences).toFixed(2)
-    const revpar    = +(catRevenue  / suitesInCat / occurrences).toFixed(2)
-    const totalRevpar = +(totalRevenue / allSuites / occurrences).toFixed(2)
+    const giro       = +(catRentals  / suitesInCat / occurrences).toFixed(2)
+    const totalGiro  = +(totRentals  / allSuites   / occurrences).toFixed(2)
+    const revpar     = +(catRevenue  / suitesInCat / occurrences).toFixed(2)
+    const totalRevpar = +(totRevenue / allSuites   / occurrences).toFixed(2)
 
     if (!giroMap.has(r.category))   giroMap.set(r.category, {})
     if (!revparMap.has(r.category)) revparMap.set(r.category, {})
 
-    giroMap.get(r.category)![dayName]  = { giro, totalGiro }
+    giroMap.get(r.category)![dayName]   = { giro, totalGiro }
     revparMap.get(r.category)![dayName] = { revpar, totalRevpar }
   }
 
-  const giro:   DataTableGiroByWeek[]  = Array.from(giroMap.entries()).map(([cat, days]) => ({ [cat]: days } as DataTableGiroByWeek))
+  const giro:   DataTableGiroByWeek[]   = Array.from(giroMap.entries()).map(([cat, days]) => ({ [cat]: days } as DataTableGiroByWeek))
   const revpar: DataTableRevparByWeek[] = Array.from(revparMap.entries()).map(([cat, days]) => ({ [cat]: days } as DataTableRevparByWeek))
 
   return { giro, revpar }
@@ -447,7 +462,7 @@ async function queryTotalRevOcc(
 
 /**
  * Busca Company KPIs diretamente do Automo PostgreSQL.
- * Substitui fetchCompanyKPIs() da LHG Analytics API.
+ * KPIs agregados a partir do ERP Automo (PostgreSQL).
  */
 export async function fetchCompanyKPIsFromAutomo(
   unitSlug: string,

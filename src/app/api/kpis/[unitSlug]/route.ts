@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
-import { todayOperational, toApiDate } from '@/lib/lhg-analytics/client'
+import { todayOperational, toApiDate } from '@/lib/kpis/period'
 import type { Database } from '@/types/database.types'
-import type { UnitKPIData } from '@/lib/lhg-analytics/types'
+import type { UnitKPIData } from '@/lib/kpis/types'
 
 function getAdminClient() {
   return createSupabaseAdminClient<Database>(
@@ -63,8 +63,8 @@ export async function GET(
 
     const data: UnitKPIData = {
       company,
-      restaurant: null,  // não usa LHG Analytics para restaurant
-      bookings:   null,  // não usa LHG Analytics para bookings
+      restaurant: null,
+      bookings:   null,
       fetchedAt:  new Date().toISOString(),
     }
 

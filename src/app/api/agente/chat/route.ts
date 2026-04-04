@@ -3,11 +3,8 @@ import { z } from 'zod'
 import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import {
-  fetchCompanyKPIs,
-  fetchBookingsKPIs,
-  trailingYear,
-} from '@/lib/lhg-analytics/client'
+import { trailingYear } from '@/lib/kpis/period'
+import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
@@ -58,12 +55,12 @@ export async function POST(req: NextRequest) {
 
   // 4. Resolver unidade
   const admin = getAdminClient()
-  let unit: { id: string; name: string; slug: string; api_base_url: string | null } | null = null
+  let unit: { id: string; name: string; slug: string } | null = null
 
   if (unitSlug) {
     const { data } = await admin
       .from('units')
-      .select('id, name, slug, api_base_url')
+      .select('id, name, slug')
       .eq('slug', unitSlug)
       .eq('is_active', true)
       .single()
@@ -78,7 +75,7 @@ export async function POST(req: NextRequest) {
   if (!unit && profile.unit_id) {
     const { data } = await admin
       .from('units')
-      .select('id, name, slug, api_base_url')
+      .select('id, name, slug')
       .eq('id', profile.unit_id)
       .single()
     unit = data
@@ -87,7 +84,7 @@ export async function POST(req: NextRequest) {
   if (!unit && profile.role === 'super_admin') {
     const { data } = await admin
       .from('units')
-      .select('id, name, slug, api_base_url')
+      .select('id, name, slug')
       .eq('is_active', true)
       .order('name')
       .limit(1)
@@ -100,7 +97,6 @@ export async function POST(req: NextRequest) {
   }
 
   // 5. Buscar KPIs e imports em paralelo
-  const lhgUnit = { slug: unit.slug, apiBaseUrl: unit.api_base_url ?? '' }
   const isComparison = priceAnalysisPeriods?.length === 2
 
   // Imports query: por IDs específicos (modo comparativo) ou todos da unidade
@@ -111,13 +107,10 @@ export async function POST(req: NextRequest) {
   let kpiPeriods: KPIPeriod[]
   let rawImports: { id: string; parsed_data: unknown; valid_from: string; valid_until: string | null }[] = []
 
-  if (isComparison && unit.api_base_url) {
-    // Modo comparativo: busca KPIs de cada período separadamente (4 fetches paralelos)
-    const [cA, bA, cB, bB, importsResult] = await Promise.allSettled([
-      fetchCompanyKPIs(lhgUnit, priceAnalysisPeriods![0]),
-      fetchBookingsKPIs(lhgUnit, priceAnalysisPeriods![0]),
-      fetchCompanyKPIs(lhgUnit, priceAnalysisPeriods![1]),
-      fetchBookingsKPIs(lhgUnit, priceAnalysisPeriods![1]),
+  if (isComparison) {
+    const [cA, cB, importsResult] = await Promise.allSettled([
+      fetchCompanyKPIsFromAutomo(unit.slug, priceAnalysisPeriods![0].startDate, priceAnalysisPeriods![0].endDate),
+      fetchCompanyKPIsFromAutomo(unit.slug, priceAnalysisPeriods![1].startDate, priceAnalysisPeriods![1].endDate),
       importsQuery,
     ])
     rawImports = importsResult.status === 'fulfilled' ? (importsResult.value.data ?? []) : []
@@ -126,28 +119,26 @@ export async function POST(req: NextRequest) {
         label: `Período A — Tabela anterior (${priceAnalysisPeriods![0].startDate} a ${priceAnalysisPeriods![0].endDate})`,
         period: priceAnalysisPeriods![0],
         company: cA.status === 'fulfilled' ? cA.value : null,
-        bookings: bA.status === 'fulfilled' ? bA.value : null,
+        bookings: null,
       },
       {
         label: `Período B — Tabela atual (${priceAnalysisPeriods![1].startDate} a ${priceAnalysisPeriods![1].endDate})`,
         period: priceAnalysisPeriods![1],
         company: cB.status === 'fulfilled' ? cB.value : null,
-        bookings: bB.status === 'fulfilled' ? bB.value : null,
+        bookings: null,
       },
     ]
   } else {
-    // Modo simples: único período
     const kpiParams = (startDate && endDate) ? { startDate, endDate } : trailingYear()
-    const [companyResult, bookingsResult, importsResult] = await Promise.allSettled([
-      unit.api_base_url ? fetchCompanyKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
-      unit.api_base_url ? fetchBookingsKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
+    const [companyResult, importsResult] = await Promise.allSettled([
+      fetchCompanyKPIsFromAutomo(unit.slug, kpiParams.startDate, kpiParams.endDate),
       importsQuery,
     ])
     rawImports = importsResult.status === 'fulfilled' ? (importsResult.value.data ?? []) : []
     kpiPeriods = [{
       period: kpiParams,
       company: companyResult.status === 'fulfilled' ? companyResult.value : null,
-      bookings: bookingsResult.status === 'fulfilled' ? bookingsResult.value : null,
+      bookings: null,
     }]
   }
 
@@ -166,14 +157,11 @@ export async function POST(req: NextRequest) {
   // 6. Montar system prompt com KPIs (por período) + tabelas
   const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports)
 
-  // 7. Definir tools (fecham sobre `unit` e `lhgUnit`)
-  const lhgUnitForTools = { slug: unit.slug, apiBaseUrl: unit.api_base_url ?? '' }
-
   const agentTools = {
     buscar_kpis_periodo: tool({
       description:
-        'Busca KPIs operacionais completos (giro, RevPAR, ticket médio, ocupação, canal digital, tabelas semanais) ' +
-        'para qualquer período específico via LHG Analytics. ' +
+        'Busca KPIs operacionais completos (giro, RevPAR, ticket médio, ocupação, tabelas semanais) ' +
+        'para qualquer período específico via ERP Automo. ' +
         'Use sempre que o usuário mencionar datas específicas, pedir monitoramento de uma semana, ' +
         'ou quando os dados do contexto não cobrirem o período solicitado. ' +
         'Nunca diga que não tem acesso — use este tool.',
@@ -182,17 +170,12 @@ export async function POST(req: NextRequest) {
         endDate:   z.string().describe('Data final no formato DD/MM/YYYY, ex: "07/04/2026"'),
       }),
       execute: async ({ startDate, endDate }) => {
-        if (!unit.api_base_url) {
-          return 'API de analytics não configurada para esta unidade. Solicite ao administrador que configure api_base_url.'
+        try {
+          const company = await fetchCompanyKPIsFromAutomo(unit.slug, startDate, endDate)
+          return buildKPIContext(unit.name, { startDate, endDate }, company, null)
+        } catch {
+          return `Falha ao buscar KPIs no Automo para ${startDate} a ${endDate}. Verifique o período e se a conexão ERP está configurada.`
         }
-        const [companyResult, bookingsResult] = await Promise.allSettled([
-          fetchCompanyKPIs(lhgUnitForTools, { startDate, endDate }),
-          fetchBookingsKPIs(lhgUnitForTools, { startDate, endDate }),
-        ])
-        const company  = companyResult.status  === 'fulfilled' ? companyResult.value  : null
-        const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : null
-        if (!company) return `Falha ao buscar KPIs para ${startDate} a ${endDate}. Verifique se o período é válido.`
-        return buildKPIContext(unit.name, { startDate, endDate }, company, bookings)
       },
     }),
 
@@ -301,8 +284,7 @@ export async function POST(req: NextRequest) {
     buscar_dados_automo: tool({
       description:
         'Consulta diretamente o ERP Automo para obter giro, total de locações e número de suítes por categoria ' +
-        'em qualquer período. Use quando precisar de dados granulares por categoria ou quando a API de analytics ' +
-        'não estiver disponível.',
+        'em qualquer período. Use quando precisar de dados granulares por categoria ou para cruzar com os KPIs agregados.',
       inputSchema: z.object({
         startDate: z.string().describe('Data inicial no formato YYYY-MM-DD, ex: "2026-04-01"'),
         endDate:   z.string().describe('Data final no formato YYYY-MM-DD, ex: "2026-04-07"'),

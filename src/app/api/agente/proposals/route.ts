@@ -5,11 +5,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
-import {
-  fetchCompanyKPIs,
-  fetchBookingsKPIs,
-  trailingYear,
-} from '@/lib/lhg-analytics/client'
+import { trailingYear } from '@/lib/kpis/period'
+import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt, type PriceImportForPrompt } from '@/lib/agente/system-prompt'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -125,7 +122,7 @@ export async function POST(req: NextRequest) {
   const admin = getAdminClient()
   const { data: unit } = await admin
     .from('units')
-    .select('id, name, slug, api_base_url')
+    .select('id, name, slug')
     .eq('slug', unitSlug)
     .eq('is_active', true)
     .single()
@@ -138,16 +135,14 @@ export async function POST(req: NextRequest) {
 
   // Buscar KPIs + tabela de preços ativa em paralelo
   const kpiParams = trailingYear()
-  const lhgUnit = { slug: unit.slug, apiBaseUrl: unit.api_base_url ?? '' }
 
-  const [companyResult, bookingsResult, priceImportsResult] = await Promise.allSettled([
-    unit.api_base_url ? fetchCompanyKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
-    unit.api_base_url ? fetchBookingsKPIs(lhgUnit, kpiParams) : Promise.reject('no api url'),
+  const [companyResult, priceImportsResult] = await Promise.allSettled([
+    fetchCompanyKPIsFromAutomo(unit.slug, kpiParams.startDate, kpiParams.endDate),
     admin.from('price_imports').select('parsed_data, valid_from, valid_until').eq('unit_id', unit.id).order('valid_from', { ascending: false }),
   ])
 
   const company = companyResult.status === 'fulfilled' ? companyResult.value : null
-  const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : null
+  const bookings = null
   const priceImports: PriceImportForPrompt[] =
     priceImportsResult.status === 'fulfilled' && priceImportsResult.value.data
       ? priceImportsResult.value.data.map((imp) => ({

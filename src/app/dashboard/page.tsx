@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { fetchCompanyKPIs } from '@/lib/lhg-analytics/client'
+import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { resolvePreset, toLhgDate, fmtDisplay } from '@/lib/date-range'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
@@ -30,12 +30,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   if (!profile) redirect('/login')
 
   // Resolve active unit
-  let activeUnit: { slug: string; api_base_url: string | null; name: string } | null = null
+  let activeUnit: { slug: string; name: string } | null = null
 
   if (unitSlug) {
     const { data } = await supabase
       .from('units')
-      .select('slug, api_base_url, name')
+      .select('slug, name')
       .eq('slug', unitSlug)
       .eq('is_active', true)
       .single()
@@ -45,7 +45,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   if (!activeUnit && profile.unit_id) {
     const { data } = await supabase
       .from('units')
-      .select('slug, api_base_url, name')
+      .select('slug, name')
       .eq('id', profile.unit_id)
       .single()
     activeUnit = data
@@ -54,7 +54,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   if (!activeUnit) {
     const { data } = await supabase
       .from('units')
-      .select('slug, api_base_url, name')
+      .select('slug, name')
       .eq('is_active', true)
       .order('name')
       .limit(1)
@@ -77,17 +77,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   // Resolve date range from URL preset / custom dates
   const dateRange  = resolvePreset(preset, start, end)
-  const kpiParams  = {
-    startDate: toLhgDate(dateRange.startDate),
-    endDate:   toLhgDate(dateRange.endDate),
-  }
-  const lhgUnit = { slug: activeUnit.slug, apiBaseUrl: activeUnit.api_base_url ?? '' }
+  const startDDMMYYYY = toLhgDate(dateRange.startDate)
+  const endDDMMYYYY   = toLhgDate(dateRange.endDate)
 
-  const companyResult = await (
-    activeUnit.api_base_url ? fetchCompanyKPIs(lhgUnit, kpiParams) : Promise.reject('no api url')
+  const company = await fetchCompanyKPIsFromAutomo(
+    activeUnit.slug,
+    startDDMMYYYY,
+    endDDMMYYYY
   ).catch(() => null)
-
-  const company = companyResult
 
   return (
     <div className="flex flex-1 flex-col gap-6">

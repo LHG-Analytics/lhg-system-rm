@@ -100,7 +100,7 @@ export interface CompanyKPIResponse {
   DataTableRevparByWeek: DataTableRevparByWeek[]
 }
 
-// ─── Restaurant (A&B) ─────────────────────────────────────────────────────────
+// ─── Restaurant (A&B) — legado Analytics; não populado pelo Automo ───────────
 
 export interface RestaurantBigNumbersCurrentDate {
   totalAllValue: number
@@ -137,7 +137,7 @@ export interface RestaurantKPIResponse {
   LeastSellingDrinks: FoodOrDrinkItem[]
 }
 
-// ─── Bookings ─────────────────────────────────────────────────────────────────
+// ─── Bookings — legado Analytics; não populado pelo Automo ────────────────────
 
 export interface BookingsBigNumbersCurrentDate {
   totalAllValue: number
@@ -209,7 +209,7 @@ export interface UnitKPIData {
   fetchedAt: string
 }
 
-// ─── API request params ───────────────────────────────────────────────────────
+// ─── Período de consulta (DD/MM/YYYY) ────────────────────────────────────────
 
 export interface KPIQueryParams {
   startDate: string // DD/MM/YYYY

@@ -68,32 +68,9 @@ Só commitar se ambos passarem sem erros.
 - **`next/image` com CSS de tamanho**: sempre incluir `style={{ height: 'auto' }}` ou `style={{ width: 'auto' }}` para manter o aspect ratio quando só uma dimensão é definida no CSS.
 - **`SidebarProvider` do shadcn/ui** deve envolver com `<TooltipProvider delayDuration={0}>` internamente — a versão gerada pelo CLI não inclui, causando erro de SSR "Tooltip must be used within TooltipProvider".
 
-## LHG Analytics API
+## KPIs operacionais (Automo)
 
-Base URL por unidade: `https://analytics.lhgmoteis.com.br/{unit_slug}/{unit_name}/api`
-
-| Unidade | api_base_url |
-|---------|-------------|
-| Lush Ipiranga | `https://analytics.lhgmoteis.com.br/lush_ipiranga/ipiranga/api` |
-| Lush Lapa | `https://analytics.lhgmoteis.com.br/lush_lapa/lapa/api` |
-| Altana | `https://analytics.lhgmoteis.com.br/altana/altana/api` |
-| Andar de Cima | `https://analytics.lhgmoteis.com.br/andar_de_cima/andar_de_cima/api` |
-| Tout | `https://analytics.lhgmoteis.com.br/tout/tout/api` |
-
-**Auth:** `POST https://analytics.lhgmoteis.com.br/auth/api/login` com `{email, password}`. Resposta define `Set-Cookie: access_token=JWT` (HttpOnly, 1h). Ler com `res.headers.get('set-cookie')` no server-side. Reenviar como `Cookie: access_token=VALUE`. Tokens armazenados em `lhg_analytics_tokens` no Supabase.
-
-**Endpoints de dados** (autenticação via Cookie):
-- `GET /Company/kpis/date-range?startDate=DD%2FMM%2YYYY&endDate=DD%2FMM%2YYYY`
-- `GET /Restaurants/restaurants/date-range?startDate=...&endDate=...`
-- `GET /Bookings/bookings/date-range?startDate=...&endDate=...`
-
-**Formatos importantes:**
-- Datas: `DD/MM/YYYY` (URL-encoded: `%2F` para `/`)
-- `totalAverageOccupationTime`: string `"HH:MM:SS"`, não número
-- `DataTableSuiteCategory`: `Array<{ [categoryName: string]: SuiteCategoryKPI }>` (objeto com chave dinâmica, não array plano)
-- Campos da suíte: `totalRentalsApartments`, `totalValue`, `totalTicketAverage` (não `rentals`, `revenue`, `ticketAverage`)
-
-**Período padrão:** "últimos 12 meses" via `trailingYear()` — mesma data do ano passado até ontem operacional (06:00 cutoff). Ex: hoje 28/03/2026 → 28/03/2025 a 27/03/2026. Evita sazonalidade (YTD seria incompleto no início do ano).
+Dashboard, agente RM e cron usam **`fetchCompanyKPIsFromAutomo()`** (`src/lib/automo/company-kpis.ts`) — SQL read-only no PostgreSQL do ERP. Tipos compartilhados em `src/lib/kpis/types.ts`. Períodos em `DD/MM/YYYY`; janela padrão de contexto histórico: **`trailingYear()`** em `src/lib/kpis/period.ts` (mesma data do ano passado até ontem operacional, corte 06:00).
 
 ## Contexto de negócio
 
@@ -128,7 +105,7 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 
 | Tabela | Descrição |
 |--------|-----------|
-| `units` | Unidades/motéis (com `api_base_url` para LHG Analytics) |
+| `units` | Unidades/motéis |
 | `profiles` | Usuários com roles (super_admin/admin/manager/viewer) |
 | `suite_categories` | Categorias de suíte por unidade |
 | `suite_periods` | Períodos (3h/6h/12h/pernoite) com preço base |
@@ -143,7 +120,7 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 | `rm_agent_overrides` | Cancelamentos e reversões de decisões |
 | `rm_weather_demand_patterns` | Padrões aprendidos clima × demanda |
 | `kpi_snapshots` | Cache de KPIs do ERP |
-| `lhg_analytics_tokens` | Tokens de auth da LHG Analytics API por unidade |
+| `lhg_analytics_tokens` | Legado (não usado pelo app atual; pode ser removido em migração futura) |
 | `channel_sync_log` | Log de sincronização com canais |
 | `notifications` | Notificações para usuários |
 | `price_proposals` | Propostas de preço do agente (JSONB rows, pending/approved/rejected) — sem FK para tabelas de categorias/períodos/canais |
@@ -163,7 +140,7 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 - **LHG-10:** DB Schema completo + migrations
 - **LHG-11:** RLS Policies
 - **LHG-14:** Sidebar + Navegação + Layout base (incl. hover expand/collapse, unit switcher com Suspense)
-- **LHG-21:** Integração LHG Analytics API — KPIs em tempo real (trailing 12 meses, fallback unidade para super_admin)
+- **LHG-21:** KPIs em tempo real via Automo (substitui integração Analytics legada)
 - **LHG-5:** SPIKE — Mapear banco Automo
 - **LHG-64:** Supabase local + vínculo remoto
 - **LHG-65:** Google OAuth configurado

@@ -69,7 +69,7 @@ export function resolvePreset(
   return { startDate: fmt(start), endDate: fmt(yest), preset: 'this-month', label: 'Este mês' }
 }
 
-/** YYYY-MM-DD → DD/MM/YYYY (LHG Analytics API format) */
+/** YYYY-MM-DD → DD/MM/YYYY (formato de período KPI / Automo) */
 export function toLhgDate(isoDate: string): string {
   const [y, m, d] = isoDate.split('-')
   return `${d}/${m}/${y}`
