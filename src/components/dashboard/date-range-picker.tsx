@@ -20,6 +20,14 @@ function clampHour(v: string | null, fallback: number): number {
   return isNaN(n) || n < 0 || n > 23 ? fallback : n
 }
 
+export type DateType = 'all' | 'checkin' | 'checkout'
+
+const DATE_TYPE_OPTIONS: { value: DateType; label: string; description: string }[] = [
+  { value: 'checkin',  label: 'Entrada', description: 'Filtrar pela data de entrada na suíte' },
+  { value: 'checkout', label: 'Saída',   description: 'Filtrar pela data de saída da suíte'   },
+  { value: 'all',      label: 'Todas',   description: 'Considerar entradas e saídas'          },
+]
+
 export type RentalStatus = 'FINALIZADA' | 'TRANSFERIDA' | 'CANCELADA' | 'ABERTA' | 'TODAS'
 
 const STATUS_OPTIONS: { value: RentalStatus; label: string; description: string }[] = [
@@ -48,6 +56,9 @@ export function DateRangePicker() {
   const [localEnd,       setLocalEnd]       = useState(initial.endDate)
   const [localStartHour, setLocalStartHour] = useState(() => clampHour(searchParams.get('startHour'), 0))
   const [localEndHour,   setLocalEndHour]   = useState(() => clampHour(searchParams.get('endHour'), 23))
+  const [localDateType,  setLocalDateType]  = useState<DateType>(
+    () => (searchParams.get('dateType') as DateType) ?? 'checkin'
+  )
   const [localStatus,    setLocalStatus]    = useState<RentalStatus>(
     () => (searchParams.get('status') as RentalStatus) ?? 'FINALIZADA'
   )
@@ -62,12 +73,13 @@ export function DateRangePicker() {
     setLocalEnd(r.endDate)
     setLocalStartHour(clampHour(searchParams.get('startHour'), 0))
     setLocalEndHour(clampHour(searchParams.get('endHour'), 23))
+    setLocalDateType((searchParams.get('dateType') as DateType) ?? 'checkin')
     setLocalStatus((searchParams.get('status') as RentalStatus) ?? 'FINALIZADA')
   }, [searchParams])
 
   function navigate(extra: Record<string, string>) {
     const params = new URLSearchParams()
-    const DATE_KEYS = new Set(['preset', 'start', 'end', 'startHour', 'endHour', 'status'])
+    const DATE_KEYS = new Set(['preset', 'start', 'end', 'startHour', 'endHour', 'dateType', 'status'])
     for (const [k, v] of searchParams.entries()) {
       if (!DATE_KEYS.has(k)) params.set(k, v)
     }
@@ -87,6 +99,7 @@ export function DateRangePicker() {
       end:       resolved.endDate,
       startHour: String(localStartHour),
       endHour:   String(localEndHour),
+      dateType:  localDateType,
       status:    localStatus,
     })
   }
@@ -99,6 +112,7 @@ export function DateRangePicker() {
       end:       localEnd,
       startHour: String(localStartHour),
       endHour:   String(localEndHour),
+      dateType:  localDateType,
       status:    localStatus,
     })
   }
@@ -159,6 +173,23 @@ export function DateRangePicker() {
         >
           {HOURS.map((h) => (
             <option key={h} value={h}>{fmtHour(h)}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Filtro de tipo de data */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs text-muted-foreground">Data</span>
+        <select
+          value={localDateType}
+          onChange={(e) => setLocalDateType(e.target.value as DateType)}
+          title={DATE_TYPE_OPTIONS.find(o => o.value === localDateType)?.description}
+          className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          {DATE_TYPE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value} title={opt.description}>
+              {opt.label}
+            </option>
           ))}
         </select>
       </div>

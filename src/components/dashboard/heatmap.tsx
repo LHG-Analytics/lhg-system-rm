@@ -80,8 +80,9 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: H
   const searchParams = useSearchParams()
   const rentalStatus = searchParams.get('status') ?? 'FINALIZADA'
 
+  const urlDateType = (searchParams.get('dateType') ?? 'checkin') as HeatmapDateType
   const [metric,     setMetric]     = useState<HeatmapMetric>('giro')
-  const [dateType,   setDateType]   = useState<HeatmapDateType>('all')
+  const [dateType,   setDateType]   = useState<HeatmapDateType>(urlDateType)
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [rows,       setRows]       = useState<HeatmapCell[]>([])
   const [categories, setCategories] = useState<HeatmapCategory[]>([])

@@ -16,6 +16,7 @@ interface DashboardPageProps {
     end?:        string
     startHour?:  string
     endHour?:    string
+    dateType?:   string
     status?:     string
   }>
 }
@@ -24,10 +25,13 @@ const VALID_STATUSES = ['FINALIZADA', 'TRANSFERIDA', 'CANCELADA', 'ABERTA', 'TOD
 type RentalStatus = typeof VALID_STATUSES[number]
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-  const { unit: unitSlug, preset, start, end, startHour: shParam, endHour: ehParam, status: statusParam } = await searchParams
+  const { unit: unitSlug, preset, start, end, startHour: shParam, endHour: ehParam, dateType: dtParam, status: statusParam } = await searchParams
 
   const startHour    = Math.min(23, Math.max(0, parseInt(shParam ?? '0')  || 0))
   const endHour      = Math.min(23, Math.max(0, parseInt(ehParam ?? '23') || 23))
+  const dateType     = (['all', 'checkin', 'checkout'] as const).includes(dtParam as 'all' | 'checkin' | 'checkout')
+    ? (dtParam as 'all' | 'checkin' | 'checkout')
+    : 'checkin'
   const rentalStatus: RentalStatus = VALID_STATUSES.includes(statusParam as RentalStatus)
     ? (statusParam as RentalStatus)
     : 'FINALIZADA'
@@ -99,8 +103,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     startHour,
     endHour,
     rentalStatus,
+    dateType,
   ).catch((e) => {
-    console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h status=${rentalStatus}):`, e)
+    console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h dateType=${dateType} status=${rentalStatus}):`, e)
     return null
   })
 
