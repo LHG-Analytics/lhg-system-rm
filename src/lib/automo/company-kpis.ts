@@ -497,14 +497,24 @@ export async function fetchCompanyKPIsFromAutomo(
   const totalDaysInMonth = new Date(nowBR.getFullYear(), nowBR.getMonth() + 1, 0).getDate()
   const remainingDays = totalDaysInMonth - daysElapsed
 
-  // Executa queries em paralelo
+  // Executa queries em paralelo — cada uma loga o próprio erro para diagnóstico
+  const tag = `[KPIs/${unitSlug}]`
+
+  function tagError(query: string) {
+    return (e: unknown) => {
+      const err = e instanceof Error ? e : new Error(String(e))
+      console.error(`${tag} Query falhou [${query}]:`, err.message)
+      throw err
+    }
+  }
+
   const [currentBN, prevBN, monthBN, revOcc, suiteCatTable, weekTables] = await Promise.all([
-    queryBigNumbers(pool, catIds, isoStart,    isoEnd,    daysDiff),
-    queryBigNumbers(pool, catIds, prevIsoStart, prevIsoEnd, daysDiff),
-    queryBigNumbers(pool, catIds, monIsoStart,  monIsoEnd,  daysElapsed || 1),
-    queryTotalRevOcc(pool, catIds, isoStart, isoEnd, daysDiff),
-    queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff),
-    queryWeekTables(pool, catIds, isoStart, isoEnd),
+    queryBigNumbers(pool, catIds, isoStart,    isoEnd,    daysDiff)       .catch(tagError('BigNumbers/current')),
+    queryBigNumbers(pool, catIds, prevIsoStart, prevIsoEnd, daysDiff)     .catch(tagError('BigNumbers/prev')),
+    queryBigNumbers(pool, catIds, monIsoStart,  monIsoEnd,  daysElapsed || 1).catch(tagError('BigNumbers/month')),
+    queryTotalRevOcc(pool, catIds, isoStart, isoEnd, daysDiff)            .catch(tagError('TotalRevOcc')),
+    queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff).catch(tagError('DataTableSuiteCategory')),
+    queryWeekTables(pool, catIds, isoStart, isoEnd)                       .catch(tagError('WeekTables')),
   ])
 
   // Previsão de fechamento do mês

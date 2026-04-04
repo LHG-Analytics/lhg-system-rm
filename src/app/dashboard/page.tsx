@@ -84,7 +84,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     activeUnit.slug,
     startDDMMYYYY,
     endDDMMYYYY
-  ).catch(() => null)
+  ).catch((e) => {
+    console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY}):`, e)
+    return null
+  })
 
   return (
     <div className="flex flex-1 flex-col gap-6">
