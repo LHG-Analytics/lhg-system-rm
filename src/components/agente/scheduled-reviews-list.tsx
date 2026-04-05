@@ -31,6 +31,7 @@ import type { ScheduledReview } from '@/app/api/agente/scheduled-reviews/route'
 interface ScheduledReviewsListProps {
   unitSlug: string
   onSelectConversation?: (convId: string) => void
+  onSelectProposal?: (proposalId: string) => void
 }
 
 const STATUS_CONFIG = {
@@ -45,7 +46,7 @@ function formatScheduled(iso: string) {
   return format(d, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
 }
 
-export function ScheduledReviewsList({ unitSlug, onSelectConversation }: ScheduledReviewsListProps) {
+export function ScheduledReviewsList({ unitSlug, onSelectConversation, onSelectProposal }: ScheduledReviewsListProps) {
   const [reviews, setReviews]         = useState<ScheduledReview[]>([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
@@ -168,10 +169,16 @@ export function ScheduledReviewsList({ unitSlug, onSelectConversation }: Schedul
                               Aguardando execução
                             </Badge>
                           )}
-                          {review.proposal_created_at && (
-                            <span className="text-xs text-muted-foreground">
+                          {review.proposal_id && review.proposal_created_at && (
+                            <button
+                              className="text-xs text-muted-foreground hover:text-primary underline-offset-2 hover:underline transition-colors"
+                              onClick={() => onSelectProposal?.(review.proposal_id!)}
+                              title={`Ver proposta ${review.proposal_id}`}
+                            >
                               Proposta de {format(parseISO(review.proposal_created_at), 'dd/MM/yyyy', { locale: ptBR })}
-                            </span>
+                              {' '}
+                              <span className="font-mono text-[10px]">({review.proposal_id.slice(0, 8)})</span>
+                            </button>
                           )}
                         </div>
 
@@ -282,10 +289,16 @@ export function ScheduledReviewsList({ unitSlug, onSelectConversation }: Schedul
                             · executada em {format(parseISO(review.executed_at), 'dd/MM HH:mm', { locale: ptBR })}
                           </span>
                         )}
-                        {review.proposal_created_at && (
-                          <span className="text-xs text-muted-foreground">
+                        {review.proposal_id && review.proposal_created_at && (
+                          <button
+                            className="text-xs text-muted-foreground hover:text-primary underline-offset-2 hover:underline transition-colors"
+                            onClick={() => onSelectProposal?.(review.proposal_id!)}
+                            title={`Ver proposta ${review.proposal_id}`}
+                          >
                             · proposta de {format(parseISO(review.proposal_created_at), 'dd/MM/yyyy', { locale: ptBR })}
-                          </span>
+                            {' '}
+                            <span className="font-mono text-[10px]">({review.proposal_id.slice(0, 8)})</span>
+                          </button>
                         )}
                       </div>
                       {review.note && (

@@ -44,6 +44,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
   const [chatKey,          setChatKey]          = useState(0)
   const [proposalsRefreshKey, setProposalsRefreshKey] = useState(0)
   const [activeTab,        setActiveTab]        = useState('chat')
+  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!unitId) return
@@ -116,6 +117,11 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
 
   function handleProposalSaved() {
     setProposalsRefreshKey((k) => k + 1)
+  }
+
+  function handleSelectProposal(proposalId: string) {
+    setSelectedProposalId(proposalId)
+    setActiveTab('propostas')
   }
 
   async function handleMessagesUpdate(id: string, msgs: UIMessage[]) {
@@ -266,6 +272,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
             unitSlug={activeUnit?.slug ?? ''}
             initialProposals={initialProposals}
             refreshKey={proposalsRefreshKey}
+            selectedProposalId={selectedProposalId}
           />
         </TabsContent>
 
@@ -273,6 +280,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
           <ScheduledReviewsList
             unitSlug={unitSlug}
             onSelectConversation={handleSelectConversationById}
+            onSelectProposal={handleSelectProposal}
           />
         </TabsContent>
       </Tabs>

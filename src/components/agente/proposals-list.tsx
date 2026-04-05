@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -32,6 +32,7 @@ interface ProposalsListProps {
   unitSlug: string
   initialProposals: PriceProposal[]
   refreshKey?: number
+  selectedProposalId?: string | null
 }
 
 const STATUS_CONFIG = {
@@ -79,12 +80,13 @@ function ExpandableText({ text, maxLength = 120 }: { text: string; maxLength?: n
   )
 }
 
-export function ProposalsList({ unitSlug, initialProposals, refreshKey }: ProposalsListProps) {
+export function ProposalsList({ unitSlug, initialProposals, refreshKey, selectedProposalId }: ProposalsListProps) {
   const [proposals, setProposals] = useState<PriceProposal[]>(initialProposals)
   const [generating, setGenerating] = useState(false)
   const [reviewing, setReviewing] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // Edição inline
   const [editing, setEditing] = useState<{ id: string; rows: ProposedPriceRow[] } | null>(null)
@@ -101,6 +103,15 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
       .then((data) => { if (Array.isArray(data)) setProposals(data as PriceProposal[]) })
       .catch(() => {})
   }, [refreshKey, unitSlug])
+
+  // Auto-expande e scrolla para a proposta vinda da Agenda
+  useEffect(() => {
+    if (!selectedProposalId) return
+    setExpanded((prev) => new Set([...prev, selectedProposalId]))
+    setTimeout(() => {
+      cardRefs.current[selectedProposalId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+  }, [selectedProposalId])
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -267,8 +278,17 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
             const isReviewing = reviewing === proposal.id
             const isEditing = editing?.id === proposal.id
 
+            const isHighlighted = selectedProposalId === proposal.id
+
             return (
-              <div key={proposal.id} className="rounded-xl border bg-card overflow-hidden">
+              <div
+                key={proposal.id}
+                ref={(el) => { cardRefs.current[proposal.id] = el }}
+                className={cn(
+                  'rounded-xl border bg-card overflow-hidden transition-colors',
+                  isHighlighted && 'ring-2 ring-primary/40'
+                )}
+              >
                 {/* Cabeçalho do card */}
                 <div className="flex items-start gap-3 p-4">
                   <div className="flex-1 min-w-0">
@@ -282,6 +302,9 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
                       </span>
                       <span className="text-xs text-muted-foreground">
                         · {proposal.rows.length} {proposal.rows.length === 1 ? 'linha' : 'linhas'}
+                      </span>
+                      <span className="font-mono text-[10px] text-muted-foreground/50 select-all" title={proposal.id}>
+                        {proposal.id.slice(0, 8)}
                       </span>
                     </div>
                     {proposal.context && (
