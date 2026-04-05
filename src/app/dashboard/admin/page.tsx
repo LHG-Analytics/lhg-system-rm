@@ -3,8 +3,11 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import { UsersManager } from './_components/users-manager'
+import { GuardrailsManager } from './_components/guardrails-manager'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Users, Shield } from 'lucide-react'
 
-export const metadata = { title: 'Usuários — LHG Revenue Manager' }
+export const metadata = { title: 'Administração — LHG Revenue Manager' }
 
 function getAdminClient() {
   return createAdminClient<Database>(
@@ -13,7 +16,7 @@ function getAdminClient() {
   )
 }
 
-export default async function AdminPage() {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ unit?: string }> }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -27,16 +30,17 @@ export default async function AdminPage() {
   if (profile?.role !== 'super_admin') redirect('/dashboard')
 
   const admin = getAdminClient()
+  const { unit: unitSlug } = await searchParams
 
   const [profilesResult, authUsersResult, unitsResult] = await Promise.allSettled([
     admin.from('profiles').select('user_id, role, unit_id, created_at').order('created_at', { ascending: false }),
     admin.auth.admin.listUsers({ perPage: 1000 }),
-    admin.from('units').select('id, name').eq('is_active', true).order('name'),
+    admin.from('units').select('id, name, slug').eq('is_active', true).order('name'),
   ])
 
   const profiles  = profilesResult.status  === 'fulfilled' ? (profilesResult.value.data  ?? []) : []
   const authUsers = authUsersResult.status === 'fulfilled' ? (authUsersResult.value.data?.users ?? []) : []
-  const unitsData = unitsResult.status     === 'fulfilled' ? (unitsResult.value.data     ?? []) : []
+  const unitsData = unitsResult.status     === 'fulfilled' ? (unitsResult.value.data ?? []) : []
 
   const emailMap    = new Map(authUsers.map((u) => [u.id, u.email        ?? '']))
   const invitedMap  = new Map(authUsers.map((u) => [u.id, u.invited_at   ?? null]))
@@ -52,11 +56,65 @@ export default async function AdminPage() {
     last_sign_in: lastSignMap.get(p.user_id) ?? null,
   }))
 
+  // Unidade selecionada para guardrails (padrão: primeira)
+  const activeUnitSlug = unitSlug ?? unitsData[0]?.slug ?? ''
+  const activeUnit = unitsData.find((u) => u.slug === activeUnitSlug) ?? unitsData[0]
+
+  // Busca guardrails da unidade ativa
+  const { data: guardrailsData } = activeUnit
+    ? await supabase
+        .from('agent_price_guardrails')
+        .select('id, categoria, periodo, preco_minimo, preco_maximo')
+        .eq('unit_id', activeUnit.id)
+        .order('categoria')
+        .order('periodo')
+    : { data: [] }
+
   return (
-    <UsersManager
-      initialUsers={users}
-      units={unitsData ?? []}
-      currentUserId={user.id}
-    />
+    <div className="flex flex-1 flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Administração</h1>
+        <p className="text-sm text-muted-foreground mt-1">Gerencie usuários e configurações do sistema.</p>
+      </div>
+
+      <Tabs defaultValue="usuarios">
+        <TabsList className="h-9">
+          <TabsTrigger value="usuarios" className="gap-1.5 text-xs">
+            <Users className="size-3.5" />
+            Usuários
+          </TabsTrigger>
+          <TabsTrigger value="guardrails" className="gap-1.5 text-xs">
+            <Shield className="size-3.5" />
+            Guardrails do Agente
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="usuarios" className="mt-6">
+          <UsersManager
+            initialUsers={users}
+            units={unitsData.map((u) => ({ id: u.id, name: u.name }))}
+            currentUserId={user.id}
+          />
+        </TabsContent>
+
+        <TabsContent value="guardrails" className="mt-6">
+          {activeUnit ? (
+            <GuardrailsManager
+              unitSlug={activeUnit.slug}
+              unitName={activeUnit.name}
+              initialGuardrails={(guardrailsData ?? []).map((g) => ({
+                id: g.id,
+                categoria: g.categoria,
+                periodo: g.periodo,
+                preco_minimo: g.preco_minimo,
+                preco_maximo: g.preco_maximo,
+              }))}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
   )
 }

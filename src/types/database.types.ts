@@ -14,6 +14,50 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_price_guardrails: {
+        Row: {
+          categoria: string
+          created_at: string
+          created_by: string | null
+          id: string
+          periodo: string
+          preco_maximo: number
+          preco_minimo: number
+          unit_id: string
+          updated_at: string
+        }
+        Insert: {
+          categoria: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          periodo: string
+          preco_maximo: number
+          preco_minimo: number
+          unit_id: string
+          updated_at?: string
+        }
+        Update: {
+          categoria?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          periodo?: string
+          preco_maximo?: number
+          preco_minimo?: number
+          unit_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_price_guardrails_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       channel_inventory: {
         Row: {
           available_quantity: number
@@ -854,7 +898,7 @@ export type Database = {
           id: string
           note: string | null
           proposal_id: string | null
-          scheduled_at: string   // timestamptz ISO string
+          scheduled_at: string
           status: string
           unit_id: string
         }

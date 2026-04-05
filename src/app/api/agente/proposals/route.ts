@@ -333,12 +333,40 @@ export async function POST(req: NextRequest) {
     `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo} = R$ ${r.preco.toFixed(2)}`
   ).join('\n')
 
+  // ─── Buscar guardrails para injetar restrições no prompt ────────────────
+  const { data: guardrailsData } = await supabase
+    .from('agent_price_guardrails')
+    .select('categoria, periodo, preco_minimo, preco_maximo')
+    .eq('unit_id', unit.id)
+
+  // Mapa: "categoria|periodo" → { min, max }
+  const guardrailMap = new Map<string, { min: number; max: number }>(
+    (guardrailsData ?? []).map((g) => [
+      `${g.categoria}|${g.periodo}`,
+      { min: g.preco_minimo, max: g.preco_maximo },
+    ])
+  )
+
+  const guardrailsBlock = guardrailsData?.length
+    ? `## Guardrails de preço (limites obrigatórios — NÃO ULTRAPASSAR)
+
+Estes limites foram configurados pelo gestor. Nenhuma proposta pode ter preco_proposto fora deste intervalo.
+
+| Categoria | Período | Preço Mínimo | Preço Máximo |
+|-----------|---------|-------------|-------------|
+${guardrailsData.map((g) =>
+  `| ${g.categoria} | ${g.periodo} | R$ ${g.preco_minimo.toFixed(2)} | R$ ${g.preco_maximo.toFixed(2)} |`
+).join('\n')}
+
+IMPORTANTE: Se o preço ótimo calculado ultrapassar o máximo, use o máximo. Se estiver abaixo do mínimo, use o mínimo.`
+    : ''
+
   const prompt = `Você é um especialista em Revenue Management para motéis. Analise os dados abaixo e gere uma proposta de ajuste de preços.
 
 ## Dados operacionais — ${unit.name}
 
 ${kpiBlocks}
-${memoryBlock ? `\n${memoryBlock}\n` : ''}
+${memoryBlock ? `\n${memoryBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
@@ -389,6 +417,20 @@ Omita itens sem dados suficientes. JSON minificado, sem indentação.`
       { error: 'O modelo não retornou JSON válido. Tente novamente.', preview: text.slice(0, 800) },
       { status: 422 }
     )
+  }
+
+  // ─── Clamp server-side pelos guardrails (safety net) ────────────────────
+  if (guardrailMap.size > 0) {
+    for (const row of parsed.rows) {
+      const g = guardrailMap.get(`${row.categoria}|${row.periodo}`)
+      if (!g) continue
+      const clamped = Math.min(g.max, Math.max(g.min, row.preco_proposto))
+      if (clamped !== row.preco_proposto) {
+        row.preco_proposto = +clamped.toFixed(2)
+        row.variacao_pct   = +((clamped - row.preco_atual) / row.preco_atual * 100).toFixed(1)
+        row.justificativa  = `${row.justificativa} [ajustado ao limite configurado: R$ ${clamped.toFixed(2)}]`
+      }
+    }
   }
 
   const { data: saved, error } = await supabase

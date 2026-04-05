@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AppSidebar } from '@/components/app-sidebar'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import {
   SidebarInset,
   SidebarProvider,
@@ -77,6 +78,7 @@ export default async function DashboardLayout({
           <SidebarTrigger className="-ml-1 md:hidden" />
           <Separator orientation="vertical" className="mr-2 h-4 md:hidden" />
           <div className="flex-1" />
+          <NotificationsBell />
           <ThemeToggle />
         </header>
         <main className="flex flex-1 flex-col gap-4 p-4">
