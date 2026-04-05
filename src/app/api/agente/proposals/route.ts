@@ -8,6 +8,7 @@ import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 import { toApiDate } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildKPIContext, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
+import type { CompanyKPIResponse } from '@/lib/kpis/types'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -53,14 +54,47 @@ const CANAL_LABELS: Record<string, string> = {
 
 /**
  * Monta o bloco de memória estratégica: lista as últimas propostas aprovadas
- * com os preços alterados (Δ%). O agente cruza com o comparativo de KPIs
- * (período atual × anterior) para avaliar se as decisões passadas funcionaram.
+ * com os preços alterados (Δ%) e — quando disponível — o resultado observado
+ * (KPIs antes × depois da mudança de tabela) para fechar o ciclo de aprendizado.
  */
-function buildStrategicMemoryBlock(history: PriceProposal[]): string {
+function buildStrategicMemoryBlock(
+  history: PriceProposal[],
+  kpiAfter: CompanyKPIResponse | null,
+  kpiBefore: CompanyKPIResponse | null,
+): string {
   const relevant = history.filter((p) =>
     (p.rows as ProposedPriceRow[])?.some((r) => Math.abs(r.variacao_pct) >= 1)
   )
   if (!relevant.length) return ''
+
+  function fmtBRL(n: number) {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
+  }
+  function delta(a: number, b: number) {
+    if (!b) return '—'
+    const pct = ((a - b) / b) * 100
+    return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
+  }
+
+  // Resultado real: compara KPIs do período anterior (antes da tabela ativa)
+  // com o período atual (depois) — fecha explicitamente o loop de aprendizado
+  let impactBlock = ''
+  if (kpiAfter && kpiBefore) {
+    const af = kpiAfter.TotalResult
+    const bf = kpiBefore.TotalResult
+    impactBlock = `### Resultado observado após última mudança de tabela
+| KPI | Antes | Depois | Δ |
+|-----|-------|--------|---|
+| RevPAR | ${fmtBRL(bf.totalRevpar)} | ${fmtBRL(af.totalRevpar)} | **${delta(af.totalRevpar, bf.totalRevpar)}** |
+| TRevPAR | ${fmtBRL(bf.totalTrevpar)} | ${fmtBRL(af.totalTrevpar)} | **${delta(af.totalTrevpar, bf.totalTrevpar)}** |
+| Giro | ${bf.totalGiro.toFixed(2)} | ${af.totalGiro.toFixed(2)} | **${delta(af.totalGiro, bf.totalGiro)}** |
+| Ocupação | ${bf.totalOccupancyRate.toFixed(1)}% | ${af.totalOccupancyRate.toFixed(1)}% | **${delta(af.totalOccupancyRate, bf.totalOccupancyRate)}** |
+| Ticket Médio | ${fmtBRL(bf.totalAllTicketAverage)} | ${fmtBRL(af.totalAllTicketAverage)} | **${delta(af.totalAllTicketAverage, bf.totalAllTicketAverage)}** |
+
+> Use este resultado para calibrar a nova proposta: se os KPIs melhoraram, intensifique a direção; se pioraram, recue ou corrija o caminho.
+
+`
+  }
 
   const blocks = relevant.map((p, idx) => {
     const date = p.reviewed_at
@@ -85,9 +119,7 @@ ${tableLines}`
 
   return `## Memória estratégica — ${relevant.length} proposta(s) aprovada(s)
 
-> Os KPIs comparativos acima (período atual × período anterior) refletem o impacto dessas decisões. Use esse histórico para avaliar se a direção foi correta e para calibrar a nova proposta.
-
-${blocks}`
+${impactBlock}${blocks}`
 }
 
 function extractProposalJSON(text: string): ProposalResponse | null {
@@ -297,7 +329,7 @@ export async function POST(req: NextRequest) {
 
   // ─── Montar prompt focado (sem system prompt do chat) ───────────────────
   const hasPrevious = kpiData.length > 1
-  const memoryBlock = buildStrategicMemoryBlock(approvedHistory)
+  const memoryBlock = buildStrategicMemoryBlock(approvedHistory, kpiActive, kpiPrevious)
 
   const kpiBlocks = kpiData.map((kpi) => {
     const label = kpi.label ?? 'Período'

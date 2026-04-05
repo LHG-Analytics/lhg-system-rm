@@ -121,6 +121,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               unitName={activeUnit.name}
               categorias={categorias}
               periodos={periodos}
+              units={unitsData.map((u) => ({ id: u.id, name: u.name, slug: u.slug }))}
               initialGuardrails={guardrailsData.map((g) => ({
                 id: g.id,
                 categoria: g.categoria,

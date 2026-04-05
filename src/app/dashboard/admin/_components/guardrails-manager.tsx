@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { Plus, Trash2, Shield, Loader2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Plus, Trash2, Shield, Loader2, Building2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,17 +33,25 @@ interface Guardrail {
   preco_maximo: number
 }
 
+interface Unit {
+  id: string
+  name: string
+  slug: string
+}
+
 interface GuardrailsManagerProps {
   unitSlug: string
   unitName: string
   categorias: string[]
   periodos: string[]
   initialGuardrails: Guardrail[]
+  units: Unit[]
 }
 
 const PERIODOS_FALLBACK = ['3h', '6h', '12h', 'pernoite']
 
-export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, initialGuardrails }: GuardrailsManagerProps) {
+export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, initialGuardrails, units }: GuardrailsManagerProps) {
+  const router = useRouter()
   const periodoOptions = periodos.length > 0 ? periodos : PERIODOS_FALLBACK
   const [guardrails, setGuardrails] = useState<Guardrail[]>(initialGuardrails)
   const [categoria, setCategoria] = useState('')
@@ -103,15 +112,33 @@ export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, in
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
-          <Shield className="size-4 text-primary" />
-          Guardrails de Preço — {unitName}
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Limites de preço que o agente RM não pode ultrapassar ao gerar propostas.
-          {categorias.length === 0 && ' Importe uma tabela de preços para ver as categorias disponíveis.'}
-        </p>
+      <div className="flex flex-col gap-3">
+        {/* Seletor de unidade */}
+        {units.length > 1 && (
+          <div className="flex items-center gap-2">
+            <Building2 className="size-3.5 text-muted-foreground shrink-0" />
+            <Select value={unitSlug} onValueChange={(slug) => router.push(`/dashboard/admin?unit=${slug}`)}>
+              <SelectTrigger className="h-8 text-xs w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {units.map((u) => (
+                  <SelectItem key={u.slug} value={u.slug}>{u.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+            <Shield className="size-4 text-primary" />
+            Guardrails de Preço — {unitName}
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Limites de preço que o agente RM não pode ultrapassar ao gerar propostas.
+            {categorias.length === 0 && ' Importe uma tabela de preços para ver as categorias disponíveis.'}
+          </p>
+        </div>
       </div>
 
       {/* Formulário */}
