@@ -62,6 +62,23 @@ function VariacaoBadge({ pct }: { pct: number }) {
   )
 }
 
+function ExpandableText({ text, maxLength = 120 }: { text: string; maxLength?: number }) {
+  const [expanded, setExpanded] = useState(false)
+  if (text.length <= maxLength) return <span>{text}</span>
+  return (
+    <span>
+      {expanded ? text : text.slice(0, maxLength) + '…'}
+      {' '}
+      <button
+        className="text-primary underline-offset-2 hover:underline text-[11px] font-medium shrink-0"
+        onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v) }}
+      >
+        {expanded ? 'Ler menos' : 'Ler mais'}
+      </button>
+    </span>
+  )
+}
+
 export function ProposalsList({ unitSlug, initialProposals, refreshKey }: ProposalsListProps) {
   const [proposals, setProposals] = useState<PriceProposal[]>(initialProposals)
   const [generating, setGenerating] = useState(false)
@@ -268,8 +285,8 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
                       </span>
                     </div>
                     {proposal.context && (
-                      <p className="mt-2 text-sm text-muted-foreground line-clamp-2">
-                        {proposal.context}
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        <ExpandableText text={proposal.context} maxLength={160} />
                       </p>
                     )}
                   </div>
@@ -345,7 +362,7 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
                               <TableCell className="text-right text-xs">
                                 <VariacaoBadge pct={row.variacao_pct} />
                               </TableCell>
-                              <TableCell className="text-xs text-muted-foreground max-w-[200px]">
+                              <TableCell className="text-xs text-muted-foreground max-w-[240px]">
                                 {isEditing ? (
                                   <input
                                     type="text"
@@ -354,7 +371,7 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
                                     onChange={(e) => updateEditJustificativa(i, e.target.value)}
                                   />
                                 ) : (
-                                  row.justificativa
+                                  <ExpandableText text={row.justificativa} maxLength={80} />
                                 )}
                               </TableCell>
                             </TableRow>
