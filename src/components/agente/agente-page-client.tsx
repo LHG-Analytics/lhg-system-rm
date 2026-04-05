@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Plus, MessageSquare, Trash2, BotMessageSquare, ClipboardCheck, CalendarClock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -46,8 +46,17 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
   const [activeTab,        setActiveTab]        = useState('chat')
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null)
 
+  // Reseta o chat quando a unidade muda (troca via sidebar)
+  const prevUnitIdRef = useRef<string>('')
   useEffect(() => {
     if (!unitId) return
+    if (prevUnitIdRef.current && prevUnitIdRef.current !== unitId) {
+      // Unidade trocou — começa nova conversa em branco com o novo contexto
+      setSelectedConvId(null)
+      setSelectedMessages([])
+      setChatKey((k) => k + 1)
+    }
+    prevUnitIdRef.current = unitId
     loadConversations()
   }, [unitId]) // eslint-disable-line react-hooks/exhaustive-deps
 
