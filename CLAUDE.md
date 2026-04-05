@@ -261,13 +261,21 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Header do dashboard: preset `custom` exibe só `dateRange.label` (sem duplicar datas)
   - `date-range-picker.tsx`: scrollbar horizontal oculta via `[scrollbar-width:none]` (scroll funcional mas invisível)
 
+- **LHG-86:** Agente RM: Memória estratégica — histórico de propostas aprovadas injetado no prompt de geração
+  - `buildStrategicMemoryBlock`: busca últimas 3 propostas aprovadas em paralelo com KPIs (sem latência extra)
+  - Monta tabela com cada alteração de preço (Δ%) por item; só aparece quando há itens com variação ≥1%
+  - Critério condicional no prompt: "se KPIs melhoraram → intensifique direção; se pioraram → recue"
+  - Agente cruza com comparativo período atual × anterior para avaliar se decisões passadas funcionaram
+- **LHG-87:** Agente RM: Contexto por categoria de suíte no prompt (chat + geração de propostas)
+  - `DataTableSuiteCategory` era calculada mas exibida como texto corrido sem RevPAR/TRevPAR
+  - Substituído por tabela markdown: `Categoria | Locações | RevPAR | TRevPAR | Ocupação | Giro | Ticket | TMO`
+  - Afeta tanto o chat do agente (buildKPIContext em system-prompt.ts) quanto o prompt de geração de propostas
+
 ### 🔲 Backlog MVP (por prioridade)
 
 #### 🤖 Agente RM — aprimoramento (foco atual)
-1. **LHG-86:** Agente RM: Memória estratégica — injetar histórico de propostas aprovadas + resultado (KPI antes vs depois)
-2. **LHG-87:** Agente RM: Contexto por categoria de suíte — DataTableSuiteCategory já calculada, mas não injetada no prompt
-3. **LHG-88:** Agente RM: Guardrails configuráveis — preço mínimo/máximo por categoria/período; agente não pode propor fora da faixa
-4. **LHG-89:** Notificações in-app — sino no header com badge de contagem, lista de notificações, marcar como lida
+1. **LHG-88:** Agente RM: Guardrails configuráveis — preço mínimo/máximo por categoria/período; agente não pode propor fora da faixa
+2. **LHG-89:** Notificações in-app — sino no header com badge de contagem, lista de notificações, marcar como lida
 
 #### ✨ Polish e UX
 5. **LHG-71:** Logo de cada unidade no seletor da sidebar
