@@ -35,15 +35,18 @@ interface Guardrail {
 interface GuardrailsManagerProps {
   unitSlug: string
   unitName: string
+  categorias: string[]
+  periodos: string[]
   initialGuardrails: Guardrail[]
 }
 
-const PERIODOS = ['3h', '6h', '12h', 'pernoite']
+const PERIODOS_FALLBACK = ['3h', '6h', '12h', 'pernoite']
 
-export function GuardrailsManager({ unitSlug, unitName, initialGuardrails }: GuardrailsManagerProps) {
+export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, initialGuardrails }: GuardrailsManagerProps) {
+  const periodoOptions = periodos.length > 0 ? periodos : PERIODOS_FALLBACK
   const [guardrails, setGuardrails] = useState<Guardrail[]>(initialGuardrails)
   const [categoria, setCategoria] = useState('')
-  const [periodo, setPeriodo] = useState('3h')
+  const [periodo, setPeriodo] = useState(periodoOptions[0] ?? '3h')
   const [precoMin, setPrecoMin] = useState('')
   const [precoMax, setPrecoMax] = useState('')
   const [saving, setSaving] = useState(false)
@@ -106,7 +109,8 @@ export function GuardrailsManager({ unitSlug, unitName, initialGuardrails }: Gua
           Guardrails de Preço — {unitName}
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Limites de preço que o agente RM não pode ultrapassar ao gerar propostas. Categoria deve ser o nome exato usado no ERP (ex: "Luxo", "Standard").
+          Limites de preço que o agente RM não pode ultrapassar ao gerar propostas.
+          {categorias.length === 0 && ' Importe uma tabela de preços para ver as categorias disponíveis.'}
         </p>
       </div>
 
@@ -121,15 +125,28 @@ export function GuardrailsManager({ unitSlug, unitName, initialGuardrails }: Gua
         <form onSubmit={handleAdd} className="flex flex-col gap-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="sm:col-span-2 flex flex-col gap-1.5">
-              <Label className="text-xs">Categoria (nome exato do ERP)</Label>
-              <Input
-                placeholder="Ex: Luxo, Standard…"
-                value={categoria}
-                onChange={(e) => setCategoria(e.target.value)}
-                required
-                disabled={saving}
-                className="h-9 text-sm"
-              />
+              <Label className="text-xs">Categoria</Label>
+              {categorias.length > 0 ? (
+                <Select value={categoria} onValueChange={setCategoria} disabled={saving}>
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="Selecionar categoria…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categorias.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  placeholder="Ex: Luxo, Standard… (importe uma tabela de preços para ver opções)"
+                  value={categoria}
+                  onChange={(e) => setCategoria(e.target.value)}
+                  required
+                  disabled={saving}
+                  className="h-9 text-sm"
+                />
+              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs">Período</Label>
@@ -138,7 +155,7 @@ export function GuardrailsManager({ unitSlug, unitName, initialGuardrails }: Gua
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PERIODOS.map((p) => (
+                  {periodoOptions.map((p) => (
                     <SelectItem key={p} value={p}>{p}</SelectItem>
                   ))}
                 </SelectContent>

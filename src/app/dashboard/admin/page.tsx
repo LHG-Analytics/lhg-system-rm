@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
+import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 import { UsersManager } from './_components/users-manager'
 import { GuardrailsManager } from './_components/guardrails-manager'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -60,15 +61,31 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const activeUnitSlug = unitSlug ?? unitsData[0]?.slug ?? ''
   const activeUnit = unitsData.find((u) => u.slug === activeUnitSlug) ?? unitsData[0]
 
-  // Busca guardrails da unidade ativa
-  const { data: guardrailsData } = activeUnit
-    ? await supabase
-        .from('agent_price_guardrails')
-        .select('id, categoria, periodo, preco_minimo, preco_maximo')
-        .eq('unit_id', activeUnit.id)
-        .order('categoria')
-        .order('periodo')
-    : { data: [] }
+  // Busca guardrails + último price import da unidade ativa (para extrair categorias e períodos reais)
+  const [guardrailsResult, priceImportResult] = activeUnit
+    ? await Promise.all([
+        supabase
+          .from('agent_price_guardrails')
+          .select('id, categoria, periodo, preco_minimo, preco_maximo')
+          .eq('unit_id', activeUnit.id)
+          .order('categoria')
+          .order('periodo'),
+        supabase
+          .from('price_imports')
+          .select('parsed_data')
+          .eq('unit_id', activeUnit.id)
+          .order('valid_from', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ])
+    : [{ data: [] }, { data: null }]
+
+  const guardrailsData = guardrailsResult.data ?? []
+
+  // Extrai categorias e períodos únicos do import mais recente
+  const importRows = (priceImportResult.data?.parsed_data as unknown as ParsedPriceRow[]) ?? []
+  const categorias = [...new Set(importRows.map((r) => r.categoria))].sort()
+  const periodos   = [...new Set(importRows.map((r) => r.periodo))].sort()
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -102,7 +119,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             <GuardrailsManager
               unitSlug={activeUnit.slug}
               unitName={activeUnit.name}
-              initialGuardrails={(guardrailsData ?? []).map((g) => ({
+              categorias={categorias}
+              periodos={periodos}
+              initialGuardrails={guardrailsData.map((g) => ({
                 id: g.id,
                 categoria: g.categoria,
                 periodo: g.periodo,
