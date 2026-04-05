@@ -102,7 +102,7 @@ export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, in
   }, [confirmDelete])
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
+    <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
           <Shield className="size-4 text-primary" />

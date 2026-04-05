@@ -311,7 +311,7 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
   }, [confirmDelete])
 
   return (
-    <div className="flex flex-col gap-8 max-w-2xl">
+    <div className="flex flex-col gap-8">
 
       {/* Formulário de convite */}
       <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">

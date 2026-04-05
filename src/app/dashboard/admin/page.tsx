@@ -88,7 +88,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const periodos   = [...new Set(importRows.map((r) => r.periodo))].sort()
 
   return (
-    <div className="flex flex-1 flex-col gap-6">
+    <div className="flex flex-1 flex-col gap-6 max-w-2xl mx-auto w-full">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Administração</h1>
         <p className="text-sm text-muted-foreground mt-1">Gerencie usuários e configurações do sistema.</p>
