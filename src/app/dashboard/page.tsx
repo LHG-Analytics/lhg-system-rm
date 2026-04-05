@@ -111,8 +111,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   return (
     <div className="flex flex-1 flex-col gap-6">
-      {/* Header com seletor de período */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
+      {/* Header */}
+      <div className="flex flex-col gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{activeUnit.name}</h1>
           <p className="text-sm text-muted-foreground">

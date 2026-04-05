@@ -3,9 +3,18 @@
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { CalendarIcon } from 'lucide-react'
+import { format, parse } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
+import type { DateRange } from 'react-day-picker'
 import type { DatePreset } from '@/lib/date-range'
 import { resolvePreset } from '@/lib/date-range'
 import { Button } from '@/components/ui/button'
+import { Calendar } from '@/components/ui/calendar'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -15,8 +24,8 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
 
 // ─── Dados estáticos ──────────────────────────────────────────────────────────
 
@@ -35,7 +44,13 @@ function clampHour(v: string | null, fallback: number): number {
   return isNaN(n) || n < 0 || n > 23 ? fallback : n
 }
 
-export type DateType    = 'all' | 'checkin' | 'checkout'
+// YYYY-MM-DD → Date (local)
+function parseIso(s: string): Date | undefined {
+  if (!s) return undefined
+  try { return parse(s, 'yyyy-MM-dd', new Date()) } catch { return undefined }
+}
+
+export type DateType     = 'all' | 'checkin' | 'checkout'
 export type RentalStatus = 'FINALIZADA' | 'TRANSFERIDA' | 'CANCELADA' | 'ABERTA' | 'TODAS'
 
 const DATE_TYPE_OPTIONS: { value: DateType; label: string }[] = [
@@ -75,6 +90,7 @@ export function DateRangePicker() {
   const [localStatus, setLocalStatus] = useState<RentalStatus>(
     () => (searchParams.get('status') as RentalStatus) ?? 'FINALIZADA'
   )
+  const [calendarOpen, setCalendarOpen] = useState(false)
 
   useEffect(() => {
     const p = (searchParams.get('preset') ?? 'this-month') as DatePreset
@@ -116,6 +132,14 @@ export function DateRangePicker() {
     })
   }
 
+  function handleRangeSelect(range: DateRange | undefined) {
+    const from = range?.from ? format(range.from, 'yyyy-MM-dd') : ''
+    const to   = range?.to   ? format(range.to,   'yyyy-MM-dd') : ''
+    setLocalStart(from)
+    setLocalEnd(to)
+    if (from && to) setCalendarOpen(false)
+  }
+
   function handleApply() {
     if (!localStart || !localEnd) return
     navigate({
@@ -129,18 +153,22 @@ export function DateRangePicker() {
     })
   }
 
-  const today        = new Date().toISOString().slice(0, 10)
-  const displayPreset = PRESETS.find((p) => p.value === preset)?.value ?? 'this-month'
+  // Label do botão de calendário
+  const calendarLabel = localStart && localEnd
+    ? `${format(parse(localStart, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy')} → ${format(parse(localEnd, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy')}`
+    : 'Selecionar período'
+
+  const today = new Date()
 
   return (
-    <div className="flex items-end gap-3 flex-wrap">
+    <div className="flex items-end gap-3 overflow-x-auto">
 
       {/* Período */}
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5 shrink-0">
         <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Período</Label>
         <div className="flex items-center gap-2">
           <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
-          <Select value={displayPreset} onValueChange={handlePresetChange}>
+          <Select value={(PRESETS.find(p => p.value === preset)?.value) ?? 'this-month'} onValueChange={handlePresetChange}>
             <SelectTrigger size="sm" className="w-[160px]">
               <SelectValue />
             </SelectTrigger>
@@ -150,35 +178,41 @@ export function DateRangePicker() {
               ))}
             </SelectContent>
           </Select>
-          <Input
-            type="date"
-            value={localStart}
-            max={localEnd || today}
-            onChange={(e) => setLocalStart(e.target.value)}
-            className="h-7 w-[130px] text-xs px-2"
-          />
-          <span className="text-xs text-muted-foreground">→</span>
-          <Input
-            type="date"
-            value={localEnd}
-            min={localStart}
-            max={today}
-            onChange={(e) => setLocalEnd(e.target.value)}
-            className="h-7 w-[130px] text-xs px-2"
-          />
+
+          {/* Range calendar em popover */}
+          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn('h-7 px-2 text-xs font-normal gap-1.5', !localStart && 'text-muted-foreground')}
+              >
+                <CalendarIcon className="size-3" />
+                {calendarLabel}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="range"
+                defaultMonth={parseIso(localStart)}
+                selected={{ from: parseIso(localStart), to: parseIso(localEnd) }}
+                onSelect={handleRangeSelect}
+                numberOfMonths={2}
+                disabled={(date) => date > today || date < new Date('2020-01-01')}
+                locale={ptBR}
+              />
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
-      <Separator orientation="vertical" className="h-8 hidden sm:block" />
+      <Separator orientation="vertical" className="h-8 shrink-0" />
 
       {/* Horas */}
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5 shrink-0">
         <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Horário</Label>
         <div className="flex items-center gap-2">
-          <Select
-            value={String(localStartHour)}
-            onValueChange={(v) => setLocalStartHour(Number(v))}
-          >
+          <Select value={String(localStartHour)} onValueChange={(v) => setLocalStartHour(Number(v))}>
             <SelectTrigger size="sm" className="w-[108px]">
               <SelectValue />
             </SelectTrigger>
@@ -189,10 +223,7 @@ export function DateRangePicker() {
             </SelectContent>
           </Select>
           <span className="text-xs text-muted-foreground">→</span>
-          <Select
-            value={String(localEndHour)}
-            onValueChange={(v) => setLocalEndHour(Number(v))}
-          >
+          <Select value={String(localEndHour)} onValueChange={(v) => setLocalEndHour(Number(v))}>
             <SelectTrigger size="sm" className="w-[108px]">
               <SelectValue />
             </SelectTrigger>
@@ -205,10 +236,10 @@ export function DateRangePicker() {
         </div>
       </div>
 
-      <Separator orientation="vertical" className="h-8 hidden sm:block" />
+      <Separator orientation="vertical" className="h-8 shrink-0" />
 
       {/* Data tipo + Status */}
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5 shrink-0">
         <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Filtros</Label>
         <div className="flex items-center gap-2">
           <ToggleGroup
@@ -240,7 +271,7 @@ export function DateRangePicker() {
         size="sm"
         onClick={handleApply}
         disabled={!localStart || !localEnd}
-        className="self-end"
+        className="self-end shrink-0"
       >
         Aplicar
       </Button>
