@@ -28,23 +28,27 @@ export default async function AdminPage() {
 
   const admin = getAdminClient()
 
-  const [{ data: profiles }, { data: authUsers }, { data: unitsData }] = await Promise.all([
+  const [profilesResult, authUsersResult, unitsResult] = await Promise.allSettled([
     admin.from('profiles').select('user_id, role, unit_id, created_at').order('created_at', { ascending: false }),
     admin.auth.admin.listUsers({ perPage: 1000 }),
     admin.from('units').select('id, name').eq('is_active', true).order('name'),
   ])
 
-  const emailMap = new Map(authUsers?.users?.map((u) => [u.id, u.email ?? '']) ?? [])
-  const invitedMap = new Map(authUsers?.users?.map((u) => [u.id, u.invited_at ?? null]) ?? [])
-  const lastSignMap = new Map(authUsers?.users?.map((u) => [u.id, u.last_sign_in_at ?? null]) ?? [])
+  const profiles  = profilesResult.status  === 'fulfilled' ? (profilesResult.value.data  ?? []) : []
+  const authUsers = authUsersResult.status === 'fulfilled' ? (authUsersResult.value.data?.users ?? []) : []
+  const unitsData = unitsResult.status     === 'fulfilled' ? (unitsResult.value.data     ?? []) : []
 
-  const users = (profiles ?? []).map((p) => ({
-    user_id: p.user_id,
-    email: emailMap.get(p.user_id) ?? '',
-    role: p.role,
-    unit_id: p.unit_id,
+  const emailMap    = new Map(authUsers.map((u) => [u.id, u.email        ?? '']))
+  const invitedMap  = new Map(authUsers.map((u) => [u.id, u.invited_at   ?? null]))
+  const lastSignMap = new Map(authUsers.map((u) => [u.id, u.last_sign_in_at ?? null]))
+
+  const users = profiles.map((p) => ({
+    user_id:    p.user_id,
+    email:      emailMap.get(p.user_id)    ?? '',
+    role:       p.role,
+    unit_id:    p.unit_id,
     created_at: p.created_at,
-    invited_at: invitedMap.get(p.user_id) ?? null,
+    invited_at: invitedMap.get(p.user_id)  ?? null,
     last_sign_in: lastSignMap.get(p.user_id) ?? null,
   }))
 

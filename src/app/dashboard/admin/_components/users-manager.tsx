@@ -71,7 +71,7 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
   const [users, setUsers] = useState<UserEntry[]>(initialUsers)
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('manager')
-  const [unitId, setUnitId] = useState<string>('')
+  const [unitId, setUnitId] = useState<string>('all')
   const [inviting, setInviting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -87,7 +87,7 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
       const res = await fetch('/api/admin/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, role, unit_id: unitId || null }),
+        body: JSON.stringify({ email, role, unit_id: unitId === 'all' ? null : unitId }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao convidar')
@@ -192,7 +192,7 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
                   <SelectValue placeholder="Selecionar…" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todas as unidades</SelectItem>
+                  <SelectItem value="all">Todas as unidades</SelectItem>
                   {units.map((u) => (
                     <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                   ))}
