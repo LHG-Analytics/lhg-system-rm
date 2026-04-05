@@ -7,7 +7,7 @@ import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 import { toApiDate } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
-import { buildSystemPrompt, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
+import { buildKPIContext, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -239,33 +239,65 @@ export async function POST(req: NextRequest) {
       : []),
   ]
 
-  const kpiContext = buildSystemPrompt(
-    unit.name,
-    kpiData.length === 1 ? kpiData[0] : kpiData,
-    priceImports
-  )
-
+  // ─── Montar prompt focado (sem system prompt do chat) ───────────────────
   const hasPrevious = kpiData.length > 1
-  const prompt = `${kpiContext}
+
+  const kpiBlocks = kpiData.map((kpi) => {
+    const label = kpi.label ?? 'Período'
+    const ctx = buildKPIContext(unit.name, kpi.period, kpi.company, kpi.bookings)
+    return `### ${label}\n${ctx.replace(/^## Dados operacionais[^\n]*\n/, '')}`
+  }).join('\n\n---\n\n')
+
+  // Tabela de preços ativa formatada inline
+  const CANAL_LABELS: Record<string, string> = {
+    balcao_site: 'Balcão/Site',
+    site_programada: 'Site Programada',
+    guia_moteis: 'Guia de Motéis',
+  }
+  const priceBlocks = priceImports.map((imp) => {
+    const vigencia = `${imp.valid_from}${imp.valid_until ? ` → ${imp.valid_until}` : ' → atualmente'}`
+    const byCanal = new Map<string, ParsedPriceRow[]>()
+    for (const r of imp.rows) {
+      const list = byCanal.get(r.canal) ?? []
+      list.push(r)
+      byCanal.set(r.canal, list)
+    }
+    const sections = [...byCanal.entries()].map(([canal, rows]) => {
+      const label = CANAL_LABELS[canal] ?? canal
+      const lines = rows.map((r) =>
+        `  | ${r.categoria} | ${r.periodo} | ${r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | R$ ${r.preco.toFixed(2)} |`
+      )
+      return `**${label}**\n  | Categoria | Período | Dia | Preço |\n  |-----------|---------|-----|-------|\n${lines.join('\n')}`
+    })
+    return `#### Tabela ${vigencia}\n${sections.join('\n\n')}`
+  }).join('\n\n---\n\n')
+
+  const prompt = `Você é um especialista em Revenue Management para motéis. Analise os dados abaixo e gere uma proposta de ajuste de preços.
+
+## Dados operacionais — ${unit.name}
+
+${kpiBlocks}
+
+## Tabelas de preços${priceImports.length > 1 ? ' (histórico para comparação)' : ''}
+
+${priceBlocks}
 
 ---
 
-TAREFA: Gere uma proposta de ajuste de preços baseada nos dados acima.
+TAREFA: Com base nos dados acima, gere uma proposta de ajuste de preços.
 
-Aplique o framework de Revenue Management:
-- Analise giro, ocupação e ticket por categoria${hasPrevious ? '\n- Compare o desempenho do período atual com o período anterior (antes da última mudança de tabela)' : ''}
-- Avalie as tabelas semanais de RevPAR e giro para identificar dias de pico e dias fracos
-- Proponha apenas ajustes justificados pelos dados
+Critérios:
+- Analise giro, ocupação e RevPAR por categoria e dia da semana
+${hasPrevious ? '- Compare o desempenho do período atual com o anterior para identificar impacto das mudanças de tabela\n' : ''}- Proponha apenas ajustes com justificativa clara nos dados
 - Variação máxima: ±30% por item
-- Priorize ajustes com maior impacto no RevPAR
+- Priorize itens com maior impacto no RevPAR
 
-Retorne SOMENTE JSON minificado (sem texto antes ou depois) no formato:
-{"context":"análise resumida em 2-3 frases explicando a lógica geral da proposta${hasPrevious ? ' e o comparativo entre os dois períodos' : ''}","rows":[{"canal":"balcao_site|site_programada|guia_moteis","categoria":"nome","periodo":"3h|6h|12h|Pernoite","dia_tipo":"semana|fds_feriado|todos","preco_atual":0.00,"preco_proposto":0.00,"variacao_pct":0.0,"justificativa":"razão objetiva em 1 frase"}]}
+Retorne SOMENTE este JSON minificado (sem nenhum texto antes ou depois):
+{"context":"análise em 2-3 frases","rows":[{"canal":"balcao_site","categoria":"nome","periodo":"3h","dia_tipo":"semana","preco_atual":0.00,"preco_proposto":0.00,"variacao_pct":0.0,"justificativa":"razão em 1 frase"}]}
 
-Regras do JSON:
-- variacao_pct = ((preco_proposto - preco_atual) / preco_atual * 100) arredondado para 1 decimal
-- Se não há dados suficientes para justificar ajuste em um item, omita-o
-- JSON minificado, sem indentação`
+Valores válidos: canal = balcao_site | site_programada | guia_moteis; dia_tipo = semana | fds_feriado | todos
+variacao_pct = ((preco_proposto - preco_atual) / preco_atual * 100) arredondado 1 decimal
+Omita itens sem dados suficientes. JSON minificado, sem indentação.`
 
   const { text } = await generateText({
     model: PRIMARY_MODEL,
