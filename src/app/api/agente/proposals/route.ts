@@ -5,9 +5,9 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
-import { trailingYear } from '@/lib/kpis/period'
+import { toApiDate } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
-import { buildSystemPrompt, type PriceImportForPrompt } from '@/lib/agente/system-prompt'
+import { buildSystemPrompt, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
   return Response.json(proposals as unknown as PriceProposal[])
 }
 
-// ─── POST: gera nova proposta via IA ─────────────────────────────────────────
+// ─── POST: gera nova proposta via IA com análise comparativa ─────────────────
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -133,35 +133,119 @@ export async function POST(req: NextRequest) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
   }
 
-  // Buscar KPIs + tabela de preços ativa em paralelo
-  const kpiParams = trailingYear()
+  // ─── Buscar todas as tabelas de preços ──────────────────────────────────
+  const { data: allImports } = await admin
+    .from('price_imports')
+    .select('id, parsed_data, valid_from, valid_until')
+    .eq('unit_id', unit.id)
+    .order('valid_from', { ascending: false })
 
-  const [companyResult, priceImportsResult] = await Promise.allSettled([
-    fetchCompanyKPIsFromAutomo(unit.slug, kpiParams.startDate, kpiParams.endDate),
-    admin.from('price_imports').select('parsed_data, valid_from, valid_until').eq('unit_id', unit.id).order('valid_from', { ascending: false }),
-  ])
-
-  const company = companyResult.status === 'fulfilled' ? companyResult.value : null
-  const bookings = null
-  const priceImports: PriceImportForPrompt[] =
-    priceImportsResult.status === 'fulfilled' && priceImportsResult.value.data
-      ? priceImportsResult.value.data.map((imp) => ({
-          rows: imp.parsed_data ? (imp.parsed_data as unknown as ParsedPriceRow[]) : [],
-          valid_from: imp.valid_from,
-          valid_until: imp.valid_until,
-        }))
-      : []
-
-  if (!priceImports.some((i) => i.rows.length > 0)) {
+  if (!allImports?.some((i) => (i.parsed_data as unknown as ParsedPriceRow[])?.length > 0)) {
     return Response.json(
       { error: 'Nenhuma tabela de preços importada. Importe uma tabela de preços antes de gerar propostas.' },
       { status: 422 }
     )
   }
 
-  // Montar contexto resumido para geração de proposta
-  const kpiContext = buildSystemPrompt(unit.name, { period: kpiParams, company, bookings }, priceImports)
+  // ─── Identificar tabela ativa e anterior ────────────────────────────────
+  const now = new Date()
+  const todayOp =
+    now.getHours() < 6
+      ? new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+      : new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const todayStr = todayOp.toISOString().slice(0, 10)
 
+  const activeImport = allImports?.find(
+    (i) => i.valid_from <= todayStr && (i.valid_until === null || i.valid_until >= todayStr)
+  )
+  const previousImport = activeImport
+    ? allImports?.find((i) => i.valid_from < activeImport.valid_from)
+    : undefined
+
+  if (!activeImport || (activeImport.parsed_data as unknown as ParsedPriceRow[])?.length === 0) {
+    return Response.json(
+      { error: 'Nenhuma tabela de preços ativa encontrada. Verifique as datas de vigência.' },
+      { status: 422 }
+    )
+  }
+
+  // ─── Calcular períodos de KPI ────────────────────────────────────────────
+  const yesterday = new Date(todayOp)
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  // Período da tabela atual: de valid_from até ontem (mín. 14 dias para ter dados)
+  const activeFromDate = new Date(activeImport.valid_from)
+  const MIN_DAYS = 14
+  const daysActive = Math.floor((todayOp.getTime() - activeFromDate.getTime()) / 86400000)
+  const kpiStartDate =
+    daysActive >= MIN_DAYS
+      ? activeFromDate
+      : new Date(yesterday.getTime() - (MIN_DAYS - 1) * 86400000)
+
+  const activePeriod = { startDate: toApiDate(kpiStartDate), endDate: toApiDate(yesterday) }
+
+  // Período anterior: mesma duração, terminando no dia antes da tabela atual entrar
+  let prevPeriod: { startDate: string; endDate: string } | null = null
+  if (previousImport) {
+    const durationDays = Math.floor((yesterday.getTime() - kpiStartDate.getTime()) / 86400000) + 1
+    const prevEnd = new Date(activeFromDate)
+    prevEnd.setDate(prevEnd.getDate() - 1)
+    const prevStart = new Date(prevEnd)
+    prevStart.setDate(prevStart.getDate() - (durationDays - 1))
+    prevPeriod = { startDate: toApiDate(prevStart), endDate: toApiDate(prevEnd) }
+  }
+
+  // ─── Buscar KPIs em paralelo ────────────────────────────────────────────
+  const kpiTasks = [
+    fetchCompanyKPIsFromAutomo(unit.slug, activePeriod.startDate, activePeriod.endDate),
+    ...(prevPeriod
+      ? [fetchCompanyKPIsFromAutomo(unit.slug, prevPeriod.startDate, prevPeriod.endDate)]
+      : []),
+  ]
+  const kpiResults = await Promise.allSettled(kpiTasks)
+  const kpiActive = kpiResults[0]?.status === 'fulfilled' ? kpiResults[0].value : null
+  const kpiPrevious = kpiResults[1]?.status === 'fulfilled' ? kpiResults[1].value : null
+
+  // ─── Montar contexto comparativo para o prompt ──────────────────────────
+  const priceImports: PriceImportForPrompt[] = [
+    {
+      rows: (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? [],
+      valid_from: activeImport.valid_from,
+      valid_until: activeImport.valid_until,
+    },
+    ...(previousImport
+      ? [{
+          rows: (previousImport.parsed_data as unknown as ParsedPriceRow[]) ?? [],
+          valid_from: previousImport.valid_from,
+          valid_until: previousImport.valid_until,
+        }]
+      : []),
+  ]
+
+  const kpiData: KPIPeriod[] = [
+    {
+      label: `Período atual (tabela vigente desde ${activeImport.valid_from})`,
+      period: activePeriod,
+      company: kpiActive,
+      bookings: null,
+    },
+    ...(kpiPrevious && prevPeriod
+      ? [{
+          label: `Período anterior (tabela de ${previousImport?.valid_from ?? '?'} a ${previousImport?.valid_until ?? activeImport.valid_from})`,
+          period: prevPeriod,
+          company: kpiPrevious,
+          bookings: null,
+        }]
+      : []),
+  ]
+
+  const kpiContext = buildSystemPrompt(
+    unit.name,
+    kpiData.length === 1 ? kpiData[0] : kpiData,
+    priceImports
+  )
+
+  const hasPrevious = kpiData.length > 1
   const prompt = `${kpiContext}
 
 ---
@@ -169,13 +253,14 @@ export async function POST(req: NextRequest) {
 TAREFA: Gere uma proposta de ajuste de preços baseada nos dados acima.
 
 Aplique o framework de Revenue Management:
-- Analise giro, ocupação e ticket por categoria
+- Analise giro, ocupação e ticket por categoria${hasPrevious ? '\n- Compare o desempenho do período atual com o período anterior (antes da última mudança de tabela)' : ''}
+- Avalie as tabelas semanais de RevPAR e giro para identificar dias de pico e dias fracos
 - Proponha apenas ajustes justificados pelos dados
 - Variação máxima: ±30% por item
 - Priorize ajustes com maior impacto no RevPAR
 
 Retorne SOMENTE JSON minificado (sem texto antes ou depois) no formato:
-{"context":"análise resumida em 2-3 frases explicando a lógica geral da proposta","rows":[{"canal":"balcao_site|site_programada|guia_moteis","categoria":"nome","periodo":"3h|6h|12h|Pernoite","dia_tipo":"semana|fds_feriado|todos","preco_atual":0.00,"preco_proposto":0.00,"variacao_pct":0.0,"justificativa":"razão objetiva em 1 frase"}]}
+{"context":"análise resumida em 2-3 frases explicando a lógica geral da proposta${hasPrevious ? ' e o comparativo entre os dois períodos' : ''}","rows":[{"canal":"balcao_site|site_programada|guia_moteis","categoria":"nome","periodo":"3h|6h|12h|Pernoite","dia_tipo":"semana|fds_feriado|todos","preco_atual":0.00,"preco_proposto":0.00,"variacao_pct":0.0,"justificativa":"razão objetiva em 1 frase"}]}
 
 Regras do JSON:
 - variacao_pct = ((preco_proposto - preco_atual) / preco_atual * 100) arredondado para 1 decimal
@@ -199,7 +284,6 @@ Regras do JSON:
     )
   }
 
-  // Salvar no banco como proposta pendente
   const { data: saved, error } = await supabase
     .from('price_proposals')
     .insert({
@@ -220,7 +304,7 @@ Regras do JSON:
   return Response.json(saved as unknown as PriceProposal)
 }
 
-// ─── PATCH: aprovar ou rejeitar proposta ──────────────────────────────────────
+// ─── PATCH: aprovar, rejeitar ou editar proposta ──────────────────────────────
 
 export async function PATCH(req: NextRequest) {
   const supabase = await createClient()
@@ -237,14 +321,41 @@ export async function PATCH(req: NextRequest) {
     return new Response('Permissão negada', { status: 403 })
   }
 
-  const body = await req.json() as { id: string; status: 'approved' | 'rejected' }
-  const { id, status } = body
+  const body = await req.json() as {
+    id: string
+    status?: 'approved' | 'rejected'
+    rows?: ProposedPriceRow[]
+    context?: string
+  }
+  const { id } = body
 
-  if (!id || !['approved', 'rejected'].includes(status)) {
-    return new Response('id e status obrigatórios', { status: 400 })
+  if (!id) return new Response('id obrigatório', { status: 400 })
+
+  // ─── Edição manual de linhas ─────────────────────────────────────────────
+  if (body.rows !== undefined) {
+    const { data: updated, error } = await supabase
+      .from('price_proposals')
+      .update({
+        rows: body.rows as unknown as Database['public']['Tables']['price_proposals']['Update']['rows'],
+        ...(body.context !== undefined && { context: body.context }),
+      })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .select('*')
+      .single()
+
+    if (error || !updated) {
+      return Response.json({ error: 'Proposta não encontrada ou não está pendente' }, { status: 404 })
+    }
+    return Response.json(updated as unknown as PriceProposal)
   }
 
-  // Busca a proposta completa para poder criar o price_import ao aprovar
+  // ─── Aprovação / rejeição ────────────────────────────────────────────────
+  const { status } = body
+  if (!status || !['approved', 'rejected'].includes(status)) {
+    return new Response('status obrigatório (approved/rejected)', { status: 400 })
+  }
+
   const { data: proposal, error: fetchErr } = await supabase
     .from('price_proposals')
     .select('*')
@@ -266,22 +377,18 @@ export async function PATCH(req: NextRequest) {
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
-  // Ao aprovar: clona a tabela ativa, aplica os preços propostos e insere como nova versão
   if (status === 'approved') {
     const proposedRows = (proposal.rows as unknown as ProposedPriceRow[]) ?? []
     const today = new Date().toISOString().slice(0, 10)
     const admin = getAdminClient()
 
-    // Chave de identificação única de um item de preço
     const rowKey = (r: ParsedPriceRow) => `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`
 
-    // Mapa dos preços propostos: chave → preco_proposto
     const proposedMap = new Map<string, number>()
     for (const r of proposedRows) {
       proposedMap.set(rowKey(r), r.preco_proposto)
     }
 
-    // 1. Busca o snapshot ativo atual (base para o clone)
     const { data: activeImport } = await admin
       .from('price_imports')
       .select('id, parsed_data, canals')
@@ -292,24 +399,21 @@ export async function PATCH(req: NextRequest) {
       .limit(1)
       .maybeSingle()
 
-    // 2. Monta o novo snapshot: clone da base + upsert dos preços propostos
     const baseRows: ParsedPriceRow[] = activeImport
       ? (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? []
       : []
 
-    // Clona cada linha da base; substitui o preço se havia proposta para aquela chave
     const remainingProposed = new Map(proposedMap)
     const newRows: ParsedPriceRow[] = baseRows.map((r) => {
       const key = rowKey(r)
       const newPrice = remainingProposed.get(key)
       if (newPrice !== undefined) {
-        remainingProposed.delete(key) // marcado como aplicado
+        remainingProposed.delete(key)
         return { ...r, preco: newPrice }
       }
       return { ...r }
     })
 
-    // Linhas da proposta sem correspondência na base (itens novos): adiciona ao final
     for (const [key, preco] of remainingProposed) {
       const src = proposedRows.find((r) => rowKey(r) === key)
       if (src) {
@@ -319,7 +423,6 @@ export async function PATCH(req: NextRequest) {
 
     const newCanais = [...new Set(newRows.map((r) => r.canal))]
 
-    // 3. Encerra a vigência do registro ativo anterior (valid_until = ontem)
     if (activeImport) {
       const yesterday = new Date()
       yesterday.setDate(yesterday.getDate() - 1)
@@ -329,7 +432,6 @@ export async function PATCH(req: NextRequest) {
         .eq('id', activeImport.id)
     }
 
-    // 4. Insere o novo snapshot como tabela ativa (valid_from = hoje, valid_until = null)
     await admin
       .from('price_imports')
       .insert({
@@ -345,4 +447,34 @@ export async function PATCH(req: NextRequest) {
   }
 
   return Response.json(updated as unknown as PriceProposal)
+}
+
+// ─── DELETE: excluir proposta ─────────────────────────────────────────────────
+
+export async function DELETE(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return new Response('Não autorizado', { status: 401 })
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, unit_id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!profile || !['super_admin', 'admin', 'manager'].includes(profile.role)) {
+    return new Response('Permissão negada', { status: 403 })
+  }
+
+  const id = req.nextUrl.searchParams.get('id')
+  if (!id) return new Response('id obrigatório', { status: 400 })
+
+  const { error } = await supabase
+    .from('price_proposals')
+    .delete()
+    .eq('id', id)
+
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  return Response.json({ ok: true })
 }

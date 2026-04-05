@@ -11,9 +11,22 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Loader2, Sparkles, ChevronDown, ChevronUp, CheckCircle2, XCircle, Clock } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
+  Loader2, Sparkles, ChevronDown, ChevronUp,
+  CheckCircle2, XCircle, Clock, Pencil, Trash2, Save, X,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { PriceProposal } from '@/app/api/agente/proposals/route'
+import type { PriceProposal, ProposedPriceRow } from '@/app/api/agente/proposals/route'
 
 interface ProposalsListProps {
   unitSlug: string
@@ -51,6 +64,18 @@ function VariacaoBadge({ pct }: { pct: number }) {
 
 export function ProposalsList({ unitSlug, initialProposals, refreshKey }: ProposalsListProps) {
   const [proposals, setProposals] = useState<PriceProposal[]>(initialProposals)
+  const [generating, setGenerating] = useState(false)
+  const [reviewing, setReviewing] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [error, setError] = useState<string | null>(null)
+
+  // Edição inline
+  const [editing, setEditing] = useState<{ id: string; rows: ProposedPriceRow[] } | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  // Exclusão com confirmação
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (!refreshKey) return
@@ -59,10 +84,6 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
       .then((data) => { if (Array.isArray(data)) setProposals(data as PriceProposal[]) })
       .catch(() => {})
   }, [refreshKey, unitSlug])
-  const [generating, setGenerating] = useState(false)
-  const [reviewing, setReviewing] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [error, setError] = useState<string | null>(null)
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -111,18 +132,90 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
     }
   }, [])
 
+  // Abre modo de edição para uma proposta pendente
+  const startEditing = useCallback((proposal: PriceProposal) => {
+    setEditing({ id: proposal.id, rows: proposal.rows.map((r) => ({ ...r })) })
+    setExpanded((prev) => new Set([...prev, proposal.id]))
+    setError(null)
+  }, [])
+
+  // Atualiza o preco_proposto de uma linha e recalcula variacao_pct
+  const updateEditRow = useCallback((index: number, newPrice: number) => {
+    setEditing((prev) => {
+      if (!prev) return null
+      const rows = [...prev.rows]
+      const row = rows[index]
+      const variacao_pct = row.preco_atual
+        ? Math.round(((newPrice - row.preco_atual) / row.preco_atual) * 1000) / 10
+        : 0
+      rows[index] = { ...row, preco_proposto: newPrice, variacao_pct }
+      return { ...prev, rows }
+    })
+  }, [])
+
+  // Atualiza a justificativa de uma linha
+  const updateEditJustificativa = useCallback((index: number, value: string) => {
+    setEditing((prev) => {
+      if (!prev) return null
+      const rows = [...prev.rows]
+      rows[index] = { ...rows[index], justificativa: value }
+      return { ...prev, rows }
+    })
+  }, [])
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editing) return
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/agente/proposals', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editing.id, rows: editing.rows }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Erro ao salvar edição')
+      setProposals((prev) => prev.map((p) => p.id === editing.id ? data as PriceProposal : p))
+      setEditing(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setSaving(false)
+    }
+  }, [editing])
+
+  const handleDelete = useCallback(async () => {
+    if (!confirmDelete) return
+    setDeleting(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/agente/proposals?id=${confirmDelete}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error ?? 'Erro ao excluir proposta')
+      }
+      setProposals((prev) => prev.filter((p) => p.id !== confirmDelete))
+      if (editing?.id === confirmDelete) setEditing(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setDeleting(false)
+      setConfirmDelete(null)
+    }
+  }, [confirmDelete, editing])
+
   return (
     <div className="flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-muted-foreground">
-            O agente analisa KPIs e tabela de preços para gerar propostas de ajuste para aprovação.
+            O agente analisa KPIs da tabela atual e anterior, comparando desempenho por período para gerar propostas otimizadas.
           </p>
         </div>
         <Button onClick={handleGenerate} disabled={generating} className="gap-2 shrink-0">
           {generating
-            ? <><Loader2 className="size-4 animate-spin" />Gerando…</>
+            ? <><Loader2 className="size-4 animate-spin" />Analisando…</>
             : <><Sparkles className="size-4" />Gerar Nova Proposta</>
           }
         </Button>
@@ -140,7 +233,7 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
           <Sparkles className="size-8 text-muted-foreground/40" />
           <p className="font-medium">Nenhuma proposta ainda</p>
           <p className="text-sm text-muted-foreground max-w-sm">
-            Clique em &quot;Gerar Nova Proposta&quot; para que o agente analise os dados e sugira ajustes de preço.
+            Clique em &quot;Gerar Nova Proposta&quot; para que o agente analise os KPIs e sugira ajustes de preço.
           </p>
         </div>
       ) : (
@@ -151,6 +244,7 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
             const isExpanded = expanded.has(proposal.id)
             const isPending = proposal.status === 'pending'
             const isReviewing = reviewing === proposal.id
+            const isEditing = editing?.id === proposal.id
 
             return (
               <div key={proposal.id} className="rounded-xl border bg-card overflow-hidden">
@@ -175,14 +269,28 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
                       </p>
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0 size-8"
-                    onClick={() => toggleExpand(proposal.id)}
-                  >
-                    {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-                  </Button>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    {/* Botão excluir */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => setConfirmDelete(proposal.id)}
+                      title="Excluir proposta"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                    {/* Toggle expand */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      onClick={() => toggleExpand(proposal.id)}
+                    >
+                      {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Tabela de linhas (colapsável) */}
@@ -203,7 +311,7 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {proposal.rows.map((row, i) => (
+                          {(isEditing ? editing.rows : proposal.rows).map((row, i) => (
                             <TableRow key={i}>
                               <TableCell className="text-xs">{CANAL_LABELS[row.canal] ?? row.canal}</TableCell>
                               <TableCell className="text-xs font-medium">{row.categoria}</TableCell>
@@ -217,13 +325,33 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
                                 R$ {row.preco_atual.toFixed(2).replace('.', ',')}
                               </TableCell>
                               <TableCell className="text-right text-xs tabular-nums font-medium">
-                                R$ {row.preco_proposto.toFixed(2).replace('.', ',')}
+                                {isEditing ? (
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    className="w-20 text-right bg-transparent border-b border-primary outline-none text-xs tabular-nums font-medium"
+                                    value={row.preco_proposto}
+                                    onChange={(e) => updateEditRow(i, parseFloat(e.target.value) || 0)}
+                                  />
+                                ) : (
+                                  `R$ ${row.preco_proposto.toFixed(2).replace('.', ',')}`
+                                )}
                               </TableCell>
                               <TableCell className="text-right text-xs">
                                 <VariacaoBadge pct={row.variacao_pct} />
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground max-w-[200px]">
-                                {row.justificativa}
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    className="w-full bg-transparent border-b border-primary outline-none text-xs text-foreground"
+                                    value={row.justificativa}
+                                    onChange={(e) => updateEditJustificativa(i, e.target.value)}
+                                  />
+                                ) : (
+                                  row.justificativa
+                                )}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -231,8 +359,33 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
                       </Table>
                     </div>
 
-                    {/* Botões de aprovação (só para pendentes) */}
-                    {isPending && (
+                    {/* Barra de ações */}
+                    {isEditing ? (
+                      <div className="flex justify-end gap-2 p-4 border-t">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={saving}
+                          onClick={() => setEditing(null)}
+                        >
+                          <X className="size-3.5" />
+                          Cancelar
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={saving}
+                          onClick={handleSaveEdit}
+                        >
+                          {saving
+                            ? <Loader2 className="size-3.5 animate-spin" />
+                            : <Save className="size-3.5" />
+                          }
+                          Salvar Edições
+                        </Button>
+                      </div>
+                    ) : isPending ? (
                       <div className="flex justify-end gap-2 p-4 border-t">
                         <Button
                           variant="outline"
@@ -248,6 +401,16 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
                           Rejeitar
                         </Button>
                         <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={isReviewing}
+                          onClick={() => startEditing(proposal)}
+                        >
+                          <Pencil className="size-3.5" />
+                          Editar
+                        </Button>
+                        <Button
                           size="sm"
                           className="gap-1.5"
                           disabled={isReviewing}
@@ -260,7 +423,7 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
                           Aprovar Proposta
                         </Button>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -268,6 +431,29 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
           })}
         </div>
       )}
+
+      {/* Dialog de confirmação de exclusão */}
+      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => { if (!open) setConfirmDelete(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir proposta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não pode ser desfeita. A proposta será removida permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+              onClick={handleDelete}
+            >
+              {deleting ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
