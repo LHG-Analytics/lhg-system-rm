@@ -62,6 +62,105 @@ function getAdminClient() {
   )
 }
 
+// PATCH /api/agente/import-prices
+// Body: { id: string; validFrom?: string; validUntil?: string | null; isActive?: boolean }
+export async function PATCH(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return new Response('Não autorizado', { status: 401 })
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, unit_id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!profile || !['super_admin', 'admin', 'manager'].includes(profile.role)) {
+    return new Response('Permissão negada', { status: 403 })
+  }
+
+  const body = await req.json() as {
+    id: string
+    validFrom?: string
+    validUntil?: string | null
+    isActive?: boolean
+  }
+
+  if (!body.id) return new Response('id obrigatório', { status: 400 })
+
+  const admin = getAdminClient()
+
+  // Verificar que o import pertence a uma unidade que o usuário pode acessar
+  const { data: existing } = await admin
+    .from('price_imports')
+    .select('id, unit_id')
+    .eq('id', body.id)
+    .single()
+
+  if (!existing) return new Response('Import não encontrado', { status: 404 })
+
+  if (profile.role !== 'super_admin' && profile.unit_id !== existing.unit_id) {
+    return new Response('Sem acesso', { status: 403 })
+  }
+
+  const update: Record<string, unknown> = {}
+  if (body.validFrom  !== undefined) update.valid_from  = body.validFrom
+  if (body.validUntil !== undefined) update.valid_until = body.validUntil
+  if (body.isActive   !== undefined) update.is_active   = body.isActive
+
+  const { error } = await admin
+    .from('price_imports')
+    .update(update)
+    .eq('id', body.id)
+
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  return Response.json({ success: true })
+}
+
+// DELETE /api/agente/import-prices?id=xxx
+export async function DELETE(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return new Response('Não autorizado', { status: 401 })
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, unit_id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!profile || !['super_admin', 'admin', 'manager'].includes(profile.role)) {
+    return new Response('Permissão negada', { status: 403 })
+  }
+
+  const id = req.nextUrl.searchParams.get('id')
+  if (!id) return new Response('id obrigatório', { status: 400 })
+
+  const admin = getAdminClient()
+
+  const { data: existing } = await admin
+    .from('price_imports')
+    .select('id, unit_id')
+    .eq('id', id)
+    .single()
+
+  if (!existing) return new Response('Import não encontrado', { status: 404 })
+
+  if (profile.role !== 'super_admin' && profile.unit_id !== existing.unit_id) {
+    return new Response('Sem acesso', { status: 403 })
+  }
+
+  const { error } = await admin
+    .from('price_imports')
+    .delete()
+    .eq('id', id)
+
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  return Response.json({ success: true })
+}
+
 // GET /api/agente/import-prices?unitSlug=xxx
 // Lista todos os imports de uma unidade, do mais recente ao mais antigo
 export async function GET(req: NextRequest) {

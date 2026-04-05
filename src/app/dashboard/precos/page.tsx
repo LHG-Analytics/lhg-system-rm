@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { PriceImport } from '@/components/precos/price-import'
+import { PriceList } from '@/components/precos/price-list'
 
 interface PrecosPageProps {
   searchParams: Promise<{ unit?: string }>
@@ -14,12 +15,12 @@ export default async function PrecosPage({ searchParams }: PrecosPageProps) {
   if (!user) redirect('/login')
 
   // Resolver unidade ativa
-  let activeUnit: { slug: string; name: string } | null = null
+  let activeUnit: { id: string; slug: string; name: string } | null = null
 
   if (unitSlug) {
     const { data } = await supabase
       .from('units')
-      .select('slug, name')
+      .select('id, slug, name')
       .eq('slug', unitSlug)
       .eq('is_active', true)
       .single()
@@ -36,7 +37,7 @@ export default async function PrecosPage({ searchParams }: PrecosPageProps) {
     if (profile?.unit_id) {
       const { data } = await supabase
         .from('units')
-        .select('slug, name')
+        .select('id, slug, name')
         .eq('id', profile.unit_id)
         .single()
       activeUnit = data
@@ -46,7 +47,7 @@ export default async function PrecosPage({ searchParams }: PrecosPageProps) {
   if (!activeUnit) {
     const { data } = await supabase
       .from('units')
-      .select('slug, name')
+      .select('id, slug, name')
       .eq('is_active', true)
       .order('name')
       .limit(1)
@@ -66,7 +67,13 @@ export default async function PrecosPage({ searchParams }: PrecosPageProps) {
       </div>
 
       {activeUnit ? (
-        <PriceImport unitSlug={activeUnit.slug} unitName={activeUnit.name} />
+        <>
+          {/* Lista de tabelas com realtime */}
+          <PriceList unitSlug={activeUnit.slug} unitId={activeUnit.id} />
+
+          {/* Importar nova tabela */}
+          <PriceImport unitSlug={activeUnit.slug} unitName={activeUnit.name} />
+        </>
       ) : (
         <p className="text-muted-foreground">Nenhuma unidade disponível.</p>
       )}
