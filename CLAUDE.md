@@ -291,17 +291,18 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Tabs na página admin: Usuários | Guardrails do Agente
   - `GuardrailsManager` recebe `categorias` e `periodos` extraídos dinamicamente do último `price_import` da unidade ativa
   - **Armadilha Radix UI Select:** `value=""` causa comportamento indefinido — sempre usar sentinel não-vazio (ex: `"all"`)
+- **LHG-71:** UI: Logo de cada unidade no seletor da sidebar
+  - Logos por slug em `app-sidebar.tsx` via imports estáticos (lush, altana, andar-de-cima, tout)
+  - Componente `UnitLogo` com fallback para inicial do nome
+  - Suporte a `darkBg` para logos que precisam de fundo escuro (Altana)
 
 ### 🔲 Backlog MVP (por prioridade)
 
-#### ✨ Polish e UX
-1. **LHG-71:** Logo de cada unidade no seletor da sidebar
-
 #### 🚀 Deploy e CI/CD
-2. **LHG-50:** Deploy produção + onboarding unidades piloto
+1. **LHG-50:** Deploy produção + onboarding unidades piloto
 
 #### 📊 Dashboard — enriquecimento
-3. **LHG-31:** Dashboard: Visão de canais
+2. **LHG-31:** Dashboard: Visão de canais
 
 ### 📅 Pós-MVP (Backlog)
 LHG-51 a LHG-63: clima, eventos, trânsito, aprendizado autônomo, dynamic pricing loop, integração com canais (Guia, Site Próprio).
