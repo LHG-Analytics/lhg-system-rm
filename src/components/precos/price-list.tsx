@@ -71,7 +71,7 @@ function isCurrentlyActive(imp: PriceImport): boolean {
   const today = new Date().toISOString().slice(0, 10)
   if (imp.valid_from > today) return false
   if (imp.valid_until && imp.valid_until < today) return false
-  return imp.is_active
+  return true
 }
 
 // ─── Inline date editor ───────────────────────────────────────────────────────

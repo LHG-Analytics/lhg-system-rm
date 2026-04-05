@@ -229,7 +229,7 @@ export async function PATCH(req: NextRequest) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, unit_id')
     .eq('user_id', user.id)
     .single()
 
@@ -244,6 +244,15 @@ export async function PATCH(req: NextRequest) {
     return new Response('id e status obrigatórios', { status: 400 })
   }
 
+  // Busca a proposta completa para poder criar o price_import ao aprovar
+  const { data: proposal, error: fetchErr } = await supabase
+    .from('price_proposals')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (fetchErr || !proposal) return Response.json({ error: 'Proposta não encontrada' }, { status: 404 })
+
   const { data: updated, error } = await supabase
     .from('price_proposals')
     .update({
@@ -256,6 +265,51 @@ export async function PATCH(req: NextRequest) {
     .single()
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  // Ao aprovar: cria um price_import com os preços propostos
+  if (status === 'approved') {
+    const rows = (proposal.rows as unknown as ProposedPriceRow[]) ?? []
+    const today = new Date().toISOString().slice(0, 10)
+
+    // Converte ProposedPriceRow[] → ParsedPriceRow[] usando preco_proposto como preço
+    const importRows: ParsedPriceRow[] = rows.map((r) => ({
+      canal:     r.canal,
+      categoria: r.categoria,
+      periodo:   r.periodo,
+      dia_tipo:  r.dia_tipo,
+      preco:     r.preco_proposto,
+    }))
+
+    const canais = [...new Set(importRows.map((r) => r.canal))]
+
+    const admin = getAdminClient()
+
+    // Encerra a vigência da tabela anterior ativa (via valid_until = ontem)
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayIso = yesterday.toISOString().slice(0, 10)
+
+    await admin
+      .from('price_imports')
+      .update({ valid_until: yesterdayIso })
+      .eq('unit_id', proposal.unit_id)
+      .is('valid_until', null)
+      .lt('valid_from', today)
+
+    // Insere a nova tabela como ativa a partir de hoje
+    await admin
+      .from('price_imports')
+      .insert({
+        unit_id:      proposal.unit_id,
+        imported_by:  user.id,
+        raw_content:  `[Gerado pelo Agente RM — proposta ${id}]`,
+        parsed_data:  importRows as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
+        canals:       canais,
+        is_active:    true,
+        valid_from:   today,
+        valid_until:  null,
+      })
+  }
 
   return Response.json(updated as unknown as PriceProposal)
 }
