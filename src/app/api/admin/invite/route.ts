@@ -65,6 +65,44 @@ export async function POST(req: NextRequest) {
   return Response.json({ ok: true, user_id: invited.user.id })
 }
 
+// ─── PATCH: atualiza role e/ou unit_id de um usuário existente ───────────────
+
+export async function PATCH(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return new Response('Não autorizado', { status: 401 })
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('user_id', user.id)
+    .single()
+
+  if (profile?.role !== 'super_admin') {
+    return new Response('Acesso negado', { status: 403 })
+  }
+
+  const body = await req.json() as { userId: string; role?: string; unit_id?: string | null }
+  const { userId, role, unit_id } = body
+
+  if (!userId) return new Response('userId obrigatório', { status: 400 })
+  if (userId === user.id) return Response.json({ error: 'Não é possível editar seu próprio perfil aqui.' }, { status: 400 })
+
+  const admin = getAdminClient()
+  const update: Record<string, unknown> = {}
+  if (role !== undefined) update.role = role
+  if (unit_id !== undefined) update.unit_id = unit_id ?? null
+
+  if (Object.keys(update).length === 0) {
+    return new Response('Nenhum campo para atualizar', { status: 400 })
+  }
+
+  const { error } = await admin.from('profiles').update(update).eq('user_id', userId)
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  return Response.json({ ok: true })
+}
+
 // ─── GET: lista usuários com seus perfis ─────────────────────────────────────
 
 export async function GET(req: NextRequest) {
