@@ -116,7 +116,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{activeUnit.name}</h1>
           <p className="text-sm text-muted-foreground">
-            {dateRange.label} · {fmtDisplay(dateRange.startDate)} até {fmtDisplay(dateRange.endDate)}
+            {dateRange.preset === 'custom'
+              ? dateRange.label
+              : `${dateRange.label} · ${fmtDisplay(dateRange.startDate)} até ${fmtDisplay(dateRange.endDate)}`
+            }
           </p>
         </div>
         <Suspense fallback={null}>

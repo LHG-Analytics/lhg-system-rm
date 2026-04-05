@@ -14,6 +14,7 @@ export interface CompanyBigNumbersPreviousDate {
   totalAllRentalsApartmentsPreviousData: number
   totalAllTicketAveragePreviousData: number
   totalAllTrevparPreviousData: number
+  totalAllRevparPreviousData: number
   totalAllGiroPreviousData: number
   totalAverageOccupationTimePreviousData: string // "HH:MM:SS"
   totalAllOccupancyRatePreviousData: number
@@ -35,6 +36,7 @@ export interface CompanyBigNumbersPrevMonthDate {
   totalAllRentalsApartmentsPrevMonth: number
   totalAllTicketAveragePrevMonth: number
   totalAllTrevparPrevMonth: number
+  totalAllRevparPrevMonth: number
   totalAllGiroPrevMonth: number
   totalAverageOccupationTimePrevMonth: string
   totalAllOccupancyRatePrevMonth: number

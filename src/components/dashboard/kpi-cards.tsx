@@ -149,6 +149,7 @@ export function DashboardKPICards({ company }: DashboardKPICardsProps) {
   const cmpRentals = compareMode === 'aa' ? prev?.totalAllRentalsApartmentsPreviousData  : prevM?.totalAllRentalsApartmentsPrevMonth
   const cmpValue   = compareMode === 'aa' ? prev?.totalAllValuePreviousData              : prevM?.totalAllValuePrevMonth
   const cmpTicket  = compareMode === 'aa' ? prev?.totalAllTicketAveragePreviousData      : prevM?.totalAllTicketAveragePrevMonth
+  const cmpRevpar  = compareMode === 'aa' ? prev?.totalAllRevparPreviousData             : prevM?.totalAllRevparPrevMonth
   const cmpTrevpar = compareMode === 'aa' ? prev?.totalAllTrevparPreviousData            : prevM?.totalAllTrevparPrevMonth
   const cmpGiro    = compareMode === 'aa' ? prev?.totalAllGiroPreviousData               : prevM?.totalAllGiroPrevMonth
   const cmpOccTime = compareMode === 'aa' ? prev?.totalAverageOccupationTimePreviousData : prevM?.totalAverageOccupationTimePrevMonth
@@ -165,11 +166,12 @@ export function DashboardKPICards({ company }: DashboardKPICardsProps) {
     {
       label:         'RevPAR',
       value:         formatCurrency(r.totalRevpar),
-      deltaPct:      cmpValue != null ? delta(cur.totalAllValue, cmpValue) : null,
-      previousValue: cmpValue != null ? formatCurrency(cmpValue) : undefined,
+      deltaPct:      cmpRevpar != null ? delta(r.totalRevpar, cmpRevpar) : null,
+      previousValue: cmpRevpar != null ? formatCurrency(cmpRevpar) : undefined,
       compareMode,
       forecast:      fc ? formatCurrency(fc.totalAllRevparForecast) : undefined,
     },
+
     {
       label:         'Ticket Médio',
       value:         formatCurrency(r.totalAllTicketAverage),

@@ -161,7 +161,7 @@ export function DateRangePicker() {
   const today = new Date()
 
   return (
-    <div className="flex items-end gap-3 overflow-x-auto">
+    <div className="flex items-end gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
 
       {/* Período */}
       <div className="flex flex-col gap-1.5 shrink-0">
