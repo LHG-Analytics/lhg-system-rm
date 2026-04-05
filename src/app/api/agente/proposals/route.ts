@@ -437,6 +437,19 @@ export async function PATCH(req: NextRequest) {
     const today = new Date().toISOString().slice(0, 10)
     const admin = getAdminClient()
 
+    // Auto-agendar revisão +7 dias após aprovação (às 13:00 UTC = 10:00 BRT)
+    const reviewDate = new Date()
+    reviewDate.setDate(reviewDate.getDate() + 7)
+    reviewDate.setUTCHours(13, 0, 0, 0)
+    await admin.from('scheduled_reviews').insert({
+      unit_id:      proposal.unit_id,
+      created_by:   user.id,
+      scheduled_at: reviewDate.toISOString(),
+      proposal_id:  proposal.id,
+      note:         `Acompanhamento de precificação — verificar impacto da proposta aprovada em ${today} nos KPIs de giro, RevPAR e ocupação.`,
+      status:       'pending',
+    }).select('id').single()
+
     const rowKey = (r: ParsedPriceRow) => `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`
 
     const proposedMap = new Map<string, number>()

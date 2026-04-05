@@ -853,7 +853,8 @@ export type Database = {
           executed_at: string | null
           id: string
           note: string | null
-          scheduled_at: string
+          proposal_id: string | null
+          scheduled_at: string   // timestamptz ISO string
           status: string
           unit_id: string
         }
@@ -864,7 +865,8 @@ export type Database = {
           executed_at?: string | null
           id?: string
           note?: string | null
-          scheduled_at: string
+          proposal_id?: string | null
+          scheduled_at?: string
           status?: string
           unit_id: string
         }
@@ -875,6 +877,7 @@ export type Database = {
           executed_at?: string | null
           id?: string
           note?: string | null
+          proposal_id?: string | null
           scheduled_at?: string
           status?: string
           unit_id?: string
@@ -885,6 +888,13 @@ export type Database = {
             columns: ["conv_id"]
             isOneToOne: false
             referencedRelation: "rm_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_reviews_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "price_proposals"
             referencedColumns: ["id"]
           },
           {
