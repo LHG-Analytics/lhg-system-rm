@@ -168,6 +168,11 @@ export function ScheduledReviewsList({ unitSlug, onSelectConversation }: Schedul
                               Aguardando execução
                             </Badge>
                           )}
+                          {review.proposal_created_at && (
+                            <span className="text-xs text-muted-foreground">
+                              Proposta de {format(parseISO(review.proposal_created_at), 'dd/MM/yyyy', { locale: ptBR })}
+                            </span>
+                          )}
                         </div>
 
                         {/* Nota */}
@@ -275,6 +280,11 @@ export function ScheduledReviewsList({ unitSlug, onSelectConversation }: Schedul
                         {review.executed_at && (
                           <span className="text-xs text-muted-foreground">
                             · executada em {format(parseISO(review.executed_at), 'dd/MM HH:mm', { locale: ptBR })}
+                          </span>
+                        )}
+                        {review.proposal_created_at && (
+                          <span className="text-xs text-muted-foreground">
+                            · proposta de {format(parseISO(review.proposal_created_at), 'dd/MM/yyyy', { locale: ptBR })}
                           </span>
                         )}
                       </div>

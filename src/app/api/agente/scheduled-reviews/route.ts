@@ -10,6 +10,7 @@ export interface ScheduledReview {
   scheduled_at: string   // ISO timestamptz
   note: string | null
   proposal_id: string | null
+  proposal_created_at: string | null  // vindo do join
   status: 'pending' | 'running' | 'done' | 'failed'
   conv_id: string | null
   created_at: string
@@ -40,13 +41,19 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('scheduled_reviews')
-    .select('*')
+    .select('*, price_proposals(created_at)')
     .eq('unit_id', unit.id)
     .order('scheduled_at', { ascending: true })
     .limit(50)
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
-  return Response.json(data as unknown as ScheduledReview[])
+
+  const reviews = (data ?? []).map((r) => {
+    const { price_proposals, ...rest } = r as typeof r & { price_proposals: { created_at: string } | null }
+    return { ...rest, proposal_created_at: price_proposals?.created_at ?? null }
+  })
+
+  return Response.json(reviews as unknown as ScheduledReview[])
 }
 
 // ─── PATCH: editar data/nota de agendamento pendente ─────────────────────────
