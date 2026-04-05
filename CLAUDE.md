@@ -283,6 +283,14 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Popover com `ScrollArea`: lista até 20 notificações, timestamps relativos
   - Marcar como lida ao clicar; "Marcar todas como lidas" no header do popover
   - Instalado `scroll-area.tsx` do shadcn/ui
+- **LHG-90:** Admin: redesign UI + edição inline de perfil e unidade de usuários
+  - `UserRow` sub-componente com estado local de edição (ícone ✏️ → selects inline → salvar/cancelar)
+  - `PATCH /api/admin/invite`: atualiza `role` e/ou `unit_id` de usuário existente (só `super_admin`, não pode editar a si mesmo)
+  - Formulário de convite redesenhado: header com ícone + descrição, email full-width, perfil+unidade em grid 2-col
+  - Badges de perfil com cores por papel: `super_admin` roxo, `admin` azul, `manager` verde, `viewer` muted
+  - Tabs na página admin: Usuários | Guardrails do Agente
+  - `GuardrailsManager` recebe `categorias` e `periodos` extraídos dinamicamente do último `price_import` da unidade ativa
+  - **Armadilha Radix UI Select:** `value=""` causa comportamento indefinido — sempre usar sentinel não-vazio (ex: `"all"`)
 
 ### 🔲 Backlog MVP (por prioridade)
 
@@ -294,15 +302,6 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 
 #### 📊 Dashboard — enriquecimento
 3. **LHG-31:** Dashboard: Visão de canais
-
-#### ✨ Polish e UX
-5. **LHG-71:** Logo de cada unidade no seletor da sidebar
-
-#### 🚀 Deploy e CI/CD
-6. **LHG-50:** Deploy produção + onboarding unidades piloto
-
-#### 📊 Dashboard — enriquecimento
-7. **LHG-31:** Dashboard: Visão de canais
 
 ### 📅 Pós-MVP (Backlog)
 LHG-51 a LHG-63: clima, eventos, trânsito, aprendizado autônomo, dynamic pricing loop, integração com canais (Guia, Site Próprio).
