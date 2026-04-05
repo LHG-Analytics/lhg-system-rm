@@ -21,6 +21,7 @@ export default async function LoginPage({
   const params = await searchParams
   const errorMap: Record<string, string> = {
     auth_callback_failed: 'Falha na autenticação. Tente novamente.',
+    unauthorized: 'Acesso não autorizado. Solicite um convite ao administrador.',
   }
   const error = params.error ? (errorMap[params.error] ?? 'Erro desconhecido.') : null
 
