@@ -255,20 +255,28 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 - **LHG-84:** Fix: Agente RM usava unidade errada ao trocar via sidebar
   - Bug: `AgenteChat` não remontava ao trocar unidade — transport continuava com `unitSlug` antigo
   - Fix: `useRef` detecta mudança de `unitId` no `useEffect` e incrementa `chatKey`, forçando remontagem com novo contexto
+- **LHG-85:** Fix: Dashboard — RevPAR comparativo real + header sem data duplicada + scrollbar oculta
+  - `totalAllRevparPreviousData` e `totalAllRevparPrevMonth` adicionados aos tipos e populados via `prevRevOcc.totalRevpar` / `prevMonRevOcc.totalRevpar` (mesmo cálculo do período atual: `valorliquidolocacao / suites / daysDiff`)
+  - `kpi-cards.tsx`: revPAR anterior usa o campo direto, sem aproximação via proporção de faturamento
+  - Header do dashboard: preset `custom` exibe só `dateRange.label` (sem duplicar datas)
+  - `date-range-picker.tsx`: scrollbar horizontal oculta via `[scrollbar-width:none]` (scroll funcional mas invisível)
 
 ### 🔲 Backlog MVP (por prioridade)
 
+#### 🤖 Agente RM — aprimoramento (foco atual)
+1. **LHG-86:** Agente RM: Memória estratégica — injetar histórico de propostas aprovadas + resultado (KPI antes vs depois)
+2. **LHG-87:** Agente RM: Contexto por categoria de suíte — DataTableSuiteCategory já calculada, mas não injetada no prompt
+3. **LHG-88:** Agente RM: Guardrails configuráveis — preço mínimo/máximo por categoria/período; agente não pode propor fora da faixa
+4. **LHG-89:** Notificações in-app — sino no header com badge de contagem, lista de notificações, marcar como lida
+
 #### ✨ Polish e UX
-1. **LHG-71:** Logo de cada unidade no seletor da sidebar
+5. **LHG-71:** Logo de cada unidade no seletor da sidebar
 
 #### 🚀 Deploy e CI/CD
-2. **LHG-50:** Deploy produção + onboarding unidades piloto
+6. **LHG-50:** Deploy produção + onboarding unidades piloto
 
 #### 📊 Dashboard — enriquecimento
-3. **LHG-31:** Dashboard: Visão de canais
-
-#### 🔔 Notificações
-4. **LHG-32:** Notificações push + email (Resend)
+7. **LHG-31:** Dashboard: Visão de canais
 
 ### 📅 Pós-MVP (Backlog)
-LHG-51 a LHG-63: guardrails, clima, eventos, trânsito, aprendizado autônomo, dynamic pricing loop.
+LHG-51 a LHG-63: clima, eventos, trânsito, aprendizado autônomo, dynamic pricing loop, integração com canais (Guia, Site Próprio).
