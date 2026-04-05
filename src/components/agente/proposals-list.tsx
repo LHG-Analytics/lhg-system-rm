@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   Loader2, Sparkles, ChevronDown, ChevronUp,
-  CheckCircle2, XCircle, Clock, Pencil, Trash2, Save, X,
+  CheckCircle2, XCircle, Clock, Pencil, Trash2, Save, X, CalendarPlus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PriceProposal, ProposedPriceRow } from '@/app/api/agente/proposals/route'
@@ -95,6 +95,9 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
   // Exclusão com confirmação
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Agendar revisão manual
+  const [scheduling, setScheduling] = useState<string | null>(null)
 
   useEffect(() => {
     if (!refreshKey) return
@@ -215,6 +218,35 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
       setSaving(false)
     }
   }, [editing])
+
+  const handleScheduleReview = useCallback(async (proposal: PriceProposal) => {
+    setScheduling(proposal.id)
+    setError(null)
+    try {
+      const reviewDate = new Date()
+      reviewDate.setDate(reviewDate.getDate() + 7)
+      reviewDate.setUTCHours(13, 0, 0, 0)
+      const today = new Date().toISOString().slice(0, 10)
+      const res = await fetch('/api/agente/scheduled-reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit_id: proposal.unit_id,
+          proposal_id: proposal.id,
+          scheduled_at: reviewDate.toISOString(),
+          note: `Acompanhamento de precificação — verificar impacto da proposta aprovada em ${today} nos KPIs de giro, RevPAR e ocupação.`,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error ?? 'Erro ao agendar revisão')
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setScheduling(null)
+    }
+  }, [])
 
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) return
@@ -427,6 +459,23 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
                             : <Save className="size-3.5" />
                           }
                           Salvar Edições
+                        </Button>
+                      </div>
+                    ) : proposal.status === 'approved' ? (
+                      <div className="flex justify-end p-4 border-t">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5 text-xs"
+                          disabled={scheduling === proposal.id}
+                          onClick={() => handleScheduleReview(proposal)}
+                          title="Agendar revisão automática para +7 dias"
+                        >
+                          {scheduling === proposal.id
+                            ? <Loader2 className="size-3.5 animate-spin" />
+                            : <CalendarPlus className="size-3.5" />
+                          }
+                          Agendar revisão
                         </Button>
                       </div>
                     ) : isPending ? (

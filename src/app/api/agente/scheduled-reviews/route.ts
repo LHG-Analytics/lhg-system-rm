@@ -56,6 +56,29 @@ export async function GET(req: NextRequest) {
   return Response.json(reviews as unknown as ScheduledReview[])
 }
 
+// ─── POST: criar agendamento manualmente (para propostas aprovadas sem revisão) ─
+
+export async function POST(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return new Response('Não autorizado', { status: 401 })
+
+  const body = await req.json() as { unit_id: string; proposal_id: string; scheduled_at: string; note: string }
+  const { unit_id, proposal_id, scheduled_at, note } = body
+  if (!unit_id || !proposal_id || !scheduled_at) {
+    return new Response('unit_id, proposal_id e scheduled_at são obrigatórios', { status: 400 })
+  }
+
+  const { data, error } = await supabase
+    .from('scheduled_reviews')
+    .insert({ unit_id, proposal_id, scheduled_at, note, created_by: user.id, status: 'pending' })
+    .select('*')
+    .single()
+
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  return Response.json({ ...(data as unknown as Record<string, unknown>), proposal_created_at: null })
+}
+
 // ─── PATCH: editar data/nota de agendamento pendente ─────────────────────────
 
 export async function PATCH(req: NextRequest) {

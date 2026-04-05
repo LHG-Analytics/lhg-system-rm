@@ -169,14 +169,15 @@ export function ScheduledReviewsList({ unitSlug, onSelectConversation, onSelectP
                               Aguardando execução
                             </Badge>
                           )}
-                          {review.proposal_id && review.proposal_created_at && (
+                          {review.proposal_id && (
                             <button
                               className="text-xs text-muted-foreground hover:text-primary underline-offset-2 hover:underline transition-colors"
                               onClick={() => onSelectProposal?.(review.proposal_id!)}
                               title={`Ver proposta ${review.proposal_id}`}
                             >
-                              Proposta de {format(parseISO(review.proposal_created_at), 'dd/MM/yyyy', { locale: ptBR })}
-                              {' '}
+                              {review.proposal_created_at
+                                ? `Proposta de ${format(parseISO(review.proposal_created_at), 'dd/MM/yyyy', { locale: ptBR })} `
+                                : 'Ver proposta '}
                               <span className="font-mono text-[10px]">({review.proposal_id.slice(0, 8)})</span>
                             </button>
                           )}
@@ -289,14 +290,15 @@ export function ScheduledReviewsList({ unitSlug, onSelectConversation, onSelectP
                             · executada em {format(parseISO(review.executed_at), 'dd/MM HH:mm', { locale: ptBR })}
                           </span>
                         )}
-                        {review.proposal_id && review.proposal_created_at && (
+                        {review.proposal_id && (
                           <button
                             className="text-xs text-muted-foreground hover:text-primary underline-offset-2 hover:underline transition-colors"
                             onClick={() => onSelectProposal?.(review.proposal_id!)}
                             title={`Ver proposta ${review.proposal_id}`}
                           >
-                            · proposta de {format(parseISO(review.proposal_created_at), 'dd/MM/yyyy', { locale: ptBR })}
-                            {' '}
+                            · {review.proposal_created_at
+                                ? `proposta de ${format(parseISO(review.proposal_created_at), 'dd/MM/yyyy', { locale: ptBR })} `
+                                : 'ver proposta '}
                             <span className="font-mono text-[10px]">({review.proposal_id.slice(0, 8)})</span>
                           </button>
                         )}
