@@ -266,48 +266,81 @@ export async function PATCH(req: NextRequest) {
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
-  // Ao aprovar: cria um price_import com os preços propostos
+  // Ao aprovar: clona a tabela ativa, aplica os preços propostos e insere como nova versão
   if (status === 'approved') {
-    const rows = (proposal.rows as unknown as ProposedPriceRow[]) ?? []
+    const proposedRows = (proposal.rows as unknown as ProposedPriceRow[]) ?? []
     const today = new Date().toISOString().slice(0, 10)
-
-    // Converte ProposedPriceRow[] → ParsedPriceRow[] usando preco_proposto como preço
-    const importRows: ParsedPriceRow[] = rows.map((r) => ({
-      canal:     r.canal,
-      categoria: r.categoria,
-      periodo:   r.periodo,
-      dia_tipo:  r.dia_tipo,
-      preco:     r.preco_proposto,
-    }))
-
-    const canais = [...new Set(importRows.map((r) => r.canal))]
-
     const admin = getAdminClient()
 
-    // Encerra a vigência da tabela anterior ativa (via valid_until = ontem)
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    const yesterdayIso = yesterday.toISOString().slice(0, 10)
+    // Chave de identificação única de um item de preço
+    const rowKey = (r: ParsedPriceRow) => `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`
 
-    await admin
+    // Mapa dos preços propostos: chave → preco_proposto
+    const proposedMap = new Map<string, number>()
+    for (const r of proposedRows) {
+      proposedMap.set(rowKey(r), r.preco_proposto)
+    }
+
+    // 1. Busca o snapshot ativo atual (base para o clone)
+    const { data: activeImport } = await admin
       .from('price_imports')
-      .update({ valid_until: yesterdayIso })
+      .select('id, parsed_data, canals')
       .eq('unit_id', proposal.unit_id)
       .is('valid_until', null)
-      .lt('valid_from', today)
+      .lte('valid_from', today)
+      .order('valid_from', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-    // Insere a nova tabela como ativa a partir de hoje
+    // 2. Monta o novo snapshot: clone da base + upsert dos preços propostos
+    const baseRows: ParsedPriceRow[] = activeImport
+      ? (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? []
+      : []
+
+    // Clona cada linha da base; substitui o preço se havia proposta para aquela chave
+    const remainingProposed = new Map(proposedMap)
+    const newRows: ParsedPriceRow[] = baseRows.map((r) => {
+      const key = rowKey(r)
+      const newPrice = remainingProposed.get(key)
+      if (newPrice !== undefined) {
+        remainingProposed.delete(key) // marcado como aplicado
+        return { ...r, preco: newPrice }
+      }
+      return { ...r }
+    })
+
+    // Linhas da proposta sem correspondência na base (itens novos): adiciona ao final
+    for (const [key, preco] of remainingProposed) {
+      const src = proposedRows.find((r) => rowKey(r) === key)
+      if (src) {
+        newRows.push({ canal: src.canal, categoria: src.categoria, periodo: src.periodo, dia_tipo: src.dia_tipo, preco })
+      }
+    }
+
+    const newCanais = [...new Set(newRows.map((r) => r.canal))]
+
+    // 3. Encerra a vigência do registro ativo anterior (valid_until = ontem)
+    if (activeImport) {
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      await admin
+        .from('price_imports')
+        .update({ valid_until: yesterday.toISOString().slice(0, 10) })
+        .eq('id', activeImport.id)
+    }
+
+    // 4. Insere o novo snapshot como tabela ativa (valid_from = hoje, valid_until = null)
     await admin
       .from('price_imports')
       .insert({
-        unit_id:      proposal.unit_id,
-        imported_by:  user.id,
-        raw_content:  `[Gerado pelo Agente RM — proposta ${id}]`,
-        parsed_data:  importRows as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
-        canals:       canais,
-        is_active:    true,
-        valid_from:   today,
-        valid_until:  null,
+        unit_id:     proposal.unit_id,
+        imported_by: user.id,
+        raw_content: `[Agente RM — proposta ${id} aprovada em ${today}]`,
+        parsed_data: newRows as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
+        canals:      newCanais,
+        is_active:   true,
+        valid_from:  today,
+        valid_until: null,
       })
   }
 
