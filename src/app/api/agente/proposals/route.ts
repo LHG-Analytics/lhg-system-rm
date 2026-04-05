@@ -272,25 +272,40 @@ export async function POST(req: NextRequest) {
     return `#### Tabela ${vigencia}\n${sections.join('\n\n')}`
   }).join('\n\n---\n\n')
 
+  // Mapa de preços atuais (tabela ativa) para o modelo não precisar inferir
+  const activeRows = (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? []
+  const precoAtualMap = Object.fromEntries(
+    activeRows.map((r) => [`${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`, r.preco])
+  )
+  const precoAtualBlock = activeRows.map((r) =>
+    `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo} = R$ ${r.preco.toFixed(2)}`
+  ).join('\n')
+
   const prompt = `Você é um especialista em Revenue Management para motéis. Analise os dados abaixo e gere uma proposta de ajuste de preços.
 
 ## Dados operacionais — ${unit.name}
 
 ${kpiBlocks}
 
-## Tabelas de preços${priceImports.length > 1 ? ' (histórico para comparação)' : ''}
+## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
+
+## Mapa de preços atuais (use estes valores exatos como preco_atual no JSON)
+
+${precoAtualBlock}
 
 ---
 
 TAREFA: Com base nos dados acima, gere uma proposta de ajuste de preços.
 
 Critérios:
-- Analise giro, ocupação e RevPAR por categoria e dia da semana
-${hasPrevious ? '- Compare o desempenho do período atual com o anterior para identificar impacto das mudanças de tabela\n' : ''}- Proponha apenas ajustes com justificativa clara nos dados
+- Analise giro, ocupação e RevPAR por categoria e dia da semana nas tabelas semanais
+${hasPrevious ? '- Compare o desempenho do período atual com o anterior: se KPIs melhoraram após mudança de tabela, a direção estava certa; se pioraram, corrija\n' : ''}- Proponha apenas ajustes com justificativa clara nos dados
 - Variação máxima: ±30% por item
-- Priorize itens com maior impacto no RevPAR
+- Priorize itens com maior impacto no RevPAR (alto giro + RevPAR baixo = oportunidade de aumento)
+
+IMPORTANTE: Use os valores do "Mapa de preços atuais" acima como preco_atual. Não invente valores.
 
 Retorne SOMENTE este JSON minificado (sem nenhum texto antes ou depois):
 {"context":"análise em 2-3 frases","rows":[{"canal":"balcao_site","categoria":"nome","periodo":"3h","dia_tipo":"semana","preco_atual":0.00,"preco_proposto":0.00,"variacao_pct":0.0,"justificativa":"razão em 1 frase"}]}
@@ -298,6 +313,9 @@ Retorne SOMENTE este JSON minificado (sem nenhum texto antes ou depois):
 Valores válidos: canal = balcao_site | site_programada | guia_moteis; dia_tipo = semana | fds_feriado | todos
 variacao_pct = ((preco_proposto - preco_atual) / preco_atual * 100) arredondado 1 decimal
 Omita itens sem dados suficientes. JSON minificado, sem indentação.`
+
+  // Suprimir warning de variável não usada (precoAtualMap disponível para validação futura)
+  void precoAtualMap
 
   const { text } = await generateText({
     model: PRIMARY_MODEL,
