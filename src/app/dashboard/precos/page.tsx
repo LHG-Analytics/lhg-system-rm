@@ -68,11 +68,11 @@ export default async function PrecosPage({ searchParams }: PrecosPageProps) {
 
       {activeUnit ? (
         <>
-          {/* Lista de tabelas com realtime */}
-          <PriceList unitSlug={activeUnit.slug} unitId={activeUnit.id} />
-
           {/* Importar nova tabela */}
           <PriceImport unitSlug={activeUnit.slug} unitName={activeUnit.name} />
+
+          {/* Lista de tabelas com realtime */}
+          <PriceList unitSlug={activeUnit.slug} unitId={activeUnit.id} />
         </>
       ) : (
         <p className="text-muted-foreground">Nenhuma unidade disponível.</p>
