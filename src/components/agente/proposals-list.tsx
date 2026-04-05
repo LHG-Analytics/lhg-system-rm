@@ -22,11 +22,25 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
+import {
   Loader2, Sparkles, ChevronDown, ChevronUp,
-  CheckCircle2, XCircle, Clock, Pencil, Trash2, Save, X, CalendarPlus,
+  CheckCircle2, XCircle, Clock, Pencil, Trash2, Save, X,
+  CalendarPlus, CalendarClock,
 } from 'lucide-react'
+import { format, parseISO } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { PriceProposal, ProposedPriceRow } from '@/app/api/agente/proposals/route'
+
+interface PendingReview {
+  id: string
+  scheduled_at: string
+}
 
 interface ProposalsListProps {
   unitSlug: string
@@ -88,6 +102,12 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
   const [error, setError] = useState<string | null>(null)
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
+  // Reviews agendadas por proposal_id
+  const [pendingReviews, setPendingReviews] = useState<Map<string, PendingReview>>(new Map())
+  const [scheduling, setScheduling] = useState<string | null>(null)
+  const [rescheduling, setRescheduling] = useState<string | null>(null)  // proposal_id em reagendamento
+  const [calendarOpen, setCalendarOpen] = useState<string | null>(null)  // proposal_id com calendar aberto
+
   // Edição inline
   const [editing, setEditing] = useState<{ id: string; rows: ProposedPriceRow[] } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -95,9 +115,6 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
   // Exclusão com confirmação
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
-
-  // Agendar revisão manual
-  const [scheduling, setScheduling] = useState<string | null>(null)
 
   useEffect(() => {
     if (!refreshKey) return
@@ -107,6 +124,25 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
       .catch(() => {})
   }, [refreshKey, unitSlug])
 
+  // Carrega revisões pendentes para cruzar com proposals
+  const loadPendingReviews = useCallback(async () => {
+    if (!unitSlug) return
+    try {
+      const res = await fetch(`/api/agente/scheduled-reviews?unitSlug=${unitSlug}`)
+      const data = await res.json()
+      if (!Array.isArray(data)) return
+      const map = new Map<string, PendingReview>()
+      for (const r of data) {
+        if (r.proposal_id && r.status === 'pending') {
+          map.set(r.proposal_id, { id: r.id, scheduled_at: r.scheduled_at })
+        }
+      }
+      setPendingReviews(map)
+    } catch { /* silencioso */ }
+  }, [unitSlug])
+
+  useEffect(() => { loadPendingReviews() }, [loadPendingReviews])
+
   // Auto-expande e scrolla para a proposta vinda da Agenda
   useEffect(() => {
     if (!selectedProposalId) return
@@ -115,6 +151,9 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
       cardRefs.current[selectedProposalId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 50)
   }, [selectedProposalId])
+
+  // Proposta aprovada mais recente (é a que está vigente na tabela atual)
+  const latestApprovedId = proposals.find((p) => p.status === 'approved')?.id ?? null
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -160,21 +199,20 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao revisar proposta')
       setProposals((prev) => prev.map((p) => p.id === id ? data as PriceProposal : p))
+      await loadPendingReviews()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
       setReviewing(null)
     }
-  }, [])
+  }, [loadPendingReviews])
 
-  // Abre modo de edição para uma proposta pendente
   const startEditing = useCallback((proposal: PriceProposal) => {
     setEditing({ id: proposal.id, rows: proposal.rows.map((r) => ({ ...r })) })
     setExpanded((prev) => new Set([...prev, proposal.id]))
     setError(null)
   }, [])
 
-  // Atualiza o preco_proposto de uma linha e recalcula variacao_pct
   const updateEditRow = useCallback((index: number, newPrice: number) => {
     setEditing((prev) => {
       if (!prev) return null
@@ -188,7 +226,6 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
     })
   }, [])
 
-  // Atualiza a justificativa de uma linha
   const updateEditJustificativa = useCallback((index: number, value: string) => {
     setEditing((prev) => {
       if (!prev) return null
@@ -219,6 +256,7 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
     }
   }, [editing])
 
+  // Cria agendamento novo para a proposta
   const handleScheduleReview = useCallback(async (proposal: PriceProposal) => {
     setScheduling(proposal.id)
     setError(null)
@@ -241,12 +279,36 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
         const data = await res.json()
         throw new Error(data.error ?? 'Erro ao agendar revisão')
       }
+      await loadPendingReviews()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
       setScheduling(null)
     }
-  }, [])
+  }, [loadPendingReviews])
+
+  // Reagenda revisão existente para nova data
+  const handleReschedule = useCallback(async (proposalId: string, newDate: Date) => {
+    const review = pendingReviews.get(proposalId)
+    if (!review) return
+    setRescheduling(proposalId)
+    try {
+      const prev = parseISO(review.scheduled_at)
+      newDate.setUTCHours(prev.getUTCHours(), prev.getUTCMinutes(), 0, 0)
+      const res = await fetch('/api/agente/scheduled-reviews', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: review.id, scheduled_at: newDate.toISOString() }),
+      })
+      if (!res.ok) throw new Error('Erro ao reagendar')
+      await loadPendingReviews()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setRescheduling(null)
+      setCalendarOpen(null)
+    }
+  }, [pendingReviews, loadPendingReviews])
 
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) return
@@ -307,10 +369,12 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
             const StatusIcon = cfg.icon
             const isExpanded = expanded.has(proposal.id)
             const isPending = proposal.status === 'pending'
+            const isApproved = proposal.status === 'approved'
+            const isLatestApproved = proposal.id === latestApprovedId
             const isReviewing = reviewing === proposal.id
             const isEditing = editing?.id === proposal.id
-
             const isHighlighted = selectedProposalId === proposal.id
+            const pendingReview = pendingReviews.get(proposal.id)
 
             return (
               <div
@@ -347,6 +411,63 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    {/* Botão de revisão — apenas na proposta aprovada mais recente */}
+                    {isApproved && isLatestApproved && (
+                      pendingReview ? (
+                        /* Já tem revisão agendada — mostrar data + reagendar */
+                        <Popover
+                          open={calendarOpen === proposal.id}
+                          onOpenChange={(open) => setCalendarOpen(open ? proposal.id : null)}
+                        >
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5 text-xs h-7 text-blue-600 border-blue-500/30 hover:bg-blue-500/10"
+                              title="Revisão agendada — clique para reagendar"
+                            >
+                              <CalendarClock className="size-3.5" />
+                              {format(parseISO(pendingReview.scheduled_at), 'dd/MM', { locale: ptBR })}
+                              · Reagendar
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="end">
+                            <div className="px-3 pt-3 pb-1 text-xs text-muted-foreground font-medium">
+                              Nova data para a revisão:
+                            </div>
+                            <Calendar
+                              mode="single"
+                              selected={parseISO(pendingReview.scheduled_at)}
+                              onSelect={(date) => { if (date) handleReschedule(proposal.id, date) }}
+                              disabled={(date) => date <= new Date()}
+                              locale={ptBR}
+                            />
+                            {rescheduling === proposal.id && (
+                              <div className="flex justify-center pb-3">
+                                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                              </div>
+                            )}
+                          </PopoverContent>
+                        </Popover>
+                      ) : (
+                        /* Sem revisão — botão para agendar */
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5 text-xs h-7"
+                          disabled={scheduling === proposal.id}
+                          onClick={() => handleScheduleReview(proposal)}
+                          title="Agendar revisão automática para +7 dias"
+                        >
+                          {scheduling === proposal.id
+                            ? <Loader2 className="size-3.5 animate-spin" />
+                            : <CalendarPlus className="size-3.5" />
+                          }
+                          Agendar revisão
+                        </Button>
+                      )
+                    )}
+
                     {/* Botão excluir */}
                     <Button
                       variant="ghost"
@@ -459,23 +580,6 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
                             : <Save className="size-3.5" />
                           }
                           Salvar Edições
-                        </Button>
-                      </div>
-                    ) : proposal.status === 'approved' ? (
-                      <div className="flex justify-end p-4 border-t">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5 text-xs"
-                          disabled={scheduling === proposal.id}
-                          onClick={() => handleScheduleReview(proposal)}
-                          title="Agendar revisão automática para +7 dias"
-                        >
-                          {scheduling === proposal.id
-                            ? <Loader2 className="size-3.5 animate-spin" />
-                            : <CalendarPlus className="size-3.5" />
-                          }
-                          Agendar revisão
                         </Button>
                       </div>
                     ) : isPending ? (
