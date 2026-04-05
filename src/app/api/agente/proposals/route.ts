@@ -317,6 +317,9 @@ Omita itens sem dados suficientes. JSON minificado, sem indentação.`
   // Suprimir warning de variável não usada (precoAtualMap disponível para validação futura)
   void precoAtualMap
 
+  console.log('[proposals] kpiActive disponível:', !!kpiActive, '| kpiPrevious disponível:', !!kpiPrevious)
+  console.log('[proposals] prompt length (chars):', prompt.length)
+
   const { text } = await generateText({
     model: PRIMARY_MODEL,
     providerOptions: gatewayOptions,
@@ -325,11 +328,13 @@ Omita itens sem dados suficientes. JSON minificado, sem indentação.`
     temperature: 0.2,
   })
 
+  console.log('[proposals] resposta do modelo (primeiros 500 chars):', text.slice(0, 500))
+
   const parsed = extractProposalJSON(text)
   if (!parsed || !Array.isArray(parsed.rows)) {
-    console.error('[proposals] Resposta não parseável:', text.slice(0, 500))
+    console.error('[proposals] Resposta não parseável — texto completo:', text)
     return Response.json(
-      { error: 'O modelo não retornou JSON válido. Tente novamente.', preview: text.slice(0, 300) },
+      { error: 'O modelo não retornou JSON válido. Tente novamente.', preview: text.slice(0, 800) },
       { status: 422 }
     )
   }

@@ -103,7 +103,11 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey }: Propos
         body: JSON.stringify({ unitSlug }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Erro ao gerar proposta')
+      if (!res.ok) {
+        const msg = data.error ?? 'Erro ao gerar proposta'
+        const preview = data.preview ? `\n\nResposta do modelo: "${data.preview}"` : ''
+        throw new Error(msg + preview)
+      }
       setProposals((prev) => [data as PriceProposal, ...prev])
       setExpanded((prev) => new Set([...prev, (data as PriceProposal).id]))
     } catch (e) {
