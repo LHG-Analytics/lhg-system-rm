@@ -74,21 +74,18 @@ function buildKPIContext(
   const cur = bn?.currentDate
   const prev = bn?.previousDate
 
-  // Tabela por categoria de suíte
+  // Tabela por categoria de suíte — inclui RevPAR e TRevPAR por categoria
   const suiteRows = company.DataTableSuiteCategory.flatMap((item) =>
     Object.entries(item).map(([cat, kpi]) => ({ cat, ...kpi }))
   )
 
-  const suiteSummary = suiteRows
-    .map(
-      (s) =>
-        `  • ${s.cat}: ${fmt(s.totalRentalsApartments)} loc | ` +
-        `Fat. ${fmt(s.totalValue, 'currency')} | ` +
-        `Ticket ${fmt(s.totalTicketAverage, 'currency')} | ` +
-        `Ocup. ${fmt(s.occupancyRate, 'percent')} | ` +
-        `Giro ${s.giro.toFixed(2)} | TMO ${formatTime(s.averageOccupationTime)}`
-    )
-    .join('\n')
+  const suiteSummary = suiteRows.length
+    ? `| Categoria | Locações | RevPAR | TRevPAR | Ocupação | Giro | Ticket | TMO |
+|-----------|----------|--------|---------|----------|------|--------|-----|
+${suiteRows.map((s) =>
+  `| ${s.cat} | ${fmt(s.totalRentalsApartments)} | ${fmt(s.revpar, 'currency')} | ${fmt(s.trevpar, 'currency')} | ${fmt(s.occupancyRate, 'percent')} | ${s.giro.toFixed(2)} | ${fmt(s.totalTicketAverage, 'currency')} | ${formatTime(s.averageOccupationTime)} |`
+).join('\n')}`
+    : '  Dados não disponíveis'
 
   // Mix por tipo de locação (3h, 6h, 12h, pernoite)
   const billingMix = company.BillingRentalType?.length

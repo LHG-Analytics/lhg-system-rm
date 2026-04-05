@@ -44,6 +44,52 @@ function getAdminClient() {
   )
 }
 
+// Labels de canal reutilizados no prompt e no bloco de memória
+const CANAL_LABELS: Record<string, string> = {
+  balcao_site:    'Balcão/Site',
+  site_programada:'Site Programada',
+  guia_moteis:    'Guia de Motéis',
+}
+
+/**
+ * Monta o bloco de memória estratégica: lista as últimas propostas aprovadas
+ * com os preços alterados (Δ%). O agente cruza com o comparativo de KPIs
+ * (período atual × anterior) para avaliar se as decisões passadas funcionaram.
+ */
+function buildStrategicMemoryBlock(history: PriceProposal[]): string {
+  const relevant = history.filter((p) =>
+    (p.rows as ProposedPriceRow[])?.some((r) => Math.abs(r.variacao_pct) >= 1)
+  )
+  if (!relevant.length) return ''
+
+  const blocks = relevant.map((p, idx) => {
+    const date = p.reviewed_at
+      ? new Date(p.reviewed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '?'
+    const changed = ((p.rows as ProposedPriceRow[]) ?? []).filter((r) => Math.abs(r.variacao_pct) >= 1)
+    const tableLines = changed.map((r) =>
+      `| ${r.categoria} | ${r.periodo} | ${CANAL_LABELS[r.canal] ?? r.canal} | ` +
+      `${r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | ` +
+      `R$ ${r.preco_atual.toFixed(2)} | R$ ${r.preco_proposto.toFixed(2)} | ` +
+      `${r.variacao_pct > 0 ? '+' : ''}${r.variacao_pct.toFixed(1)}% |`
+    ).join('\n')
+    const rank = idx === 0 ? 'mais recente' : `${idx + 1}ª mais recente`
+    return `### Proposta aprovada em ${date} (${rank})
+Análise registrada: ${p.context ?? 'Não registrado'}
+
+Alterações aplicadas (${changed.length} item${changed.length !== 1 ? 'ns' : ''}):
+| Categoria | Período | Canal | Dia | Preço anterior | Preço novo | Δ% |
+|-----------|---------|-------|-----|----------------|------------|-----|
+${tableLines}`
+  }).join('\n\n---\n\n')
+
+  return `## Memória estratégica — ${relevant.length} proposta(s) aprovada(s)
+
+> Os KPIs comparativos acima (período atual × período anterior) refletem o impacto dessas decisões. Use esse histórico para avaliar se a direção foi correta e para calibrar a nova proposta.
+
+${blocks}`
+}
+
 function extractProposalJSON(text: string): ProposalResponse | null {
   const clean = text.trim()
   const codeBlock = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
@@ -195,16 +241,26 @@ export async function POST(req: NextRequest) {
     prevPeriod = { startDate: toApiDate(prevStart), endDate: toApiDate(prevEnd) }
   }
 
-  // ─── Buscar KPIs em paralelo ────────────────────────────────────────────
+  // ─── Buscar KPIs + histórico de propostas aprovadas em paralelo ─────────
   const kpiTasks = [
     fetchCompanyKPIsFromAutomo(unit.slug, activePeriod.startDate, activePeriod.endDate),
     ...(prevPeriod
       ? [fetchCompanyKPIsFromAutomo(unit.slug, prevPeriod.startDate, prevPeriod.endDate)]
       : []),
   ]
-  const kpiResults = await Promise.allSettled(kpiTasks)
-  const kpiActive = kpiResults[0]?.status === 'fulfilled' ? kpiResults[0].value : null
+  const [kpiResults, historyResult] = await Promise.all([
+    Promise.allSettled(kpiTasks),
+    supabase
+      .from('price_proposals')
+      .select('id, context, rows, reviewed_at, status')
+      .eq('unit_id', unit.id)
+      .eq('status', 'approved')
+      .order('reviewed_at', { ascending: false })
+      .limit(3),
+  ])
+  const kpiActive   = kpiResults[0]?.status === 'fulfilled' ? kpiResults[0].value : null
   const kpiPrevious = kpiResults[1]?.status === 'fulfilled' ? kpiResults[1].value : null
+  const approvedHistory = (historyResult.data ?? []) as unknown as PriceProposal[]
 
   // ─── Montar contexto comparativo para o prompt ──────────────────────────
   const priceImports: PriceImportForPrompt[] = [
@@ -241,6 +297,7 @@ export async function POST(req: NextRequest) {
 
   // ─── Montar prompt focado (sem system prompt do chat) ───────────────────
   const hasPrevious = kpiData.length > 1
+  const memoryBlock = buildStrategicMemoryBlock(approvedHistory)
 
   const kpiBlocks = kpiData.map((kpi) => {
     const label = kpi.label ?? 'Período'
@@ -249,11 +306,6 @@ export async function POST(req: NextRequest) {
   }).join('\n\n---\n\n')
 
   // Tabela de preços ativa formatada inline
-  const CANAL_LABELS: Record<string, string> = {
-    balcao_site: 'Balcão/Site',
-    site_programada: 'Site Programada',
-    guia_moteis: 'Guia de Motéis',
-  }
   const priceBlocks = priceImports.map((imp) => {
     const vigencia = `${imp.valid_from}${imp.valid_until ? ` → ${imp.valid_until}` : ' → atualmente'}`
     const byCanal = new Map<string, ParsedPriceRow[]>()
@@ -286,7 +338,7 @@ export async function POST(req: NextRequest) {
 ## Dados operacionais — ${unit.name}
 
 ${kpiBlocks}
-
+${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
@@ -301,7 +353,7 @@ TAREFA: Com base nos dados acima, gere uma proposta de ajuste de preços.
 
 Critérios:
 - Analise giro, ocupação e RevPAR por categoria e dia da semana nas tabelas semanais
-${hasPrevious ? '- Compare o desempenho do período atual com o anterior: se KPIs melhoraram após mudança de tabela, a direção estava certa; se pioraram, corrija\n' : ''}- Proponha apenas ajustes com justificativa clara nos dados
+${hasPrevious ? '- Compare o desempenho do período atual com o anterior: se KPIs melhoraram após mudança de tabela, a direção estava certa; se pioraram, corrija\n' : ''}${memoryBlock ? '- Use a memória estratégica para calibrar a nova proposta: se as mudanças anteriores melhoraram os KPIs, intensifique a direção; se pioraram, recue ou teste outro caminho\n' : ''}- Proponha apenas ajustes com justificativa clara nos dados
 - Variação máxima: ±30% por item
 - Priorize itens com maior impacto no RevPAR (alto giro + RevPAR baixo = oportunidade de aumento)
 
