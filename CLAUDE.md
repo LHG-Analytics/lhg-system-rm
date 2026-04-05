@@ -234,6 +234,15 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `Input type="date"` (x2) substituídos por Popover com `Calendar mode="range"` (shadcn) — fecha ao selecionar range completo, label `DD/MM/YYYY → DD/MM/YYYY`, locale pt-BR
   - Filtros: `flex-wrap` removido, `shrink-0` em cada seção, `overflow-x-auto` no container — nunca quebra linha ao aplicar
   - Header do dashboard em `flex-col` (título + filtros empilhados) — elimina layout shift
+- **LHG-82:** Agente RM: ID de proposta visível + navegação Agenda→Proposta + revisão inteligente no header
+  - ID curto (8 chars, font-mono, opaco) exibido no header de cada card de proposta
+  - Aba Agenda: link "Proposta de DD/MM/YYYY (c41fe383)" clicável — navega para aba Propostas, scrolla e destaca o card com ring
+  - GET `/api/agente/scheduled-reviews` faz join com `price_proposals` para trazer `proposal_created_at`
+  - Botão "Agendar revisão" no header da proposta aprovada mais recente (sem precisar expandir)
+  - Propostas aprovadas anteriores (supersedidas) não mostram o botão
+  - Se já existe revisão pendente: badge azul "DD/MM · Reagendar" com Calendar popover para alterar data inline
+  - POST `/api/agente/scheduled-reviews` para criar agendamento manualmente (propostas aprovadas antes do automático)
+  - `loadPendingReviews()` recarrega após approve e após criar/reagendar
 
 ### 🔲 Backlog MVP (por prioridade)
 
