@@ -244,6 +244,18 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - POST `/api/agente/scheduled-reviews` para criar agendamento manualmente (propostas aprovadas antes do automático)
   - `loadPendingReviews()` recarrega após approve e após criar/reagendar
 
+- **LHG-83:** Auth: Sistema invite-only + página de gerenciamento de usuários
+  - Supabase "Allow new users to sign up" deve estar desabilitado em Authentication → Providers → Email
+  - `auth/callback`: após OAuth Google, verifica se user tem `profile` — se não, faz sign out e redireciona com `?error=unauthorized`
+  - `login/page.tsx`: exibe "Acesso não autorizado. Solicite um convite." quando `error=unauthorized`
+  - `POST /api/admin/invite`: convida por email via `supabase.auth.admin.inviteUserByEmail` + cria `profile` imediatamente; só `super_admin` pode usar
+  - `GET /api/admin/invite`: lista usuários (join `auth.users` para email, `invited_at`, `last_sign_in_at`)
+  - `DELETE /api/admin/invite?userId=`: remove `profile` + deleta `auth.users` (não permite remover a si mesmo)
+  - `/dashboard/admin`: página só para `super_admin` com formulário de convite (email + perfil + unidade) e lista de usuários com status "Aguardando aceite" ou "Último acesso"
+- **LHG-84:** Fix: Agente RM usava unidade errada ao trocar via sidebar
+  - Bug: `AgenteChat` não remontava ao trocar unidade — transport continuava com `unitSlug` antigo
+  - Fix: `useRef` detecta mudança de `unitId` no `useEffect` e incrementa `chatKey`, forçando remontagem com novo contexto
+
 ### 🔲 Backlog MVP (por prioridade)
 
 #### ✨ Polish e UX
