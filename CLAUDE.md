@@ -132,7 +132,7 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 
 **RLS:** funções `current_user_role()` e `current_user_unit_id()` como `SECURITY DEFINER` são a base de todas as policies.
 
-## Issues Linear (status atual — 2026-04-04)
+## Issues Linear (status atual — 2026-04-05)
 
 ### ✅ Concluídos
 - **LHG-8:** Setup Next.js + Supabase + Tailwind + shadcn/ui
@@ -208,6 +208,19 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - KPI cards: `Card/CardHeader/CardContent`, `Badge` com ícone TrendingUp/Down, `Separator`, `ToggleGroup`
   - DateRangePicker: `Select`, `ToggleGroup` segmentado, `Button`, `Input`, `Label`, `Separator` vertical
   - Novos componentes instalados: `toggle.tsx`, `toggle-group.tsx`
+- **LHG-78:** Preços: listagem realtime de tabelas com edição, exclusão e status de vigência
+  - `PriceList` component com Supabase Realtime (`postgres_changes`) — atualiza ao INSERT/UPDATE/DELETE
+  - Badge "Em uso" / "Inativa" baseado em datas (`valid_from ≤ hoje AND valid_until IS NULL OR ≥ hoje`)
+  - Expansão inline dos preços (ChevronDown), edição de vigência inline, exclusão com `AlertDialog`
+  - API: `PATCH /api/agente/import-prices` (atualiza vigência) e `DELETE /api/agente/import-prices?id=`
+  - Instalado componente `alert-dialog.tsx` do shadcn
+- **LHG-79:** Preços: aprovação de proposta cria snapshot versionado da tabela de preços
+  - Ao aprovar proposta no Agente RM: clona a tabela ativa atual (snapshot completo)
+  - Aplica upsert dos `preco_proposto` sobre o clone (por chave `canal|categoria|periodo|dia_tipo`)
+  - Itens sem proposta preservados intactos; itens novos na proposta adicionados ao clone
+  - Encerra a vigência da tabela anterior (`valid_until = ontem`) e insere o novo snapshot como ativo
+  - Se não há tabela ativa, cria do zero apenas com os preços propostos
+  - **Armadilha:** `is_active` no banco pode estar inconsistente — status "em uso" usa apenas datas
 
 ### 🔲 Backlog MVP (por prioridade)
 
