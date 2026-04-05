@@ -271,11 +271,29 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Substituído por tabela markdown: `Categoria | Locações | RevPAR | TRevPAR | Ocupação | Giro | Ticket | TMO`
   - Afeta tanto o chat do agente (buildKPIContext em system-prompt.ts) quanto o prompt de geração de propostas
 
+- **LHG-88:** Agente RM: Guardrails de preço configuráveis por categoria/período
+  - Migration: tabela `agent_price_guardrails` (unit_id, categoria, periodo, preco_minimo, preco_maximo) com UNIQUE + RLS
+  - API `/api/admin/guardrails`: GET (lista), POST (upsert por unit+categoria+periodo), DELETE por id
+  - POST `/api/agente/proposals`: busca guardrails da unidade, injeta limites no prompt (tabela markdown) e faz clamp server-side após parse do JSON (safety net)
+  - UI na aba "Guardrails do Agente" em `/dashboard/admin` (Tabs: Usuários | Guardrails do Agente)
+  - Categoria = nome exato do ERP (texto livre); Período = select: 3h/6h/12h/pernoite
+- **LHG-89:** Notificações in-app com realtime
+  - `NotificationsBell`: sino no header com badge de contagem de não-lidas
+  - Supabase Realtime (`postgres_changes` INSERT) — badge atualiza sem polling
+  - Popover com `ScrollArea`: lista até 20 notificações, timestamps relativos
+  - Marcar como lida ao clicar; "Marcar todas como lidas" no header do popover
+  - Instalado `scroll-area.tsx` do shadcn/ui
+
 ### 🔲 Backlog MVP (por prioridade)
 
-#### 🤖 Agente RM — aprimoramento (foco atual)
-1. **LHG-88:** Agente RM: Guardrails configuráveis — preço mínimo/máximo por categoria/período; agente não pode propor fora da faixa
-2. **LHG-89:** Notificações in-app — sino no header com badge de contagem, lista de notificações, marcar como lida
+#### ✨ Polish e UX
+1. **LHG-71:** Logo de cada unidade no seletor da sidebar
+
+#### 🚀 Deploy e CI/CD
+2. **LHG-50:** Deploy produção + onboarding unidades piloto
+
+#### 📊 Dashboard — enriquecimento
+3. **LHG-31:** Dashboard: Visão de canais
 
 #### ✨ Polish e UX
 5. **LHG-71:** Logo de cada unidade no seletor da sidebar
