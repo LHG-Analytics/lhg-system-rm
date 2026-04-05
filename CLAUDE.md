@@ -221,6 +221,19 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Encerra a vigência da tabela anterior (`valid_until = ontem`) e insere o novo snapshot como ativo
   - Se não há tabela ativa, cria do zero apenas com os preços propostos
   - **Armadilha:** `is_active` no banco pode estar inconsistente — status "em uso" usa apenas datas
+- **LHG-80:** Agente RM: Geração rápida de proposta com análise comparativa, edição inline e exclusão
+  - POST `/api/agente/proposals`: identifica tabela ativa e anterior, calcula KPIs para o período de vigência de cada uma (janela deslizante, mín. 14 dias), injeta contexto comparativo no prompt
+  - Injeta mapa explícito `canal|categoria|periodo|dia_tipo = R$ X` para o modelo não inferir `preco_atual`
+  - Prompt focado com `buildKPIContext` (não usa `buildSystemPrompt` do chat — evita contexto de tools que impedia JSON puro)
+  - `maxOutputTokens` 8000 (propostas com 35+ linhas eram truncadas em 4000)
+  - PATCH com `{ id, rows }` edita linhas de proposta pendente sem alterar status; `variacao_pct` recalculada ao vivo
+  - DELETE `/api/agente/proposals?id=` remove proposta; AlertDialog de confirmação na UI
+  - "Ler mais / Ler menos" no contexto do card (160 chars) e justificativa de cada linha (80 chars)
+  - Página de Preços: componente de importação movido para o topo, histórico abaixo
+- **LHG-81:** Dashboard: Range calendar picker e filtros fixos sem quebra de linha
+  - `Input type="date"` (x2) substituídos por Popover com `Calendar mode="range"` (shadcn) — fecha ao selecionar range completo, label `DD/MM/YYYY → DD/MM/YYYY`, locale pt-BR
+  - Filtros: `flex-wrap` removido, `shrink-0` em cada seção, `overflow-x-auto` no container — nunca quebra linha ao aplicar
+  - Header do dashboard em `flex-col` (título + filtros empilhados) — elimina layout shift
 
 ### 🔲 Backlog MVP (por prioridade)
 
