@@ -295,6 +295,10 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Logos por slug em `app-sidebar.tsx` via imports estáticos (lush, altana, andar-de-cima, tout)
   - Componente `UnitLogo` com fallback para inicial do nome
   - Suporte a `darkBg` para logos que precisam de fundo escuro (Altana)
+- **LHG-91:** Agente RM: Feedback loop explícito na memória estratégica + seletor de unidade nos guardrails
+  - `buildStrategicMemoryBlock` agora recebe `kpiAfter` e `kpiBefore` (já buscados em paralelo) e exibe tabela explícita "Resultado observado após última mudança de tabela" com Δ de RevPAR, TRevPAR, Giro, Ocupação e Ticket Médio — zero latência extra
+  - `GuardrailsManager`: seletor de unidade (`Building2` + `Select`) navega via `router.push(?unit=slug)`, aparece apenas quando há 2+ unidades
+  - `admin/page.tsx`: passa `units[]` (id, name, slug) para `GuardrailsManager`
 
 ### 🔲 Backlog MVP (por prioridade)
 
