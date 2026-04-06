@@ -406,16 +406,24 @@ export async function POST(req: NextRequest) {
     agressivo:   'Maximize receita: proponha variações maiores onde a demanda suportar, priorizando RevPAR mesmo que reduza volume.',
   }
   const FOCUS_GUIDE: Record<string, string> = {
-    balanceado: 'Otimize todos os KPIs de forma equilibrada: avalie RevPAR, Giro, Taxa de Ocupação e Ticket Médio em conjunto. Não sacrifique um KPI por outro sem justificativa clara nos dados.',
-    revpar:     'Priorize itens que aumentem o RevPAR (receita por apartamento disponível), mesmo que isso reduza ligeiramente o volume.',
-    ocupacao:   'Priorize manter ou aumentar a taxa de ocupação, aceitando ticket menor se necessário para preencher mais suítes.',
-    ticket:     'Priorize aumentar o ticket médio por locação, aceitando redução de volume quando a margem compensa.',
+    balanceado: 'Otimize todos os KPIs em conjunto: RevPAR, Giro, TRevPAR, Taxa de Ocupação, Ticket Médio e TMO. Não sacrifique um KPI por outro sem justificativa clara nos dados.',
+    agressivo:  'Maximize RevPAR e TRevPAR com variações ousadas. Aceite impacto temporário no volume se o ganho de receita for significativo. Priorize itens com maior oportunidade de aumento.',
+    revpar:     'Priorize itens que aumentem o RevPAR (receita por apartamento disponível). Use Giro e Ocupação como contexto, mas o critério principal é RevPAR.',
+    giro:       'Priorize aumentar o número de locações por suíte. Considere reduções de preço em horários de baixo giro se isso gerar mais rotatividade e receita total.',
+    ocupacao:   'Priorize manter ou aumentar a taxa de ocupação. Aceite ticket menor se necessário para preencher mais suítes em períodos de baixa.',
+    ticket:     'Priorize aumentar o ticket médio por locação. Aceite redução de volume quando o ganho por locação compensar a queda de giro.',
+    trevpar:    'Priorize aumentar o TRevPAR (receita total por apartamento, incluindo serviços). Considere categorias com maior potencial de receita adicional além da locação.',
+    tmo:        'Priorize otimizar o Tempo Médio de Ocupação (TMO). Avalie períodos onde o ajuste de preço pode estimular ou desestimular permanências longas conforme a demanda.',
   }
   const focusLabel: Record<string, string> = {
     balanceado: 'Balanceado (todos os KPIs)',
+    agressivo:  'Agressivo (maximizar RevPAR + TRevPAR)',
     revpar:     'RevPAR',
+    giro:       'Giro',
     ocupacao:   'Ocupação',
     ticket:     'Ticket médio',
+    trevpar:    'TRevPAR',
+    tmo:        'TMO',
   }
 
   const agentConfigBlock = `## Configuração do agente para esta unidade

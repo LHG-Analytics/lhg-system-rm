@@ -23,6 +23,14 @@ interface Unit {
   slug: string
 }
 
+interface MappedPrice {
+  categoria_concorrente: string
+  periodo: string
+  dia_tipo: 'semana' | 'fds_feriado' | 'todos'
+  preco: number
+  categoria_nossa?: string | null
+}
+
 interface AgentConfigManagerProps {
   unitSlug: string
   unitName: string
@@ -55,10 +63,14 @@ const STRATEGY_OPTIONS = [
 ] as const
 
 const METRIC_OPTIONS = [
-  { value: 'balanceado', label: 'Balanceado',  description: 'Otimiza todos os KPIs juntos: RevPAR, Giro, Ocupação e Ticket Médio (recomendado)' },
-  { value: 'revpar',     label: 'RevPAR',      description: 'Prioriza receita por apartamento disponível acima dos demais KPIs' },
-  { value: 'ocupacao',   label: 'Ocupação',    description: 'Maximiza taxa de ocupação, aceitando ticket menor se necessário' },
-  { value: 'ticket',     label: 'Ticket médio', description: 'Foca em receita por locação, aceitando redução de volume' },
+  { value: 'balanceado', label: 'Balanceado',   description: 'Otimiza todos os KPIs em conjunto: RevPAR, Giro, TRevPAR, Ocupação, Ticket e TMO (recomendado)' },
+  { value: 'agressivo',  label: 'Agressivo',    description: 'Maximiza RevPAR e TRevPAR com variações mais ousadas — aceita risco maior para ganho maior' },
+  { value: 'revpar',     label: 'RevPAR',       description: 'Prioriza receita por apartamento disponível como critério principal' },
+  { value: 'giro',       label: 'Giro',         description: 'Prioriza o número de locações por suíte — mais rotatividade, mais receita total' },
+  { value: 'ocupacao',   label: 'Ocupação',     description: 'Maximiza taxa de ocupação, aceitando ticket menor se necessário' },
+  { value: 'ticket',     label: 'Ticket médio', description: 'Foca em receita por locação individual, aceitando menor volume' },
+  { value: 'trevpar',    label: 'TRevPAR',      description: 'Receita total por apartamento (inclui serviços além da locação)' },
+  { value: 'tmo',        label: 'TMO',          description: 'Tempo médio de ocupação — útil para otimizar giro em horários de pico' },
 ] as const
 
 function timeAgo(dateStr: string): string {
@@ -85,6 +97,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
   const [addingCompetitor, setAddingCompetitor] = useState(false)
   const [analyzingUrl, setAnalyzingUrl] = useState<string | null>(null)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
+  const [expandedPricesUrl, setExpandedPricesUrl] = useState<string | null>(null)
 
   // Carrega snapshots existentes ao montar
   useEffect(() => {
@@ -411,7 +424,8 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
                   const snap = snapshots.find((s) => s.competitor_url === c.url)
                   const isAnalyzing = analyzingUrl === c.url
                   return (
-                    <div key={c.url} className="rounded-lg border bg-muted/20 px-3 py-2.5 flex items-center gap-3">
+                    <div key={c.url} className="flex flex-col gap-1">
+                    <div className="rounded-lg border bg-muted/20 px-3 py-2.5 flex items-center gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-medium truncate">{c.name}</p>
@@ -424,10 +438,14 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
                         </div>
                         <p className="text-[11px] text-muted-foreground truncate">{c.url}</p>
                         {snap && (
-                          <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                            <CheckCircle2 className="size-3 text-emerald-500" />
-                            {(snap.mapped_prices as unknown as unknown[]).length} preços extraídos · {timeAgo(snap.scraped_at)}
-                          </p>
+                          <button
+                            onClick={() => setExpandedPricesUrl(expandedPricesUrl === c.url ? null : c.url)}
+                            className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1 hover:text-foreground transition-colors text-left"
+                          >
+                            <CheckCircle2 className="size-3 text-emerald-500 shrink-0" />
+                            {(snap.mapped_prices as unknown as MappedPrice[]).length} preços extraídos · {timeAgo(snap.scraped_at)}
+                            <span className="text-primary underline-offset-2 underline">{expandedPricesUrl === c.url ? 'ocultar' : 'ver preços'}</span>
+                          </button>
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -453,6 +471,42 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
                           <Trash2 className="size-3.5" />
                         </Button>
                       </div>
+                    </div>{/* card */}
+                    {/* Tabela de preços expandida */}
+                    {snap && expandedPricesUrl === c.url && (
+                      <div className="mt-2 rounded-lg border bg-muted/20 overflow-hidden">
+                        {(snap.mapped_prices as unknown as MappedPrice[]).length === 0 ? (
+                          <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum preço estruturado extraído.</p>
+                        ) : (
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b bg-muted/40">
+                                <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Categoria</th>
+                                <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Período</th>
+                                <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Dia</th>
+                                <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">Preço</th>
+                                <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Nossa categ.</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(snap.mapped_prices as unknown as MappedPrice[]).map((p, i) => (
+                                <tr key={i} className="border-b last:border-0">
+                                  <td className="px-3 py-1.5">{p.categoria_concorrente}</td>
+                                  <td className="px-3 py-1.5">{p.periodo}</td>
+                                  <td className="px-3 py-1.5 text-muted-foreground">
+                                    {p.dia_tipo === 'semana' ? 'Semana' : p.dia_tipo === 'fds_feriado' ? 'FDS' : 'Todos'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-medium tabular-nums">
+                                    R$ {p.preco.toFixed(2)}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-muted-foreground">{p.categoria_nossa ?? '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
                     </div>
                   )
                 })}

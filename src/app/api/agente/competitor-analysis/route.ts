@@ -60,89 +60,108 @@ function buildPlaywrightPageFunction(fridayDate: Date): string {
   const fridayMonth = fridayDate.getMonth() // 0-based
   const fridayYear = fridayDate.getFullYear()
 
+  const fridayPadded = `${fridayYear}-${String(fridayMonth + 1).padStart(2, '0')}-${String(fridayDay).padStart(2, '0')}`
+
   return `
 async function pageFunction({ page, log }) {
-  // Aguarda conteúdo dinâmico carregar
-  await page.waitForTimeout(3000);
+  // Aguarda carregamento inicial + XHR de preços
+  await page.waitForTimeout(4000);
 
   const todayText = await page.evaluate(() => document.body.innerText);
-  const results = [{ label: 'hoje (dia de semana)', text: todayText.slice(0, 7000) }];
+  log.info('Tamanho conteúdo inicial: ' + todayText.length);
+  const results = [{ label: 'hoje (dia de semana)', text: todayText.slice(0, 8000) }];
 
-  // Próxima sexta-feira alvo
-  const fridayDay = ${fridayDay};
-  const fridayMonth = ${fridayMonth};
-  const fridayYear = ${fridayYear};
+  const fridayDay   = ${fridayDay};
+  const fridayIso   = '${fridayPadded}';
+  const fridayPt    = '${String(fridayDay).padStart(2, '0')}/${String(fridayMonth + 1).padStart(2, '0')}/${fridayYear}';
 
   try {
-    // Tenta clicar no gatilho do calendário (input, ícone ou wrapper com data)
-    const triggers = [
-      'input[type="date"]',
-      '[class*="calendar"] input',
-      '[class*="datepicker"] input',
-      '[class*="date"] input',
+    // Estratégia 1: input[type=date] — setar valor diretamente
+    const dateInput = await page.$('input[type="date"]');
+    if (dateInput) {
+      await dateInput.fill(fridayIso);
+      await dateInput.dispatchEvent('change');
+      await dateInput.dispatchEvent('input');
+      await page.waitForTimeout(2500);
+      const t = await page.evaluate(() => document.body.innerText);
+      results.push({ label: 'sexta-feira (final de semana)', text: t.slice(0, 8000) });
+      log.info('Estratégia date input bem-sucedida');
+      return results;
+    }
+
+    // Estratégia 2: clicar no gatilho do calendário e depois no dia
+    const triggerSelectors = [
+      '[class*="datepicker"]',
+      '[class*="date-picker"]',
+      '[class*="calendar-input"]',
       '[class*="calendario"]',
-      'input[class*="date"]',
+      '[class*="data-busca"]',
+      'input[placeholder*="data"]',
+      'input[placeholder*="Data"]',
+      '.input-group [class*="calendar"]',
+      '[data-toggle="datepicker"]',
+      'button[class*="date"]',
     ];
-    let clicked = false;
-    for (const sel of triggers) {
+
+    let calendarOpened = false;
+    for (const sel of triggerSelectors) {
       try {
-        const el = page.locator(sel).first();
-        if (await el.count() > 0) {
-          await el.click({ timeout: 2000 });
-          clicked = true;
-          log.info('Clicou no calendário via: ' + sel);
-          break;
+        const el = await page.$(sel);
+        if (el) {
+          await el.click();
+          await page.waitForTimeout(1200);
+          // Verifica se algum popup/dropdown apareceu
+          const popup = await page.$('.datepicker, .flatpickr-calendar, .pika-single, [class*="calendar-popup"], [class*="datepicker-dropdown"]');
+          if (popup) { calendarOpened = true; log.info('Calendário aberto via: ' + sel); break; }
         }
       } catch(e) { /* tenta próximo */ }
     }
 
-    if (!clicked) {
-      log.info('Nenhum gatilho de calendário encontrado');
+    if (!calendarOpened) {
+      log.info('Nenhum calendário interativo encontrado');
       return results;
     }
 
-    await page.waitForTimeout(1200);
+    // Estratégia de clique no dia: tenta múltiplos seletores de célula
+    let fridayClicked = false;
+    for (let pass = 0; pass < 2 && !fridayClicked; pass++) {
+      const cellSelectors = [
+        \`[data-date="\${fridayIso}"]\`,
+        \`[data-date="\${fridayPt}"]\`,
+        \`td[data-day="\${fridayDay}"]:not([class*="disabled"]):not([class*="prev"]):not([class*="next"])\`,
+        \`[class*="day"]:not([class*="disabled"]):not([class*="prev"]):not([class*="next"]) >> text="${fridayDay}"\`,
+        \`td:not([class*="disabled"]) >> text="${fridayDay}"\`,
+      ];
 
-    // Navega o calendário para o mês correto (até 2 cliques em "próximo mês")
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const visibleMonth = await page.evaluate(() => {
-        const el = document.querySelector('[class*="month"], [class*="mes"], .ui-datepicker-month, .flatpickr-month');
-        return el ? el.textContent : null;
-      });
-      log.info('Mês visível: ' + visibleMonth);
-
-      // Tenta encontrar e clicar a célula com o dia da sexta
-      const dateCell = page.locator(
-        \`[data-date*="\${fridayYear}-\${String(fridayMonth+1).padStart(2,'0')}-\${String(fridayDay).padStart(2,'0')}"], \` +
-        \`td[data-day="\${fridayDay}"]:not(.disabled):not(.flatpickr-disabled), \` +
-        \`[class*="day"]:not(.disabled):not(.prev):not(.next) >> text="\${fridayDay}"\`
-      ).first();
-
-      if (await dateCell.count() > 0) {
-        await dateCell.click({ timeout: 2000 });
-        log.info('Clicou no dia ' + fridayDay);
-        await page.waitForTimeout(2500);
-
-        const fridayText = await page.evaluate(() => document.body.innerText);
-        results.push({ label: 'sexta-feira (final de semana)', text: fridayText.slice(0, 7000) });
-        break;
+      for (const cellSel of cellSelectors) {
+        try {
+          const cell = await page.$(cellSel);
+          if (cell) {
+            await cell.click();
+            await page.waitForTimeout(3000);
+            const t = await page.evaluate(() => document.body.innerText);
+            if (t !== todayText) {
+              results.push({ label: 'sexta-feira (final de semana)', text: t.slice(0, 8000) });
+              fridayClicked = true;
+              log.info('Sexta selecionada via: ' + cellSel);
+            }
+            break;
+          }
+        } catch(e) { /* tenta próximo */ }
       }
 
-      // Avança para o próximo mês
-      try {
-        const nextBtn = page.locator(
-          '[class*="next"], [class*="proximo"], [class*="arrow-right"], .ui-datepicker-next, button[aria-label*="next"], button[aria-label*="próximo"]'
-        ).first();
-        if (await nextBtn.count() > 0) {
-          await nextBtn.click({ timeout: 2000 });
-          await page.waitForTimeout(800);
-        } else {
-          break;
-        }
-      } catch(e) { break; }
+      if (!fridayClicked && pass === 0) {
+        // Tenta avançar um mês
+        try {
+          const nextBtn = await page.$('.datepicker--nav-action[data-action="next"], .pika-next, .flatpickr-next-month, [class*="next-month"], button[aria-label*="xt"]');
+          if (nextBtn) { await nextBtn.click(); await page.waitForTimeout(800); }
+        } catch(e) { /* ignora */ }
+      }
     }
+
+    if (!fridayClicked) log.info('Não conseguiu selecionar sexta-feira');
   } catch(e) {
-    log.info('Erro na interação do calendário: ' + e.message);
+    log.info('Erro na interação do calendário: ' + String(e));
   }
 
   return results;

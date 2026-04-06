@@ -14,7 +14,7 @@ export interface AgentConfig {
   unit_id: string
   pricing_strategy: 'conservador' | 'moderado' | 'agressivo'
   max_variation_pct: number
-  focus_metric: 'balanceado' | 'revpar' | 'ocupacao' | 'ticket'
+  focus_metric: 'balanceado' | 'agressivo' | 'revpar' | 'giro' | 'ocupacao' | 'ticket' | 'trevpar' | 'tmo'
   is_active: boolean
   competitor_urls: CompetitorUrl[]
 }
