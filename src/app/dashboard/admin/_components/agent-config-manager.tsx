@@ -55,9 +55,10 @@ const STRATEGY_OPTIONS = [
 ] as const
 
 const METRIC_OPTIONS = [
-  { value: 'revpar',   label: 'RevPAR',      description: 'Receita por apartamento disponível (recomendado)' },
-  { value: 'ocupacao', label: 'Ocupação',     description: 'Maximiza taxa de ocupação mesmo com ticket menor' },
-  { value: 'ticket',   label: 'Ticket médio', description: 'Foca em receita por locação, aceitando menor volume' },
+  { value: 'balanceado', label: 'Balanceado',  description: 'Otimiza todos os KPIs juntos: RevPAR, Giro, Ocupação e Ticket Médio (recomendado)' },
+  { value: 'revpar',     label: 'RevPAR',      description: 'Prioriza receita por apartamento disponível acima dos demais KPIs' },
+  { value: 'ocupacao',   label: 'Ocupação',    description: 'Maximiza taxa de ocupação, aceitando ticket menor se necessário' },
+  { value: 'ticket',     label: 'Ticket médio', description: 'Foca em receita por locação, aceitando redução de volume' },
 ] as const
 
 function timeAgo(dateStr: string): string {

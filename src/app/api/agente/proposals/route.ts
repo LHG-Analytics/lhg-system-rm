@@ -398,7 +398,7 @@ export async function POST(req: NextRequest) {
   // Bloco de configuração do agente (estratégia + variação + foco)
   const strategy = agentConfigData?.pricing_strategy ?? 'moderado'
   const maxVar   = agentConfigData?.max_variation_pct ?? 20
-  const focus    = agentConfigData?.focus_metric ?? 'revpar'
+  const focus    = agentConfigData?.focus_metric ?? 'balanceado'
 
   const STRATEGY_GUIDE: Record<string, string> = {
     conservador: 'Priorize estabilidade: proponha variações menores (≤10%), evite mudanças simultâneas em muitos itens e prefira ajustes incrementais.',
@@ -406,15 +406,22 @@ export async function POST(req: NextRequest) {
     agressivo:   'Maximize receita: proponha variações maiores onde a demanda suportar, priorizando RevPAR mesmo que reduza volume.',
   }
   const FOCUS_GUIDE: Record<string, string> = {
-    revpar:   'Priorize itens que aumentem o RevPAR (receita por apartamento disponível).',
-    ocupacao: 'Priorize manter ou aumentar a taxa de ocupação, aceitando ticket menor se necessário.',
-    ticket:   'Priorize aumentar o ticket médio por locação, aceitando redução de volume.',
+    balanceado: 'Otimize todos os KPIs de forma equilibrada: avalie RevPAR, Giro, Taxa de Ocupação e Ticket Médio em conjunto. Não sacrifique um KPI por outro sem justificativa clara nos dados.',
+    revpar:     'Priorize itens que aumentem o RevPAR (receita por apartamento disponível), mesmo que isso reduza ligeiramente o volume.',
+    ocupacao:   'Priorize manter ou aumentar a taxa de ocupação, aceitando ticket menor se necessário para preencher mais suítes.',
+    ticket:     'Priorize aumentar o ticket médio por locação, aceitando redução de volume quando a margem compensa.',
+  }
+  const focusLabel: Record<string, string> = {
+    balanceado: 'Balanceado (todos os KPIs)',
+    revpar:     'RevPAR',
+    ocupacao:   'Ocupação',
+    ticket:     'Ticket médio',
   }
 
   const agentConfigBlock = `## Configuração do agente para esta unidade
 - Estratégia: **${strategy}** — ${STRATEGY_GUIDE[strategy]}
 - Variação máxima permitida: **±${maxVar}%** por item (não exceder este limite em nenhuma linha)
-- Métrica de foco: **${focus === 'revpar' ? 'RevPAR' : focus === 'ocupacao' ? 'Ocupação' : 'Ticket médio'}** — ${FOCUS_GUIDE[focus]}`
+- Métrica de foco: **${focusLabel[focus] ?? focus}** — ${FOCUS_GUIDE[focus] ?? ''}`
 
   // Bloco de preços de concorrentes (snapshots dos últimos 7 dias)
   interface MappedPrice { categoria_concorrente: string; categoria_nossa: string | null; periodo: string; preco: number; dia_tipo?: string; notas?: string }

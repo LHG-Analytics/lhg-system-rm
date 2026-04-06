@@ -13,7 +13,7 @@ export interface AgentConfig {
   unit_id: string
   pricing_strategy: 'conservador' | 'moderado' | 'agressivo'
   max_variation_pct: number
-  focus_metric: 'revpar' | 'ocupacao' | 'ticket'
+  focus_metric: 'balanceado' | 'revpar' | 'ocupacao' | 'ticket'
   is_active: boolean
   competitor_urls: CompetitorUrl[]
 }
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   // Cria config padrão se não existir
   if (!data) {
     const { data: created } = await admin.from('rm_agent_config').insert({
-      unit_id: unit.id, pricing_strategy: 'moderado', max_variation_pct: 20, focus_metric: 'revpar', is_active: true,
+      unit_id: unit.id, pricing_strategy: 'moderado', max_variation_pct: 20, focus_metric: 'balanceado', is_active: true,
     }).select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls').single()
     return Response.json(created as unknown as AgentConfig)
   }
