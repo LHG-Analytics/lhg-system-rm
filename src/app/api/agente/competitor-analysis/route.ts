@@ -258,9 +258,7 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             startUrls: [{ url: competitorUrl }],
             crawlerType: 'cheerio',
-            maxCrawlPages: 5,
-            maxCrawlDepth: 1,
-            htmlTransformer: 'readableText',
+            maxCrawlPages: 3,
           }),
           signal: AbortSignal.timeout(52000),
         }

@@ -128,14 +128,18 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
     }
   }, [config, competitorUrls])
 
-  // ─── Adicionar concorrente ─────────────────────────────────────────────────
+  // ─── Adicionar + Analisar concorrente (ação única) ────────────────────────
   const handleAddCompetitor = useCallback(async () => {
     const name = newName.trim()
     const url  = newUrl.trim()
     if (!name || !url || !config) return
-    const updated = [...competitorUrls, { name, url, mode: newMode }]
+    const newEntry = { name, url, mode: newMode }
+    const updated = [...competitorUrls, newEntry]
     setAddingCompetitor(true)
     setError(null)
+    setAnalyzeError(null)
+
+    // 1. Salvar na config
     try {
       const res = await fetch('/api/admin/agent-config', {
         method: 'PATCH',
@@ -150,10 +154,32 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
       setNewMode('cheerio')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
-    } finally {
       setAddingCompetitor(false)
+      return
     }
-  }, [config, competitorUrls, newName, newUrl])
+    setAddingCompetitor(false)
+
+    // 2. Disparar análise imediatamente
+    setAnalyzingUrl(url)
+    try {
+      const analyzeRes = await fetch('/api/agente/competitor-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unitSlug, competitorName: name, competitorUrl: url, mode: newMode }),
+      })
+      const analyzeData = await analyzeRes.json()
+      if (!analyzeRes.ok) throw new Error(analyzeData.error ?? 'Erro ao analisar')
+      setSnapshots((prev) => {
+        const idx = prev.findIndex((s) => s.competitor_url === url)
+        if (idx >= 0) { const next = [...prev]; next[idx] = analyzeData as CompetitorSnapshot; return next }
+        return [analyzeData as CompetitorSnapshot, ...prev]
+      })
+    } catch (e) {
+      setAnalyzeError(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setAnalyzingUrl(null)
+    }
+  }, [config, competitorUrls, newName, newUrl, newMode, unitSlug])
 
   // ─── Remover concorrente ──────────────────────────────────────────────────
   const handleRemoveCompetitor = useCallback(async (url: string) => {
@@ -488,7 +514,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
                 disabled={!newName.trim() || !newUrl.trim() || addingCompetitor}
               >
                 {addingCompetitor ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-                Adicionar concorrente
+                {addingCompetitor ? 'Salvando…' : 'Adicionar e Analisar'}
               </Button>
             </div>
           </div>
