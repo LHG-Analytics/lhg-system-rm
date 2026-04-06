@@ -300,6 +300,19 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `GuardrailsManager`: seletor de unidade (`Building2` + `Select`) navega via `router.push(?unit=slug)`, aparece apenas quando há 2+ unidades
   - `admin/page.tsx`: passa `units[]` (id, name, slug) para `GuardrailsManager`
 
+- **LHG-92:** Proposals: filtro de status + simulação de impacto no ticket médio
+  - Filtros por status (Todas/Pendentes/Aprovadas/Rejeitadas) com contador, pill buttons acima da lista
+  - `calcImpact()`: conta aumentos/reduções/sem mudança e calcula Δ% do ticket médio (volume constante)
+  - Mini resumo no header colapsado: ↑X aumentos · ↓Y reduções · ticket médio +Z% (volume constante)
+  - Painel de simulação no rodapé expandido: ticket atual → projetado → Δ% por locação
+  - Hipótese "volume constante" explícita em todos os lugares
+- **LHG-93:** Admin: configuração do agente RM por unidade (estratégia, variação máxima, foco)
+  - Migration: `pricing_strategy` (conservador/moderado/agressivo), `max_variation_pct` (5–30%), `focus_metric` (revpar/ocupacao/ticket) em `rm_agent_config`
+  - `GET/PATCH /api/admin/agent-config`: lê e atualiza config por unidade; cria config padrão se não existir
+  - `AgentConfigManager`: UI com seletor de estratégia (cards coloridos), slider de variação, radio de foco + resumo + seletor de unidade
+  - Nova aba "Agente RM" (Settings2) em `/dashboard/admin`
+  - Prompt de geração injeta `agentConfigBlock` com instruções específicas de estratégia/foco; `max_variation_pct` substitui o hardcoded 30%
+
 ### 🔲 Backlog MVP (por prioridade)
 
 #### 🚀 Deploy e CI/CD
