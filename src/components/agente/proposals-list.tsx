@@ -30,7 +30,7 @@ import { Calendar } from '@/components/ui/calendar'
 import {
   Loader2, Sparkles, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, Clock, Pencil, Trash2, Save, X,
-  CalendarPlus, CalendarClock,
+  CalendarPlus, CalendarClock, TrendingUp, TrendingDown, Minus,
 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -66,6 +66,21 @@ function formatDate(iso: string) {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
+}
+
+/**
+ * Calcula o impacto estimado de uma proposta no ticket médio.
+ * Assume volume (locações) constante — deixa isso explícito na UI.
+ */
+function calcImpact(rows: ProposedPriceRow[]) {
+  if (!rows.length) return null
+  const up    = rows.filter((r) => r.variacao_pct >  0.5)
+  const down  = rows.filter((r) => r.variacao_pct < -0.5)
+  const flat  = rows.filter((r) => Math.abs(r.variacao_pct) <= 0.5)
+  const avgCurrent  = rows.reduce((s, r) => s + r.preco_atual,    0) / rows.length
+  const avgProposed = rows.reduce((s, r) => s + r.preco_proposto, 0) / rows.length
+  const deltaTicket = avgCurrent > 0 ? ((avgProposed - avgCurrent) / avgCurrent) * 100 : 0
+  return { up: up.length, down: down.length, flat: flat.length, deltaTicket, avgCurrent, avgProposed }
 }
 
 function VariacaoBadge({ pct }: { pct: number }) {
@@ -116,6 +131,9 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Filtro de status
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
+
   useEffect(() => {
     if (!refreshKey) return
     fetch(`/api/agente/proposals?unitSlug=${unitSlug}`)
@@ -154,6 +172,10 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
 
   // Proposta aprovada mais recente (é a que está vigente na tabela atual)
   const latestApprovedId = proposals.find((p) => p.status === 'approved')?.id ?? null
+
+  const filteredProposals = statusFilter === 'all'
+    ? proposals
+    : proposals.filter((p) => p.status === statusFilter)
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -333,18 +355,53 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
   return (
     <div className="flex flex-col gap-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            O agente analisa KPIs da tabela atual e anterior, comparando desempenho por período para gerar propostas otimizadas.
+            O agente analisa KPIs da tabela atual e anterior para gerar propostas otimizadas.
           </p>
+          <Button onClick={handleGenerate} disabled={generating} className="gap-2 shrink-0">
+            {generating
+              ? <><Loader2 className="size-4 animate-spin" />Analisando…</>
+              : <><Sparkles className="size-4" />Gerar Nova Proposta</>
+            }
+          </Button>
         </div>
-        <Button onClick={handleGenerate} disabled={generating} className="gap-2 shrink-0">
-          {generating
-            ? <><Loader2 className="size-4 animate-spin" />Analisando…</>
-            : <><Sparkles className="size-4" />Gerar Nova Proposta</>
-          }
-        </Button>
+
+        {/* Filtro de status */}
+        {proposals.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            {(['all', 'pending', 'approved', 'rejected'] as const).map((s) => {
+              const labels = { all: 'Todas', pending: 'Pendentes', approved: 'Aprovadas', rejected: 'Rejeitadas' }
+              const counts = {
+                all: proposals.length,
+                pending:  proposals.filter((p) => p.status === 'pending').length,
+                approved: proposals.filter((p) => p.status === 'approved').length,
+                rejected: proposals.filter((p) => p.status === 'rejected').length,
+              }
+              const active = statusFilter === s
+              return (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={cn(
+                    'px-2.5 py-1 rounded-md text-xs font-medium transition-colors border',
+                    active
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-transparent text-muted-foreground border-border hover:bg-accent hover:text-foreground'
+                  )}
+                >
+                  {labels[s]}
+                  {counts[s] > 0 && (
+                    <span className={cn('ml-1.5 tabular-nums', active ? 'opacity-80' : 'opacity-60')}>
+                      {counts[s]}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {error && (
@@ -362,9 +419,16 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
             Clique em &quot;Gerar Nova Proposta&quot; para que o agente analise os KPIs e sugira ajustes de preço.
           </p>
         </div>
+      ) : filteredProposals.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 gap-2 text-center">
+          <p className="text-sm text-muted-foreground">Nenhuma proposta com esse status.</p>
+          <button onClick={() => setStatusFilter('all')} className="text-xs text-primary underline-offset-2 hover:underline">
+            Ver todas
+          </button>
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {proposals.map((proposal) => {
+          {filteredProposals.map((proposal) => {
             const cfg = STATUS_CONFIG[proposal.status]
             const StatusIcon = cfg.icon
             const isExpanded = expanded.has(proposal.id)
@@ -375,6 +439,7 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
             const isEditing = editing?.id === proposal.id
             const isHighlighted = selectedProposalId === proposal.id
             const pendingReview = pendingReviews.get(proposal.id)
+            const impact = calcImpact(proposal.rows)
 
             return (
               <div
@@ -403,6 +468,37 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
                         {proposal.id.slice(0, 8)}
                       </span>
                     </div>
+
+                    {/* Resumo de impacto estimado */}
+                    {impact && (
+                      <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                        {impact.up > 0 && (
+                          <span className="flex items-center gap-1 text-[11px] text-green-600">
+                            <TrendingUp className="size-3" />
+                            {impact.up} {impact.up === 1 ? 'aumento' : 'aumentos'}
+                          </span>
+                        )}
+                        {impact.down > 0 && (
+                          <span className="flex items-center gap-1 text-[11px] text-red-500">
+                            <TrendingDown className="size-3" />
+                            {impact.down} {impact.down === 1 ? 'redução' : 'reduções'}
+                          </span>
+                        )}
+                        {impact.flat > 0 && (
+                          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                            <Minus className="size-3" />
+                            {impact.flat} sem alteração
+                          </span>
+                        )}
+                        <span className={cn(
+                          'text-[11px] font-medium tabular-nums',
+                          impact.deltaTicket > 0 ? 'text-green-600' : impact.deltaTicket < 0 ? 'text-red-500' : 'text-muted-foreground'
+                        )}>
+                          · Ticket médio {impact.deltaTicket >= 0 ? '+' : ''}{impact.deltaTicket.toFixed(1)}% (volume constante)
+                        </span>
+                      </div>
+                    )}
+
                     {proposal.context && (
                       <p className="mt-2 text-sm text-muted-foreground">
                         <ExpandableText text={proposal.context} maxLength={160} />
@@ -555,6 +651,34 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
                         </TableBody>
                       </Table>
                     </div>
+
+                    {/* Painel de simulação de receita */}
+                    {!isEditing && impact && (
+                      <div className="border-t px-4 py-3 bg-muted/30 flex flex-wrap items-center gap-x-6 gap-y-1">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Simulação (volume constante)
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Ticket médio atual:{' '}
+                          <span className="font-medium text-foreground">
+                            R$ {impact.avgCurrent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Ticket projetado:{' '}
+                          <span className="font-medium text-foreground">
+                            R$ {impact.avgProposed.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </span>
+                        <span className={cn(
+                          'text-xs font-semibold',
+                          impact.deltaTicket > 0 ? 'text-green-600' : impact.deltaTicket < 0 ? 'text-red-500' : 'text-muted-foreground'
+                        )}>
+                          {impact.deltaTicket >= 0 ? '▲' : '▼'}{' '}
+                          {Math.abs(impact.deltaTicket).toFixed(1)}% por locação
+                        </span>
+                      </div>
+                    )}
 
                     {/* Barra de ações */}
                     {isEditing ? (
