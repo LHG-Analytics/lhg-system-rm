@@ -365,11 +365,18 @@ export async function POST(req: NextRequest) {
     `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo} = R$ ${r.preco.toFixed(2)}`
   ).join('\n')
 
-  // ─── Buscar guardrails para injetar restrições no prompt ────────────────
-  const { data: guardrailsData } = await supabase
-    .from('agent_price_guardrails')
-    .select('categoria, periodo, preco_minimo, preco_maximo')
-    .eq('unit_id', unit.id)
+  // ─── Buscar guardrails + config do agente ───────────────────────────────
+  const [{ data: guardrailsData }, { data: agentConfigData }] = await Promise.all([
+    supabase
+      .from('agent_price_guardrails')
+      .select('categoria, periodo, preco_minimo, preco_maximo')
+      .eq('unit_id', unit.id),
+    supabase
+      .from('rm_agent_config')
+      .select('pricing_strategy, max_variation_pct, focus_metric')
+      .eq('unit_id', unit.id)
+      .maybeSingle(),
+  ])
 
   // Mapa: "categoria|periodo" → { min, max }
   const guardrailMap = new Map<string, { min: number; max: number }>(
@@ -378,6 +385,27 @@ export async function POST(req: NextRequest) {
       { min: g.preco_minimo, max: g.preco_maximo },
     ])
   )
+
+  // Bloco de configuração do agente (estratégia + variação + foco)
+  const strategy = agentConfigData?.pricing_strategy ?? 'moderado'
+  const maxVar   = agentConfigData?.max_variation_pct ?? 20
+  const focus    = agentConfigData?.focus_metric ?? 'revpar'
+
+  const STRATEGY_GUIDE: Record<string, string> = {
+    conservador: 'Priorize estabilidade: proponha variações menores (≤10%), evite mudanças simultâneas em muitos itens e prefira ajustes incrementais.',
+    moderado:    'Equilíbrio entre receita e volume: proponha variações proporcionais aos dados, ajustando itens com oportunidade clara.',
+    agressivo:   'Maximize receita: proponha variações maiores onde a demanda suportar, priorizando RevPAR mesmo que reduza volume.',
+  }
+  const FOCUS_GUIDE: Record<string, string> = {
+    revpar:   'Priorize itens que aumentem o RevPAR (receita por apartamento disponível).',
+    ocupacao: 'Priorize manter ou aumentar a taxa de ocupação, aceitando ticket menor se necessário.',
+    ticket:   'Priorize aumentar o ticket médio por locação, aceitando redução de volume.',
+  }
+
+  const agentConfigBlock = `## Configuração do agente para esta unidade
+- Estratégia: **${strategy}** — ${STRATEGY_GUIDE[strategy]}
+- Variação máxima permitida: **±${maxVar}%** por item (não exceder este limite em nenhuma linha)
+- Métrica de foco: **${focus === 'revpar' ? 'RevPAR' : focus === 'ocupacao' ? 'Ocupação' : 'Ticket médio'}** — ${FOCUS_GUIDE[focus]}`
 
   const guardrailsBlock = guardrailsData?.length
     ? `## Guardrails de preço (limites obrigatórios — NÃO ULTRAPASSAR)
@@ -398,7 +426,9 @@ IMPORTANTE: Se o preço ótimo calculado ultrapassar o máximo, use o máximo. S
 ## Dados operacionais — ${unit.name}
 
 ${kpiBlocks}
-${memoryBlock ? `\n${memoryBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}
+${memoryBlock ? `\n${memoryBlock}\n` : ''}
+${agentConfigBlock}
+${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
@@ -414,7 +444,7 @@ TAREFA: Com base nos dados acima, gere uma proposta de ajuste de preços.
 Critérios:
 - Analise giro, ocupação e RevPAR por categoria e dia da semana nas tabelas semanais
 ${hasPrevious ? '- Compare o desempenho do período atual com o anterior: se KPIs melhoraram após mudança de tabela, a direção estava certa; se pioraram, corrija\n' : ''}${memoryBlock ? '- Use a memória estratégica para calibrar a nova proposta: se as mudanças anteriores melhoraram os KPIs, intensifique a direção; se pioraram, recue ou teste outro caminho\n' : ''}- Proponha apenas ajustes com justificativa clara nos dados
-- Variação máxima: ±30% por item
+- Variação máxima: ±${maxVar}% por item (configurado pelo gestor — não exceder)
 - Priorize itens com maior impacto no RevPAR (alto giro + RevPAR baixo = oportunidade de aumento)
 
 IMPORTANTE: Use os valores do "Mapa de preços atuais" acima como preco_atual. Não invente valores.

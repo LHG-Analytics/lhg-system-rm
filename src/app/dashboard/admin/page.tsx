@@ -3,10 +3,12 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
+import type { AgentConfig } from '@/app/api/admin/agent-config/route'
 import { UsersManager } from './_components/users-manager'
 import { GuardrailsManager } from './_components/guardrails-manager'
+import { AgentConfigManager } from './_components/agent-config-manager'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Users, Shield } from 'lucide-react'
+import { Users, Shield, Settings2 } from 'lucide-react'
 
 export const metadata = { title: 'Administração — LHG Revenue Manager' }
 
@@ -17,7 +19,7 @@ function getAdminClient() {
   )
 }
 
-export default async function AdminPage({ searchParams }: { searchParams: Promise<{ unit?: string }> }) {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ unit?: string; tab?: string }> }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -31,7 +33,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   if (profile?.role !== 'super_admin') redirect('/dashboard')
 
   const admin = getAdminClient()
-  const { unit: unitSlug } = await searchParams
+  const { unit: unitSlug, tab } = await searchParams
 
   const [profilesResult, authUsersResult, unitsResult] = await Promise.allSettled([
     admin.from('profiles').select('user_id, role, unit_id, created_at').order('created_at', { ascending: false }),
@@ -57,12 +59,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     last_sign_in: lastSignMap.get(p.user_id) ?? null,
   }))
 
-  // Unidade selecionada para guardrails (padrão: primeira)
+  // Unidade selecionada (padrão: primeira)
   const activeUnitSlug = unitSlug ?? unitsData[0]?.slug ?? ''
   const activeUnit = unitsData.find((u) => u.slug === activeUnitSlug) ?? unitsData[0]
+  const unitsForComponents = unitsData.map((u) => ({ id: u.id, name: u.name, slug: u.slug }))
 
-  // Busca guardrails + último price import da unidade ativa (para extrair categorias e períodos reais)
-  const [guardrailsResult, priceImportResult] = activeUnit
+  // Busca guardrails + último price import + config do agente em paralelo
+  const [guardrailsResult, priceImportResult, agentConfigResult] = activeUnit
     ? await Promise.all([
         supabase
           .from('agent_price_guardrails')
@@ -77,15 +80,21 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           .order('valid_from', { ascending: false })
           .limit(1)
           .maybeSingle(),
+        admin
+          .from('rm_agent_config')
+          .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active')
+          .eq('unit_id', activeUnit.id)
+          .maybeSingle(),
       ])
-    : [{ data: [] }, { data: null }]
+    : [{ data: [] }, { data: null }, { data: null }]
 
   const guardrailsData = guardrailsResult.data ?? []
-
-  // Extrai categorias e períodos únicos do import mais recente
   const importRows = (priceImportResult.data?.parsed_data as unknown as ParsedPriceRow[]) ?? []
   const categorias = [...new Set(importRows.map((r) => r.categoria))].sort()
   const periodos   = [...new Set(importRows.map((r) => r.periodo))].sort()
+  const agentConfig = (agentConfigResult.data ?? null) as AgentConfig | null
+
+  const defaultTab = tab ?? 'usuarios'
 
   return (
     <div className="flex flex-1 flex-col gap-6 max-w-2xl mx-auto w-full">
@@ -94,7 +103,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         <p className="text-sm text-muted-foreground mt-1">Gerencie usuários e configurações do sistema.</p>
       </div>
 
-      <Tabs defaultValue="usuarios">
+      <Tabs defaultValue={defaultTab}>
         <TabsList className="h-9">
           <TabsTrigger value="usuarios" className="gap-1.5 text-xs">
             <Users className="size-3.5" />
@@ -102,7 +111,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </TabsTrigger>
           <TabsTrigger value="guardrails" className="gap-1.5 text-xs">
             <Shield className="size-3.5" />
-            Guardrails do Agente
+            Guardrails
+          </TabsTrigger>
+          <TabsTrigger value="config" className="gap-1.5 text-xs">
+            <Settings2 className="size-3.5" />
+            Agente RM
           </TabsTrigger>
         </TabsList>
 
@@ -121,7 +134,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               unitName={activeUnit.name}
               categorias={categorias}
               periodos={periodos}
-              units={unitsData.map((u) => ({ id: u.id, name: u.name, slug: u.slug }))}
+              units={unitsForComponents}
               initialGuardrails={guardrailsData.map((g) => ({
                 id: g.id,
                 categoria: g.categoria,
@@ -129,6 +142,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 preco_minimo: g.preco_minimo,
                 preco_maximo: g.preco_maximo,
               }))}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="config" className="mt-6">
+          {activeUnit ? (
+            <AgentConfigManager
+              unitSlug={activeUnit.slug}
+              unitName={activeUnit.name}
+              units={unitsForComponents}
+              initialConfig={agentConfig}
             />
           ) : (
             <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>

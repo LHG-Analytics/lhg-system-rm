@@ -462,27 +462,36 @@ export type Database = {
         Row: {
           competitor_urls: Json
           created_at: string
+          focus_metric: string
           id: string
           is_active: boolean
           last_context_update: string | null
+          max_variation_pct: number
+          pricing_strategy: string
           unit_id: string
           updated_at: string
         }
         Insert: {
           competitor_urls?: Json
           created_at?: string
+          focus_metric?: string
           id?: string
           is_active?: boolean
           last_context_update?: string | null
+          max_variation_pct?: number
+          pricing_strategy?: string
           unit_id: string
           updated_at?: string
         }
         Update: {
           competitor_urls?: Json
           created_at?: string
+          focus_metric?: string
           id?: string
           is_active?: boolean
           last_context_update?: string | null
+          max_variation_pct?: number
+          pricing_strategy?: string
           unit_id?: string
           updated_at?: string
         }
