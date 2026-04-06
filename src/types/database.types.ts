@@ -139,6 +139,44 @@ export type Database = {
           },
         ]
       }
+      competitor_snapshots: {
+        Row: {
+          competitor_name: string
+          competitor_url: string
+          id: string
+          mapped_prices: Json
+          raw_text: string | null
+          scraped_at: string
+          unit_id: string
+        }
+        Insert: {
+          competitor_name: string
+          competitor_url: string
+          id?: string
+          mapped_prices?: Json
+          raw_text?: string | null
+          scraped_at?: string
+          unit_id: string
+        }
+        Update: {
+          competitor_name?: string
+          competitor_url?: string
+          id?: string
+          mapped_prices?: Json
+          raw_text?: string | null
+          scraped_at?: string
+          unit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competitor_snapshots_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kpi_snapshots: {
         Row: {
           avg_ticket: number | null
