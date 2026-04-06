@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Settings2, Loader2, Building2, Save, Globe, Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Settings2, Loader2, Building2, Save, Globe, Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -81,6 +81,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
   const [snapshots, setSnapshots] = useState<CompetitorSnapshot[]>([])
   const [newName, setNewName] = useState('')
   const [newUrl, setNewUrl] = useState('')
+  const [newMode, setNewMode] = useState<'cheerio' | 'playwright'>('cheerio')
   const [addingCompetitor, setAddingCompetitor] = useState(false)
   const [analyzingUrl, setAnalyzingUrl] = useState<string | null>(null)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
@@ -132,7 +133,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
     const name = newName.trim()
     const url  = newUrl.trim()
     if (!name || !url || !config) return
-    const updated = [...competitorUrls, { name, url }]
+    const updated = [...competitorUrls, { name, url, mode: newMode }]
     setAddingCompetitor(true)
     setError(null)
     try {
@@ -146,6 +147,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
       setConfig(data as AgentConfig)
       setNewName('')
       setNewUrl('')
+      setNewMode('cheerio')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
@@ -183,6 +185,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
           unitSlug,
           competitorName: competitor.name,
           competitorUrl: competitor.url,
+          mode: competitor.mode ?? 'cheerio',
         }),
       })
       const data = await res.json()
@@ -384,7 +387,15 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
                   return (
                     <div key={c.url} className="rounded-lg border bg-muted/20 px-3 py-2.5 flex items-center gap-3">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{c.name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-medium truncate">{c.name}</p>
+                          {c.mode === 'playwright' && (
+                            <span className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium bg-violet-500/10 text-violet-500 border border-violet-500/20 shrink-0">
+                              <Zap className="size-2.5" />
+                              Interativo
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[11px] text-muted-foreground truncate">{c.url}</p>
                         {snap && (
                           <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
@@ -426,18 +437,49 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
             <div className="flex flex-col gap-2">
               <div className="grid grid-cols-2 gap-2">
                 <Input
-                  placeholder="Nome (ex: Motel Paraíso)"
+                  placeholder="Nome (ex: Motel Prime)"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   className="h-8 text-xs"
                 />
                 <Input
-                  placeholder="URL (ex: https://...)"
+                  placeholder="URL da página de preços"
                   value={newUrl}
                   onChange={(e) => setNewUrl(e.target.value)}
                   className="h-8 text-xs"
                 />
               </div>
+
+              {/* Toggle de modo */}
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-lg border overflow-hidden text-xs">
+                  <button
+                    onClick={() => setNewMode('cheerio')}
+                    className={cn(
+                      'px-3 py-1.5 transition-colors',
+                      newMode === 'cheerio' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                    )}
+                  >
+                    Estático
+                  </button>
+                  <button
+                    onClick={() => setNewMode('playwright')}
+                    className={cn(
+                      'px-3 py-1.5 transition-colors flex items-center gap-1',
+                      newMode === 'playwright' ? 'bg-violet-500 text-white' : 'hover:bg-accent'
+                    )}
+                  >
+                    <Zap className="size-3" />
+                    Interativo
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {newMode === 'playwright'
+                    ? 'Renderiza JavaScript e interage com o calendário para capturar preços de semana e FDS (~45s)'
+                    : 'Scraping estático rápido (~15s). Use para sites com tabela de preços fixa.'}
+                </p>
+              </div>
+
               <Button
                 size="sm"
                 variant="outline"

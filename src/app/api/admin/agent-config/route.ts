@@ -6,6 +6,7 @@ import type { Database } from '@/types/database.types'
 export interface CompetitorUrl {
   name: string
   url: string
+  mode?: 'cheerio' | 'playwright'
 }
 
 export interface AgentConfig {
