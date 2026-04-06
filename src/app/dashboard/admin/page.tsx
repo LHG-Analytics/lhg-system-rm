@@ -82,7 +82,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           .maybeSingle(),
         admin
           .from('rm_agent_config')
-          .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active')
+          .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls')
           .eq('unit_id', activeUnit.id)
           .maybeSingle(),
       ])

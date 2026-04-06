@@ -3,6 +3,11 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 
+export interface CompetitorUrl {
+  name: string
+  url: string
+}
+
 export interface AgentConfig {
   id: string
   unit_id: string
@@ -10,6 +15,7 @@ export interface AgentConfig {
   max_variation_pct: number
   focus_metric: 'revpar' | 'ocupacao' | 'ticket'
   is_active: boolean
+  competitor_urls: CompetitorUrl[]
 }
 
 function getAdminClient() {
@@ -43,7 +49,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error: err } = await admin
     .from('rm_agent_config')
-    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active')
+    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls')
     .eq('unit_id', unit.id)
     .maybeSingle()
 
@@ -53,11 +59,11 @@ export async function GET(req: NextRequest) {
   if (!data) {
     const { data: created } = await admin.from('rm_agent_config').insert({
       unit_id: unit.id, pricing_strategy: 'moderado', max_variation_pct: 20, focus_metric: 'revpar', is_active: true,
-    }).select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active').single()
-    return Response.json(created as AgentConfig)
+    }).select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls').single()
+    return Response.json(created as unknown as AgentConfig)
   }
 
-  return Response.json(data as AgentConfig)
+  return Response.json(data as unknown as AgentConfig)
 }
 
 // ─── PATCH: atualiza config da unidade ───────────────────────────────────────
@@ -71,18 +77,24 @@ export async function PATCH(req: NextRequest) {
     pricing_strategy?: string
     max_variation_pct?: number
     focus_metric?: string
+    competitor_urls?: CompetitorUrl[]
   }
-  const { unit_id, ...fields } = body
+  const { unit_id, competitor_urls, ...rest } = body
   if (!unit_id) return new Response('unit_id obrigatório', { status: 400 })
+
+  const fields = {
+    ...rest,
+    ...(competitor_urls !== undefined ? { competitor_urls: competitor_urls as unknown as import('@/types/database.types').Database['public']['Tables']['rm_agent_config']['Update']['competitor_urls'] } : {}),
+  }
 
   const admin = getAdminClient()
   const { data, error: err } = await admin
     .from('rm_agent_config')
     .update(fields)
     .eq('unit_id', unit_id)
-    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active')
+    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls')
     .single()
 
   if (err) return Response.json({ error: err.message }, { status: 500 })
-  return Response.json(data as AgentConfig)
+  return Response.json(data as unknown as AgentConfig)
 }

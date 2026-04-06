@@ -365,8 +365,11 @@ export async function POST(req: NextRequest) {
     `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo} = R$ ${r.preco.toFixed(2)}`
   ).join('\n')
 
-  // ─── Buscar guardrails + config do agente ───────────────────────────────
-  const [{ data: guardrailsData }, { data: agentConfigData }] = await Promise.all([
+  // ─── Buscar guardrails + config do agente + snapshots de concorrentes ───
+  const SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 dias
+  const snapshotCutoff = new Date(Date.now() - SNAPSHOT_MAX_AGE_MS).toISOString()
+
+  const [{ data: guardrailsData }, { data: agentConfigData }, { data: competitorSnapshotsData }] = await Promise.all([
     supabase
       .from('agent_price_guardrails')
       .select('categoria, periodo, preco_minimo, preco_maximo')
@@ -376,6 +379,12 @@ export async function POST(req: NextRequest) {
       .select('pricing_strategy, max_variation_pct, focus_metric')
       .eq('unit_id', unit.id)
       .maybeSingle(),
+    supabase
+      .from('competitor_snapshots')
+      .select('competitor_name, mapped_prices, scraped_at')
+      .eq('unit_id', unit.id)
+      .gte('scraped_at', snapshotCutoff)
+      .order('scraped_at', { ascending: false }),
   ])
 
   // Mapa: "categoria|periodo" → { min, max }
@@ -407,6 +416,24 @@ export async function POST(req: NextRequest) {
 - Variação máxima permitida: **±${maxVar}%** por item (não exceder este limite em nenhuma linha)
 - Métrica de foco: **${focus === 'revpar' ? 'RevPAR' : focus === 'ocupacao' ? 'Ocupação' : 'Ticket médio'}** — ${FOCUS_GUIDE[focus]}`
 
+  // Bloco de preços de concorrentes (snapshots dos últimos 7 dias)
+  interface MappedPrice { categoria_concorrente: string; categoria_nossa: string | null; periodo: string; preco: number; dia_tipo?: string; notas?: string }
+  const competitorBlock = competitorSnapshotsData?.length
+    ? `## Preços de concorrentes (referência — última análise)
+
+${competitorSnapshotsData.map((snap) => {
+  const prices = (snap.mapped_prices as unknown as MappedPrice[]) ?? []
+  if (!prices.length) return `**${snap.competitor_name}**: sem preços extraídos`
+  const date = new Date(snap.scraped_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  const lines = prices.map((p) =>
+    `  | ${p.categoria_nossa ?? p.categoria_concorrente} | ${p.periodo} | ${p.dia_tipo ?? 'todos'} | R$ ${p.preco.toFixed(2)} |`
+  ).join('\n')
+  return `**${snap.competitor_name}** (analisado em ${date})\n  | Categoria | Período | Dia | Preço |\n  |-----------|---------|-----|-------|\n${lines}`
+}).join('\n\n')}
+
+> Use estes preços como referência de posicionamento de mercado, não como limite rígido.`
+    : ''
+
   const guardrailsBlock = guardrailsData?.length
     ? `## Guardrails de preço (limites obrigatórios — NÃO ULTRAPASSAR)
 
@@ -428,7 +455,7 @@ IMPORTANTE: Se o preço ótimo calculado ultrapassar o máximo, use o máximo. S
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}
+${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
