@@ -7,17 +7,17 @@ const openrouter = createOpenRouter({
 /**
  * Modelo estratégico — usado em chat, geração de propostas e revisões agendadas.
  * Foco: raciocínio, texto de estratégia de preços e recomendações de RM.
- * Fallback: nvidia/nemotron-3-super-120b-a12b:free
+ * Fallback: minimax/minimax-m2.5:free
  */
-export const STRATEGY_MODEL = openrouter('openai/gpt-oss-120b')
+export const STRATEGY_MODEL = openrouter('nvidia/nemotron-3-super-120b-a12b:free')
 export const strategyOptions = {
-  openrouter: { models: ['nvidia/nemotron-3-super-120b-a12b:free'] },
+  openrouter: { models: ['minimax/minimax-m2.5:free'] },
 }
 
 /**
  * Modelo analítico — usado em importação de planilhas, análise de concorrentes.
  * Foco: parsing de CSV/JSON, cálculos de KPIs, comparação direta de valores.
- * Fallback: google/gemma-4-31b-it:free
+ * Fallback: nvidia/nemotron-3-super-120b-a12b:free
  */
 export const ANALYSIS_MODEL = openrouter('google/gemma-4-31b-it:free')
 export const analysisOptions = {
