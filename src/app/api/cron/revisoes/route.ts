@@ -144,7 +144,7 @@ Por favor, realize uma análise completa de acompanhamento:
             execute: async () => ({ ok: true }),
           }),
         },
-        maxOutputTokens: 4096,
+        maxOutputTokens: 2500,
         temperature: 0.3,
         providerOptions: gatewayOptions,
       })

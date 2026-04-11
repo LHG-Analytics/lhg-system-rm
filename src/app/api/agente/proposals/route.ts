@@ -525,7 +525,7 @@ Omita itens sem dados suficientes. JSON minificado, sem indentação.`
     model: PRIMARY_MODEL,
     providerOptions: gatewayOptions,
     prompt,
-    maxOutputTokens: 8000,
+    maxOutputTokens: 2500,
     temperature: 0.2,
   })
 
