@@ -281,30 +281,20 @@ export async function POST(req: NextRequest) {
     if (!csvContent) return new Response('csvContent obrigatório', { status: 400 })
 
     const prompt = importType === 'discounts'
-      ? `Você receberá uma planilha de política de descontos de motel exportada como CSV (formato matriz: dias × categorias).
+      ? `Extract discount rules from the CSV below. Output ONLY minified JSON, no explanation.
 
-TAREFA: extrair UMA linha por combinação única de categoria × período × dia_semana × faixa_horaria.
+Schema per row: canal="guia_moteis", categoria (exact name), periodo ("3h"|"6h"|"12h"|"pernoite"), dia_semana ("domingo"|"segunda"|"terca"|"quarta"|"quinta"|"sexta"|"sabado"|"todos"), faixa_horaria (e.g. "00:00-17:59"), tipo_desconto ("percentual"|"absoluto"), valor (number), condicao (omit if empty).
 
-CAMPOS obrigatórios de cada linha:
-- canal: sempre "guia_moteis"
-- categoria: nome exato da categoria de suíte (ex: "Lush POP", "Lush", "Lush Hidro")
-- periodo: "3h" | "6h" | "12h" | "pernoite" (expandir grupos: "3h, 6h e 12h" → 3 linhas)
-- dia_semana: "domingo" | "segunda" | "terca" | "quarta" | "quinta" | "sexta" | "sabado" | "todos"
-- faixa_horaria: intervalo exato (ex: "00:00-17:59", "18:00-23:59", "00:00-23:59")
-- tipo_desconto: "percentual" | "absoluto"
-- valor: número sem símbolo (ex: 10 para 10%, 20.00 para R$20)
-- condicao: omitir se vazio
+Rules:
+- One row per unique categoria+periodo+dia_semana+faixa_horaria combination
+- Expand period groups: "3h, 6h e 12h" → 3 separate rows
+- Include EVERY weekday found, even if discount matches another day
+- If same categoria+periodo+dia has two time slots with EQUAL discount → merge into "00:00-23:59"
+- If two time slots have DIFFERENT discounts → keep 2 separate rows
+- Skip empty cells ("-" or blank)
+- ALL discounts go in "discount_rows", never in "rows"
 
-REGRAS CRÍTICAS — siga rigorosamente:
-1. NUNCA omita um dia da semana que aparece na planilha, mesmo que o desconto pareça igual ao dia anterior. Extraia cada dia individualmente.
-2. MESCLAGEM de faixas horárias: se a MESMA (categoria × período × dia) aparece em dois slots horários (ex: "00:00-17:59" e "18:00-23:59") com o MESMO valor de desconto → gerar UMA única linha com faixa_horaria "00:00-23:59".
-3. Se os dois slots têm valores DIFERENTES → manter 2 linhas separadas com cada faixa_horaria.
-4. Slots vazios ("-" ou em branco) → ignorar completamente (não gerar linha).
-5. Grupos de categorias com mesmo desconto → uma linha por categoria (não agrupar).
-6. A planilha pode ter formato matriz (colunas = categorias, linhas = dia+horário) — pivote corretamente para o formato normalizado.
-
-Retorne SOMENTE JSON minificado. TODOS os descontos devem ir em "discount_rows", NUNCA em "rows".
-Exemplo de formato correto:
+Required output format (minified, no whitespace):
 {"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30}]}
 
 CSV:
