@@ -285,16 +285,27 @@ export async function PATCH(req: NextRequest) {
   try {
     // Prompt varia por tipo de importação
     const prompt = jobImportType === 'discounts'
-      ? `Você receberá o conteúdo de uma planilha de política de descontos de motel exportada como CSV.
+      ? `Você receberá uma planilha de política de descontos de motel exportada como CSV (formato matriz: dias × categorias).
 
-POLÍTICA DE DESCONTOS (Guia de Motéis)
-Extraia UMA linha por: categoria × período × dia_semana × faixa_horaria.
-Campos: canal ("guia_moteis"), categoria, periodo, dia_semana ("domingo"|"segunda"|"terca"|"quarta"|"quinta"|"sexta"|"sabado"|"todos"), faixa_horaria (ex: "06:00-17:59"), tipo_desconto ("percentual"|"absoluto"), valor (número), condicao (omitir se vazio)
+TAREFA: extrair UMA linha por combinação única de categoria × período × dia_semana × faixa_horaria.
 
-Regras:
-- Sempre dividir múltiplos períodos em múltiplas linhas
-- "3h, 6h e 12h" → gerar 3 linhas
-- Se dois percentuais diferentes, separar corretamente
+CAMPOS obrigatórios de cada linha:
+- canal: sempre "guia_moteis"
+- categoria: nome exato da categoria de suíte (ex: "Lush POP", "Lush", "Lush Hidro")
+- periodo: "3h" | "6h" | "12h" | "pernoite" (expandir grupos: "3h, 6h e 12h" → 3 linhas)
+- dia_semana: "domingo" | "segunda" | "terca" | "quarta" | "quinta" | "sexta" | "sabado" | "todos"
+- faixa_horaria: intervalo exato (ex: "00:00-17:59", "18:00-23:59", "00:00-23:59")
+- tipo_desconto: "percentual" | "absoluto"
+- valor: número sem símbolo (ex: 10 para 10%, 20.00 para R$20)
+- condicao: omitir se vazio
+
+REGRAS CRÍTICAS — siga rigorosamente:
+1. NUNCA omita um dia da semana que aparece na planilha, mesmo que o desconto pareça igual ao dia anterior. Extraia cada dia individualmente.
+2. MESCLAGEM de faixas horárias: se a MESMA (categoria × período × dia) aparece em dois slots horários (ex: "00:00-17:59" e "18:00-23:59") com o MESMO valor de desconto → gerar UMA única linha com faixa_horaria "00:00-23:59".
+3. Se os dois slots têm valores DIFERENTES → manter 2 linhas separadas com cada faixa_horaria.
+4. Slots vazios ("-" ou em branco) → ignorar completamente (não gerar linha).
+5. Grupos de categorias com mesmo desconto → uma linha por categoria (não agrupar).
+6. A planilha pode ter formato matriz (colunas = categorias, linhas = dia+horário) — pivote corretamente para o formato normalizado.
 
 Retorne SOMENTE JSON minificado:
 {"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[...]}
