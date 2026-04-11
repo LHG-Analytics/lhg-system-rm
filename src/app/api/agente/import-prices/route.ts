@@ -311,7 +311,7 @@ ${csvContent.slice(0, 24000)}`
       model: ANALYSIS_MODEL,
       providerOptions: analysisOptions,
       prompt,
-      maxOutputTokens: 8000,
+      maxOutputTokens: 2500,
       temperature: 0,
     })
 
