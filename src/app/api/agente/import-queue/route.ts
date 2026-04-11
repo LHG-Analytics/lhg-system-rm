@@ -176,8 +176,14 @@ Extraia as tarifas dos seguintes canais (ignore qualquer outro):
 Para cada tarifa: canal, categoria, periodo, dia_tipo ("semana"|"fds_feriado"|"todos"), preco (numérico)
 
 PARTE 2 — POLÍTICA DE DESCONTOS (Guia de Motéis)
-Se houver tabela de descontos para o Guia de Motéis (com faixas de horário e dias da semana), extraia UMA linha por: categoria × período × dia_semana × faixa_horaria.
-Campos: canal ("guia_moteis"), categoria, periodo, dia_semana ("domingo"|"segunda"|"terca"|"quarta"|"quinta"|"sexta"|"sabado"|"todos"), faixa_horaria (ex: "06:00-17:59"), tipo_desconto ("percentual"|"absoluto"), valor (número), condicao (omitir se vazio)
+A tabela pode conter frases como:
+- "10% nos períodos de 3h, 6h e 12h"
+- "15% nos períodos de 3h e 10% nos períodos de 6h e 12h"
+
+Regras obrigatórias:
+- Sempre dividir múltiplos períodos em múltiplas linhas
+- "3h, 6h e 12h" → gerar 3 linhas
+- Se houver dois percentuais diferentes, separar corretamente
 
 Retorne SOMENTE JSON minificado:
 {"rows":[...],"canais_encontrados":[],"discount_rows":[]}
@@ -194,11 +200,30 @@ ${job.csv_content.slice(0, 24000)}`
     })
 
     const parsed = extractJSON(text)
-    if (!parsed || !Array.isArray(parsed.rows) || parsed.rows.length === 0) {
-      throw new Error('O modelo não retornou preços válidos. Verifique o formato do arquivo.')
-    }
 
-    const canais = [...new Set(parsed.rows.map((r) => r.canal))]
+if (!parsed) {
+  throw new Error('O modelo não retornou JSON válido.')
+}
+
+// ✅ NORMALIZAÇÃO
+parsed.rows = Array.isArray(parsed.rows) ? parsed.rows : []
+parsed.discount_rows = Array.isArray(parsed.discount_rows) ? parsed.discount_rows : []
+
+// DEBUG
+console.log('[QUEUE PARSE] rows:', parsed.rows.length)
+console.log('[QUEUE PARSE] discounts:', parsed.discount_rows.length)
+
+// ✅ NOVA VALIDAÇÃO (ACEITA PREÇO OU DESCONTO)
+if (parsed.rows.length === 0 && parsed.discount_rows.length === 0) {
+  throw new Error('O modelo não retornou preços nem descontos válidos.')
+}
+
+const canais = [
+  ...new Set([
+    ...(parsed.rows?.map((r) => r.canal) ?? []),
+    ...(parsed.discount_rows?.map((d) => d.canal) ?? [])
+  ])
+]
     const today = new Date().toISOString().slice(0, 10)
 
     // Salva o price_import
@@ -229,10 +254,20 @@ ${job.csv_content.slice(0, 24000)}`
       .eq('id', job.id)
 
     // Notificação in-app
+    const totalPrecos = parsed.rows.length
+    const totalDescontos = parsed.discount_rows.length
+    
+    let resumo = ''
+    if (totalPrecos > 0) resumo += `${totalPrecos} preços`
+    if (totalDescontos > 0) {
+      if (resumo) resumo += ' e '
+      resumo += `${totalDescontos} descontos`
+    }
+    
     await admin.from('notifications').insert({
       user_id: auth.user!.id,
       title: 'Planilha importada',
-      body: `"${job.file_name}" foi analisada e importada com sucesso (${parsed.rows.length} preços).`,
+      body: `"${job.file_name}" foi analisada e importada com sucesso (${resumo}).`,
       type: 'success',
     })
 
