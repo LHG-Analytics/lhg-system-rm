@@ -9,7 +9,7 @@ import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
 import type { Database } from '@/types/database.types'
-import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
+import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 import type { PriceImportForPrompt, KPIPeriod } from '@/lib/agente/system-prompt'
 
 function getAdminClient() {
@@ -101,11 +101,11 @@ export async function POST(req: NextRequest) {
 
   // Imports query: por IDs específicos (modo comparativo) ou todos da unidade
   const importsQuery = priceImportIds?.length
-    ? admin.from('price_imports').select('id, parsed_data, valid_from, valid_until').in('id', priceImportIds)
-    : admin.from('price_imports').select('id, parsed_data, valid_from, valid_until').eq('unit_id', unit.id).order('valid_from', { ascending: false })
+    ? admin.from('price_imports').select('id, parsed_data, discount_data, valid_from, valid_until').in('id', priceImportIds)
+    : admin.from('price_imports').select('id, parsed_data, discount_data, valid_from, valid_until').eq('unit_id', unit.id).order('valid_from', { ascending: false })
 
   let kpiPeriods: KPIPeriod[]
-  let rawImports: { id: string; parsed_data: unknown; valid_from: string; valid_until: string | null }[] = []
+  let rawImports: { id: string; parsed_data: unknown; discount_data: unknown; valid_from: string; valid_until: string | null }[] = []
 
   if (isComparison) {
     const [cA, cB, importsResult] = await Promise.allSettled([
@@ -149,6 +149,7 @@ export async function POST(req: NextRequest) {
       : undefined
     return {
       rows: imp.parsed_data ? (imp.parsed_data as unknown as ParsedPriceRow[]) : [],
+      discount_data: imp.discount_data ? (imp.discount_data as unknown as ParsedDiscountRow[]) : null,
       valid_from: analysisPeriod ? analysisPeriod.startDate : imp.valid_from,
       valid_until: analysisPeriod ? analysisPeriod.endDate : imp.valid_until,
     }

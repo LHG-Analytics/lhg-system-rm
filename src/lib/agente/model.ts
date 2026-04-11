@@ -21,7 +21,7 @@ export const strategyOptions = {
  */
 export const ANALYSIS_MODEL = openrouter('google/gemma-4-31b-it:free')
 export const analysisOptions = {
-  openrouter: { models: ['google/gemma-4-31b-it:free'] },
+  openrouter: { models: ['google/gemma-4-26b-a4b-it:free', 'nvidia/nemotron-3-super-120b-a12b:free'] },
 }
 
 // Alias retrocompatível — aponta para o modelo estratégico

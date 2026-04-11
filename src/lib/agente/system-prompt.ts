@@ -4,7 +4,7 @@ import type {
   DataTableGiroByWeek,
   DataTableRevparByWeek,
 } from '@/lib/kpis/types'
-import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
+import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 
 // ─── Formatadores ─────────────────────────────────────────────────────────────
 
@@ -173,6 +173,7 @@ const CANAL_LABELS: Record<string, string> = {
 
 export interface PriceImportForPrompt {
   rows: ParsedPriceRow[]
+  discount_data?: ParsedDiscountRow[] | null
   valid_from: string
   valid_until: string | null
 }
@@ -205,6 +206,16 @@ function buildSinglePriceTable(rows: ParsedPriceRow[], validFrom: string, validU
 
   const vigencia = `${validFrom}${validUntil ? ` → ${validUntil}` : ' → atualmente'}`
   return `#### Tabela vigente ${vigencia}\n${sections.join('\n\n')}`
+}
+
+function buildDiscountContext(imports: PriceImportForPrompt[]): string {
+  const discounts = imports.flatMap((i) => i.discount_data ?? [])
+  if (!discounts.length) return ''
+
+  const lines = discounts.map((d) =>
+    `  | ${d.categoria} | ${d.periodo} | ${d.dia_semana ?? d.dia_tipo ?? '—'} | ${d.faixa_horaria ?? '—'} | ${d.tipo_desconto === 'percentual' ? `${d.valor}%` : `R$ ${d.valor.toFixed(2).replace('.', ',')}`}${d.condicao ? ` (${d.condicao})` : ''} |`
+  )
+  return `### Política de descontos — Guia de Motéis\n| Categoria | Período | Dia | Horário | Desconto |\n|-----------|---------|-----|---------|----------|\n${lines.join('\n')}`
 }
 
 function buildPriceTablesContext(imports: PriceImportForPrompt[]): string {
@@ -251,6 +262,7 @@ export function buildSystemPrompt(
   }
 
   const priceContext = buildPriceTablesContext(priceImports)
+  const discountContext = buildDiscountContext(priceImports)
 
   return `Você é o Agente de Revenue Management sênior da LHG Motéis — especialista em yield management para o setor moteleiro brasileiro com mais de 10 anos de experiência.
 
@@ -339,6 +351,7 @@ Após a tabela, inclua:
 
 ${kpiContext}
 ${priceContext ? `\n${priceContext}` : ''}
+${discountContext ? `\n${discountContext}` : ''}
 
 ---
 Se o usuário pedir algo fora do escopo de Revenue Management, redirecione gentilmente para o foco em precificação e receita.`
