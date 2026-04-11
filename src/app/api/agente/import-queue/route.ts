@@ -6,7 +6,7 @@
  * PATCH            — processa o próximo job pendente (chamado pelo frontend via polling)
  */
 import { generateText } from 'ai'
-import { ANALYSIS_MODEL, gatewayOptions } from '@/lib/agente/model'
+import { ANALYSIS_MODEL, analysisOptions } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -177,7 +177,7 @@ ${job.csv_content.slice(0, 24000)}`
 
     const { text } = await generateText({
       model: ANALYSIS_MODEL,
-      providerOptions: gatewayOptions,
+      providerOptions: analysisOptions,
       prompt,
       maxOutputTokens: 16000,
       temperature: 0,
