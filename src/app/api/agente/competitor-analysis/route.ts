@@ -1,5 +1,5 @@
 import { generateText } from 'ai'
-import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
+import { ANALYSIS_MODEL, gatewayOptions } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -191,7 +191,7 @@ Se não encontrar preços estruturados, retorne: {"prices":[],"nota":"motivo bre
   let mappedPrices: MappedPrice[] = []
   try {
     const { text } = await generateText({
-      model: PRIMARY_MODEL,
+      model: ANALYSIS_MODEL,
       providerOptions: gatewayOptions,
       prompt: extractionPrompt,
       maxOutputTokens: 2000,

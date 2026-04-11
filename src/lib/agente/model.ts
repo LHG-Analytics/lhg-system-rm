@@ -4,11 +4,20 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 })
 
-// Modelo primário: Google Gemma 3 27B (gratuito)
-export const PRIMARY_MODEL = openrouter('google/gemma-4-26b-a4b-it:free')
+/**
+ * Modelo estratégico — usado em chat, geração de propostas e revisões agendadas.
+ * Foco: raciocínio, texto de estratégia de preços e recomendações de RM.
+ */
+export const STRATEGY_MODEL = openrouter('openai/gpt-oss-120b')
 
-// Modelo de fallback para tasks menos críticas
-export const FALLBACK_MODEL = openrouter('nvidia/nemotron-3-super-120b-a12b:free')
+/**
+ * Modelo analítico — usado em importação de planilhas, análise de concorrentes.
+ * Foco: parsing de CSV/JSON, cálculos de KPIs, comparação direta de valores.
+ */
+export const ANALYSIS_MODEL = openrouter('qwen/qwen3-next-80b')
 
-// Mantido para compatibilidade — sem opções extras necessárias no OpenRouter
+// Alias retrocompatível — aponta para o modelo estratégico
+export const PRIMARY_MODEL = STRATEGY_MODEL
+
+// Mantido para compatibilidade de assinatura nas rotas
 export const gatewayOptions: Record<string, never> = {}
