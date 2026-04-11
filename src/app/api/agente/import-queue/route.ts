@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query = (auth.supabase! as any)
     .from('price_import_jobs')
-    .select('id, file_name, valid_from, valid_until, status, error_msg, result_id, created_at, started_at, finished_at, import_type')
+    .select('id, file_name, valid_from, valid_until, status, error_msg, result_id, created_at, started_at, finished_at, import_type, parsed_preview')
     .eq('unit_id', unit.id)
     .order('created_at', { ascending: false })
     .limit(30)
