@@ -283,17 +283,30 @@ Para cada tarifa, extraia:
 - dia_tipo: "semana" | "fds_feriado" | "todos"
 - preco: valor numérico em reais (sem R$)
 
+Se não houver valores numéricos claros de preços, retorne "rows":[].
+
 PARTE 2 — POLÍTICA DE DESCONTOS (Guia de Motéis)
-Se houver tabela de descontos para o Guia de Motéis (com faixas de horário e dias da semana), extraia UMA linha por combinação de: categoria × período × dia_semana × faixa_horaria.
-Campos obrigatórios:
-- canal: sempre "guia_moteis"
-- categoria: nome exato da categoria (ex: "Lush POP", "Lush Hidro")
-- periodo: "3h" | "6h" | "12h" | "Pernoite" (um valor por linha — multiplique se o desconto vale para vários períodos)
-- dia_semana: "domingo"|"segunda"|"terca"|"quarta"|"quinta"|"sexta"|"sabado"|"todos"
-- faixa_horaria: ex: "00:00-05:59", "06:00-17:59", "18:00-23:59" ou "todos"
-- tipo_desconto: "percentual" (ex: 10%) ou "absoluto" (ex: R$20)
-- valor: número sem símbolo (ex: 10 para 10%, 20 para R$20)
-- condicao: omitir se não houver condição especial
+
+A tabela pode conter frases como:
+- "10% nos períodos de 3h, 6h e 12h"
+- "15% nos períodos de 3h e 10% nos períodos de 6h e 12h"
+
+Regras obrigatórias:
+- Sempre dividir múltiplos períodos em múltiplas linhas
+- "3h, 6h e 12h" → gerar 3 linhas
+- Se houver dois percentuais diferentes, separar corretamente
+
+Exemplo:
+"15% nos períodos de 3h e 10% nos períodos de 6h e 12h"
+
+vira:
+[
+ { periodo: "3h", valor: 15 },
+ { periodo: "6h", valor: 10 },
+ { periodo: "12h", valor: 10 }
+]
+
+Se não houver descontos, retorne "discount_rows":[].
 
 Retorne SOMENTE JSON minificado no formato:
 {"rows":[...],"canais_encontrados":["balcao_site"],"observacoes":"opcional","discount_rows":[]}
@@ -317,6 +330,7 @@ ${csvContent.slice(0, 24000)}`
 
     // Extrair JSON robusto: tenta code block primeiro, depois busca balanceada
     const parsed = extractJSON(text)
+
     if (!parsed) {
       console.error('[import-prices] Resposta do modelo não parseável:', text.slice(0, 500))
       return Response.json(
@@ -324,18 +338,35 @@ ${csvContent.slice(0, 24000)}`
         { status: 422 }
       )
     }
+    
+    // ✅ NORMALIZAÇÃO (EVITA QUEBRA)
+    parsed.rows = Array.isArray(parsed.rows) ? parsed.rows : []
+    parsed.discount_rows = Array.isArray(parsed.discount_rows) ? parsed.discount_rows : []
+    
+    // DEBUG
+    console.log('[IMPORT PARSE] rows:', parsed.rows.length)
+    console.log('[IMPORT PARSE] discounts:', parsed.discount_rows.length)
 
     return Response.json(parsed)
   }
 
   // ── CONFIRM: Salva no banco após aprovação do usuário ─────────────────────
   if (action === 'confirm') {
-    if (!parsedData || !Array.isArray(parsedData) || parsedData.length === 0) {
-      return new Response('parsedData obrigatório', { status: 400 })
+    if (
+      (!parsedData || parsedData.length === 0) &&
+      (!discountData || discountData.length === 0)
+    ) {
+      return new Response('parsedData ou discountData obrigatório', { status: 400 })
     }
+
     if (!csvContent) return new Response('csvContent obrigatório', { status: 400 })
 
-    const canais = [...new Set(parsedData.map((r) => r.canal))]
+    const canais = [
+  ...new Set([
+    ...(parsedData?.map((r) => r.canal) ?? []),
+    ...(discountData?.map((d) => d.canal) ?? [])
+  ])
+]
     const today = new Date().toISOString().slice(0, 10)
 
     // Salvar no Supabase
