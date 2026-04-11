@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Upload, Loader2, FileText, X, CalendarIcon, CheckCircle2,
-  AlertCircle, Clock, RefreshCw, Plus, Trash2, RotateCcw
+  AlertCircle, Clock, RefreshCw, Plus, Trash2, RotateCcw, ChevronDown
 } from 'lucide-react'
 import {
   AlertDialog,
@@ -89,18 +89,25 @@ interface QueuedFile {
   validUntil: string | null
 }
 
+interface ParsedPreview {
+  rows: Array<{ canal: string; categoria: string; periodo: string; dia_tipo: string; preco: number }>
+  discount_rows: Array<{ categoria: string; periodo: string; dia_semana: string; faixa_horaria: string; tipo_desconto: string; valor: number; condicao?: string }>
+  canais_encontrados: string[]
+}
+
 export interface ImportJob {
   id: string
   file_name: string
   valid_from: string
   valid_until: string | null
-  status: 'pending' | 'processing' | 'done' | 'failed'
+  status: 'pending' | 'processing' | 'needs_review' | 'done' | 'failed'
   error_msg: string | null
   result_id: string | null
   created_at: string
   started_at: string | null
   finished_at: string | null
   import_type?: 'prices' | 'discounts'
+  parsed_preview?: ParsedPreview | null
 }
 
 interface PriceImportQueueProps {
@@ -110,12 +117,16 @@ interface PriceImportQueueProps {
 }
 
 const STATUS_ICON = {
-  pending:    <Clock className="size-3.5 text-muted-foreground" />,
-  processing: <Loader2 className="size-3.5 animate-spin text-blue-500" />,
-  done:       <CheckCircle2 className="size-3.5 text-emerald-500" />,
-  failed:     <AlertCircle className="size-3.5 text-destructive" />,
+  pending:      <Clock className="size-3.5 text-muted-foreground" />,
+  processing:   <Loader2 className="size-3.5 animate-spin text-blue-500" />,
+  needs_review: <AlertCircle className="size-3.5 text-amber-500" />,
+  done:         <CheckCircle2 className="size-3.5 text-emerald-500" />,
+  failed:       <AlertCircle className="size-3.5 text-destructive" />,
 }
-const STATUS_LABEL = { pending: 'Na fila', processing: 'Analisando…', done: 'Importado', failed: 'Falhou' }
+const STATUS_LABEL = {
+  pending: 'Na fila', processing: 'Analisando…',
+  needs_review: 'Aguardando confirmação', done: 'Importado', failed: 'Falhou',
+}
 
 // ─── PriceImportQueue: upload + polling (sem histórico) ───────────────────────
 
@@ -127,6 +138,9 @@ export function PriceImportQueue({ unitSlug, unitName, importType = 'prices' }: 
   const [jobs, setJobs] = useState<ImportJob[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState<string | null>(null)
+  const [rejecting, setRejecting] = useState<string | null>(null)
+  const [expandedPreviews, setExpandedPreviews] = useState<Set<string>>(new Set())
 
   const [dragging, setDragging] = useState(false)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -248,7 +262,47 @@ export function PriceImportQueue({ unitSlug, unitName, importType = 'prices' }: 
     }
   }
 
-  const hasActiveJobs = jobs.some((j) => j.status === 'pending' || j.status === 'processing')
+  async function handleConfirm(jobId: string) {
+    setConfirming(jobId); setError(null)
+    try {
+      const res = await fetch('/api/agente/import-queue', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unitSlug, action: 'confirm', jobId }),
+      })
+      if (!res.ok) {
+        const d = await res.json() as { error?: string }
+        setError(d.error ?? 'Erro ao confirmar importação')
+        return
+      }
+      await loadJobs()
+    } catch { setError('Erro ao confirmar importação') }
+    finally { setConfirming(null) }
+  }
+
+  async function handleReject(jobId: string) {
+    setRejecting(jobId)
+    try {
+      await fetch('/api/agente/import-queue', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unitSlug, action: 'reject', jobId }),
+      })
+      await loadJobs()
+    } finally { setRejecting(null) }
+  }
+
+  function togglePreview(jobId: string) {
+    setExpandedPreviews((prev) => {
+      const next = new Set(prev)
+      next.has(jobId) ? next.delete(jobId) : next.add(jobId)
+      return next
+    })
+  }
+
+  // needs_review pausa o polling para evitar loop: PATCH retorna done:true quando há jobs para revisar
+  const needsReviewJobs = jobs.filter((j) => j.status === 'needs_review')
+  const hasActiveJobs = needsReviewJobs.length === 0 && jobs.some((j) => j.status === 'pending' || j.status === 'processing')
 
   return (
     <Card>
@@ -274,6 +328,134 @@ export function PriceImportQueue({ unitSlug, unitName, importType = 'prices' }: 
             Analisando planilhas em segundo plano — você pode navegar livremente.
           </div>
         )}
+
+        {/* ── Confirmações pendentes ── */}
+        {needsReviewJobs.map((job) => {
+          const preview = job.parsed_preview
+          const isPrices = (job.import_type ?? 'prices') === 'prices'
+          const rowCount = isPrices ? (preview?.rows.length ?? 0) : (preview?.discount_rows.length ?? 0)
+          const canais = preview?.canais_encontrados ?? []
+          const expanded = expandedPreviews.has(job.id)
+
+          return (
+            <div key={job.id} className="rounded-lg border border-amber-500/40 bg-amber-500/5 overflow-hidden">
+              <div className="px-4 py-3 flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <AlertCircle className="size-4 text-amber-500 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{job.file_name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Vigência: {fmtIso(job.valid_from)} → {job.valid_until ? fmtIso(job.valid_until) : <span className="text-emerald-600 dark:text-emerald-400">ativa</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400 shrink-0">Aguarda confirmação</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
+                  <CheckCircle2 className="size-3 text-emerald-500 shrink-0" />
+                  <span className="font-medium text-foreground">
+                    {rowCount} {isPrices ? 'preços encontrados' : 'regras de desconto'}
+                  </span>
+                  {canais.length > 0 && (
+                    <> · {canais.join(' · ')}</>
+                  )}
+                  {rowCount > 0 && (
+                    <button
+                      onClick={() => togglePreview(job.id)}
+                      className="ml-auto text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                    >
+                      {expanded ? 'Ocultar detalhes ↑' : 'Ver detalhes ↓'}
+                    </button>
+                  )}
+                </div>
+
+                {expanded && preview && (
+                  <div className="mt-1 max-h-64 overflow-y-auto rounded border bg-background text-xs">
+                    {isPrices && preview.rows.length > 0 && (
+                      <table className="w-full min-w-max">
+                        <thead className="sticky top-0 bg-muted text-muted-foreground">
+                          <tr>
+                            <th className="px-2 py-1 text-left font-medium">Canal</th>
+                            <th className="px-2 py-1 text-left font-medium">Categoria</th>
+                            <th className="px-2 py-1 text-left font-medium">Período</th>
+                            <th className="px-2 py-1 text-left font-medium">Dia</th>
+                            <th className="px-2 py-1 text-right font-medium">R$</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {preview.rows.map((r, i) => (
+                            <tr key={i} className="border-t">
+                              <td className="px-2 py-1 text-muted-foreground">{r.canal}</td>
+                              <td className="px-2 py-1">{r.categoria}</td>
+                              <td className="px-2 py-1">{r.periodo}</td>
+                              <td className="px-2 py-1 text-muted-foreground">{r.dia_tipo}</td>
+                              <td className="px-2 py-1 text-right font-medium">{Number(r.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {!isPrices && preview.discount_rows.length > 0 && (
+                      <table className="w-full min-w-max">
+                        <thead className="sticky top-0 bg-muted text-muted-foreground">
+                          <tr>
+                            <th className="px-2 py-1 text-left font-medium">Categoria</th>
+                            <th className="px-2 py-1 text-left font-medium">Período</th>
+                            <th className="px-2 py-1 text-left font-medium">Dia</th>
+                            <th className="px-2 py-1 text-left font-medium">Horário</th>
+                            <th className="px-2 py-1 text-left font-medium">Desconto</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {preview.discount_rows.map((r, i) => (
+                            <tr key={i} className="border-t">
+                              <td className="px-2 py-1">{r.categoria}</td>
+                              <td className="px-2 py-1">{r.periodo}</td>
+                              <td className="px-2 py-1 text-muted-foreground">{r.dia_semana}</td>
+                              <td className="px-2 py-1 text-muted-foreground">{r.faixa_horaria}</td>
+                              <td className="px-2 py-1 font-medium">
+                                {r.tipo_desconto === 'percentual' ? `${r.valor}%` : `R$ ${r.valor}`}
+                                {r.condicao && <span className="text-muted-foreground"> · {r.condicao}</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex gap-2 mt-1">
+                  <Button
+                    size="sm"
+                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    disabled={confirming === job.id || rejecting === job.id}
+                    onClick={() => handleConfirm(job.id)}
+                  >
+                    {confirming === job.id
+                      ? <><Loader2 className="size-3.5 animate-spin" /> Confirmando…</>
+                      : <><CheckCircle2 className="size-3.5" /> Confirmar importação</>
+                    }
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-destructive hover:bg-destructive/10 hover:border-destructive/40"
+                    disabled={confirming === job.id || rejecting === job.id}
+                    onClick={() => handleReject(job.id)}
+                  >
+                    {rejecting === job.id
+                      ? <><Loader2 className="size-3.5 animate-spin" /> Rejeitando…</>
+                      : <><X className="size-3.5" /> Rejeitar</>
+                    }
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
 
         <div
           className={cn(

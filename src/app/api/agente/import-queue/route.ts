@@ -136,27 +136,128 @@ export async function POST(req: NextRequest) {
   return Response.json(jobs)
 }
 
-// ─── PATCH: processa próximo job pendente ─────────────────────────────────────
+// ─── PATCH: processa próximo job pendente | confirma | rejeita ────────────────
 
 export async function PATCH(req: NextRequest) {
   const auth = await requireManager()
   if (auth.error) return new Response(auth.error, { status: auth.status })
 
-  const body = await req.json() as { unitSlug: string; retryJobId?: string }
-  const { unitSlug, retryJobId } = body
+  const body = await req.json() as {
+    unitSlug: string
+    retryJobId?: string
+    action?: 'confirm' | 'reject'
+    jobId?: string
+  }
+  const { unitSlug, retryJobId, action, jobId } = body
   if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
 
   const admin = getAdminClient()
   const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
 
-  // Se for retry: reseta o job específico para pending e continua o fluxo normal
+  // ── CONFIRMAR importação ──────────────────────────────────────────────────
+  if (action === 'confirm' && jobId) {
+    const { data: job } = await admin
+      .from('price_import_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .eq('unit_id', unit.id)
+      .single()
+
+    if (!job) return new Response('Job não encontrado', { status: 404 })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const preview = (job as any).parsed_preview as {
+      rows: ParsedPriceRow[]
+      discount_rows: ParsedDiscountRow[]
+      canais_encontrados: string[]
+    } | null
+
+    if (!preview) return Response.json({ error: 'Sem dados para confirmar' }, { status: 400 })
+
+    const jobImportType: 'prices' | 'discounts' = (job as any).import_type === 'discounts' ? 'discounts' : 'prices'
+
+    let canais: string[]
+    let parsedDataToSave: ParsedPriceRow[]
+    let discountDataToSave: ParsedDiscountRow[] | null
+
+    if (jobImportType === 'discounts') {
+      canais = ['guia_moteis']
+      parsedDataToSave = []
+      discountDataToSave = preview.discount_rows
+    } else {
+      canais = [...new Set(preview.rows.map((r) => r.canal))]
+      parsedDataToSave = preview.rows
+      discountDataToSave = null
+    }
+
+    const { data: importRecord, error: importError } = await (admin as any)
+      .from('price_imports')
+      .insert({
+        unit_id: unit.id,
+        imported_by: auth.user!.id,
+        raw_content: job.csv_content,
+        parsed_data: parsedDataToSave as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
+        discount_data: discountDataToSave as unknown as Database['public']['Tables']['price_imports']['Insert']['discount_data'],
+        canals: canais,
+        is_active: true,
+        valid_from: job.valid_from,
+        valid_until: job.valid_until ?? null,
+        import_type: jobImportType,
+      })
+      .select('id')
+      .single()
+
+    if (importError) throw new Error(importError.message)
+
+    await admin
+      .from('price_import_jobs')
+      .update({ status: 'done', finished_at: new Date().toISOString(), result_id: importRecord.id })
+      .eq('id', jobId)
+
+    const resumo = jobImportType === 'discounts'
+      ? `${preview.discount_rows.length} descontos`
+      : `${preview.rows.length} preços`
+
+    await admin.from('notifications').insert({
+      user_id: auth.user!.id,
+      title: 'Planilha importada',
+      body: `"${job.file_name}" foi confirmada e importada com sucesso (${resumo}).`,
+      type: 'success',
+    })
+
+    return Response.json({ success: true })
+  }
+
+  // ── REJEITAR importação ───────────────────────────────────────────────────
+  if (action === 'reject' && jobId) {
+    await admin
+      .from('price_import_jobs')
+      .update({ status: 'failed', finished_at: new Date().toISOString(), error_msg: 'Rejeitado pelo usuário' })
+      .eq('id', jobId)
+      .eq('unit_id', unit.id)
+
+    return Response.json({ success: true })
+  }
+
+  // ── RETRY ─────────────────────────────────────────────────────────────────
   if (retryJobId) {
     await admin
       .from('price_import_jobs')
       .update({ status: 'pending', error_msg: null, started_at: null, finished_at: null })
       .eq('id', retryJobId)
       .eq('unit_id', unit.id)
+  }
+
+  // Bloqueia processamento se houver jobs aguardando confirmação
+  const { count: reviewCount } = await (admin as any)
+    .from('price_import_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('unit_id', unit.id)
+    .eq('status', 'needs_review')
+
+  if (reviewCount && reviewCount > 0) {
+    return Response.json({ done: true, message: 'Aguardando confirmação de importação' })
   }
 
   // Busca o próximo job pendente (ou já em processamento por muito tempo — timeout 5min)
@@ -243,65 +344,36 @@ ${job.csv_content.slice(0, 24000)}`
       throw new Error('O modelo não retornou preços válidos.')
     }
 
-    // Montar canais e dados conforme tipo
-    let canais: string[]
-    let parsedDataToSave: ParsedPriceRow[]
-    let discountDataToSave: ParsedDiscountRow[] | null
-
-    if (jobImportType === 'discounts') {
-      canais = ['guia_moteis']
-      parsedDataToSave = []
-      discountDataToSave = parsed.discount_rows
-    } else {
-      canais = [...new Set(parsed.rows.map((r) => r.canal))]
-      parsedDataToSave = parsed.rows
-      discountDataToSave = null
-    }
-
-    // Salva o price_import (cast para any pois import_type não está nos tipos gerados)
-    const { data: importRecord, error: importError } = await (admin as any)
-      .from('price_imports')
-      .insert({
-        unit_id: unit.id,
-        imported_by: auth.user!.id,
-        raw_content: job.csv_content,
-        parsed_data: parsedDataToSave as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
-        discount_data: discountDataToSave as unknown as Database['public']['Tables']['price_imports']['Insert']['discount_data'],
-        canals: canais,
-        is_active: true,
-        valid_from: job.valid_from,
-        valid_until: job.valid_until ?? null,
-        import_type: jobImportType,
-      })
-      .select('id')
-      .single()
-
-    if (importError) throw new Error(importError.message)
-
-    // Marca job como done
-    await admin
-      .from('price_import_jobs')
-      .update({ status: 'done', finished_at: new Date().toISOString(), result_id: importRecord.id })
-      .eq('id', job.id)
-
-    // Notificação in-app
+    // Salva resultado da análise para revisão — NÃO salva em price_imports ainda
     const resumo = jobImportType === 'discounts'
       ? `${parsed.discount_rows.length} descontos`
       : `${parsed.rows.length} preços`
 
+    await (admin as any)
+      .from('price_import_jobs')
+      .update({
+        status: 'needs_review',
+        parsed_preview: {
+          rows: parsed.rows,
+          discount_rows: parsed.discount_rows,
+          canais_encontrados: parsed.canais_encontrados,
+        },
+      })
+      .eq('id', job.id)
+
     await admin.from('notifications').insert({
       user_id: auth.user!.id,
-      title: 'Planilha importada',
-      body: `"${job.file_name}" foi analisada e importada com sucesso (${resumo}).`,
-      type: 'success',
+      title: 'Planilha analisada — confirme a importação',
+      body: `"${job.file_name}" foi analisada (${resumo}). Acesse Preços para confirmar.`,
+      type: 'info',
     })
 
     return Response.json({
       done: false,
       jobId: job.id,
       fileName: job.file_name,
-      rowsImported: parsed.rows.length,
-      importId: importRecord.id,
+      status: 'needs_review',
+      rowsParsed: parsed.rows.length + parsed.discount_rows.length,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Erro desconhecido'
