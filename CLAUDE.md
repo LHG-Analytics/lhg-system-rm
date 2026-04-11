@@ -8,13 +8,13 @@
   - Local: `http://127.0.0.1:54321` (Docker via Scoop CLI v2.84.2)
   - Remoto: `https://pvlcktqbjianrbzpqrbd.supabase.co`
 - **Upstash Redis** — cache (a configurar)
-- **Vercel AI Gateway** — roteamento de IA (Claude primário + Gemini Flash fallback automático)
-  - Auth: `VERCEL_OIDC_TOKEN` (via `vercel env pull`) + `AI_GATEWAY_API_KEY`
-  - Modelo primário: `anthropic/claude-sonnet-4.6` | Fallback: `google/gemini-2.0-flash`
+- **OpenRouter** — roteamento de IA (Claude primário + Gemini Flash fallback)
+  - Provider: `@openrouter/ai-sdk-provider` v2.5.1
+  - Auth: `OPENROUTER_API_KEY`
+  - Modelo primário: `anthropic/claude-sonnet-4-5` | Fallback: `google/gemini-2.0-flash`
   - Config centralizada em `src/lib/agente/model.ts`
 - **Deploy:** Vercel + Supabase hosted
   - Projeto linkado: `danilo-dinizs-projects/lhg-system-rm`
-  - AI Gateway habilitado no dashboard Vercel
 
 ## Convenções obrigatórias
 
@@ -56,11 +56,11 @@ Só commitar se ambos passarem sem erros.
 - `<script>` inline dentro de componentes React não é executado no cliente no React 19 — usar `useEffect` para lógica de inicialização.
 - `useSearchParams()` sem `<Suspense>` causa "Can't perform a React state update on a component that hasn't mounted yet" no React 19 concurrent mode.
 
-### Vercel AI Gateway
-- Usar `gateway('provider/model')` de `'ai'` — não usar providers diretos nas rotas do agente
-- Versões com ponto: `anthropic/claude-sonnet-4.6` (não hífen: `claude-sonnet-4-6`)
-- Fallback via `providerOptions: { gateway: { models: ['google/gemini-2.0-flash'] } }`
-- `VERCEL_OIDC_TOKEN` expira em ~24h em dev — reexecutar `vercel env pull` se expirar
+### OpenRouter
+- Usar `createOpenRouter` de `@openrouter/ai-sdk-provider` — não usar Vercel AI Gateway
+- `PRIMARY_MODEL = openrouter('anthropic/claude-sonnet-4-5')` — IDs com hífen (não ponto)
+- `FALLBACK_MODEL = openrouter('google/gemini-2.0-flash')`
+- `gatewayOptions` exportado como `{}` — mantido para compatibilidade de assinatura nas rotas
 - `NODE_OPTIONS="--max-old-space-size=4096" npm run build` para build local (evita OOM)
 
 ### Next.js 16 — armadilhas conhecidas
@@ -125,14 +125,17 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 | `notifications` | Notificações para usuários |
 | `price_proposals` | Propostas de preço do agente (JSONB rows, pending/approved/rejected) — sem FK para tabelas de categorias/períodos/canais |
 | `scheduled_reviews` | Revisões automáticas agendadas (unit_id, scheduled_at, note, status, conv_id) — executadas via Vercel Cron |
+| `price_import_jobs` | Fila de importação em background (unit_id, file_name, csv_content, valid_from, valid_until, status: pending/processing/done/failed, error_msg, result_id) |
+| `competitor_snapshots` | Snapshots de preços de concorrentes — inclui `apify_run_id` e `status` (processing/done) para análise Playwright em background |
 
 **Campos de vigência em `price_imports`** (adicionados em 2026-03-29):
 - `valid_from DATE NOT NULL DEFAULT CURRENT_DATE` — início da vigência da tabela
 - `valid_until DATE` (nullable) — fim da vigência; NULL = atualmente ativa
+- `discount_data JSONB` (nullable) — política de descontos do Guia de Motéis (array de `ParsedDiscountRow`)
 
 **RLS:** funções `current_user_role()` e `current_user_unit_id()` como `SECURITY DEFINER` são a base de todas as policies.
 
-## Issues Linear (status atual — 2026-04-05)
+## Issues Linear (status atual — 2026-04-11)
 
 ### ✅ Concluídos
 - **LHG-8:** Setup Next.js + Supabase + Tailwind + shadcn/ui
@@ -159,6 +162,9 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Agente RM: dropdown de seleção de tabela (aparece quando há 2+ imports); datas de análise preenchidas automaticamente pela vigência; editável pelo usuário
   - System prompt inclui período de vigência no cabeçalho da tabela de preços
   - **Armadilha:** migração precisa ser aplicada no banco **remoto** via MCP (`mcp__supabase__apply_migration`), não apenas `supabase db push --local`
+  - Extrai também política de descontos do Guia de Motéis (PARTE 2 do prompt) → salvo em `discount_data JSONB`
+  - Encoding automático: detecta Windows-1252 via contagem de `\uFFFD` (fallback para Latin-1)
+  - Limite do CSV aumentado de 8k → 24k chars; tokens máximos: 16k
 - **LHG-40:** Agente RM: Prompt engineering e estratégia de precificação (framework Diagnóstico→Proposta, KPIs + tabela de preços injetados)
 - **LHG-41:** Agente RM: Interface de aprovação de propostas (humano sempre aprova no MVP)
   - Tabela `price_proposals` com JSONB rows (sem FK — independente de suite_categories/periods/channels)
@@ -319,13 +325,47 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `buildPlaywrightPageFunction`: captura preços do dia atual + tenta navegar calendário para próxima sexta (semana × FDS); dois passes com advance de mês
   - Polling no frontend (`startPolling`): a cada 4s por até 120s, mostra "Playwright…" no botão
   - GET `/api/agente/competitor-analysis`: sem `runId` = lista snapshots; com `runId` = polling de run assíncrono
-  - `rm_agent_config.competitor_urls: [{name, url, mode: 'cheerio'|'playwright'}]`
+  - `rm_agent_config.competitor_urls: [{name, urls: [{url, label}], mode: 'cheerio'|'playwright'}]` — múltiplas URLs por concorrente
+  - **Compatibilidade retroativa:** `normalizeCompetitor()` converte formato antigo `{url: string}` → `{urls: [{url}]}`
+  - **Campo `url` deprecated** em `CompetitorUrl` — usar `urls[]`; `normalizeCompetitor()` no frontend lida com ambos
+  - **Análise em background**: snapshot salvo com `status: 'processing'` antes da análise Apify; atualizado para `done` ao concluir; componente retoma polling automaticamente ao remontar
   - **8 métricas de foco**: balanceado, agressivo, revpar, giro, ocupacao, ticket, trevpar, tmo
   - DB: constraint `rm_agent_config_focus_metric_check` atualizada via migration Supabase MCP
-  - `AgentConfigManager`: toggle Estático/Interativo no formulário; botão "Adicionar e Analisar" (ação única); tabela de preços expansível por concorrente (categoria, período, dia, preço, nossa categ.); `initialConfig=null` faz auto-fetch via GET
+  - `AgentConfigManager`: toggle Estático/Interativo no formulário; múltiplas URLs por concorrente na UI; tabela de preços expansível por concorrente (categoria, período, dia, preço, nossa categ.); `initialConfig=null` faz auto-fetch via GET
   - **Gear icon (Settings2) no header do Agente RM**: abre Sheet lateral com `AgentConfigManager` completo; visível para `super_admin` e `admin`; `agente/page.tsx` passa `userRole` e `units[]` para `AgenteChatPage`
   - POST `/api/agente/proposals`: injeta snapshots dos últimos 7 dias no prompt como referência de mercado
   - `APIFY_API_TOKEN` configurado em `.env.local` e na Vercel
+
+- **LHG-95:** Fix: Propostas aprovadas não podiam ser excluídas
+  - Root cause: Next.js retorna 405 quando não existe handler `DELETE`; o frontend não verificava o status HTTP
+  - Fix: adicionado handler `DELETE` correto em `/api/agente/proposals/route.ts` usando admin client
+- **LHG-96:** Fix: Erro de JSON ao importar planilha do Lush Ipiranga (encoding Windows-1252)
+  - Root cause: `FileReader.readAsText(file, 'utf-8')` em CSV Windows-1252 produz `\uFFFD` — modelo recebia CSV corrompido
+  - Fix: detecta contagem de `\uFFFD > 3` e re-lê com `windows-1252`; limite CSV 8k→24k; tokens 8k→16k
+- **LHG-97:** UX: Lazy loading / skeleton entre transições de páginas
+  - `loading.tsx` em `src/app/dashboard/`, `src/app/dashboard/agente/` e `src/app/dashboard/precos/`
+  - Next.js App Router usa esses arquivos como Suspense fallback automático durante render do Server Component
+  - Skeleton com `animate-pulse` que imita o layout de cada página
+- **LHG-98:** Infra: Migrar de Vercel AI Gateway para OpenRouter
+  - Substituído `gateway()` de `'ai'` por `createOpenRouter` de `@openrouter/ai-sdk-provider`
+  - `OPENROUTER_API_KEY` — nova variável de ambiente (`.env.local` + Vercel)
+  - IDs de modelo com hífen: `anthropic/claude-sonnet-4-5`, `google/gemini-2.0-flash`
+  - `gatewayOptions` exportado como `{}` para manter assinatura compatível com todas as rotas
+- **LHG-99:** Agente RM: Análise de concorrentes — múltiplas URLs + análise em background
+  - Modelo de dados: `CompetitorUrl.urls: CompetitorUrlEntry[]` (era `url: string`) com retrocompat via `normalizeCompetitor()`
+  - Background: snapshot `status: 'processing'` salvo antes da análise; `status: 'done'` ao concluir
+  - Frontend retoma polling automaticamente para runs `processing` ao remontar (sobrevive navegação)
+- **LHG-100:** Preços: Política de descontos do Guia de Motéis na importação de planilhas
+  - Prompt expandido com PARTE 2: extrai regras de desconto (`canal, categoria, periodo, dia_tipo, tipo_desconto, valor, condicao`)
+  - `ParsedDiscountRow` type em `import-prices/route.ts`; coluna `discount_data JSONB` em `price_imports`
+  - Preview de descontos na UI com ícone `Tag` antes de confirmar importação
+  - Propostas injetam bloco de descontos no prompt quando disponível
+- **LHG-101:** Preços: Fila de importação em background com múltiplas planilhas e notificações
+  - Tabela `price_import_jobs` (status: pending/processing/done/failed, apify-style queue)
+  - `PriceImportQueue` substitui `PriceImport`: seleção múltipla, vigência por arquivo, polling a cada 8s
+  - PATCH `/api/agente/import-queue` processa próximo job pendente — chamado pelo frontend via polling
+  - Notificação in-app ao concluir (`type: 'success'`) ou falhar (`type: 'error'`)
+  - Histórico de jobs com ícones de status (pending/processing/done/failed) e timestamp de conclusão
 
 ### 🔲 Backlog MVP (por prioridade)
 
