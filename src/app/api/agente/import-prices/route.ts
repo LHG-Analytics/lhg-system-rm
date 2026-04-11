@@ -207,11 +207,21 @@ export async function GET(req: NextRequest) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
   }
 
-  const { data: imports, error } = await supabase
+  const importType = req.nextUrl.searchParams.get('importType') // null = todos
+
+  // NOTE: import_type added via migration; cast needed until database.types.ts is regenerated
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let importsQuery = (supabase as any)
     .from('price_imports')
-    .select('id, imported_at, canals, is_active, valid_from, valid_until, parsed_data, discount_data')
+    .select('id, imported_at, canals, is_active, valid_from, valid_until, parsed_data, discount_data, import_type')
     .eq('unit_id', unit.id)
     .order('valid_from', { ascending: false })
+
+  if (importType === 'prices' || importType === 'discounts') {
+    importsQuery = importsQuery.eq('import_type', importType)
+  }
+
+  const { data: imports, error } = await importsQuery
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
@@ -239,6 +249,7 @@ export async function POST(req: NextRequest) {
     action: 'parse' | 'confirm'
     csvContent?: string
     unitSlug: string
+    importType?: 'prices' | 'discounts'
     parsedData?: ParsedPriceRow[]
     discountData?: ParsedDiscountRow[]
     validFrom?: string
@@ -246,6 +257,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { action, csvContent, unitSlug, parsedData, discountData, validFrom, validUntil } = body
+  const importType = body.importType ?? 'prices'
 
   if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
 
@@ -268,9 +280,25 @@ export async function POST(req: NextRequest) {
   if (action === 'parse') {
     if (!csvContent) return new Response('csvContent obrigatório', { status: 400 })
 
-    const prompt = `Você receberá o conteúdo de uma planilha de tabela de preços de motel exportada como CSV.
+    const prompt = importType === 'discounts'
+      ? `Você receberá o conteúdo de uma planilha de política de descontos de motel exportada como CSV.
 
-PARTE 1 — TARIFAS
+POLÍTICA DE DESCONTOS (Guia de Motéis)
+Extraia UMA linha por: categoria × período × dia_semana × faixa_horaria.
+Campos: canal ("guia_moteis"), categoria, periodo, dia_semana ("domingo"|"segunda"|"terca"|"quarta"|"quinta"|"sexta"|"sabado"|"todos"), faixa_horaria (ex: "06:00-17:59"), tipo_desconto ("percentual"|"absoluto"), valor (número), condicao (omitir se vazio)
+
+Regras:
+- Sempre dividir múltiplos períodos em múltiplas linhas
+- "3h, 6h e 12h" → gerar 3 linhas
+- Se dois percentuais diferentes, separar corretamente
+
+Retorne SOMENTE JSON minificado:
+{"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[...]}
+
+CSV:
+${csvContent.slice(0, 24000)}`
+      : `Você receberá o conteúdo de uma planilha de tabela de preços de motel exportada como CSV.
+
 Extraia as tarifas dos seguintes canais (ignore qualquer outro):
 1. **balcao_site** — Tarifa Balcão (presencial) e Site imediato (mesmo preço)
 2. **site_programada** — Reserva Antecipada pelo site
@@ -285,36 +313,13 @@ Para cada tarifa, extraia:
 
 Se não houver valores numéricos claros de preços, retorne "rows":[].
 
-PARTE 2 — POLÍTICA DE DESCONTOS (Guia de Motéis)
-
-A tabela pode conter frases como:
-- "10% nos períodos de 3h, 6h e 12h"
-- "15% nos períodos de 3h e 10% nos períodos de 6h e 12h"
-
-Regras obrigatórias:
-- Sempre dividir múltiplos períodos em múltiplas linhas
-- "3h, 6h e 12h" → gerar 3 linhas
-- Se houver dois percentuais diferentes, separar corretamente
-
-Exemplo:
-"15% nos períodos de 3h e 10% nos períodos de 6h e 12h"
-
-vira:
-[
- { periodo: "3h", valor: 15 },
- { periodo: "6h", valor: 10 },
- { periodo: "12h", valor: 10 }
-]
-
-Se não houver descontos, retorne "discount_rows":[].
-
 Retorne SOMENTE JSON minificado no formato:
 {"rows":[...],"canais_encontrados":["balcao_site"],"observacoes":"opcional","discount_rows":[]}
 
 Regras:
 - JSON minificado — sem indentação, sem espaços extras
 - Sem texto antes ou depois do JSON
-- discount_rows pode ser [] se não houver descontos configurados
+- discount_rows sempre []
 - Se não encontrar nenhum canal, retorne {"rows":[],"canais_encontrados":[],"discount_rows":[]}
 
 CSV:
@@ -352,38 +357,49 @@ ${csvContent.slice(0, 24000)}`
 
   // ── CONFIRM: Salva no banco após aprovação do usuário ─────────────────────
   if (action === 'confirm') {
-    if (
-      (!parsedData || parsedData.length === 0) &&
-      (!discountData || discountData.length === 0)
-    ) {
-      return new Response('parsedData ou discountData obrigatório', { status: 400 })
+    if (importType === 'discounts') {
+      if (!discountData || discountData.length === 0) {
+        return new Response('discountData obrigatório para importType=discounts', { status: 400 })
+      }
+    } else {
+      if (!parsedData || parsedData.length === 0) {
+        return new Response('parsedData obrigatório para importType=prices', { status: 400 })
+      }
     }
 
     if (!csvContent) return new Response('csvContent obrigatório', { status: 400 })
 
-    const canais = [
-  ...new Set([
-    ...(parsedData?.map((r) => r.canal) ?? []),
-    ...(discountData?.map((d) => d.canal) ?? [])
-  ])
-]
     const today = new Date().toISOString().slice(0, 10)
 
-    // Salvar no Supabase
-    const { data: importRecord, error } = await supabase
+    let canais: string[]
+    let parsedDataToSave: ParsedPriceRow[]
+    let discountDataToSave: ParsedDiscountRow[] | null
+
+    if (importType === 'discounts') {
+      canais = ['guia_moteis']
+      parsedDataToSave = []
+      discountDataToSave = discountData!
+    } else {
+      canais = [...new Set((parsedData ?? []).map((r) => r.canal))]
+      parsedDataToSave = parsedData ?? []
+      discountDataToSave = null
+    }
+
+    // Salvar no Supabase (cast para any pois import_type não está nos tipos gerados)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: importRecord, error } = await (supabase as any)
       .from('price_imports')
       .insert({
         unit_id: unit.id,
         imported_by: user.id,
         raw_content: csvContent,
-        parsed_data: parsedData as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
-        discount_data: (discountData && discountData.length > 0)
-          ? discountData as unknown as Database['public']['Tables']['price_imports']['Insert']['discount_data']
-          : null,
+        parsed_data: parsedDataToSave as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
+        discount_data: discountDataToSave as unknown as Database['public']['Tables']['price_imports']['Insert']['discount_data'],
         canals: canais,
         is_active: true,
         valid_from: validFrom ?? today,
         valid_until: validUntil ?? null,
+        import_type: importType,
       })
       .select('id, imported_at, valid_from, valid_until')
       .single()

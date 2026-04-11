@@ -154,14 +154,16 @@ interface ImportItemProps {
   imp: PriceImport
   onDeleted: () => void
   onUpdated: () => void
+  importType?: 'prices' | 'discounts'
 }
 
-function ImportItem({ imp, onDeleted, onUpdated }: ImportItemProps) {
+function ImportItem({ imp, onDeleted, onUpdated, importType = 'prices' }: ImportItemProps) {
   const [expanded, setExpanded] = useState(false)
   const [editing,  setEditing]  = useState(false)
   const [deleting, setDeleting] = useState(false)
   const active = isCurrentlyActive(imp)
   const rows = imp.parsed_data ?? []
+  const isDiscounts = importType === 'discounts'
 
   async function handleDelete() {
     setDeleting(true)
@@ -222,7 +224,9 @@ function ImportItem({ imp, onDeleted, onUpdated }: ImportItemProps) {
               </Badge>
             ))}
             <span className="text-xs text-muted-foreground self-center">
-              · {rows.length} preços
+              · {isDiscounts
+                  ? `${imp.discount_data?.length ?? 0} descontos`
+                  : `${rows.length} preços`}
             </span>
           </div>
 
@@ -257,7 +261,7 @@ function ImportItem({ imp, onDeleted, onUpdated }: ImportItemProps) {
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Excluir tabela de preços?</AlertDialogTitle>
+                <AlertDialogTitle>{isDiscounts ? 'Excluir tabela de descontos?' : 'Excluir tabela de preços?'}</AlertDialogTitle>
                 <AlertDialogDescription>
                   Esta ação não pode ser desfeita. A tabela com vigência{' '}
                   <strong>{fmtDate(imp.valid_from)}</strong>{' → '}
@@ -283,7 +287,7 @@ function ImportItem({ imp, onDeleted, onUpdated }: ImportItemProps) {
             variant="ghost"
             size="icon"
             className="size-8"
-            title={expanded ? 'Recolher preços' : 'Ver preços'}
+            title={expanded ? 'Recolher' : isDiscounts ? 'Ver descontos' : 'Ver preços'}
             onClick={() => setExpanded((v) => !v)}
           >
             {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
@@ -377,9 +381,10 @@ function ImportItem({ imp, onDeleted, onUpdated }: ImportItemProps) {
 interface PriceListProps {
   unitSlug: string
   unitId: string
+  importType?: 'prices' | 'discounts'
 }
 
-export function PriceList({ unitSlug, unitId }: PriceListProps) {
+export function PriceList({ unitSlug, unitId, importType = 'prices' }: PriceListProps) {
   const [imports, setImports] = useState<PriceImport[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
@@ -387,7 +392,7 @@ export function PriceList({ unitSlug, unitId }: PriceListProps) {
   const supabase = createClient()
 
   const fetchImports = useCallback(async () => {
-    const res = await fetch(`/api/agente/import-prices?unitSlug=${unitSlug}&includeDiscounts=1`)
+    const res = await fetch(`/api/agente/import-prices?unitSlug=${unitSlug}&importType=${importType}`)
     if (!res.ok) {
       setError('Erro ao carregar tabelas de preços')
       setLoading(false)
@@ -441,26 +446,34 @@ export function PriceList({ unitSlug, unitId }: PriceListProps) {
     )
   }
 
+  const isDiscountsView = importType === 'discounts'
+
   if (imports.length === 0) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
           <Clock className="size-8 text-muted-foreground/50" />
           <p className="text-sm text-muted-foreground">
-            Nenhuma tabela de preços importada ainda.
+            {isDiscountsView
+              ? 'Nenhuma tabela de descontos importada ainda.'
+              : 'Nenhuma tabela de preços importada ainda.'}
           </p>
         </CardContent>
       </Card>
     )
   }
 
+  const activeCount = imports.filter(isCurrentlyActive).length
+
   return (
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base">Tabelas importadas</CardTitle>
+          <CardTitle className="text-base">
+            {isDiscountsView ? 'Tabelas de descontos' : 'Tabelas importadas'}
+          </CardTitle>
           <Badge variant="outline" className="text-xs">
-            {imports.filter(isCurrentlyActive).length > 0 ? '1 em uso' : 'nenhuma ativa'}
+            {activeCount > 0 ? `${activeCount} em uso` : 'nenhuma ativa'}
           </Badge>
         </div>
       </CardHeader>
@@ -471,6 +484,7 @@ export function PriceList({ unitSlug, unitId }: PriceListProps) {
             imp={imp}
             onDeleted={fetchImports}
             onUpdated={fetchImports}
+            importType={importType}
           />
         ))}
       </CardContent>

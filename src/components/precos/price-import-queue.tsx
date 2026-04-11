@@ -90,11 +90,13 @@ export interface ImportJob {
   created_at: string
   started_at: string | null
   finished_at: string | null
+  import_type?: 'prices' | 'discounts'
 }
 
 interface PriceImportQueueProps {
   unitSlug: string
   unitName: string
+  importType?: 'prices' | 'discounts'
 }
 
 const STATUS_ICON = {
@@ -107,7 +109,7 @@ const STATUS_LABEL = { pending: 'Na fila', processing: 'Analisando…', done: 'I
 
 // ─── PriceImportQueue: upload + polling (sem histórico) ───────────────────────
 
-export function PriceImportQueue({ unitSlug, unitName }: PriceImportQueueProps) {
+export function PriceImportQueue({ unitSlug, unitName, importType = 'prices' }: PriceImportQueueProps) {
   const today = new Date().toISOString().slice(0, 10)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -122,10 +124,10 @@ export function PriceImportQueue({ unitSlug, unitName }: PriceImportQueueProps) 
 
   const loadJobs = useCallback(async () => {
     try {
-      const res = await fetch(`/api/agente/import-queue?unitSlug=${unitSlug}`)
+      const res = await fetch(`/api/agente/import-queue?unitSlug=${unitSlug}&importType=${importType}`)
       if (res.ok) setJobs(await res.json() as ImportJob[])
     } catch { /* silencioso */ }
-  }, [unitSlug])
+  }, [unitSlug, importType])
 
   useEffect(() => {
     loadJobs()
@@ -221,6 +223,7 @@ export function PriceImportQueue({ unitSlug, unitName }: PriceImportQueueProps) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           unitSlug,
+          importType,
           files: queue.map((f) => ({ fileName: f.fileName, csvContent: f.csvContent, validFrom: f.validFrom, validUntil: f.validUntil })),
         }),
       })
@@ -240,7 +243,9 @@ export function PriceImportQueue({ unitSlug, unitName }: PriceImportQueueProps) 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Importar tabelas de preços</CardTitle>
+        <CardTitle>
+          {importType === 'discounts' ? 'Importar tabelas de descontos' : 'Importar tabelas de preços'}
+        </CardTitle>
         <CardDescription>
           Selecione um ou mais arquivos CSV. A análise acontece em segundo plano —
           você receberá uma notificação quando cada planilha for importada.
@@ -277,7 +282,11 @@ export function PriceImportQueue({ unitSlug, unitName }: PriceImportQueueProps) 
             <p className="text-sm font-medium">
               {dragging ? 'Solte para adicionar' : 'Arraste ou clique para selecionar'}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">Múltiplos arquivos CSV exportados do Google Sheets</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {importType === 'discounts'
+                ? 'CSV com política de descontos do Guia de Motéis'
+                : 'Múltiplos arquivos CSV exportados do Google Sheets'}
+            </p>
           </div>
           <input ref={fileInputRef} type="file" accept=".csv,text/csv" multiple className="sr-only" onChange={handleFileChange} />
         </div>
@@ -332,21 +341,22 @@ interface ImportJobHistoryProps {
   unitSlug: string
   unitName: string
   unitId: string
+  importType?: 'prices' | 'discounts'
 }
 
-export function ImportJobHistory({ unitSlug, unitName, unitId }: ImportJobHistoryProps) {
+export function ImportJobHistory({ unitSlug, unitName, unitId, importType = 'prices' }: ImportJobHistoryProps) {
   const [jobs, setJobs] = useState<ImportJob[]>([])
   const [loading, setLoading] = useState(true)
   const [retrying, setRetrying] = useState<string | null>(null)
 
   const loadJobs = useCallback(async () => {
     try {
-      const res = await fetch(`/api/agente/import-queue?unitSlug=${unitSlug}`)
+      const res = await fetch(`/api/agente/import-queue?unitSlug=${unitSlug}&importType=${importType}`)
       if (res.ok) setJobs(await res.json() as ImportJob[])
     } catch { /* silencioso */ } finally {
       setLoading(false)
     }
-  }, [unitSlug])
+  }, [unitSlug, importType])
 
   useEffect(() => {
     loadJobs()

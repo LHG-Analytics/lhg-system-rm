@@ -58,16 +58,26 @@ export async function GET(req: NextRequest) {
   const unitSlug = req.nextUrl.searchParams.get('unitSlug')
   if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
 
+  const importType = req.nextUrl.searchParams.get('importType') // null = todos
+
   const admin = getAdminClient()
   const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
 
-  const { data, error } = await auth.supabase!
+  // NOTE: import_type was added via migration; database.types.ts needs regeneration for full type support
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (auth.supabase! as any)
     .from('price_import_jobs')
-    .select('id, file_name, valid_from, valid_until, status, error_msg, result_id, created_at, started_at, finished_at')
+    .select('id, file_name, valid_from, valid_until, status, error_msg, result_id, created_at, started_at, finished_at, import_type')
     .eq('unit_id', unit.id)
     .order('created_at', { ascending: false })
     .limit(30)
+
+  if (importType === 'prices' || importType === 'discounts') {
+    query = query.eq('import_type', importType)
+  }
+
+  const { data, error } = await query
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json(data ?? [])
@@ -81,6 +91,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json() as {
     unitSlug: string
+    importType?: 'prices' | 'discounts'
     files: Array<{
       fileName: string
       csvContent: string
@@ -89,7 +100,7 @@ export async function POST(req: NextRequest) {
     }>
   }
 
-  const { unitSlug, files } = body
+  const { unitSlug, files, importType: bodyImportType } = body
   if (!unitSlug || !files?.length) {
     return new Response('unitSlug e files[] são obrigatórios', { status: 400 })
   }
@@ -102,6 +113,9 @@ export async function POST(req: NextRequest) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
   }
 
+  const importTypeValue = bodyImportType ?? 'prices'
+
+  // NOTE: import_type added via migration; cast needed until database.types.ts is regenerated
   const inserts = files.map((f) => ({
     unit_id: unit.id,
     created_by: auth.user!.id,
@@ -110,12 +124,13 @@ export async function POST(req: NextRequest) {
     valid_from: f.validFrom,
     valid_until: f.validUntil ?? null,
     status: 'pending' as const,
+    import_type: importTypeValue,
   }))
 
-  const { data: jobs, error } = await admin
+  const { data: jobs, error } = await (admin as any)
     .from('price_import_jobs')
     .insert(inserts)
-    .select('id, file_name, valid_from, valid_until, status, created_at')
+    .select('id, file_name, valid_from, valid_until, status, created_at, import_type')
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json(jobs)
@@ -163,27 +178,36 @@ export async function PATCH(req: NextRequest) {
     .update({ status: 'processing', started_at: new Date().toISOString() })
     .eq('id', job.id)
 
-  try {
-    // Analisa com IA
-    const prompt = `Você receberá o conteúdo de uma planilha de tabela de preços de motel exportada como CSV.
+  // job.import_type may be undefined for legacy rows — default to 'prices'
+  const jobImportType: 'prices' | 'discounts' = (job as any).import_type === 'discounts' ? 'discounts' : 'prices'
 
-PARTE 1 — TARIFAS
+  try {
+    // Prompt varia por tipo de importação
+    const prompt = jobImportType === 'discounts'
+      ? `Você receberá o conteúdo de uma planilha de política de descontos de motel exportada como CSV.
+
+POLÍTICA DE DESCONTOS (Guia de Motéis)
+Extraia UMA linha por: categoria × período × dia_semana × faixa_horaria.
+Campos: canal ("guia_moteis"), categoria, periodo, dia_semana ("domingo"|"segunda"|"terca"|"quarta"|"quinta"|"sexta"|"sabado"|"todos"), faixa_horaria (ex: "06:00-17:59"), tipo_desconto ("percentual"|"absoluto"), valor (número), condicao (omitir se vazio)
+
+Regras:
+- Sempre dividir múltiplos períodos em múltiplas linhas
+- "3h, 6h e 12h" → gerar 3 linhas
+- Se dois percentuais diferentes, separar corretamente
+
+Retorne SOMENTE JSON minificado:
+{"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[...]}
+
+CSV:
+${job.csv_content.slice(0, 24000)}`
+      : `Você receberá o conteúdo de uma planilha de tabela de preços de motel exportada como CSV.
+
 Extraia as tarifas dos seguintes canais (ignore qualquer outro):
 1. **balcao_site** — Tarifa Balcão (presencial) e Site imediato
 2. **site_programada** — Reserva Antecipada pelo site
 3. **guia_moteis** — Guia de Motéis (aplicativo/site externo)
 
 Para cada tarifa: canal, categoria, periodo, dia_tipo ("semana"|"fds_feriado"|"todos"), preco (numérico)
-
-PARTE 2 — POLÍTICA DE DESCONTOS (Guia de Motéis)
-A tabela pode conter frases como:
-- "10% nos períodos de 3h, 6h e 12h"
-- "15% nos períodos de 3h e 10% nos períodos de 6h e 12h"
-
-Regras obrigatórias:
-- Sempre dividir múltiplos períodos em múltiplas linhas
-- "3h, 6h e 12h" → gerar 3 linhas
-- Se houver dois percentuais diferentes, separar corretamente
 
 Retorne SOMENTE JSON minificado:
 {"rows":[...],"canais_encontrados":[],"discount_rows":[]}
@@ -201,46 +225,53 @@ ${job.csv_content.slice(0, 24000)}`
 
     const parsed = extractJSON(text)
 
-if (!parsed) {
-  throw new Error('O modelo não retornou JSON válido.')
-}
+    if (!parsed) {
+      throw new Error('O modelo não retornou JSON válido.')
+    }
 
-// ✅ NORMALIZAÇÃO
-parsed.rows = Array.isArray(parsed.rows) ? parsed.rows : []
-parsed.discount_rows = Array.isArray(parsed.discount_rows) ? parsed.discount_rows : []
+    // Normalização
+    parsed.rows = Array.isArray(parsed.rows) ? parsed.rows : []
+    parsed.discount_rows = Array.isArray(parsed.discount_rows) ? parsed.discount_rows : []
 
-// DEBUG
-console.log('[QUEUE PARSE] rows:', parsed.rows.length)
-console.log('[QUEUE PARSE] discounts:', parsed.discount_rows.length)
+    console.log('[QUEUE PARSE] import_type:', jobImportType, '| rows:', parsed.rows.length, '| discounts:', parsed.discount_rows.length)
 
-// ✅ NOVA VALIDAÇÃO (ACEITA PREÇO OU DESCONTO)
-if (parsed.rows.length === 0 && parsed.discount_rows.length === 0) {
-  throw new Error('O modelo não retornou preços nem descontos válidos.')
-}
+    // Validação por tipo
+    if (jobImportType === 'discounts' && parsed.discount_rows.length === 0) {
+      throw new Error('O modelo não retornou descontos válidos.')
+    }
+    if (jobImportType === 'prices' && parsed.rows.length === 0) {
+      throw new Error('O modelo não retornou preços válidos.')
+    }
 
-const canais = [
-  ...new Set([
-    ...(parsed.rows?.map((r) => r.canal) ?? []),
-    ...(parsed.discount_rows?.map((d) => d.canal) ?? [])
-  ])
-]
-    const today = new Date().toISOString().slice(0, 10)
+    // Montar canais e dados conforme tipo
+    let canais: string[]
+    let parsedDataToSave: ParsedPriceRow[]
+    let discountDataToSave: ParsedDiscountRow[] | null
 
-    // Salva o price_import
-    const { data: importRecord, error: importError } = await admin
+    if (jobImportType === 'discounts') {
+      canais = ['guia_moteis']
+      parsedDataToSave = []
+      discountDataToSave = parsed.discount_rows
+    } else {
+      canais = [...new Set(parsed.rows.map((r) => r.canal))]
+      parsedDataToSave = parsed.rows
+      discountDataToSave = null
+    }
+
+    // Salva o price_import (cast para any pois import_type não está nos tipos gerados)
+    const { data: importRecord, error: importError } = await (admin as any)
       .from('price_imports')
       .insert({
         unit_id: unit.id,
         imported_by: auth.user!.id,
         raw_content: job.csv_content,
-        parsed_data: parsed.rows as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
-        discount_data: (parsed.discount_rows?.length)
-          ? parsed.discount_rows as unknown as Database['public']['Tables']['price_imports']['Insert']['discount_data']
-          : null,
+        parsed_data: parsedDataToSave as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
+        discount_data: discountDataToSave as unknown as Database['public']['Tables']['price_imports']['Insert']['discount_data'],
         canals: canais,
         is_active: true,
         valid_from: job.valid_from,
         valid_until: job.valid_until ?? null,
+        import_type: jobImportType,
       })
       .select('id')
       .single()
@@ -254,16 +285,10 @@ const canais = [
       .eq('id', job.id)
 
     // Notificação in-app
-    const totalPrecos = parsed.rows.length
-    const totalDescontos = parsed.discount_rows.length
-    
-    let resumo = ''
-    if (totalPrecos > 0) resumo += `${totalPrecos} preços`
-    if (totalDescontos > 0) {
-      if (resumo) resumo += ' e '
-      resumo += `${totalDescontos} descontos`
-    }
-    
+    const resumo = jobImportType === 'discounts'
+      ? `${parsed.discount_rows.length} descontos`
+      : `${parsed.rows.length} preços`
+
     await admin.from('notifications').insert({
       user_id: auth.user!.id,
       title: 'Planilha importada',
