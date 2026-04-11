@@ -19,9 +19,9 @@ export const strategyOptions = {
  * Foco: parsing de CSV/JSON, cálculos de KPIs, comparação direta de valores.
  * Fallback: nvidia/nemotron-3-super-120b-a12b:free
  */
-export const ANALYSIS_MODEL = openrouter('google/gemma-4-31b-it:free')
+export const ANALYSIS_MODEL = openrouter('openai/gpt-oss-120b:free')
 export const analysisOptions = {
-  openrouter: { models: ['google/gemma-4-26b-a4b-it:free', 'nvidia/nemotron-3-super-120b-a12b:free'] },
+  openrouter: { models: ['openai/gpt-oss-120b:free', 'nvidia/nemotron-3-super-120b-a12b:free'] },
 }
 
 // Alias retrocompatível — aponta para o modelo estratégico
