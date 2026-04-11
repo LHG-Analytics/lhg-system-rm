@@ -116,6 +116,7 @@ export function PriceImportQueue({ unitSlug, unitName }: PriceImportQueueProps) 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [dragging, setDragging] = useState(false)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const processingRef = useRef(false)
 
@@ -161,8 +162,7 @@ export function PriceImportQueue({ unitSlug, unitName }: PriceImportQueueProps) 
     }
   }, [jobs, processNext])
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? [])
+  function processFiles(files: File[]) {
     if (!files.length) return
     files.forEach((file) => {
       const reader = new FileReader()
@@ -178,7 +178,29 @@ export function PriceImportQueue({ unitSlug, unitName }: PriceImportQueueProps) 
       }
       reader.readAsText(file, 'utf-8')
     })
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    processFiles(Array.from(e.target.files ?? []))
     if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault()
+    setDragging(true)
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false)
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragging(false)
+    const files = Array.from(e.dataTransfer.files).filter((f) =>
+      f.name.endsWith('.csv') || f.type === 'text/csv' || f.type === 'application/vnd.ms-excel'
+    )
+    processFiles(files)
   }
 
   function addToQueue(fileName: string, csvContent: string) {
@@ -239,12 +261,22 @@ export function PriceImportQueue({ unitSlug, unitName }: PriceImportQueueProps) 
         )}
 
         <div
-          className="relative flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-muted-foreground/25 px-6 py-8 text-center hover:border-muted-foreground/50 transition-colors cursor-pointer"
+          className={cn(
+            'relative flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors cursor-pointer',
+            dragging
+              ? 'border-primary bg-primary/5'
+              : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+          )}
           onClick={() => fileInputRef.current?.click()}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
         >
-          <Upload className="size-7 text-muted-foreground" />
+          <Upload className={cn('size-7 transition-colors', dragging ? 'text-primary' : 'text-muted-foreground')} />
           <div>
-            <p className="text-sm font-medium">Arraste ou clique para selecionar</p>
+            <p className="text-sm font-medium">
+              {dragging ? 'Solte para adicionar' : 'Arraste ou clique para selecionar'}
+            </p>
             <p className="text-xs text-muted-foreground mt-0.5">Múltiplos arquivos CSV exportados do Google Sheets</p>
           </div>
           <input ref={fileInputRef} type="file" accept=".csv,text/csv" multiple className="sr-only" onChange={handleFileChange} />
