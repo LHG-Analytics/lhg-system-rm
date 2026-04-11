@@ -373,7 +373,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
                 Define a agressividade das propostas de ajuste de preço.
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="flex flex-col gap-2">
               {STRATEGY_OPTIONS.map((opt) => {
                 const active = config.pricing_strategy === opt.value
                 return (
@@ -381,14 +381,22 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
                     key={opt.value}
                     onClick={() => setConfig((prev) => prev ? { ...prev, pricing_strategy: opt.value } : prev)}
                     className={cn(
-                      'rounded-lg border p-3 text-left transition-colors flex flex-col gap-1',
+                      'rounded-lg border px-4 py-3 text-left transition-colors flex items-start gap-3',
                       active ? opt.bg : 'border-border hover:bg-accent'
                     )}
                   >
-                    <span className={cn('text-sm font-semibold', active ? opt.color : 'text-foreground')}>
-                      {opt.label}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground leading-snug">{opt.description}</span>
+                    <div className={cn(
+                      'mt-0.5 size-4 rounded-full border-2 shrink-0 flex items-center justify-center',
+                      active ? `border-current ${opt.color}` : 'border-muted-foreground/40'
+                    )}>
+                      {active && <div className="size-2 rounded-full bg-current" />}
+                    </div>
+                    <div className="min-w-0">
+                      <span className={cn('text-sm font-semibold', active ? opt.color : 'text-foreground')}>
+                        {opt.label}
+                      </span>
+                      <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">{opt.description}</p>
+                    </div>
                   </button>
                 )
               })}
@@ -647,20 +655,18 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
             {/* Formulário de novo concorrente */}
             <div className="flex flex-col gap-2 pt-1">
               <p className="text-xs font-medium text-muted-foreground">Adicionar concorrente</p>
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  placeholder="Nome (ex: Motel Prime)"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="h-8 text-xs"
-                />
-                <Input
-                  placeholder="URL da página de preços"
-                  value={newUrl}
-                  onChange={(e) => setNewUrl(e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
+              <Input
+                placeholder="Nome (ex: Motel Prime)"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="h-8 text-xs"
+              />
+              <Input
+                placeholder="URL da página de preços"
+                value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)}
+                className="h-8 text-xs"
+              />
               <Input
                 placeholder="Rótulo da URL (ex: Standard, Master) — opcional"
                 value={newLabel}
@@ -669,8 +675,8 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
               />
 
               {/* Toggle de modo */}
-              <div className="flex items-center gap-2">
-                <div className="flex rounded-lg border overflow-hidden text-xs">
+              <div className="flex flex-col gap-1">
+                <div className="flex rounded-lg border overflow-hidden text-xs w-fit">
                   <button
                     onClick={() => setNewMode('cheerio')}
                     className={cn('px-3 py-1.5 transition-colors', newMode === 'cheerio' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent')}
