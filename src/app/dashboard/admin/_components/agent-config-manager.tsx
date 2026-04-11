@@ -104,7 +104,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
   const [newUrl, setNewUrl] = useState('')
   const [newMode, setNewMode] = useState<'cheerio' | 'playwright'>('cheerio')
   const [addingCompetitor, setAddingCompetitor] = useState(false)
-  const [analyzingUrl, setAnalyzingUrl] = useState<string | null>(null)
+  const [analyzingUrls, setAnalyzingUrls] = useState<Set<string>>(new Set())
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [expandedPricesUrl, setExpandedPricesUrl] = useState<string | null>(null)
 
@@ -174,7 +174,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
 
         clearInterval(timer)
         pollingRef.current.delete(url)
-        setAnalyzingUrl(null)
+        setAnalyzingUrls((prev) => { const n = new Set(prev); n.delete(url); return n })
 
         if (data.id) {
           setSnapshots((prev) => {
@@ -192,7 +192,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
       if (attempts >= maxAttempts) {
         clearInterval(timer)
         pollingRef.current.delete(url)
-        setAnalyzingUrl(null)
+        setAnalyzingUrls((prev) => { const n = new Set(prev); n.delete(url); return n })
         setAnalyzeError('Tempo limite atingido. O Playwright não retornou resultado.')
       }
     }, 4000)
@@ -232,7 +232,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
     setAddingCompetitor(false)
 
     // 2. Disparar análise imediatamente
-    setAnalyzingUrl(url)
+    setAnalyzingUrls((prev) => new Set([...prev, url]))
     try {
       const analyzeRes = await fetch('/api/agente/competitor-analysis', {
         method: 'POST',
@@ -255,7 +255,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
     } catch (e) {
       setAnalyzeError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
-      if (!pollingRef.current.has(url)) setAnalyzingUrl(null)
+      if (!pollingRef.current.has(url)) setAnalyzingUrls((prev) => { const n = new Set(prev); n.delete(url); return n })
     }
   }, [config, competitorUrls, newName, newUrl, newMode, unitSlug, startPolling])
 
@@ -279,7 +279,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
 
   // ─── Analisar concorrente ──────────────────────────────────────────────────
   const handleAnalyze = useCallback(async (competitor: CompetitorUrl) => {
-    setAnalyzingUrl(competitor.url)
+    setAnalyzingUrls((prev) => new Set([...prev, competitor.url]))
     setAnalyzeError(null)
     try {
       const res = await fetch('/api/agente/competitor-analysis', {
@@ -310,7 +310,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
       setAnalyzeError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
       // Só limpa o spinner se NÃO estiver em polling (polling limpa sozinho)
-      if (!pollingRef.current.has(competitor.url)) setAnalyzingUrl(null)
+      if (!pollingRef.current.has(competitor.url)) setAnalyzingUrls((prev) => { const n = new Set(prev); n.delete(competitor.url); return n })
     }
   }, [unitSlug, startPolling])
 
@@ -490,7 +490,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
               <div className="flex flex-col gap-2">
                 {competitorUrls.map((c) => {
                   const snap = snapshots.find((s) => s.competitor_url === c.url)
-                  const isAnalyzing = analyzingUrl === c.url
+                  const isAnalyzing = analyzingUrls.has(c.url)
                   return (
                     <div key={c.url} className="flex flex-col gap-1">
                     <div className="rounded-lg border bg-muted/20 px-3 py-2.5 flex items-center gap-3">
