@@ -233,11 +233,16 @@ export async function POST(req: NextRequest) {
       : new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const todayStr = todayOp.toISOString().slice(0, 10)
 
-  const activeImport = allImports?.find(
+  // Filtra apenas imports de preços (parsed_data com linhas) para evitar capturar imports de desconto
+  const priceOnlyImports = allImports?.filter(
+    (i) => (i.parsed_data as unknown as ParsedPriceRow[])?.length > 0
+  ) ?? []
+
+  const activeImport = priceOnlyImports.find(
     (i) => i.valid_from <= todayStr && (i.valid_until === null || i.valid_until >= todayStr)
   )
   const previousImport = activeImport
-    ? allImports?.find((i) => i.valid_from < activeImport.valid_from)
+    ? priceOnlyImports.find((i) => i.valid_from < activeImport.valid_from)
     : undefined
 
   if (!activeImport || (activeImport.parsed_data as unknown as ParsedPriceRow[])?.length === 0) {
@@ -463,21 +468,26 @@ ${guardrailsData.map((g) =>
 IMPORTANTE: Se o preço ótimo calculado ultrapassar o máximo, use o máximo. Se estiver abaixo do mínimo, use o mínimo.`
     : ''
 
-  // Bloco de política de descontos do Guia de Motéis (da tabela ativa)
-  type DiscountRow = { canal: string; categoria: string; periodo: string; dia_tipo: string; tipo_desconto: string; valor: number; condicao?: string }
-  const activeDiscounts = (activeImport.discount_data as unknown as DiscountRow[]) ?? []
+  // Bloco de política de descontos do Guia de Motéis
+  // Coleta de: (1) campo discount_data em imports de preços antigos e (2) imports separados de desconto
+  type DiscountRow = { canal: string; categoria: string; periodo: string; dia_semana?: string; dia_tipo?: string; faixa_horaria?: string; tipo_desconto: string; valor: number; condicao?: string }
+  const activeDiscounts: DiscountRow[] = (allImports ?? [])
+    .filter((i) => i.valid_from <= todayStr && (i.valid_until === null || i.valid_until >= todayStr))
+    .flatMap((i) => (i.discount_data as unknown as DiscountRow[]) ?? [])
   const discountBlock = activeDiscounts.length > 0
     ? `## Política de descontos — Guia de Motéis
 
-Estas regras estão configuradas na tabela de preços vigente. Leve-as em conta ao propor ajustes para o canal guia_moteis.
+Estas regras estão configuradas na tabela vigente. Leve-as em conta ao propor ajustes para o canal guia_moteis.
 
-| Categoria | Período | Dia | Tipo | Desconto | Condição |
-|-----------|---------|-----|------|----------|----------|
-${activeDiscounts.map((d) =>
-  `| ${d.categoria} | ${d.periodo} | ${d.dia_tipo === 'semana' ? 'Semana' : d.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | ${d.tipo_desconto === 'percentual' ? 'Percentual' : 'Absoluto'} | ${d.tipo_desconto === 'percentual' ? `${d.valor}%` : `R$ ${d.valor.toFixed(2)}`} | ${d.condicao ?? '—'} |`
-).join('\n')}
+| Categoria | Período | Dia | Horário | Tipo | Desconto | Condição |
+|-----------|---------|-----|---------|------|----------|----------|
+${activeDiscounts.map((d) => {
+  const dia = d.dia_semana ?? (d.dia_tipo === 'semana' ? 'seg–sex' : d.dia_tipo === 'fds_feriado' ? 'fds/feriado' : 'todos')
+  const horario = d.faixa_horaria ?? '—'
+  return `| ${d.categoria} | ${d.periodo} | ${dia} | ${horario} | ${d.tipo_desconto === 'percentual' ? 'Percentual' : 'Absoluto'} | ${d.tipo_desconto === 'percentual' ? `${d.valor}%` : `R$ ${d.valor.toFixed(2)}`} | ${d.condicao ?? '—'} |`
+}).join('\n')}
 
-> Os preços propostos para guia_moteis devem ser os preços BASE (antes do desconto). O sistema aplica os descontos automaticamente no canal.`
+> Os preços propostos para guia_moteis devem ser os preços BASE (antes do desconto). O desconto é aplicado automaticamente pelo canal.`
     : ''
 
   const prompt = `Você é um especialista em Revenue Management para motéis. Analise os dados abaixo e gere uma proposta de ajuste de preços.
