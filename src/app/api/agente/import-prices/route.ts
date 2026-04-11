@@ -17,13 +17,15 @@ export interface ParsedPriceRow {
 // Política de descontos do Guia de Motéis
 export interface ParsedDiscountRow {
   canal: 'guia_moteis'
-  categoria: string        // nome da categoria ou "todas"
-  periodo: string          // ex: "3h", "6h", "todas"
-  dia_tipo: 'semana' | 'fds_feriado' | 'todos'
+  categoria: string         // nome da categoria ou "todas"
+  periodo: string           // ex: "3h", "6h", "todas"
+  dia_semana: string        // "domingo"|"segunda"|"terca"|"quarta"|"quinta"|"sexta"|"sabado"|"todos"
+  faixa_horaria: string     // ex: "00:00-05:59", "06:00-17:59", "18:00-23:59", "todos"
+  /** @deprecated use dia_semana + faixa_horaria */
+  dia_tipo?: 'semana' | 'fds_feriado' | 'todos'
   tipo_desconto: 'percentual' | 'absoluto'
-  valor: number            // ex: 10 para 10% ou 20.00 para R$20
-  condicao?: string        // ex: "antecedência 24h", "via app"
-  observacao?: string
+  valor: number             // ex: 10 para 10% ou 20.00 para R$20
+  condicao?: string         // ex: "antecedência 24h", "via app"
 }
 
 export interface ParseResponse {
@@ -207,7 +209,7 @@ export async function GET(req: NextRequest) {
 
   const { data: imports, error } = await supabase
     .from('price_imports')
-    .select('id, imported_at, canals, is_active, valid_from, valid_until, parsed_data')
+    .select('id, imported_at, canals, is_active, valid_from, valid_until, parsed_data, discount_data')
     .eq('unit_id', unit.id)
     .order('valid_from', { ascending: false })
 
@@ -282,15 +284,16 @@ Para cada tarifa, extraia:
 - preco: valor numérico em reais (sem R$)
 
 PARTE 2 — POLÍTICA DE DESCONTOS (Guia de Motéis)
-Se houver seção de descontos, promoções ou condições especiais para o Guia de Motéis, extraia cada regra:
+Se houver tabela de descontos para o Guia de Motéis (com faixas de horário e dias da semana), extraia UMA linha por combinação de: categoria × período × dia_semana × faixa_horaria.
+Campos obrigatórios:
 - canal: sempre "guia_moteis"
-- categoria: nome da categoria ou "todas"
-- periodo: período específico ou "todas"
-- dia_tipo: "semana" | "fds_feriado" | "todos"
+- categoria: nome exato da categoria (ex: "Lush POP", "Lush Hidro")
+- periodo: "3h" | "6h" | "12h" | "Pernoite" (um valor por linha — multiplique se o desconto vale para vários períodos)
+- dia_semana: "domingo"|"segunda"|"terca"|"quarta"|"quinta"|"sexta"|"sabado"|"todos"
+- faixa_horaria: ex: "00:00-05:59", "06:00-17:59", "18:00-23:59" ou "todos"
 - tipo_desconto: "percentual" (ex: 10%) ou "absoluto" (ex: R$20)
-- valor: número (ex: 10 para 10% ou 20.00 para R$20 de desconto)
-- condicao: condição para aplicar (ex: "antecedência 24h", "via app") — omitir se não houver
-- observacao: informação adicional — omitir se não houver
+- valor: número sem símbolo (ex: 10 para 10%, 20 para R$20)
+- condicao: omitir se não houver condição especial
 
 Retorne SOMENTE JSON minificado no formato:
 {"rows":[...],"canais_encontrados":["balcao_site"],"observacoes":"opcional","discount_rows":[]}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Bell } from 'lucide-react'
+import { Bell, X } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
@@ -96,6 +96,20 @@ export function NotificationsBell() {
     )
   }
 
+  async function deleteNotification(id: string) {
+    const supabase = createClient()
+    await supabase.from('notifications').delete().eq('id', id)
+    setNotifications((prev) => prev.filter((n) => n.id !== id))
+  }
+
+  async function clearRead() {
+    const supabase = createClient()
+    const readIds = notifications.filter((n) => n.read_at).map((n) => n.id)
+    if (!readIds.length) return
+    await supabase.from('notifications').delete().in('id', readIds)
+    setNotifications((prev) => prev.filter((n) => !n.read_at))
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -112,14 +126,24 @@ export function NotificationsBell() {
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <p className="text-sm font-semibold">Notificações</p>
-          {unreadCount > 0 && (
-            <button
-              onClick={markAllAsRead}
-              className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Marcar todas como lidas
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {unreadCount > 0 && (
+              <button
+                onClick={markAllAsRead}
+                className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Marcar lidas
+              </button>
+            )}
+            {notifications.some((n) => n.read_at) && (
+              <button
+                onClick={clearRead}
+                className="text-[11px] text-muted-foreground hover:text-destructive transition-colors"
+              >
+                Limpar lidas
+              </button>
+            )}
+          </div>
         </div>
 
         {notifications.length === 0 ? (
@@ -132,14 +156,14 @@ export function NotificationsBell() {
             {notifications.map((n, idx) => (
               <div key={n.id}>
                 {idx > 0 && <Separator />}
-                <button
-                  onClick={() => { if (!n.read_at) markAsRead(n.id) }}
-                  className={cn(
-                    'w-full text-left px-4 py-3 hover:bg-accent transition-colors',
-                    !n.read_at && 'bg-primary/5'
-                  )}
-                >
-                  <div className="flex items-start gap-2">
+                <div className={cn(
+                  'flex items-start gap-2 px-4 py-3 hover:bg-accent transition-colors group',
+                  !n.read_at && 'bg-primary/5'
+                )}>
+                  <button
+                    onClick={() => { if (!n.read_at) markAsRead(n.id) }}
+                    className="flex items-start gap-2 flex-1 text-left min-w-0"
+                  >
                     {!n.read_at && (
                       <span className="mt-1.5 size-1.5 rounded-full bg-primary shrink-0" />
                     )}
@@ -154,8 +178,14 @@ export function NotificationsBell() {
                         {fmtDate(n.created_at)}
                       </p>
                     </div>
-                  </div>
-                </button>
+                  </button>
+                  <button
+                    onClick={() => deleteNotification(n.id)}
+                    className="shrink-0 mt-0.5 size-5 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-all text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
               </div>
             ))}
           </ScrollArea>

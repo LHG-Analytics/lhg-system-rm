@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { PriceImportQueue } from '@/components/precos/price-import-queue'
-import { PriceList } from '@/components/precos/price-list'
+import { PrecosTabs } from '@/components/precos/precos-tabs'
 
 interface PrecosPageProps {
   searchParams: Promise<{ unit?: string }>
@@ -71,8 +71,8 @@ export default async function PrecosPage({ searchParams }: PrecosPageProps) {
           {/* Importar nova tabela (fila em background, múltiplos arquivos) */}
           <PriceImportQueue unitSlug={activeUnit.slug} unitName={activeUnit.name} />
 
-          {/* Lista de tabelas com realtime */}
-          <PriceList unitSlug={activeUnit.slug} unitId={activeUnit.id} />
+          {/* Abas: Tabelas importadas | Histórico de importações */}
+          <PrecosTabs unitSlug={activeUnit.slug} unitId={activeUnit.id} unitName={activeUnit.name} />
         </>
       ) : (
         <p className="text-muted-foreground">Nenhuma unidade disponível.</p>

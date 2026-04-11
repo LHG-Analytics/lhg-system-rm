@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   CheckCircle2, Clock, Trash2, Pencil, ChevronDown, ChevronUp,
-  CalendarIcon, Loader2, AlertCircle, X, Check,
+  CalendarIcon, Loader2, AlertCircle, X, Check, Tag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -30,7 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
+import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +42,7 @@ interface PriceImport {
   valid_from: string
   valid_until: string | null
   parsed_data: ParsedPriceRow[]
+  discount_data: ParsedDiscountRow[] | null
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -164,8 +165,12 @@ function ImportItem({ imp, onDeleted, onUpdated }: ImportItemProps) {
 
   async function handleDelete() {
     setDeleting(true)
-    await fetch(`/api/agente/import-prices?id=${imp.id}`, { method: 'DELETE' })
-    onDeleted()
+    try {
+      await fetch(`/api/agente/import-prices?id=${imp.id}`, { method: 'DELETE' })
+      onDeleted()
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
@@ -281,7 +286,7 @@ function ImportItem({ imp, onDeleted, onUpdated }: ImportItemProps) {
         </div>
       </div>
 
-      {/* Tabela expandível */}
+      {/* Tabela expandível de preços */}
       {expanded && rows.length > 0 && (
         <>
           <Separator />
@@ -319,6 +324,45 @@ function ImportItem({ imp, onDeleted, onUpdated }: ImportItemProps) {
           </div>
         </>
       )}
+
+      {/* Descontos do Guia de Motéis */}
+      {expanded && imp.discount_data && imp.discount_data.length > 0 && (
+        <>
+          <Separator />
+          <div className="p-4 pt-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Tag className="size-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground">Descontos Guia de Motéis</span>
+            </div>
+            <div className="rounded-md border overflow-auto max-h-64">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Categoria</TableHead>
+                    <TableHead className="text-xs">Período</TableHead>
+                    <TableHead className="text-xs">Dia</TableHead>
+                    <TableHead className="text-xs">Horário</TableHead>
+                    <TableHead className="text-xs text-right">Desconto</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {imp.discount_data.map((row, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="text-sm font-medium">{row.categoria}</TableCell>
+                      <TableCell className="text-sm">{row.periodo}</TableCell>
+                      <TableCell className="text-sm capitalize">{row.dia_semana ?? row.dia_tipo ?? '—'}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{row.faixa_horaria ?? '—'}</TableCell>
+                      <TableCell className="text-sm text-right tabular-nums font-medium text-amber-600 dark:text-amber-400">
+                        {row.tipo_desconto === 'percentual' ? `${row.valor}%` : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(row.valor)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -338,7 +382,7 @@ export function PriceList({ unitSlug, unitId }: PriceListProps) {
   const supabase = createClient()
 
   const fetchImports = useCallback(async () => {
-    const res = await fetch(`/api/agente/import-prices?unitSlug=${unitSlug}`)
+    const res = await fetch(`/api/agente/import-prices?unitSlug=${unitSlug}&includeDiscounts=1`)
     if (!res.ok) {
       setError('Erro ao carregar tabelas de preços')
       setLoading(false)

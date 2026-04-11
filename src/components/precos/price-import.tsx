@@ -447,7 +447,7 @@ export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
                     <TableRow key={i}>
                       <TableCell className="font-medium">{row.categoria}</TableCell>
                       <TableCell>{row.periodo}</TableCell>
-                      <TableCell className="text-muted-foreground">{DIA_LABELS[row.dia_tipo] ?? row.dia_tipo}</TableCell>
+                      <TableCell className="text-muted-foreground">{row.dia_semana ?? (row.dia_tipo ? (DIA_LABELS[row.dia_tipo] ?? row.dia_tipo) : "—")}</TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="text-xs">
                           {row.tipo_desconto === 'percentual' ? 'Percentual' : 'Absoluto'}

@@ -127,12 +127,22 @@ export async function PATCH(req: NextRequest) {
   const auth = await requireManager()
   if (auth.error) return new Response(auth.error, { status: auth.status })
 
-  const { unitSlug } = await req.json() as { unitSlug: string }
+  const body = await req.json() as { unitSlug: string; retryJobId?: string }
+  const { unitSlug, retryJobId } = body
   if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
 
   const admin = getAdminClient()
   const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
+
+  // Se for retry: reseta o job específico para pending e continua o fluxo normal
+  if (retryJobId) {
+    await admin
+      .from('price_import_jobs')
+      .update({ status: 'pending', error_msg: null, started_at: null, finished_at: null })
+      .eq('id', retryJobId)
+      .eq('unit_id', unit.id)
+  }
 
   // Busca o próximo job pendente (ou já em processamento por muito tempo — timeout 5min)
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
@@ -166,8 +176,8 @@ Extraia as tarifas dos seguintes canais (ignore qualquer outro):
 Para cada tarifa: canal, categoria, periodo, dia_tipo ("semana"|"fds_feriado"|"todos"), preco (numérico)
 
 PARTE 2 — POLÍTICA DE DESCONTOS (Guia de Motéis)
-Se houver descontos para o Guia de Motéis, extraia cada regra:
-canal sempre "guia_moteis", categoria, periodo, dia_tipo, tipo_desconto ("percentual"|"absoluto"), valor (número), condicao (omitir se vazio)
+Se houver tabela de descontos para o Guia de Motéis (com faixas de horário e dias da semana), extraia UMA linha por: categoria × período × dia_semana × faixa_horaria.
+Campos: canal ("guia_moteis"), categoria, periodo, dia_semana ("domingo"|"segunda"|"terca"|"quarta"|"quinta"|"sexta"|"sabado"|"todos"), faixa_horaria (ex: "06:00-17:59"), tipo_desconto ("percentual"|"absoluto"), valor (número), condicao (omitir se vazio)
 
 Retorne SOMENTE JSON minificado:
 {"rows":[...],"canais_encontrados":[],"discount_rows":[]}
