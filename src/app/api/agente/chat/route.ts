@@ -372,7 +372,7 @@ export async function POST(req: NextRequest) {
     messages: await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]),
     tools: agentTools,
     stopWhen: stepCountIs(5),
-    maxOutputTokens: 8192,
+    maxOutputTokens: 2500,
     temperature: 0.3,
     providerOptions: gatewayOptions,
   })

@@ -19,7 +19,7 @@ export const strategyOptions = {
  * Foco: parsing de CSV/JSON, cálculos de KPIs, comparação direta de valores.
  * Fallback: google/gemma-4-31b-it:free
  */
-export const ANALYSIS_MODEL = openrouter('minimax/minimax-m2.5:free')
+export const ANALYSIS_MODEL = openrouter('google/gemma-4-31b-it:free')
 export const analysisOptions = {
   openrouter: { models: ['google/gemma-4-31b-it:free'] },
 }
