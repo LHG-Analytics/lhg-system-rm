@@ -22,6 +22,8 @@ export interface CompetitorSnapshot {
   competitor_url: string
   mapped_prices: MappedPrice[]
   scraped_at: string
+  status: 'processing' | 'done' | 'failed'
+  apify_run_id: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -54,17 +56,14 @@ function nextFridayDate(): Date {
 }
 
 // pageFunction injetada no browser via apify/playwright-scraper
-// Captura preços do dia atual e tenta navegar o calendário até a próxima sexta
 function buildPlaywrightPageFunction(fridayDate: Date): string {
   const fridayDay = fridayDate.getDate()
-  const fridayMonth = fridayDate.getMonth() // 0-based
+  const fridayMonth = fridayDate.getMonth()
   const fridayYear = fridayDate.getFullYear()
-
   const fridayPadded = `${fridayYear}-${String(fridayMonth + 1).padStart(2, '0')}-${String(fridayDay).padStart(2, '0')}`
 
   return `
 async function pageFunction({ page, log }) {
-  // Aguarda carregamento inicial + XHR de preços
   await page.waitForTimeout(5000);
 
   const todayText = await page.evaluate(() => document.body.innerText);
@@ -76,7 +75,6 @@ async function pageFunction({ page, log }) {
   const fridayPt    = '${String(fridayDay).padStart(2, '0')}/${String(fridayMonth + 1).padStart(2, '0')}/${fridayYear}';
 
   try {
-    // Estratégia 1: input[type=date] — setar valor diretamente
     const dateInput = await page.$('input[type="date"]');
     if (dateInput) {
       await dateInput.fill(fridayIso);
@@ -89,18 +87,11 @@ async function pageFunction({ page, log }) {
       return results;
     }
 
-    // Estratégia 2: clicar no gatilho do calendário e depois no dia
     const triggerSelectors = [
-      '[class*="datepicker"]',
-      '[class*="date-picker"]',
-      '[class*="calendar-input"]',
-      '[class*="calendario"]',
-      '[class*="data-busca"]',
-      'input[placeholder*="data"]',
-      'input[placeholder*="Data"]',
-      '.input-group [class*="calendar"]',
-      '[data-toggle="datepicker"]',
-      'button[class*="date"]',
+      '[class*="datepicker"]','[class*="date-picker"]','[class*="calendar-input"]',
+      '[class*="calendario"]','[class*="data-busca"]','input[placeholder*="data"]',
+      'input[placeholder*="Data"]','.input-group [class*="calendar"]',
+      '[data-toggle="datepicker"]','button[class*="date"]',
     ];
 
     let calendarOpened = false;
@@ -116,21 +107,15 @@ async function pageFunction({ page, log }) {
       } catch(e) { /* tenta próximo */ }
     }
 
-    if (!calendarOpened) {
-      log.info('Nenhum calendário interativo encontrado');
-      return results;
-    }
+    if (!calendarOpened) { log.info('Nenhum calendário interativo encontrado'); return results; }
 
-    // Tenta clicar no dia alvo, avançando mês se necessário
     let fridayClicked = false;
     for (let pass = 0; pass < 2 && !fridayClicked; pass++) {
       const cellSelectors = [
-        \`[data-date="\${fridayIso}"]\`,
-        \`[data-date="\${fridayPt}"]\`,
+        \`[data-date="\${fridayIso}"]\`,\`[data-date="\${fridayPt}"]\`,
         \`td[data-day="\${fridayDay}"]:not([class*="disabled"]):not([class*="prev"]):not([class*="next"])\`,
         \`td:not([class*="disabled"]) >> text="\${fridayDay}"\`,
       ];
-
       for (const cellSel of cellSelectors) {
         try {
           const cell = await page.$(cellSel);
@@ -147,7 +132,6 @@ async function pageFunction({ page, log }) {
           }
         } catch(e) { /* tenta próximo */ }
       }
-
       if (!fridayClicked && pass === 0) {
         try {
           const nextBtn = await page.$('.datepicker--nav-action[data-action="next"], .pika-next, .flatpickr-next-month, [class*="next-month"]');
@@ -155,18 +139,16 @@ async function pageFunction({ page, log }) {
         } catch(e) { /* ignora */ }
       }
     }
-
     if (!fridayClicked) log.info('Não conseguiu selecionar sexta-feira');
   } catch(e) {
     log.info('Erro na interação do calendário: ' + String(e));
   }
-
   return results;
 }
 `
 }
 
-// Extrai preços do texto via Claude e salva no banco
+// Extrai preços do texto via IA e salva/atualiza no banco
 async function extractAndSave({
   rawText, competitorUrl, competitorName, ourCategories, mode, unitId,
 }: {
@@ -187,7 +169,7 @@ async function extractAndSave({
 
   const extractionPrompt = `Você é um especialista em análise de preços de motéis. Analise o texto abaixo extraído do site de um motel concorrente e extraia as informações de preços.${categoriesHint}${modeHint}
 
-Períodos comuns em motéis brasileiros: 3h (curta duração), 6h (meia diária ~6h), 12h (meia diária longa), pernoite (diária noturna).
+Períodos comuns em motéis brasileiros: 3h, 6h, 12h, pernoite.
 
 Texto extraído do site (${competitorUrl}):
 \`\`\`
@@ -197,12 +179,12 @@ ${rawText.slice(0, 15000)}
 Instruções:
 1. Identifique todas as suítes/categorias e seus preços por período
 2. Mapeie cada categoria para a mais próxima das nossas (se fornecidas) ou deixe null
-3. Identifique se o preço é para semana, FDS/feriado ou ambos (use "todos" quando não diferenciado)
+3. Identifique se o preço é para semana, FDS/feriado ou ambos ("todos" quando não diferenciado)
 4. Ignore taxas de serviço, descontos promocionais pontuais e preços de eventos especiais
-5. Se houver preços diferentes para semana e FDS, crie DUAS entradas para cada item (uma por dia_tipo)
+5. Se houver preços diferentes para semana e FDS, crie DUAS entradas por item
 
-Retorne SOMENTE este JSON minificado (sem texto antes ou depois):
-{"prices":[{"categoria_concorrente":"nome exato no site","categoria_nossa":"nome mais próximo ou null","periodo":"3h|6h|12h|pernoite","preco":0.00,"dia_tipo":"semana|fds_feriado|todos","notas":"observação opcional ou omita"}]}
+Retorne SOMENTE este JSON minificado:
+{"prices":[{"categoria_concorrente":"nome exato","categoria_nossa":"nome próximo ou null","periodo":"3h|6h|12h|pernoite","preco":0.00,"dia_tipo":"semana|fds_feriado|todos","notas":"omitir se vazio"}]}
 
 Se não encontrar preços estruturados, retorne: {"prices":[],"nota":"motivo breve"}`
 
@@ -220,7 +202,7 @@ Se não encontrar preços estruturados, retorne: {"prices":[],"nota":"motivo bre
       const parsed = JSON.parse(jsonMatch[0]) as { prices?: MappedPrice[] }
       mappedPrices = parsed.prices ?? []
     }
-    console.log('[competitor-analysis] Extraídos', mappedPrices.length, 'preços')
+    console.log('[competitor-analysis] Extraídos', mappedPrices.length, 'preços de', competitorUrl)
   } catch (e) {
     console.error('[competitor-analysis] Erro de extração:', e)
   }
@@ -235,14 +217,16 @@ Se não encontrar preços estruturados, retorne: {"prices":[],"nota":"motivo bre
         mapped_prices: mappedPrices as unknown as Database['public']['Tables']['competitor_snapshots']['Insert']['mapped_prices'],
         raw_text: rawText.slice(0, 50000),
         scraped_at: new Date().toISOString(),
+        status: 'done',
+        apify_run_id: null,
       },
       { onConflict: 'unit_id,competitor_url' }
     )
-    .select('id, competitor_name, competitor_url, mapped_prices, scraped_at')
+    .select('id, competitor_name, competitor_url, mapped_prices, scraped_at, status, apify_run_id')
     .single()
 
   if (saveError) throw new Error(saveError.message)
-  return { ...saved, prices_found: mappedPrices.length } as unknown as CompetitorSnapshot
+  return saved as unknown as CompetitorSnapshot
 }
 
 // ─── GET: snapshots recentes OU polling de run Playwright ───────────────────
@@ -280,6 +264,15 @@ export async function GET(req: NextRequest) {
 
       if (runStatus !== 'SUCCEEDED') {
         console.error('[competitor-analysis] Run falhou:', runStatus)
+        // Marca o snapshot como failed no banco
+        const admin = getAdminClient()
+        const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
+        if (unit) {
+          await admin.from('competitor_snapshots')
+            .update({ status: 'failed' })
+            .eq('unit_id', unit.id)
+            .eq('competitor_url', competitorUrl)
+        }
         return Response.json({ status: 'failed', error: `Run terminou com status: ${runStatus}` })
       }
 
@@ -327,7 +320,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await auth.supabase!
     .from('competitor_snapshots')
-    .select('id, competitor_name, competitor_url, mapped_prices, scraped_at')
+    .select('id, competitor_name, competitor_url, mapped_prices, scraped_at, status, apify_run_id')
     .eq('unit_id', unit.id)
     .order('scraped_at', { ascending: false })
 
@@ -346,6 +339,7 @@ export async function POST(req: NextRequest) {
     unitSlug: string
     competitorName: string
     competitorUrl: string
+    competitorLabel?: string
     ourCategories?: string[]
     mode?: 'cheerio' | 'playwright'
   }
@@ -366,12 +360,12 @@ export async function POST(req: NextRequest) {
   const APIFY_TOKEN = process.env.APIFY_API_TOKEN
   if (!APIFY_TOKEN) return new Response('APIFY_API_TOKEN não configurado', { status: 500 })
 
-  // ─── Playwright: run assíncrono (não bloqueia a rota) ────────────────────
+  // ─── Playwright: run assíncrono ───────────────────────────────────────────
   if (mode === 'playwright') {
     const friday = nextFridayDate()
     const pageFunction = buildPlaywrightPageFunction(friday)
 
-    console.log('[competitor-analysis] Iniciando run Playwright assíncrono — sexta alvo:', friday.toISOString().slice(0, 10))
+    console.log('[competitor-analysis] Iniciando run Playwright — sexta alvo:', friday.toISOString().slice(0, 10))
     try {
       const apifyRes = await fetch(
         `https://api.apify.com/v2/acts/apify~playwright-scraper/runs?token=${APIFY_TOKEN}&timeout=180&memory=1024`,
@@ -397,7 +391,20 @@ export async function POST(req: NextRequest) {
       const runId = runData.data?.id
       console.log('[competitor-analysis] Run Playwright iniciado:', runId)
 
-      // Retorna imediatamente com o runId para o frontend fazer polling
+      // Pré-cria snapshot com status 'processing' para sobreviver a navegações
+      await admin.from('competitor_snapshots').upsert(
+        {
+          unit_id: unit.id,
+          competitor_name: competitorName,
+          competitor_url: competitorUrl,
+          mapped_prices: [] as unknown as Database['public']['Tables']['competitor_snapshots']['Insert']['mapped_prices'],
+          scraped_at: new Date().toISOString(),
+          status: 'processing',
+          apify_run_id: runId,
+        },
+        { onConflict: 'unit_id,competitor_url' }
+      )
+
       return Response.json({
         status: 'processing',
         runId,
@@ -410,7 +417,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ─── Cheerio: scraping estático rápido (síncrono) ────────────────────────
+  // ─── Cheerio: scraping estático (síncrono) ────────────────────────────────
   let rawText = ''
   try {
     const apifyRes = await fetch(
@@ -423,7 +430,7 @@ export async function POST(req: NextRequest) {
           crawlerType: 'cheerio',
           maxCrawlPages: 3,
         }),
-        signal: AbortSignal.timeout(52000),
+        signal: AbortSignal.timeout(55000),
       }
     )
 
@@ -440,7 +447,7 @@ export async function POST(req: NextRequest) {
       .join('\n\n---\n\n')
       .slice(0, 15000)
 
-    console.log('[competitor-analysis] Cheerio: extraídos', items.length, 'páginas, total', rawText.length, 'chars')
+    console.log('[competitor-analysis] Cheerio:', items.length, 'páginas,', rawText.length, 'chars')
   } catch (e) {
     console.error('[competitor-analysis] Cheerio timeout/error:', e)
     return Response.json({ error: 'Tempo limite excedido ao acessar o site. Tente novamente ou verifique a URL.' }, { status: 504 })
@@ -453,5 +460,5 @@ export async function POST(req: NextRequest) {
   const snapshot = await extractAndSave({
     rawText, competitorUrl, competitorName, ourCategories, mode, unitId: unit.id,
   })
-  return Response.json({ ...snapshot, prices_found: (snapshot as unknown as { prices_found: number }).prices_found })
+  return Response.json(snapshot)
 }

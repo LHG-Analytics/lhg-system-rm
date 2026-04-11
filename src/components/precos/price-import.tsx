@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Upload, CheckCircle, AlertCircle, Loader2, FileText, X, CalendarIcon } from 'lucide-react'
+import { Upload, CheckCircle, AlertCircle, Loader2, FileText, X, CalendarIcon, Tag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -16,7 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { cn } from '@/lib/utils'
-import type { ParsedPriceRow, ParseResponse } from '@/app/api/agente/import-prices/route'
+import type { ParsedPriceRow, ParsedDiscountRow, ParseResponse } from '@/app/api/agente/import-prices/route'
 
 // ─── DatePicker helper ────────────────────────────────────────────────────────
 
@@ -125,7 +125,15 @@ export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
     setFileName(file.name)
     const reader = new FileReader()
     reader.onload = (ev) => {
-      const text = ev.target?.result as string
+      let text = ev.target?.result as string
+      // Se detectar muitos caracteres de substituição (U+FFFD), o arquivo provavelmente
+      // usa Latin-1 / Windows-1252 (padrão de exports BR) — relê com a codificação correta
+      if ((text.match(/\uFFFD/g)?.length ?? 0) > 3) {
+        const readerLatin = new FileReader()
+        readerLatin.onload = (ev2) => setCsvContent(ev2.target?.result as string)
+        readerLatin.readAsText(file, 'windows-1252')
+        return
+      }
       setCsvContent(text)
     }
     reader.readAsText(file, 'utf-8')
@@ -174,6 +182,7 @@ export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
           csvContent,
           unitSlug,
           parsedData: preview.rows,
+          discountData: preview.discount_rows ?? [],
           validFrom,
           validUntil,
         }),
@@ -399,6 +408,58 @@ export function PriceImport({ unitSlug, unitName }: PriceImportProps) {
                       <TableCell className="text-right tabular-nums">
                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(row.preco)}
                       </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Preview de política de descontos */}
+      {(phase === 'preview' || phase === 'saving') && preview && (preview.discount_rows?.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Tag className="size-4 text-primary" />
+              Política de descontos — Guia de Motéis
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {preview.discount_rows!.length} regra{preview.discount_rows!.length !== 1 ? 's' : ''} de desconto encontrada{preview.discount_rows!.length !== 1 ? 's' : ''} na planilha.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Categoria</TableHead>
+                    <TableHead>Período</TableHead>
+                    <TableHead>Dia</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">Desconto</TableHead>
+                    <TableHead>Condição</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {preview.discount_rows!.map((row: ParsedDiscountRow, i: number) => (
+                    <TableRow key={i}>
+                      <TableCell className="font-medium">{row.categoria}</TableCell>
+                      <TableCell>{row.periodo}</TableCell>
+                      <TableCell className="text-muted-foreground">{DIA_LABELS[row.dia_tipo] ?? row.dia_tipo}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="text-xs">
+                          {row.tipo_desconto === 'percentual' ? 'Percentual' : 'Absoluto'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums font-medium">
+                        {row.tipo_desconto === 'percentual'
+                          ? `${row.valor}%`
+                          : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(row.valor)
+                        }
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs">{row.condicao ?? '—'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

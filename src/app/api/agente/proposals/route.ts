@@ -214,7 +214,7 @@ export async function POST(req: NextRequest) {
   // ─── Buscar todas as tabelas de preços ──────────────────────────────────
   const { data: allImports } = await admin
     .from('price_imports')
-    .select('id, parsed_data, valid_from, valid_until')
+    .select('id, parsed_data, discount_data, valid_from, valid_until')
     .eq('unit_id', unit.id)
     .order('valid_from', { ascending: false })
 
@@ -463,6 +463,23 @@ ${guardrailsData.map((g) =>
 IMPORTANTE: Se o preço ótimo calculado ultrapassar o máximo, use o máximo. Se estiver abaixo do mínimo, use o mínimo.`
     : ''
 
+  // Bloco de política de descontos do Guia de Motéis (da tabela ativa)
+  type DiscountRow = { canal: string; categoria: string; periodo: string; dia_tipo: string; tipo_desconto: string; valor: number; condicao?: string }
+  const activeDiscounts = (activeImport.discount_data as unknown as DiscountRow[]) ?? []
+  const discountBlock = activeDiscounts.length > 0
+    ? `## Política de descontos — Guia de Motéis
+
+Estas regras estão configuradas na tabela de preços vigente. Leve-as em conta ao propor ajustes para o canal guia_moteis.
+
+| Categoria | Período | Dia | Tipo | Desconto | Condição |
+|-----------|---------|-----|------|----------|----------|
+${activeDiscounts.map((d) =>
+  `| ${d.categoria} | ${d.periodo} | ${d.dia_tipo === 'semana' ? 'Semana' : d.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | ${d.tipo_desconto === 'percentual' ? 'Percentual' : 'Absoluto'} | ${d.tipo_desconto === 'percentual' ? `${d.valor}%` : `R$ ${d.valor.toFixed(2)}`} | ${d.condicao ?? '—'} |`
+).join('\n')}
+
+> Os preços propostos para guia_moteis devem ser os preços BASE (antes do desconto). O sistema aplica os descontos automaticamente no canal.`
+    : ''
+
   const prompt = `Você é um especialista em Revenue Management para motéis. Analise os dados abaixo e gere uma proposta de ajuste de preços.
 
 ## Dados operacionais — ${unit.name}
@@ -470,7 +487,7 @@ IMPORTANTE: Se o preço ótimo calculado ultrapassar o máximo, use o máximo. S
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}
+${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
@@ -488,7 +505,7 @@ Critérios:
 ${hasPrevious ? '- Compare o desempenho do período atual com o anterior: se KPIs melhoraram após mudança de tabela, a direção estava certa; se pioraram, corrija\n' : ''}${memoryBlock ? '- Use a memória estratégica para calibrar a nova proposta: se as mudanças anteriores melhoraram os KPIs, intensifique a direção; se pioraram, recue ou teste outro caminho\n' : ''}- Proponha apenas ajustes com justificativa clara nos dados
 - Variação máxima: ±${maxVar}% por item (configurado pelo gestor — não exceder)
 - Priorize itens com maior impacto no RevPAR (alto giro + RevPAR baixo = oportunidade de aumento)
-
+${activeDiscounts.length > 0 ? '- Para guia_moteis: os preços propostos devem ser os valores BASE (o desconto é aplicado automaticamente)\n' : ''}
 IMPORTANTE: Use os valores do "Mapa de preços atuais" acima como preco_atual. Não invente valores.
 
 Retorne SOMENTE este JSON minificado (sem nenhum texto antes ou depois):
@@ -735,12 +752,28 @@ export async function DELETE(req: NextRequest) {
   const id = req.nextUrl.searchParams.get('id')
   if (!id) return new Response('id obrigatório', { status: 400 })
 
-  const { error } = await supabase
+  const admin = getAdminClient()
+
+  // Verificar que a proposta existe e pertence a uma unidade acessível
+  const { data: existing } = await admin
+    .from('price_proposals')
+    .select('id, unit_id')
+    .eq('id', id)
+    .single()
+
+  if (!existing) return new Response('Proposta não encontrada', { status: 404 })
+
+  if (profile.role !== 'super_admin' && profile.unit_id !== existing.unit_id) {
+    return new Response('Sem acesso', { status: 403 })
+  }
+
+  const { error } = await admin
     .from('price_proposals')
     .delete()
     .eq('id', id)
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
-  return Response.json({ ok: true })
+  return Response.json({ success: true })
 }
+

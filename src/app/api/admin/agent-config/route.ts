@@ -3,10 +3,18 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 
+export interface CompetitorUrlEntry {
+  url: string
+  label?: string
+}
+
 export interface CompetitorUrl {
   name: string
-  url: string
+  /** Múltiplas URLs para o mesmo concorrente (cada categoria pode ter URL própria) */
+  urls: CompetitorUrlEntry[]
   mode?: 'cheerio' | 'playwright'
+  /** @deprecated Use urls[] */
+  url?: string
 }
 
 export interface AgentConfig {

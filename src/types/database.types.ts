@@ -141,30 +141,36 @@ export type Database = {
       }
       competitor_snapshots: {
         Row: {
+          apify_run_id: string | null
           competitor_name: string
           competitor_url: string
           id: string
           mapped_prices: Json
           raw_text: string | null
           scraped_at: string
+          status: string
           unit_id: string
         }
         Insert: {
+          apify_run_id?: string | null
           competitor_name: string
           competitor_url: string
           id?: string
           mapped_prices?: Json
           raw_text?: string | null
           scraped_at?: string
+          status?: string
           unit_id: string
         }
         Update: {
+          apify_run_id?: string | null
           competitor_name?: string
           competitor_url?: string
           id?: string
           mapped_prices?: Json
           raw_text?: string | null
           scraped_at?: string
+          status?: string
           unit_id?: string
         }
         Relationships: [
@@ -303,9 +309,73 @@ export type Database = {
         }
         Relationships: []
       }
+      price_import_jobs: {
+        Row: {
+          created_at: string
+          created_by: string
+          csv_content: string
+          error_msg: string | null
+          file_name: string
+          finished_at: string | null
+          id: string
+          result_id: string | null
+          started_at: string | null
+          status: string
+          unit_id: string
+          valid_from: string
+          valid_until: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          csv_content: string
+          error_msg?: string | null
+          file_name: string
+          finished_at?: string | null
+          id?: string
+          result_id?: string | null
+          started_at?: string | null
+          status?: string
+          unit_id: string
+          valid_from?: string
+          valid_until?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          csv_content?: string
+          error_msg?: string | null
+          file_name?: string
+          finished_at?: string | null
+          id?: string
+          result_id?: string | null
+          started_at?: string | null
+          status?: string
+          unit_id?: string
+          valid_from?: string
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_import_jobs_result_id_fkey"
+            columns: ["result_id"]
+            isOneToOne: false
+            referencedRelation: "price_imports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "price_import_jobs_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       price_imports: {
         Row: {
           canals: string[]
+          discount_data: Json | null
           id: string
           imported_at: string
           imported_by: string
@@ -318,6 +388,7 @@ export type Database = {
         }
         Insert: {
           canals?: string[]
+          discount_data?: Json | null
           id?: string
           imported_at?: string
           imported_by: string
@@ -330,6 +401,7 @@ export type Database = {
         }
         Update: {
           canals?: string[]
+          discount_data?: Json | null
           id?: string
           imported_at?: string
           imported_by?: string

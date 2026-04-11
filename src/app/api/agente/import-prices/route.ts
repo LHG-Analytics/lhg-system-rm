@@ -14,10 +14,23 @@ export interface ParsedPriceRow {
   preco: number
 }
 
+// Política de descontos do Guia de Motéis
+export interface ParsedDiscountRow {
+  canal: 'guia_moteis'
+  categoria: string        // nome da categoria ou "todas"
+  periodo: string          // ex: "3h", "6h", "todas"
+  dia_tipo: 'semana' | 'fds_feriado' | 'todos'
+  tipo_desconto: 'percentual' | 'absoluto'
+  valor: number            // ex: 10 para 10% ou 20.00 para R$20
+  condicao?: string        // ex: "antecedência 24h", "via app"
+  observacao?: string
+}
+
 export interface ParseResponse {
   rows: ParsedPriceRow[]
   canais_encontrados: string[]
   observacoes?: string
+  discount_rows?: ParsedDiscountRow[]
 }
 
 // Extrai JSON da resposta do modelo de forma robusta:
@@ -225,11 +238,12 @@ export async function POST(req: NextRequest) {
     csvContent?: string
     unitSlug: string
     parsedData?: ParsedPriceRow[]
+    discountData?: ParsedDiscountRow[]
     validFrom?: string
     validUntil?: string | null
   }
 
-  const { action, csvContent, unitSlug, parsedData, validFrom, validUntil } = body
+  const { action, csvContent, unitSlug, parsedData, discountData, validFrom, validUntil } = body
 
   if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
 
@@ -254,34 +268,47 @@ export async function POST(req: NextRequest) {
 
     const prompt = `Você receberá o conteúdo de uma planilha de tabela de preços de motel exportada como CSV.
 
-Extraia APENAS as tarifas dos seguintes canais de venda (ignore qualquer outro):
+PARTE 1 — TARIFAS
+Extraia as tarifas dos seguintes canais (ignore qualquer outro):
 1. **balcao_site** — Tarifa Balcão (presencial) e Site imediato (mesmo preço)
-2. **site_programada** — Reserva Antecipada pelo site (preço pode ser diferente)
+2. **site_programada** — Reserva Antecipada pelo site
 3. **guia_moteis** — Guia de Motéis (aplicativo/site externo)
 
-Para cada linha de preço encontrada, retorne um objeto JSON com:
+Para cada tarifa, extraia:
 - canal: "balcao_site" | "site_programada" | "guia_moteis"
-- categoria: nome da suíte/categoria (ex: "Standard", "Master", "Luxo")
-- periodo: período de locação (ex: "3h", "6h", "12h", "Pernoite", "Diária", "Day Use")
-- dia_tipo: "semana" (dias úteis/semana), "fds_feriado" (finais de semana e feriados), ou "todos" (se não houver distinção)
-- preco: valor numérico em reais (apenas o número, sem R$)
+- categoria: nome da suíte (ex: "Standard", "Master", "Luxo")
+- periodo: período de locação (ex: "3h", "6h", "12h", "Pernoite")
+- dia_tipo: "semana" | "fds_feriado" | "todos"
+- preco: valor numérico em reais (sem R$)
 
-Retorne SOMENTE JSON minificado (sem espaços ou quebras de linha desnecessárias) no formato:
-{"rows":[...],"canais_encontrados":["balcao_site"],"observacoes":"opcional"}
+PARTE 2 — POLÍTICA DE DESCONTOS (Guia de Motéis)
+Se houver seção de descontos, promoções ou condições especiais para o Guia de Motéis, extraia cada regra:
+- canal: sempre "guia_moteis"
+- categoria: nome da categoria ou "todas"
+- periodo: período específico ou "todas"
+- dia_tipo: "semana" | "fds_feriado" | "todos"
+- tipo_desconto: "percentual" (ex: 10%) ou "absoluto" (ex: R$20)
+- valor: número (ex: 10 para 10% ou 20.00 para R$20 de desconto)
+- condicao: condição para aplicar (ex: "antecedência 24h", "via app") — omitir se não houver
+- observacao: informação adicional — omitir se não houver
+
+Retorne SOMENTE JSON minificado no formato:
+{"rows":[...],"canais_encontrados":["balcao_site"],"observacoes":"opcional","discount_rows":[]}
 
 Regras:
 - JSON minificado — sem indentação, sem espaços extras
 - Sem texto antes ou depois do JSON
-- Se não encontrar nenhum canal, retorne {"rows":[],"canais_encontrados":[]}
+- discount_rows pode ser [] se não houver descontos configurados
+- Se não encontrar nenhum canal, retorne {"rows":[],"canais_encontrados":[],"discount_rows":[]}
 
 CSV:
-${csvContent.slice(0, 8000)}`
+${csvContent.slice(0, 24000)}`
 
     const { text } = await generateText({
       model: PRIMARY_MODEL,
       providerOptions: gatewayOptions,
       prompt,
-      maxOutputTokens: 8000,
+      maxOutputTokens: 16000,
       temperature: 0,
     })
 
@@ -308,7 +335,7 @@ ${csvContent.slice(0, 8000)}`
     const canais = [...new Set(parsedData.map((r) => r.canal))]
     const today = new Date().toISOString().slice(0, 10)
 
-    // Salvar no Supabase (o trigger desativa imports anteriores automaticamente)
+    // Salvar no Supabase
     const { data: importRecord, error } = await supabase
       .from('price_imports')
       .insert({
@@ -316,6 +343,9 @@ ${csvContent.slice(0, 8000)}`
         imported_by: user.id,
         raw_content: csvContent,
         parsed_data: parsedData as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
+        discount_data: (discountData && discountData.length > 0)
+          ? discountData as unknown as Database['public']['Tables']['price_imports']['Insert']['discount_data']
+          : null,
         canals: canais,
         is_active: true,
         valid_from: validFrom ?? today,

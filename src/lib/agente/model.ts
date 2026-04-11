@@ -1,11 +1,14 @@
-import { gateway } from 'ai'
+import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 
-export const PRIMARY_MODEL = gateway('anthropic/claude-sonnet-4.6')
+const openrouter = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY,
+})
 
-// Fallback automático via AI Gateway: se Claude falhar, usa Gemini Flash
-export const gatewayOptions = {
-  gateway: {
-    models: ['google/gemini-2.0-flash'],
-    tags: ['app:lhg-rm'],
-  },
-}
+// Modelo primário: Claude Sonnet 4.5 via OpenRouter
+export const PRIMARY_MODEL = openrouter('anthropic/claude-sonnet-4-5')
+
+// Modelo de fallback para tasks menos críticas
+export const FALLBACK_MODEL = openrouter('google/gemini-2.0-flash')
+
+// Mantido para compatibilidade — sem opções extras necessárias no OpenRouter
+export const gatewayOptions: Record<string, never> = {}
