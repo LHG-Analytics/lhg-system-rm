@@ -202,10 +202,10 @@ export async function POST(req: NextRequest) {
 
     salvar_proposta: tool({
       description:
-        'Salva a proposta de ajuste de preços no sistema para registro formal e aprovação. ' +
-        'Chame IMEDIATAMENTE quando o usuário aprovar uma proposta — qualquer variação de ' +
-        '"aprovado", "pode salvar", "sim", "estão todos aprovados", "faz isso", etc. ' +
-        'Passe exatamente os dados apresentados na tabela de proposta no chat.',
+        'Salva a proposta de ajuste de preços no sistema para registro e revisão pelo gerente. ' +
+        'Chame IMEDIATAMENTE ao concluir a tabela de proposta — não espere o usuário aprovar. ' +
+        'A aprovação final acontece na aba Propostas, nunca no chat. ' +
+        'Após salvar, sempre oriente: "A proposta foi salva. Acesse a aba Propostas para aprovar, ajustar ou rejeitar."',
       inputSchema: z.object({
         context: z.string().describe('Resumo em 2–3 frases da lógica geral da proposta'),
         rows: z.array(z.object({
@@ -239,8 +239,8 @@ export async function POST(req: NextRequest) {
     sugerir_respostas: tool({
       description:
         'Exibe botões de resposta rápida clicáveis para o usuário no chat. ' +
-        'Use SEMPRE após: (1) apresentar uma proposta de preços — inclua "✅ Aprovar tudo", "✏️ Ajustar um item", "❌ Rejeitar" e "Outra"; ' +
-        '(2) fazer uma pergunta de sim/não; (3) oferecer opções de análise adicional. ' +
+        'Use SEMPRE após: (1) apresentar uma proposta de preços — inclua opções de análise, "Ajustar item", "Ir à aba Propostas" (texto vazio); ' +
+        '(2) fazer uma pergunta de sim/não ou múltipla escolha; (3) oferecer próximos passos. ' +
         'Sempre inclua uma opção com texto vazio (label "Outra resposta") para o usuário digitar livremente.',
       inputSchema: z.object({
         opcoes: z.array(z.object({
@@ -249,37 +249,6 @@ export async function POST(req: NextRequest) {
         })).min(2).max(6),
       }),
       execute: async ({ opcoes }) => ({ opcoes }),
-    }),
-
-    agendar_revisao: tool({
-      description:
-        'Agenda uma revisão automática de Revenue Management para uma data futura. ' +
-        'O agente será executado automaticamente nessa data, gerará uma análise completa e salvará no histórico de conversas. ' +
-        'Use quando o usuário pedir "agende uma revisão", "me lembre de verificar em X dias", ' +
-        '"quero acompanhar os resultados em [data]", ou quando você mesmo quiser propor um monitoramento futuro. ' +
-        'SEMPRE use este tool — nunca apenas diga que agendou sem chamar o tool.',
-      inputSchema: z.object({
-        scheduled_at: z.string().describe('Data da revisão no formato YYYY-MM-DD, ex: "2026-04-07"'),
-        note: z.string().optional().describe('O que monitorar nessa revisão — contexto para o agente futuro, ex: "Monitorar impacto da tabela nova no giro de FDS"'),
-      }),
-      execute: async ({ scheduled_at, note }) => {
-        const { data, error } = await supabase
-          .from('scheduled_reviews')
-          .insert({
-            unit_id:      unit.id,
-            created_by:   user.id,
-            scheduled_at,
-            note:         note ?? null,
-            status:       'pending',
-          })
-          .select('id')
-          .single()
-        if (error) return { success: false, error: error.message }
-        const [day, month, year] = new Date(scheduled_at + 'T12:00:00')
-          .toLocaleDateString('pt-BR').split('/')
-        const dateLabel = `${day}/${month}/${year}`
-        return { success: true, reviewId: data.id, dateLabel, scheduled_at }
-      },
     }),
 
     buscar_dados_automo: tool({

@@ -106,7 +106,7 @@ const TOOL_META: Record<string, { loadingText: string; doneText: string }> = {
   },
   salvar_proposta: {
     loadingText: 'Salvando proposta…',
-    doneText:    'Proposta salva — confira na aba Propostas',
+    doneText:    '✓ Proposta salva — acesse a aba Propostas para aprovar',
   },
 }
 
@@ -124,6 +124,39 @@ function ToolCallChip({ toolName, state }: { toolName: string; state: string }) 
         ? <Loader2 className="size-3 animate-spin" />
         : <CheckCircle2 className="size-3" />}
       <span>{isLoading ? (meta?.loadingText ?? 'Processando…') : (meta?.doneText ?? 'Concluído')}</span>
+    </div>
+  )
+}
+
+const PROPOSAL_STEP_LABELS = [
+  'Analisando tabelas de preços…',
+  'Verificando KPIs do período…',
+  'Calculando variações…',
+  'Montando proposta…',
+]
+
+function ProposalGeneratingSteps() {
+  const [stepIdx, setStepIdx] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setStepIdx((s) => Math.min(s + 1, PROPOSAL_STEP_LABELS.length - 1)), 1400)
+    return () => clearInterval(t)
+  }, [])
+  return (
+    <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3 flex flex-col gap-2 w-fit">
+      {PROPOSAL_STEP_LABELS.map((label, i) => (
+        <div key={label} className={cn(
+          'flex items-center gap-2 text-xs transition-all duration-300',
+          i < stepIdx ? 'text-emerald-500' : i === stepIdx ? 'text-primary' : 'text-muted-foreground/30'
+        )}>
+          {i < stepIdx
+            ? <CheckCircle2 className="size-3.5 shrink-0" />
+            : i === stepIdx
+              ? <Loader2 className="size-3.5 animate-spin shrink-0" />
+              : <div className="size-3.5 rounded-full border border-current shrink-0 opacity-30" />
+          }
+          <span>{label}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -347,6 +380,11 @@ function AgenteChatInner({
 
                     // sugerir_respostas é renderizado como quick replies, não como chip
                     if (toolName === 'sugerir_respostas') return null
+
+                    // salvar_proposta em loading: etapas animadas
+                    if (toolName === 'salvar_proposta' && (state === 'call' || state === 'partial-call')) {
+                      return <ProposalGeneratingSteps key={i} />
+                    }
 
                     // Outros tools: chip animado
                     return <ToolCallChip key={i} toolName={toolName} state={state} />
