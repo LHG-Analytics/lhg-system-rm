@@ -281,21 +281,31 @@ export async function POST(req: NextRequest) {
     if (!csvContent) return new Response('csvContent obrigatório', { status: 400 })
 
     const prompt = importType === 'discounts'
-      ? `Extract discount rules from the CSV below. Output ONLY minified JSON, no explanation.
+      ? `Você receberá o conteúdo de uma planilha de política de descontos de motel exportada como CSV.
 
-Schema per row: canal="guia_moteis", categoria (exact name), periodo ("3h"|"6h"|"12h"|"pernoite"), dia_semana ("domingo"|"segunda"|"terca"|"quarta"|"quinta"|"sexta"|"sabado"|"todos"), faixa_horaria (e.g. "00:00-17:59"), tipo_desconto ("percentual"|"absoluto"), valor (number), condicao (omit if empty).
+POLÍTICA DE DESCONTOS (Guia de Motéis)
+Extraia UMA linha por combinação única de: categoria × período × dia_semana × faixa_horaria.
 
-Rules:
-- One row per unique categoria+periodo+dia_semana+faixa_horaria combination
-- Expand period groups: "3h, 6h e 12h" → 3 separate rows
-- Include EVERY weekday found, even if discount matches another day
-- If same categoria+periodo+dia has two time slots with EQUAL discount → merge into "00:00-23:59"
-- If two time slots have DIFFERENT discounts → keep 2 separate rows
-- Skip empty cells ("-" or blank)
-- ALL discounts go in "discount_rows", never in "rows"
+Campos de cada linha:
+- canal: sempre "guia_moteis"
+- categoria: nome exato da suíte (ex: "Lush POP", "Lush", "Lush Hidro")
+- periodo: "3h" | "6h" | "12h" | "pernoite"
+- dia_semana: "domingo" | "segunda" | "terca" | "quarta" | "quinta" | "sexta" | "sabado" | "todos"
+- faixa_horaria: ex "06:00-23:59", "00:00-17:59", "00:00-23:59"
+- tipo_desconto: "percentual" | "absoluto"
+- valor: número (ex: 10 para 10%)
+- condicao: omitir se vazio
 
-Required output format (minified, no whitespace):
-{"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30}]}
+Regras:
+- "3h, 6h e 12h" → gerar 3 linhas separadas por período
+- Se valores DIFERENTES por período (ex: 30% no 3h e 15% no 6h e 12h) → gerar 3 linhas com valores corretos
+- Incluir TODOS os dias que aparecem na planilha (domingo, segunda, terca, quarta, quinta, sexta, sabado)
+- Se um dia aparece em dois horários (ex: 00:00-17:59 e 18:00-23:59) com O MESMO desconto → gerar UMA linha com faixa_horaria "00:00-23:59"
+- Se um dia aparece em dois horários com descontos DIFERENTES → manter 2 linhas separadas
+- Células vazias ou com "-" → ignorar
+
+Retorne SOMENTE JSON minificado, sem texto antes ou depois:
+{"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30},{"canal":"guia_moteis","categoria":"Lush POP","periodo":"6h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15}]}
 
 CSV:
 ${csvContent.slice(0, 24000)}`
