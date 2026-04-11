@@ -5,6 +5,16 @@ import {
   Upload, Loader2, FileText, X, CalendarIcon, CheckCircle2,
   AlertCircle, Clock, RefreshCw, Plus, Trash2, RotateCcw
 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -348,6 +358,8 @@ export function ImportJobHistory({ unitSlug, unitName, unitId, importType = 'pri
   const [jobs, setJobs] = useState<ImportJob[]>([])
   const [loading, setLoading] = useState(true)
   const [retrying, setRetrying] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const loadJobs = useCallback(async () => {
     try {
@@ -370,6 +382,18 @@ export function ImportJobHistory({ unitSlug, unitName, unitId, importType = 'pri
 
     return () => { void supabase.removeChannel(channel) }
   }, [unitId, loadJobs])
+
+  async function handleDelete() {
+    if (!confirmDelete) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/agente/import-queue?id=${confirmDelete}`, { method: 'DELETE' })
+      if (res.ok) setJobs((prev) => prev.filter((j) => j.id !== confirmDelete))
+    } finally {
+      setDeleting(false)
+      setConfirmDelete(null)
+    }
+  }
 
   async function handleRetry(jobId: string) {
     setRetrying(jobId)
@@ -407,6 +431,28 @@ export function ImportJobHistory({ unitSlug, unitName, unitId, importType = 'pri
   }
 
   return (
+    <>
+    <AlertDialog open={!!confirmDelete} onOpenChange={(open) => { if (!open) setConfirmDelete(null) }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Excluir do histórico?</AlertDialogTitle>
+          <AlertDialogDescription>
+            O registro desta importação será removido permanentemente do histórico. Esta ação não pode ser desfeita.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            disabled={deleting}
+            onClick={handleDelete}
+          >
+            {deleting ? <Loader2 className="size-4 animate-spin mr-2" /> : null}
+            Excluir
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
@@ -433,7 +479,7 @@ export function ImportJobHistory({ unitSlug, unitName, unitId, importType = 'pri
                   <p className="text-xs text-destructive mt-0.5 truncate">{job.error_msg}</p>
                 )}
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {job.status === 'failed' && (
                   <Button
                     size="sm" variant="outline"
@@ -454,11 +500,22 @@ export function ImportJobHistory({ unitSlug, unitName, unitId, importType = 'pri
                 >
                   {STATUS_LABEL[job.status]}
                 </Badge>
+                {job.status !== 'processing' && (
+                  <Button
+                    size="icon" variant="ghost"
+                    className="size-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setConfirmDelete(job.id)}
+                    title="Excluir do histórico"
+                  >
+                    <Trash2 className="size-3" />
+                  </Button>
+                )}
               </div>
             </div>
           ))}
         </div>
       </CardContent>
     </Card>
+    </>
   )
 }

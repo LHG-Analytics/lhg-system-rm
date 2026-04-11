@@ -323,3 +323,35 @@ ${job.csv_content.slice(0, 24000)}`
     return Response.json({ done: false, jobId: job.id, error: msg })
   }
 }
+
+// ─── DELETE: remove job do histórico ─────────────────────────────────────────
+
+export async function DELETE(req: NextRequest) {
+  const auth = await requireManager()
+  if (auth.error) return new Response(auth.error, { status: auth.status })
+
+  const id = req.nextUrl.searchParams.get('id')
+  if (!id) return new Response('id obrigatório', { status: 400 })
+
+  const admin = getAdminClient()
+  const { data: job } = await admin
+    .from('price_import_jobs')
+    .select('id, unit_id, status')
+    .eq('id', id)
+    .single()
+
+  if (!job) return new Response('Job não encontrado', { status: 404 })
+
+  if (auth.profile!.role !== 'super_admin' && auth.profile!.unit_id !== job.unit_id) {
+    return new Response('Sem acesso', { status: 403 })
+  }
+
+  if (job.status === 'processing') {
+    return Response.json({ error: 'Não é possível excluir um job em processamento.' }, { status: 409 })
+  }
+
+  const { error } = await admin.from('price_import_jobs').delete().eq('id', id)
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  return Response.json({ success: true })
+}
