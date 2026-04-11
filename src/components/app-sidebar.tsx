@@ -15,6 +15,7 @@ import {
   Hotel,
   LayoutDashboard,
   LogOut,
+  Percent,
   Settings,
   Tags,
   Warehouse,
@@ -101,6 +102,7 @@ function UnitLogo({ slug, name, size = 32 }: { slug: string; name: string; size?
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Preços', href: '/dashboard/precos', icon: Tags },
+  { label: 'Descontos', href: '/dashboard/descontos', icon: Percent },
   { label: 'Disponibilidade', href: '/dashboard/disponibilidade', icon: Warehouse },
   { label: 'Agente RM', href: '/dashboard/agente', icon: BotMessageSquare },
   { label: 'Relatórios', href: '/dashboard/relatorios', icon: BarChart3 },
