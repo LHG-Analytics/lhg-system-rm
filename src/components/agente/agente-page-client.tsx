@@ -284,19 +284,22 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
         {/* Sheet de configuração do agente */}
         {canConfig && activeUnit && (
           <Sheet open={configOpen} onOpenChange={setConfigOpen}>
-            <SheetContent side="right" className="w-[520px] sm:max-w-[520px] overflow-y-auto">
-              <SheetHeader className="pb-2">
-                <SheetTitle className="flex items-center gap-2 text-base">
+            <SheetContent side="right" className="w-full sm:w-[480px] sm:max-w-[480px] flex flex-col p-0">
+              <SheetHeader className="px-6 py-4 border-b shrink-0">
+                <SheetTitle className="flex items-center gap-2 text-sm font-semibold">
                   <Settings2 className="size-4 text-primary" />
                   Configurações do Agente — {activeUnit.name}
                 </SheetTitle>
               </SheetHeader>
-              <AgentConfigManager
-                unitSlug={activeUnit.slug}
-                unitName={activeUnit.name}
-                units={units.length > 0 ? units : [activeUnit]}
-                initialConfig={null}
-              />
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                <AgentConfigManager
+                  unitSlug={activeUnit.slug}
+                  unitName={activeUnit.name}
+                  units={units.length > 0 ? units : [activeUnit]}
+                  initialConfig={null}
+                  compact
+                />
+              </div>
             </SheetContent>
           </Sheet>
         )}

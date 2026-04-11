@@ -6,9 +6,8 @@ import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 import type { AgentConfig } from '@/app/api/admin/agent-config/route'
 import { UsersManager } from './_components/users-manager'
 import { GuardrailsManager } from './_components/guardrails-manager'
-import { AgentConfigManager } from './_components/agent-config-manager'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Users, Shield, Settings2 } from 'lucide-react'
+import { Users, Shield } from 'lucide-react'
 
 export const metadata = { title: 'Administração — LHG Revenue Manager' }
 
@@ -113,10 +112,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             <Shield className="size-3.5" />
             Guardrails
           </TabsTrigger>
-          <TabsTrigger value="config" className="gap-1.5 text-xs">
-            <Settings2 className="size-3.5" />
-            Agente RM
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="usuarios" className="mt-6">
@@ -148,18 +143,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           )}
         </TabsContent>
 
-        <TabsContent value="config" className="mt-6">
-          {activeUnit ? (
-            <AgentConfigManager
-              unitSlug={activeUnit.slug}
-              unitName={activeUnit.name}
-              units={unitsForComponents}
-              initialConfig={agentConfig}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>
-          )}
-        </TabsContent>
       </Tabs>
     </div>
   )

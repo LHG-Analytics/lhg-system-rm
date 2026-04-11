@@ -36,6 +36,8 @@ interface AgentConfigManagerProps {
   unitName: string
   units: Unit[]
   initialConfig: AgentConfig | null
+  /** Quando true, oculta o header interno (título + seletor de unidade) */
+  compact?: boolean
 }
 
 const STRATEGY_OPTIONS = [
@@ -91,7 +93,7 @@ function normalizeCompetitor(c: CompetitorUrl): CompetitorUrl {
   return { name: c.name, urls: [], mode: c.mode }
 }
 
-export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }: AgentConfigManagerProps) {
+export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, compact = false }: AgentConfigManagerProps) {
   const router = useRouter()
   const [config, setConfig] = useState<AgentConfig | null>(initialConfig)
   const [saving, setSaving] = useState(false)
@@ -326,33 +328,34 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3">
-        {/* Seletor de unidade */}
-        {units.length > 1 && (
-          <div className="flex items-center gap-2">
-            <Building2 className="size-3.5 text-muted-foreground shrink-0" />
-            <Select value={unitSlug} onValueChange={(slug) => router.push(`/dashboard/admin?tab=config&unit=${slug}`)}>
-              <SelectTrigger className="h-8 text-xs w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {units.map((u) => (
-                  <SelectItem key={u.slug} value={u.slug}>{u.name}</SelectItem>
-                ))}
-            </SelectContent>
-            </Select>
+      {!compact && (
+        <div className="flex flex-col gap-3">
+          {units.length > 1 && (
+            <div className="flex items-center gap-2">
+              <Building2 className="size-3.5 text-muted-foreground shrink-0" />
+              <Select value={unitSlug} onValueChange={(slug) => router.push(`/dashboard/admin?tab=config&unit=${slug}`)}>
+                <SelectTrigger className="h-8 text-xs w-56">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {units.map((u) => (
+                    <SelectItem key={u.slug} value={u.slug}>{u.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+              <Settings2 className="size-4 text-primary" />
+              Configuração do Agente — {unitName}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Define o comportamento do agente RM ao gerar propostas de precificação.
+            </p>
           </div>
-        )}
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
-            <Settings2 className="size-4 text-primary" />
-            Configuração do Agente — {unitName}
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Define o comportamento do agente RM ao gerar propostas de precificação.
-          </p>
         </div>
-      </div>
+      )}
 
       {!config ? (
         <p className="text-sm text-muted-foreground">Configuração não encontrada para esta unidade.</p>
