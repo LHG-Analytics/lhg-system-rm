@@ -8,10 +8,11 @@
   - Local: `http://127.0.0.1:54321` (Docker via Scoop CLI v2.84.2)
   - Remoto: `https://pvlcktqbjianrbzpqrbd.supabase.co`
 - **Upstash Redis** — cache (a configurar)
-- **OpenRouter** — roteamento de IA (Claude primário + Gemini Flash fallback)
+- **OpenRouter** — roteamento de IA (modelos gratuitos)
   - Provider: `@openrouter/ai-sdk-provider` v2.5.1
   - Auth: `OPENROUTER_API_KEY`
-  - Modelo primário: `anthropic/claude-sonnet-4-5` | Fallback: `google/gemini-2.0-flash`
+  - Modelo primário: `google/gemma-4-26b-a4b-it:free` | Fallback: `nvidia/nemotron-3-super-120b-a12b:free`
+  - Modelos gratuitos disponíveis: `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `minimax/minimax-m2.5:free`
   - Config centralizada em `src/lib/agente/model.ts`
 - **Deploy:** Vercel + Supabase hosted
   - Projeto linkado: `danilo-dinizs-projects/lhg-system-rm`
@@ -58,8 +59,9 @@ Só commitar se ambos passarem sem erros.
 
 ### OpenRouter
 - Usar `createOpenRouter` de `@openrouter/ai-sdk-provider` — não usar Vercel AI Gateway
-- `PRIMARY_MODEL = openrouter('anthropic/claude-sonnet-4-5')` — IDs com hífen (não ponto)
-- `FALLBACK_MODEL = openrouter('google/gemini-2.0-flash')`
+- Usar modelos com sufixo `:free` — sem custo de créditos OpenRouter
+- `PRIMARY_MODEL = openrouter('google/gemma-4-26b-a4b-it:free')`
+- `FALLBACK_MODEL = openrouter('nvidia/nemotron-3-super-120b-a12b:free')`
 - `gatewayOptions` exportado como `{}` — mantido para compatibilidade de assinatura nas rotas
 - `NODE_OPTIONS="--max-old-space-size=4096" npm run build` para build local (evita OOM)
 
