@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -46,6 +47,7 @@ interface PendingReview {
 
 interface ProposalsListProps {
   unitSlug: string
+  unitId: string
   initialProposals: PriceProposal[]
   refreshKey?: number
   selectedProposalId?: string | null
@@ -111,7 +113,8 @@ function ExpandableText({ text, maxLength = 120 }: { text: string; maxLength?: n
   )
 }
 
-export function ProposalsList({ unitSlug, initialProposals, refreshKey, selectedProposalId }: ProposalsListProps) {
+export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, selectedProposalId }: ProposalsListProps) {
+  const supabase = useMemo(() => createClient(), [])
   const [proposals, setProposals] = useState<PriceProposal[]>(initialProposals)
   const [generating, setGenerating] = useState(false)
   const [reviewing, setReviewing] = useState<string | null>(null)
@@ -163,6 +166,23 @@ export function ProposalsList({ unitSlug, initialProposals, refreshKey, selected
   }, [unitSlug])
 
   useEffect(() => { loadPendingReviews() }, [loadPendingReviews])
+
+  // Realtime: price_proposals + scheduled_reviews desta unidade
+  useEffect(() => {
+    if (!unitId) return
+    const loadProposals = () => {
+      fetch(`/api/agente/proposals?unitSlug=${unitSlug}`)
+        .then((r) => r.json())
+        .then((data) => { if (Array.isArray(data)) setProposals(data as PriceProposal[]) })
+        .catch(() => {})
+    }
+    const ch = supabase
+      .channel(`proposals:${unitId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'price_proposals', filter: `unit_id=eq.${unitId}` }, loadProposals)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_reviews', filter: `unit_id=eq.${unitId}` }, () => { loadPendingReviews() })
+      .subscribe()
+    return () => { void supabase.removeChannel(ch) }
+  }, [unitId, unitSlug, supabase, loadPendingReviews])
 
   // Auto-expande e scrolla para a proposta vinda da Agenda
   useEffect(() => {

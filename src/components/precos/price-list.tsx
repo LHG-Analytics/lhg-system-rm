@@ -166,7 +166,12 @@ function ImportItem({ imp, onDeleted, onUpdated }: ImportItemProps) {
   async function handleDelete() {
     setDeleting(true)
     try {
-      await fetch(`/api/agente/import-prices?id=${imp.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/agente/import-prices?id=${imp.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        console.error('[price-list] delete error', res.status, data)
+        return
+      }
       onDeleted()
     } finally {
       setDeleting(false)

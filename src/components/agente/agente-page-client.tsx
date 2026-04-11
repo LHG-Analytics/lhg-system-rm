@@ -321,6 +321,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
         <TabsContent value="propostas" className="mt-0 overflow-y-auto p-4">
           <ProposalsList
             unitSlug={activeUnit?.slug ?? ''}
+            unitId={unitId}
             initialProposals={initialProposals}
             refreshKey={proposalsRefreshKey}
             selectedProposalId={selectedProposalId}
@@ -330,6 +331,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
         <TabsContent value="agendamentos" className="mt-0 overflow-y-auto p-4">
           <ScheduledReviewsList
             unitSlug={unitSlug}
+            unitId={unitId}
             onSelectConversation={handleSelectConversationById}
             onSelectProposal={handleSelectProposal}
           />

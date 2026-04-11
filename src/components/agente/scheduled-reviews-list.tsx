@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
@@ -30,6 +31,7 @@ import type { ScheduledReview } from '@/app/api/agente/scheduled-reviews/route'
 
 interface ScheduledReviewsListProps {
   unitSlug: string
+  unitId: string
   onSelectConversation?: (convId: string) => void
   onSelectProposal?: (proposalId: string) => void
 }
@@ -46,7 +48,8 @@ function formatScheduled(iso: string) {
   return format(d, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
 }
 
-export function ScheduledReviewsList({ unitSlug, onSelectConversation, onSelectProposal }: ScheduledReviewsListProps) {
+export function ScheduledReviewsList({ unitSlug, unitId, onSelectConversation, onSelectProposal }: ScheduledReviewsListProps) {
+  const supabase = useMemo(() => createClient(), [])
   const [reviews, setReviews]         = useState<ScheduledReview[]>([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
@@ -70,6 +73,16 @@ export function ScheduledReviewsList({ unitSlug, onSelectConversation, onSelectP
   }, [unitSlug])
 
   useEffect(() => { load() }, [load])
+
+  // Realtime: scheduled_reviews desta unidade
+  useEffect(() => {
+    if (!unitId) return
+    const ch = supabase
+      .channel(`scheduled_reviews:${unitId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_reviews', filter: `unit_id=eq.${unitId}` }, () => { load() })
+      .subscribe()
+    return () => { void supabase.removeChannel(ch) }
+  }, [unitId, supabase, load])
 
   const handleSaveEdit = useCallback(async () => {
     if (!editing) return
