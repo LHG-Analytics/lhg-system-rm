@@ -307,8 +307,9 @@ REGRAS CRÍTICAS — siga rigorosamente:
 5. Grupos de categorias com mesmo desconto → uma linha por categoria (não agrupar).
 6. A planilha pode ter formato matriz (colunas = categorias, linhas = dia+horário) — pivote corretamente para o formato normalizado.
 
-Retorne SOMENTE JSON minificado:
-{"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[...]}
+Retorne SOMENTE JSON minificado. TODOS os descontos devem ir em "discount_rows", NUNCA em "rows".
+Exemplo de formato correto:
+{"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30}]}
 
 CSV:
 ${job.csv_content.slice(0, 24000)}`
@@ -345,12 +346,16 @@ ${job.csv_content.slice(0, 24000)}`
     parsed.rows = Array.isArray(parsed.rows) ? parsed.rows : []
     parsed.discount_rows = Array.isArray(parsed.discount_rows) ? parsed.discount_rows : []
 
+    // Fallback: modelo às vezes coloca descontos em "rows" em vez de "discount_rows"
+    if (jobImportType === 'discounts' && parsed.discount_rows.length === 0 && parsed.rows.length > 0) {
+      console.log('[QUEUE PARSE] fallback: movendo rows → discount_rows para import de descontos')
+      parsed.discount_rows = parsed.rows as unknown as ParsedDiscountRow[]
+      parsed.rows = []
+    }
+
     console.log('[QUEUE PARSE] import_type:', jobImportType, '| rows:', parsed.rows.length, '| discounts:', parsed.discount_rows.length)
 
-    // Validação por tipo
-    if (jobImportType === 'discounts' && parsed.discount_rows.length === 0) {
-      throw new Error('O modelo não retornou descontos válidos.')
-    }
+    // Validação por tipo — não lança erro, vai para needs_review para usuário decidir
     if (jobImportType === 'prices' && parsed.rows.length === 0) {
       throw new Error('O modelo não retornou preços válidos.')
     }

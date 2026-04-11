@@ -353,13 +353,19 @@ export function PriceImportQueue({ unitSlug, unitName, importType = 'prices' }: 
                   <span className="text-xs font-medium text-amber-600 dark:text-amber-400 shrink-0">Aguarda confirmação</span>
                 </div>
 
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
-                  <CheckCircle2 className="size-3 text-emerald-500 shrink-0" />
-                  <span className="font-medium text-foreground">
-                    {rowCount} {isPrices ? 'preços encontrados' : 'regras de desconto'}
+                <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                  {rowCount > 0 ? (
+                    <CheckCircle2 className="size-3 text-emerald-500 shrink-0" />
+                  ) : (
+                    <AlertCircle className="size-3 text-amber-500 shrink-0" />
+                  )}
+                  <span className={`font-medium ${rowCount > 0 ? 'text-foreground' : 'text-amber-600 dark:text-amber-400'}`}>
+                    {rowCount > 0
+                      ? `${rowCount} ${isPrices ? 'preços encontrados' : 'regras de desconto'}`
+                      : `Nenhuma ${isPrices ? 'linha de preço' : 'regra de desconto'} extraída — verifique o CSV`}
                   </span>
-                  {canais.length > 0 && (
-                    <> · {canais.join(' · ')}</>
+                  {rowCount > 0 && canais.length > 0 && (
+                    <span className="text-muted-foreground"> · {canais.join(' · ')}</span>
                   )}
                   {rowCount > 0 && (
                     <button
