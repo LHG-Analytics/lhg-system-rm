@@ -11,8 +11,10 @@
 - **OpenRouter** — roteamento de IA (modelos gratuitos)
   - Provider: `@openrouter/ai-sdk-provider` v2.5.1
   - Auth: `OPENROUTER_API_KEY`
-  - Modelo primário: `google/gemma-4-26b-a4b-it:free` | Fallback: `nvidia/nemotron-3-super-120b-a12b:free`
-  - Modelos gratuitos disponíveis: `google/gemma-4-26b-a4b-it:free`, `google/gemma-4-31b-it:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `minimax/minimax-m2.5:free`
+  - `STRATEGY_MODEL` (chat, propostas, cron): `nvidia/nemotron-3-super-120b-a12b:free` | Fallback: `minimax/minimax-m2.5:free` — **≤ 2500 tokens**
+  - `ANALYSIS_MODEL` (import, análise de concorrentes): `openai/gpt-oss-120b:free` | Fallback: `nvidia/nemotron-3-super-120b-a12b:free` — **≤ 8000 tokens**
+  - Modelos gratuitos disponíveis: `nvidia/nemotron-3-super-120b-a12b:free`, `openai/gpt-oss-120b:free`, `minimax/minimax-m2.5:free`, `google/gemma-4-31b-it:free`
+  - **Regra obrigatória:** sempre sufixo `:free`; nunca exceder 2500 tokens em STRATEGY_MODEL nem 8000 em ANALYSIS_MODEL
   - Config centralizada em `src/lib/agente/model.ts`
 - **Deploy:** Vercel + Supabase hosted
   - Projeto linkado: `danilo-dinizs-projects/lhg-system-rm`
@@ -368,6 +370,29 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - PATCH `/api/agente/import-queue` processa próximo job pendente — chamado pelo frontend via polling
   - Notificação in-app ao concluir (`type: 'success'`) ou falhar (`type: 'error'`)
   - Histórico de jobs com ícones de status (pending/processing/done/failed) e timestamp de conclusão
+- **LHG-102:** Fix: OpenRouter — enforce modelos gratuitos + reduzir maxOutputTokens
+  - Root causes: modelo sem `:free` cobrava créditos; `maxOutputTokens` excedia limites do tier
+  - `STRATEGY_MODEL = openrouter('nvidia/nemotron-3-super-120b-a12b:free')` | `ANALYSIS_MODEL = openrouter('openai/gpt-oss-120b:free')`
+  - Regra: STRATEGY_MODEL ≤ 2500 tokens; ANALYSIS_MODEL ≤ 8000 tokens; sempre sufixo `:free`
+  - Modelos gratuitos disponíveis atualizados: `nvidia/nemotron-3-super-120b-a12b:free`, `openai/gpt-oss-120b:free`, `minimax/minimax-m2.5:free`, `google/gemma-4-31b-it:free`
+- **LHG-103:** Fix: Responsividade da UI de configuração do agente RM
+  - Cards de estratégia: `grid-cols-3` → lista vertical com radio-dot + label + descrição
+  - Formulário de concorrentes: inputs empilhados verticalmente, toggle em `flex-col`
+  - Prop `compact?: boolean` em `AgentConfigManager` oculta header interno (usado no Sheet do agente)
+- **LHG-104:** Agente RM: UX do chat — steps animados na geração, quick replies e agendamento pós-aprovação
+  - `ProposalGeneratingSteps`: 4 etapas animadas (1.4s cada) no lugar do chip genérico da tool `salvar_proposta`
+  - Tool `agendar_revisao` removida do chat; agendamento somente via aba Propostas
+  - Agendamento com `Calendar` + `Input type="time"` em Popover — abre automaticamente após aprovação
+  - System prompt atualizado: aprovação e agendamento fora do chat; `sugerir_respostas` atualizado
+- **LHG-105:** Fix + Feat: Supabase Realtime completo + fix delete de tabela importada
+  - Realtime adicionado: `price_proposals` e `scheduled_reviews` com filtro `unit_id`; `agente-page-client.tsx` passa `unitId` para ambos os componentes
+  - Bug fix FK: `price_import_jobs.result_id → price_imports.id` era `NO ACTION` → migração `fix_price_import_jobs_result_id_fk_set_null` altera para `ON DELETE SET NULL`
+  - `price-list.tsx handleDelete`: verifica `res.ok` antes de chamar `onDeleted()` — evitava remoção visual com erro HTTP
+- **LHG-106:** Preços: Fluxos separados de importação (preços vs descontos) + botão excluir histórico
+  - Coluna `import_type TEXT DEFAULT 'prices' CHECK (IN ('prices','discounts'))` em `price_imports` e `price_import_jobs`
+  - `precos-tabs.tsx`: duas seções independentes — "Tabelas de Preços" e "Tabelas de Descontos", cada uma com `PriceImportQueue(importType)` + Tabs (tabelas | histórico)
+  - `ImportJobHistory`: botão Trash2 por linha + `AlertDialog` de confirmação; oculto para jobs `processing`
+  - DELETE `/api/agente/import-queue?id=` com guard de status e verificação de unidade
 
 ### 🔲 Backlog MVP (por prioridade)
 
