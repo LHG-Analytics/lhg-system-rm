@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Settings2, Loader2, Building2, Save, Globe, Plus, Trash2, RefreshCw, CheckCircle2, AlertCircle, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -89,6 +89,15 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Auto-fetch config quando não recebida via props (ex: usado em Sheet no agente)
+  useEffect(() => {
+    if (config !== null) return
+    fetch(`/api/admin/agent-config?unitSlug=${unitSlug}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => data && setConfig(data as AgentConfig))
+      .catch(() => {})
+  }, [unitSlug]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ─── Concorrentes ──────────────────────────────────────────────────────────
   const [snapshots, setSnapshots] = useState<CompetitorSnapshot[]>([])
   const [newName, setNewName] = useState('')
@@ -99,12 +108,19 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [expandedPricesUrl, setExpandedPricesUrl] = useState<string | null>(null)
 
+  // Polling de runs Playwright assíncronos: url → runId
+  const pollingRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
+
   // Carrega snapshots existentes ao montar
   useEffect(() => {
     fetch(`/api/agente/competitor-analysis?unitSlug=${unitSlug}`)
       .then((r) => r.ok ? r.json() : [])
       .then((data) => setSnapshots(data as CompetitorSnapshot[]))
       .catch(() => {})
+    // Limpa polls ao desmontar
+    return () => {
+      pollingRef.current.forEach((timer) => clearInterval(timer))
+    }
   }, [unitSlug])
 
   const competitorUrls: CompetitorUrl[] = (config?.competitor_urls as unknown as CompetitorUrl[]) ?? []
@@ -140,6 +156,49 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
       setSaving(false)
     }
   }, [config, competitorUrls])
+
+  // ─── Polling de runs Playwright ───────────────────────────────────────────
+  const startPolling = useCallback((url: string, runId: string, name: string) => {
+    if (pollingRef.current.has(url)) clearInterval(pollingRef.current.get(url)!)
+
+    const params = new URLSearchParams({ runId, unitSlug, competitorUrl: url, competitorName: name })
+    const maxAttempts = 30 // 30 × 4s = 120s máximo
+    let attempts = 0
+
+    const timer = setInterval(async () => {
+      attempts++
+      try {
+        const res = await fetch(`/api/agente/competitor-analysis?${params}`)
+        const data = await res.json() as { status?: string; error?: string; id?: string } & Partial<CompetitorSnapshot>
+        if (data.status === 'processing') return
+
+        clearInterval(timer)
+        pollingRef.current.delete(url)
+        setAnalyzingUrl(null)
+
+        if (data.id) {
+          setSnapshots((prev) => {
+            const idx = prev.findIndex((s) => s.competitor_url === url)
+            if (idx >= 0) { const next = [...prev]; next[idx] = data as CompetitorSnapshot; return next }
+            return [data as CompetitorSnapshot, ...prev]
+          })
+        } else {
+          setAnalyzeError(data.error ?? 'Análise Playwright falhou.')
+        }
+      } catch {
+        // erro de rede — tenta novamente
+      }
+
+      if (attempts >= maxAttempts) {
+        clearInterval(timer)
+        pollingRef.current.delete(url)
+        setAnalyzingUrl(null)
+        setAnalyzeError('Tempo limite atingido. O Playwright não retornou resultado.')
+      }
+    }, 4000)
+
+    pollingRef.current.set(url, timer)
+  }, [unitSlug])
 
   // ─── Adicionar + Analisar concorrente (ação única) ────────────────────────
   const handleAddCompetitor = useCallback(async () => {
@@ -180,8 +239,14 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ unitSlug, competitorName: name, competitorUrl: url, mode: newMode }),
       })
-      const analyzeData = await analyzeRes.json()
+      const analyzeData = await analyzeRes.json() as { status?: string; runId?: string; error?: string } & Partial<CompetitorSnapshot>
       if (!analyzeRes.ok) throw new Error(analyzeData.error ?? 'Erro ao analisar')
+
+      if (analyzeData.status === 'processing' && analyzeData.runId) {
+        startPolling(url, analyzeData.runId, name)
+        return
+      }
+
       setSnapshots((prev) => {
         const idx = prev.findIndex((s) => s.competitor_url === url)
         if (idx >= 0) { const next = [...prev]; next[idx] = analyzeData as CompetitorSnapshot; return next }
@@ -190,9 +255,9 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
     } catch (e) {
       setAnalyzeError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
-      setAnalyzingUrl(null)
+      if (!pollingRef.current.has(url)) setAnalyzingUrl(null)
     }
-  }, [config, competitorUrls, newName, newUrl, newMode, unitSlug])
+  }, [config, competitorUrls, newName, newUrl, newMode, unitSlug, startPolling])
 
   // ─── Remover concorrente ──────────────────────────────────────────────────
   const handleRemoveCompetitor = useCallback(async (url: string) => {
@@ -227,24 +292,27 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
           mode: competitor.mode ?? 'cheerio',
         }),
       })
-      const data = await res.json()
+      const data = await res.json() as { status?: string; runId?: string; error?: string } & Partial<CompetitorSnapshot>
       if (!res.ok) throw new Error(data.error ?? 'Erro ao analisar')
-      // Atualiza snapshots com o novo resultado
+
+      if (data.status === 'processing' && data.runId) {
+        // Playwright assíncrono — inicia polling (mantém analyzingUrl ativo)
+        startPolling(competitor.url, data.runId, competitor.name)
+        return
+      }
+
       setSnapshots((prev) => {
         const idx = prev.findIndex((s) => s.competitor_url === competitor.url)
-        if (idx >= 0) {
-          const next = [...prev]
-          next[idx] = data as CompetitorSnapshot
-          return next
-        }
+        if (idx >= 0) { const next = [...prev]; next[idx] = data as CompetitorSnapshot; return next }
         return [data as CompetitorSnapshot, ...prev]
       })
     } catch (e) {
       setAnalyzeError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
-      setAnalyzingUrl(null)
+      // Só limpa o spinner se NÃO estiver em polling (polling limpa sozinho)
+      if (!pollingRef.current.has(competitor.url)) setAnalyzingUrl(null)
     }
-  }, [unitSlug])
+  }, [unitSlug, startPolling])
 
   return (
     <div className="flex flex-col gap-6">
@@ -460,7 +528,10 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig }:
                             ? <Loader2 className="size-3 animate-spin" />
                             : <RefreshCw className="size-3" />
                           }
-                          {isAnalyzing ? 'Analisando…' : snap ? 'Reanalisar' : 'Analisar'}
+                          {isAnalyzing
+                            ? (pollingRef.current.has(c.url) ? 'Playwright…' : 'Analisando…')
+                            : snap ? 'Reanalisar' : 'Analisar'
+                          }
                         </Button>
                         <Button
                           size="sm"

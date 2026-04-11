@@ -67,8 +67,8 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
     activeUnit = data
   }
 
-  // Buscar propostas e imports em paralelo
-  const [proposalsResult, importsResult] = await Promise.all([
+  // Buscar propostas, imports e perfil em paralelo
+  const [proposalsResult, importsResult, profileResult, unitsResult] = await Promise.all([
     activeUnit
       ? supabase
           .from('price_proposals')
@@ -84,10 +84,14 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
           .eq('unit_id', activeUnit.id)
           .order('valid_from', { ascending: false })
       : Promise.resolve({ data: [] }),
+    supabase.from('profiles').select('role').eq('user_id', user.id).single(),
+    admin.from('units').select('id, slug, name').eq('is_active', true).order('name'),
   ])
 
   const initialProposals = (proposalsResult.data ?? []) as unknown as PriceProposal[]
   const priceImports = (importsResult.data ?? []) as PriceImportSummary[]
+  const userRole = profileResult.data?.role ?? 'viewer'
+  const allUnits = (unitsResult.data ?? []).map((u) => ({ id: u.id, slug: u.slug, name: u.name }))
 
   return (
     <Suspense fallback={null}>
@@ -95,6 +99,8 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
         activeUnit={activeUnit}
         initialProposals={initialProposals}
         priceImports={priceImports}
+        userRole={userRole}
+        units={allUnits}
       />
     </Suspense>
   )

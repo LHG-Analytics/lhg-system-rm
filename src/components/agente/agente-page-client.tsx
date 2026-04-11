@@ -2,14 +2,16 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Plus, MessageSquare, Trash2, BotMessageSquare, ClipboardCheck, CalendarClock } from 'lucide-react'
+import { Plus, MessageSquare, Trash2, BotMessageSquare, ClipboardCheck, CalendarClock, Settings2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { AgenteChat } from '@/components/agente/agente-chat'
 import { ProposalsList } from '@/components/agente/proposals-list'
 import { ScheduledReviewsList } from '@/components/agente/scheduled-reviews-list'
+import { AgentConfigManager } from '@/app/dashboard/admin/_components/agent-config-manager'
 import type { UIMessage } from 'ai'
 import type { ConversationSummary, PriceImportSummary } from '@/components/agente/agente-chat'
 import type { PriceProposal } from '@/app/api/agente/proposals/route'
@@ -20,6 +22,8 @@ interface AgenteChatPageProps {
   activeUnit: { id: string; slug: string; name: string } | null
   initialProposals: PriceProposal[]
   priceImports: PriceImportSummary[]
+  userRole?: string
+  units?: { id: string; slug: string; name: string }[]
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -32,10 +36,12 @@ function isScheduledReview(title: string | null) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: AgenteChatPageProps) {
+export function AgenteChatPage({ activeUnit, initialProposals, priceImports, userRole, units = [] }: AgenteChatPageProps) {
   const searchParams = useSearchParams()
   const unitId   = activeUnit?.id   ?? ''
   const unitSlug = searchParams.get('unit') ?? activeUnit?.slug ?? ''
+  const [configOpen, setConfigOpen] = useState(false)
+  const canConfig = userRole === 'super_admin' || userRole === 'admin'
 
   // ── Histórico de conversas ─────────────────────────────────────────────────
   const [conversations,    setConversations]    = useState<ConversationSummary[]>([])
@@ -233,7 +239,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
       {/* ── Card principal: header + tabs ───────────────────────────── */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col rounded-xl border bg-card overflow-hidden min-h-0">
 
-        {/* Cabeçalho do card: título + TabsList */}
+        {/* Cabeçalho do card: título + TabsList + gear */}
         <div className="flex items-center justify-between gap-4 px-4 py-3 border-b shrink-0">
           <div className="min-w-0">
             <h1 className="text-lg font-semibold tracking-tight leading-tight">Agente RM</h1>
@@ -241,26 +247,59 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports }: A
               {activeUnit ? `Analisando ${activeUnit.name}` : 'Assistente de Revenue Management'}
             </p>
           </div>
-          <TabsList className="h-8 shrink-0">
-            <TabsTrigger value="chat" className="gap-1.5 text-xs h-7 px-3">
-              <BotMessageSquare className="size-3.5" />
-              Chat
-            </TabsTrigger>
-            <TabsTrigger value="propostas" className="gap-1.5 text-xs h-7 px-3">
-              <ClipboardCheck className="size-3.5" />
-              Propostas
-              {pendingCount > 0 && (
-                <span className="ml-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium px-1.5 py-0.5 leading-none">
-                  {pendingCount}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="agendamentos" className="gap-1.5 text-xs h-7 px-3">
-              <CalendarClock className="size-3.5" />
-              Agenda
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex items-center gap-2 shrink-0">
+            <TabsList className="h-8">
+              <TabsTrigger value="chat" className="gap-1.5 text-xs h-7 px-3">
+                <BotMessageSquare className="size-3.5" />
+                Chat
+              </TabsTrigger>
+              <TabsTrigger value="propostas" className="gap-1.5 text-xs h-7 px-3">
+                <ClipboardCheck className="size-3.5" />
+                Propostas
+                {pendingCount > 0 && (
+                  <span className="ml-1 rounded-full bg-primary text-primary-foreground text-[10px] font-medium px-1.5 py-0.5 leading-none">
+                    {pendingCount}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="agendamentos" className="gap-1.5 text-xs h-7 px-3">
+                <CalendarClock className="size-3.5" />
+                Agenda
+              </TabsTrigger>
+            </TabsList>
+            {canConfig && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={() => setConfigOpen(true)}
+                title="Configurações do agente"
+              >
+                <Settings2 className="size-4" />
+              </Button>
+            )}
+          </div>
         </div>
+
+        {/* Sheet de configuração do agente */}
+        {canConfig && activeUnit && (
+          <Sheet open={configOpen} onOpenChange={setConfigOpen}>
+            <SheetContent side="right" className="w-[520px] sm:max-w-[520px] overflow-y-auto">
+              <SheetHeader className="pb-2">
+                <SheetTitle className="flex items-center gap-2 text-base">
+                  <Settings2 className="size-4 text-primary" />
+                  Configurações do Agente — {activeUnit.name}
+                </SheetTitle>
+              </SheetHeader>
+              <AgentConfigManager
+                unitSlug={activeUnit.slug}
+                unitName={activeUnit.name}
+                units={units.length > 0 ? units : [activeUnit]}
+                initialConfig={null}
+              />
+            </SheetContent>
+          </Sheet>
+        )}
 
         <TabsContent value="chat" className="flex flex-col flex-1 min-h-0 mt-0">
           <AgenteChat

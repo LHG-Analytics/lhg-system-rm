@@ -65,7 +65,7 @@ function buildPlaywrightPageFunction(fridayDate: Date): string {
   return `
 async function pageFunction({ page, log }) {
   // Aguarda carregamento inicial + XHR de preços
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(5000);
 
   const todayText = await page.evaluate(() => document.body.innerText);
   log.info('Tamanho conteúdo inicial: ' + todayText.length);
@@ -82,7 +82,7 @@ async function pageFunction({ page, log }) {
       await dateInput.fill(fridayIso);
       await dateInput.dispatchEvent('change');
       await dateInput.dispatchEvent('input');
-      await page.waitForTimeout(2500);
+      await page.waitForTimeout(3000);
       const t = await page.evaluate(() => document.body.innerText);
       results.push({ label: 'sexta-feira (final de semana)', text: t.slice(0, 8000) });
       log.info('Estratégia date input bem-sucedida');
@@ -109,8 +109,7 @@ async function pageFunction({ page, log }) {
         const el = await page.$(sel);
         if (el) {
           await el.click();
-          await page.waitForTimeout(1200);
-          // Verifica se algum popup/dropdown apareceu
+          await page.waitForTimeout(1500);
           const popup = await page.$('.datepicker, .flatpickr-calendar, .pika-single, [class*="calendar-popup"], [class*="datepicker-dropdown"]');
           if (popup) { calendarOpened = true; log.info('Calendário aberto via: ' + sel); break; }
         }
@@ -122,15 +121,14 @@ async function pageFunction({ page, log }) {
       return results;
     }
 
-    // Estratégia de clique no dia: tenta múltiplos seletores de célula
+    // Tenta clicar no dia alvo, avançando mês se necessário
     let fridayClicked = false;
     for (let pass = 0; pass < 2 && !fridayClicked; pass++) {
       const cellSelectors = [
         \`[data-date="\${fridayIso}"]\`,
         \`[data-date="\${fridayPt}"]\`,
         \`td[data-day="\${fridayDay}"]:not([class*="disabled"]):not([class*="prev"]):not([class*="next"])\`,
-        \`[class*="day"]:not([class*="disabled"]):not([class*="prev"]):not([class*="next"]) >> text="${fridayDay}"\`,
-        \`td:not([class*="disabled"]) >> text="${fridayDay}"\`,
+        \`td:not([class*="disabled"]) >> text="\${fridayDay}"\`,
       ];
 
       for (const cellSel of cellSelectors) {
@@ -151,10 +149,9 @@ async function pageFunction({ page, log }) {
       }
 
       if (!fridayClicked && pass === 0) {
-        // Tenta avançar um mês
         try {
-          const nextBtn = await page.$('.datepicker--nav-action[data-action="next"], .pika-next, .flatpickr-next-month, [class*="next-month"], button[aria-label*="xt"]');
-          if (nextBtn) { await nextBtn.click(); await page.waitForTimeout(800); }
+          const nextBtn = await page.$('.datepicker--nav-action[data-action="next"], .pika-next, .flatpickr-next-month, [class*="next-month"]');
+          if (nextBtn) { await nextBtn.click(); await page.waitForTimeout(1000); }
         } catch(e) { /* ignora */ }
       }
     }
@@ -169,13 +166,159 @@ async function pageFunction({ page, log }) {
 `
 }
 
-// ─── GET: snapshots recentes de concorrentes da unidade ─────────────────────
+// Extrai preços do texto via Claude e salva no banco
+async function extractAndSave({
+  rawText, competitorUrl, competitorName, ourCategories, mode, unitId,
+}: {
+  rawText: string
+  competitorUrl: string
+  competitorName: string
+  ourCategories: string[]
+  mode: string
+  unitId: string
+}): Promise<CompetitorSnapshot> {
+  const admin = getAdminClient()
+  const categoriesHint = ourCategories.length > 0
+    ? `\nNossas categorias de suíte: ${ourCategories.join(', ')}`
+    : ''
+  const modeHint = mode === 'playwright'
+    ? '\nO texto foi coletado em dois momentos: "HOJE (DIA DE SEMANA)" e "SEXTA-FEIRA (FINAL DE SEMANA)". Use essas seções para preencher corretamente o campo dia_tipo.'
+    : ''
+
+  const extractionPrompt = `Você é um especialista em análise de preços de motéis. Analise o texto abaixo extraído do site de um motel concorrente e extraia as informações de preços.${categoriesHint}${modeHint}
+
+Períodos comuns em motéis brasileiros: 3h (curta duração), 6h (meia diária ~6h), 12h (meia diária longa), pernoite (diária noturna).
+
+Texto extraído do site (${competitorUrl}):
+\`\`\`
+${rawText.slice(0, 15000)}
+\`\`\`
+
+Instruções:
+1. Identifique todas as suítes/categorias e seus preços por período
+2. Mapeie cada categoria para a mais próxima das nossas (se fornecidas) ou deixe null
+3. Identifique se o preço é para semana, FDS/feriado ou ambos (use "todos" quando não diferenciado)
+4. Ignore taxas de serviço, descontos promocionais pontuais e preços de eventos especiais
+5. Se houver preços diferentes para semana e FDS, crie DUAS entradas para cada item (uma por dia_tipo)
+
+Retorne SOMENTE este JSON minificado (sem texto antes ou depois):
+{"prices":[{"categoria_concorrente":"nome exato no site","categoria_nossa":"nome mais próximo ou null","periodo":"3h|6h|12h|pernoite","preco":0.00,"dia_tipo":"semana|fds_feriado|todos","notas":"observação opcional ou omita"}]}
+
+Se não encontrar preços estruturados, retorne: {"prices":[],"nota":"motivo breve"}`
+
+  let mappedPrices: MappedPrice[] = []
+  try {
+    const { text } = await generateText({
+      model: PRIMARY_MODEL,
+      providerOptions: gatewayOptions,
+      prompt: extractionPrompt,
+      maxOutputTokens: 2000,
+      temperature: 0.1,
+    })
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as { prices?: MappedPrice[] }
+      mappedPrices = parsed.prices ?? []
+    }
+    console.log('[competitor-analysis] Extraídos', mappedPrices.length, 'preços')
+  } catch (e) {
+    console.error('[competitor-analysis] Erro de extração:', e)
+  }
+
+  const { data: saved, error: saveError } = await admin
+    .from('competitor_snapshots')
+    .upsert(
+      {
+        unit_id: unitId,
+        competitor_name: competitorName,
+        competitor_url: competitorUrl,
+        mapped_prices: mappedPrices as unknown as Database['public']['Tables']['competitor_snapshots']['Insert']['mapped_prices'],
+        raw_text: rawText.slice(0, 50000),
+        scraped_at: new Date().toISOString(),
+      },
+      { onConflict: 'unit_id,competitor_url' }
+    )
+    .select('id, competitor_name, competitor_url, mapped_prices, scraped_at')
+    .single()
+
+  if (saveError) throw new Error(saveError.message)
+  return { ...saved, prices_found: mappedPrices.length } as unknown as CompetitorSnapshot
+}
+
+// ─── GET: snapshots recentes OU polling de run Playwright ───────────────────
 
 export async function GET(req: NextRequest) {
   const auth = await requireManagerOrAbove()
   if (auth.error) return new Response(auth.error, { status: auth.status })
 
-  const unitSlug = req.nextUrl.searchParams.get('unitSlug')
+  const { searchParams } = req.nextUrl
+  const runId = searchParams.get('runId')
+
+  // ── Polling: verificar status de run Playwright assíncrono ─────────────────
+  if (runId) {
+    const unitSlug       = searchParams.get('unitSlug') ?? ''
+    const competitorUrl  = searchParams.get('competitorUrl') ?? ''
+    const competitorName = searchParams.get('competitorName') ?? ''
+    const ourCategories  = searchParams.get('ourCategories')?.split(',').filter(Boolean) ?? []
+
+    const APIFY_TOKEN = process.env.APIFY_API_TOKEN
+    if (!APIFY_TOKEN) return Response.json({ error: 'APIFY_API_TOKEN não configurado' }, { status: 500 })
+
+    try {
+      const statusRes = await fetch(
+        `https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_TOKEN}`,
+        { signal: AbortSignal.timeout(10000) }
+      )
+      if (!statusRes.ok) return Response.json({ status: 'failed', error: 'Erro ao verificar status do run' }, { status: 502 })
+
+      const statusData = await statusRes.json() as { data: { status: string } }
+      const runStatus = statusData.data?.status
+
+      if (['RUNNING', 'READY', 'CREATED'].includes(runStatus)) {
+        return Response.json({ status: 'processing' })
+      }
+
+      if (runStatus !== 'SUCCEEDED') {
+        console.error('[competitor-analysis] Run falhou:', runStatus)
+        return Response.json({ status: 'failed', error: `Run terminou com status: ${runStatus}` })
+      }
+
+      // Run bem-sucedido — busca os resultados
+      const admin = getAdminClient()
+      const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
+      if (!unit) return Response.json({ status: 'failed', error: 'Unidade não encontrada' })
+
+      const itemsRes = await fetch(
+        `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_TOKEN}`,
+        { signal: AbortSignal.timeout(15000) }
+      )
+      if (!itemsRes.ok) return Response.json({ status: 'failed', error: 'Erro ao buscar resultados do run' }, { status: 502 })
+
+      const items = await itemsRes.json() as Array<Array<{ label: string; text: string }>>
+      const sections = items.flat().filter((s) => s?.label && s?.text)
+      const rawText = sections
+        .map((s) => `=== ${s.label.toUpperCase()} ===\n${s.text}`)
+        .join('\n\n')
+        .slice(0, 20000)
+
+      console.log('[competitor-analysis] Playwright concluído, capturas:', sections.map((s) => s.label))
+
+      if (!rawText.trim()) {
+        return Response.json({ status: 'failed', error: 'Nenhum conteúdo extraído pelo Playwright.' })
+      }
+
+      const snapshot = await extractAndSave({
+        rawText, competitorUrl, competitorName, ourCategories, mode: 'playwright', unitId: unit.id,
+      })
+      return Response.json(snapshot)
+    } catch (e) {
+      console.error('[competitor-analysis] Erro ao verificar run:', e)
+      return Response.json({ status: 'failed', error: 'Tempo excedido ao verificar status do run.' })
+    }
+  }
+
+  // ── Listagem normal de snapshots ───────────────────────────────────────────
+  const unitSlug = searchParams.get('unitSlug')
   if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
 
   const admin = getAdminClient()
@@ -223,18 +366,15 @@ export async function POST(req: NextRequest) {
   const APIFY_TOKEN = process.env.APIFY_API_TOKEN
   if (!APIFY_TOKEN) return new Response('APIFY_API_TOKEN não configurado', { status: 500 })
 
-  // ─── Scraping via Apify ───────────────────────────────────────────────────
-  let rawText = ''
-
+  // ─── Playwright: run assíncrono (não bloqueia a rota) ────────────────────
   if (mode === 'playwright') {
-    // Playwright: renderiza JS + tenta interagir com calendário para pegar semana E FDS
     const friday = nextFridayDate()
     const pageFunction = buildPlaywrightPageFunction(friday)
 
+    console.log('[competitor-analysis] Iniciando run Playwright assíncrono — sexta alvo:', friday.toISOString().slice(0, 10))
     try {
-      console.log('[competitor-analysis] Modo playwright — sexta alvo:', friday.toISOString().slice(0, 10))
       const apifyRes = await fetch(
-        `https://api.apify.com/v2/acts/apify~playwright-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=55&memory=1024`,
+        `https://api.apify.com/v2/acts/apify~playwright-scraper/runs?token=${APIFY_TOKEN}&timeout=180&memory=1024`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -243,144 +383,75 @@ export async function POST(req: NextRequest) {
             pageFunction,
             maxCrawlPages: 1,
           }),
-          signal: AbortSignal.timeout(58000),
+          signal: AbortSignal.timeout(15000),
         }
       )
 
       if (!apifyRes.ok) {
         const errText = await apifyRes.text()
-        console.error('[competitor-analysis] Apify playwright error:', apifyRes.status, errText.slice(0, 300))
-        return Response.json({ error: `Erro no Playwright: ${apifyRes.statusText}` }, { status: 502 })
+        console.error('[competitor-analysis] Apify playwright start error:', apifyRes.status, errText.slice(0, 200))
+        return Response.json({ error: `Erro ao iniciar análise: ${apifyRes.statusText}` }, { status: 502 })
       }
 
-      // playwright-scraper retorna array onde cada item é o retorno da pageFunction
-      const items = await apifyRes.json() as Array<Array<{ label: string; text: string }>>
-      const sections = items.flat().filter((s) => s?.label && s?.text)
-      rawText = sections
-        .map((s) => `=== ${s.label.toUpperCase()} ===\n${s.text}`)
-        .join('\n\n')
-        .slice(0, 20000)
+      const runData = await apifyRes.json() as { data: { id: string; status: string } }
+      const runId = runData.data?.id
+      console.log('[competitor-analysis] Run Playwright iniciado:', runId)
 
-      console.log('[competitor-analysis] Playwright: capturas', sections.map((s) => s.label))
+      // Retorna imediatamente com o runId para o frontend fazer polling
+      return Response.json({
+        status: 'processing',
+        runId,
+        competitorUrl,
+        message: 'Análise iniciada. O Playwright está acessando o site (~1-2 min).',
+      })
     } catch (e) {
-      console.error('[competitor-analysis] Playwright timeout/error:', e)
-      return Response.json({ error: 'Tempo excedido no Playwright. O site pode ser muito lento ou bloquear automação.' }, { status: 504 })
+      console.error('[competitor-analysis] Erro ao iniciar run Playwright:', e)
+      return Response.json({ error: 'Erro ao iniciar análise Playwright. Verifique o token Apify.' }, { status: 502 })
     }
-  } else {
-    // Cheerio: scraping estático rápido (sem JS)
-    try {
-      const apifyRes = await fetch(
-        `https://api.apify.com/v2/acts/apify~website-content-crawler/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=50&memory=256`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            startUrls: [{ url: competitorUrl }],
-            crawlerType: 'cheerio',
-            maxCrawlPages: 3,
-          }),
-          signal: AbortSignal.timeout(52000),
-        }
-      )
+  }
 
-      if (!apifyRes.ok) {
-        const errText = await apifyRes.text()
-        console.error('[competitor-analysis] Apify cheerio error:', apifyRes.status, errText.slice(0, 200))
-        return Response.json({ error: `Erro ao acessar o site: ${apifyRes.statusText}` }, { status: 502 })
+  // ─── Cheerio: scraping estático rápido (síncrono) ────────────────────────
+  let rawText = ''
+  try {
+    const apifyRes = await fetch(
+      `https://api.apify.com/v2/acts/apify~website-content-crawler/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=50&memory=256`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startUrls: [{ url: competitorUrl }],
+          crawlerType: 'cheerio',
+          maxCrawlPages: 3,
+        }),
+        signal: AbortSignal.timeout(52000),
       }
+    )
 
-      const items = await apifyRes.json() as Array<{ text?: string; markdown?: string }>
-      rawText = items
-        .map((item) => item.text ?? item.markdown ?? '')
-        .filter(Boolean)
-        .join('\n\n---\n\n')
-        .slice(0, 15000)
-
-      console.log('[competitor-analysis] Cheerio: extraídos', items.length, 'páginas, total', rawText.length, 'chars')
-    } catch (e) {
-      console.error('[competitor-analysis] Cheerio timeout/error:', e)
-      return Response.json({ error: 'Tempo limite excedido ao acessar o site. Tente novamente ou verifique a URL.' }, { status: 504 })
+    if (!apifyRes.ok) {
+      const errText = await apifyRes.text()
+      console.error('[competitor-analysis] Apify cheerio error:', apifyRes.status, errText.slice(0, 200))
+      return Response.json({ error: `Erro ao acessar o site: ${apifyRes.statusText}` }, { status: 502 })
     }
+
+    const items = await apifyRes.json() as Array<{ text?: string; markdown?: string }>
+    rawText = items
+      .map((item) => item.text ?? item.markdown ?? '')
+      .filter(Boolean)
+      .join('\n\n---\n\n')
+      .slice(0, 15000)
+
+    console.log('[competitor-analysis] Cheerio: extraídos', items.length, 'páginas, total', rawText.length, 'chars')
+  } catch (e) {
+    console.error('[competitor-analysis] Cheerio timeout/error:', e)
+    return Response.json({ error: 'Tempo limite excedido ao acessar o site. Tente novamente ou verifique a URL.' }, { status: 504 })
   }
 
   if (!rawText.trim()) {
     return Response.json({ error: 'Nenhum conteúdo extraído do site.' }, { status: 422 })
   }
 
-  // ─── Extração de preços via Claude ────────────────────────────────────────
-  const categoriesHint = ourCategories.length > 0
-    ? `\nNossas categorias de suíte: ${ourCategories.join(', ')}`
-    : ''
-
-  const modeHint = mode === 'playwright'
-    ? '\nO texto foi coletado em dois momentos: "HOJE (DIA DE SEMANA)" e "SEXTA-FEIRA (FINAL DE SEMANA)". Use essas seções para preencher corretamente o campo dia_tipo.'
-    : ''
-
-  const extractionPrompt = `Você é um especialista em análise de preços de motéis. Analise o texto abaixo extraído do site de um motel concorrente e extraia as informações de preços.${categoriesHint}${modeHint}
-
-Períodos comuns em motéis brasileiros: 3h (curta duração), 6h (meia diária ~6h), 12h (meia diária longa), pernoite (diária noturna).
-
-Texto extraído do site (${competitorUrl}):
-\`\`\`
-${rawText}
-\`\`\`
-
-Instruções:
-1. Identifique todas as suítes/categorias e seus preços por período
-2. Mapeie cada categoria para a mais próxima das nossas (se fornecidas) ou deixe null
-3. Identifique se o preço é para semana, FDS/feriado ou ambos (use "todos" quando não diferenciado)
-4. Ignore taxas de serviço, descontos promocionais pontuais e preços de eventos especiais
-5. Se houver preços diferentes para semana e FDS, crie DUAS entradas para cada item (uma por dia_tipo)
-
-Retorne SOMENTE este JSON minificado (sem texto antes ou depois):
-{"prices":[{"categoria_concorrente":"nome exato no site","categoria_nossa":"nome mais próximo ou null","periodo":"3h|6h|12h|pernoite","preco":0.00,"dia_tipo":"semana|fds_feriado|todos","notas":"observação opcional ou omita"}]}
-
-Se não encontrar preços estruturados, retorne: {"prices":[],"nota":"motivo breve"}`
-
-  let mappedPrices: MappedPrice[] = []
-  let extractionNota = ''
-  try {
-    const { text } = await generateText({
-      model: PRIMARY_MODEL,
-      providerOptions: gatewayOptions,
-      prompt: extractionPrompt,
-      maxOutputTokens: 2000,
-      temperature: 0.1,
-    })
-
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]) as { prices?: MappedPrice[]; nota?: string }
-      mappedPrices = parsed.prices ?? []
-      extractionNota = parsed.nota ?? ''
-    }
-    console.log('[competitor-analysis] Extraídos', mappedPrices.length, 'preços')
-  } catch (e) {
-    console.error('[competitor-analysis] Erro de extração:', e)
-  }
-
-  // ─── Upsert no banco ──────────────────────────────────────────────────────
-  const { data: saved, error: saveError } = await admin
-    .from('competitor_snapshots')
-    .upsert(
-      {
-        unit_id: unit.id,
-        competitor_name: competitorName,
-        competitor_url: competitorUrl,
-        mapped_prices: mappedPrices as unknown as Database['public']['Tables']['competitor_snapshots']['Insert']['mapped_prices'],
-        raw_text: rawText.slice(0, 50000),
-        scraped_at: new Date().toISOString(),
-      },
-      { onConflict: 'unit_id,competitor_url' }
-    )
-    .select('id, competitor_name, competitor_url, mapped_prices, scraped_at')
-    .single()
-
-  if (saveError) return Response.json({ error: saveError.message }, { status: 500 })
-
-  return Response.json({
-    ...saved,
-    prices_found: mappedPrices.length,
-    nota: extractionNota || undefined,
+  const snapshot = await extractAndSave({
+    rawText, competitorUrl, competitorName, ourCategories, mode, unitId: unit.id,
   })
+  return Response.json({ ...snapshot, prices_found: (snapshot as unknown as { prices_found: number }).prices_found })
 }
