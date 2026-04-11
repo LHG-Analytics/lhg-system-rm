@@ -313,6 +313,20 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Nova aba "Agente RM" (Settings2) em `/dashboard/admin`
   - Prompt de geração injeta `agentConfigBlock` com instruções específicas de estratégia/foco; `max_variation_pct` substitui o hardcoded 30%
 
+- **LHG-94:** Agente RM: Análise de preços de concorrentes via Apify + Claude
+  - **Modo Cheerio** (estático): `website-content-crawler` síncrono, timeout 50s, max 3 páginas
+  - **Modo Playwright** (interativo): `playwright-scraper` **assíncrono** — POST inicia run Apify e retorna `{ status: 'processing', runId }` imediatamente; GET `?runId=...` faz polling do status e extrai preços quando SUCCEEDED (evita timeout Vercel 60s)
+  - `buildPlaywrightPageFunction`: captura preços do dia atual + tenta navegar calendário para próxima sexta (semana × FDS); dois passes com advance de mês
+  - Polling no frontend (`startPolling`): a cada 4s por até 120s, mostra "Playwright…" no botão
+  - GET `/api/agente/competitor-analysis`: sem `runId` = lista snapshots; com `runId` = polling de run assíncrono
+  - `rm_agent_config.competitor_urls: [{name, url, mode: 'cheerio'|'playwright'}]`
+  - **8 métricas de foco**: balanceado, agressivo, revpar, giro, ocupacao, ticket, trevpar, tmo
+  - DB: constraint `rm_agent_config_focus_metric_check` atualizada via migration Supabase MCP
+  - `AgentConfigManager`: toggle Estático/Interativo no formulário; botão "Adicionar e Analisar" (ação única); tabela de preços expansível por concorrente (categoria, período, dia, preço, nossa categ.); `initialConfig=null` faz auto-fetch via GET
+  - **Gear icon (Settings2) no header do Agente RM**: abre Sheet lateral com `AgentConfigManager` completo; visível para `super_admin` e `admin`; `agente/page.tsx` passa `userRole` e `units[]` para `AgenteChatPage`
+  - POST `/api/agente/proposals`: injeta snapshots dos últimos 7 dias no prompt como referência de mercado
+  - `APIFY_API_TOKEN` configurado em `.env.local` e na Vercel
+
 ### 🔲 Backlog MVP (por prioridade)
 
 #### 🚀 Deploy e CI/CD
