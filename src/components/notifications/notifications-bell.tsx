@@ -59,18 +59,29 @@ export function NotificationsBell() {
     loadNotifications()
 
     const supabase = createClient()
-    const channel = supabase
-      .channel('notifications-realtime')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications' },
-        (payload) => {
-          setNotifications((prev) => [payload.new as Notification, ...prev].slice(0, 20))
-        }
-      )
-      .subscribe()
+    let channel: ReturnType<typeof supabase.channel> | null = null
 
-    return () => { void supabase.removeChannel(channel) }
+    // Subscreve com filtro por user_id após resolver o usuário atual
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      channel = supabase
+        .channel('notifications-realtime')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            setNotifications((prev) => [payload.new as Notification, ...prev].slice(0, 20))
+          }
+        )
+        .subscribe()
+    })
+
+    return () => { if (channel) void supabase.removeChannel(channel) }
   }, [loadNotifications])
 
   async function markAsRead(id: string) {
