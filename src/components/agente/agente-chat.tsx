@@ -6,7 +6,6 @@ import type { UIMessage } from 'ai'
 import type { DateRange } from 'react-day-picker'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
-import { useAgentStreaming } from '@/components/agente/agent-streaming-provider'
 import { Send, Bot, User, Loader2, AlertCircle, CalendarIcon, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -220,24 +219,25 @@ function AgenteChatInner({
   initialMessages, conversationId,
   onConversationCreated, onMessagesUpdate, onProposalSaved, onNavigateToProposals,
 }: AgenteChatInnerProps) {
-  const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({
-      api: '/api/agente/chat',
-      body: { unitSlug, dateFrom, dateTo },
-    }),
-    messages: initialMessages,
-  })
-
-  const { startBackground } = useAgentStreaming()
-
   // Ref para o ID da conversa ativa (não precisa triggerar re-render)
   const convIdRef = useRef<string | null>(conversationId ?? null)
 
-  // Refs de estado atual para uso no cleanup de unmount
-  const statusRef = useRef(status)
-  const messagesRef = useRef<UIMessage[]>(messages as UIMessage[])
-  useEffect(() => { statusRef.current = status }, [status])
-  useEffect(() => { messagesRef.current = messages as UIMessage[] }, [messages])
+  // body como função: DefaultChatTransport chama resolve(body) a cada request,
+  // o que permite incluir convId dinamicamente (após a conversa ser criada).
+  const getBody = useRef(() => ({
+    unitSlug,
+    dateFrom,
+    dateTo,
+    convId: convIdRef.current ?? undefined,
+  }))
+
+  const { messages, sendMessage, status, error } = useChat({
+    transport: new DefaultChatTransport({
+      api: '/api/agente/chat',
+      body: getBody.current,
+    }),
+    messages: initialMessages,
+  })
 
   // Salva mensagens sempre que o streaming termina
   const prevStatusRef = useRef(status)
@@ -263,46 +263,6 @@ function AgenteChatInner({
       )
     if (saved) onProposalSaved?.()
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Ao desmontar durante streaming: passa o trabalho para o BackgroundStreamer
-  // do AgentStreamingProvider, que continua gerando em segundo plano e notifica
-  // o usuário quando terminar.
-  useEffect(() => {
-    return () => {
-      const currentStatus = statusRef.current
-      const currentMessages = messagesRef.current
-      const convId = convIdRef.current
-
-      if (
-        (currentStatus === 'streaming' || currentStatus === 'submitted') &&
-        convId
-      ) {
-        // Encontra o índice da última mensagem do usuário
-        const lastUserIdx = currentMessages.map((m) => m.role).lastIndexOf('user')
-        if (lastUserIdx < 0) return
-
-        const lastUserMsg = currentMessages[lastUserIdx]
-        const lastUserText = lastUserMsg.parts
-          .filter((p) => p.type === 'text')
-          .map((p) => (p as { type: 'text'; text: string }).text)
-          .join('')
-
-        if (!lastUserText) return
-
-        startBackground({
-          key: Date.now(),
-          convId,
-          unitId,
-          unitSlug,
-          dateFrom,
-          dateTo,
-          messagesBeforeLastUser: currentMessages.slice(0, lastUserIdx),
-          lastUserText,
-        })
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)

@@ -59,6 +59,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as {
     messages: unknown[]
     unitSlug?: string
+    /** ID da conversa em rm_conversations — usado pelo onFinish para salvar
+     *  resultado e notificar quando o cliente desconecta antes do término */
+    convId?: string
     // Novo: range único em YYYY-MM-DD (UI simplificada)
     dateFrom?: string
     dateTo?: string
@@ -66,7 +69,7 @@ export async function POST(req: NextRequest) {
     startDate?: string
     endDate?: string
   }
-  const { messages, unitSlug, dateFrom, dateTo, startDate, endDate } = body
+  const { messages, unitSlug, convId, dateFrom, dateTo, startDate, endDate } = body
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response('messages inválido', { status: 400 })
@@ -448,6 +451,51 @@ export async function POST(req: NextRequest) {
     maxOutputTokens: 2500,
     temperature: 0.3,
     providerOptions: gatewayOptions,
+
+    // onFinish é chamado quando o modelo termina a geração — MESMO se o cliente
+    // desconectou (SSE fechado). No Vercel, a função continua executando até
+    // concluir ou atingir o timeout. Quando convId está presente e o cliente
+    // desconectou, salvamos as mensagens e criamos notificação in-app.
+    onFinish: async ({ text }) => {
+      // Só age se o cliente desconectou E há uma conversa para salvar
+      if (!req.signal.aborted) return
+      if (!convId || typeof convId !== 'string') return
+      if (!text) return
+
+      try {
+        // Busca mensagens existentes (inclui a mensagem do usuário salva no submit)
+        const { data: conv } = await admin
+          .from('rm_conversations')
+          .select('messages')
+          .eq('id', convId)
+          .single()
+
+        const existing = (conv?.messages ?? []) as Array<{ role: string; parts: unknown[] }>
+        const assistantMsg = {
+          id: Math.random().toString(36).slice(2, 12),
+          role: 'assistant',
+          parts: [{ type: 'text', text }],
+        }
+
+        await admin
+          .from('rm_conversations')
+          .update({ messages: JSON.parse(JSON.stringify([...existing, assistantMsg])) })
+          .eq('id', convId)
+
+        // Notificação in-app com link direto para a conversa
+        await admin
+          .from('notifications')
+          .insert({
+            user_id: user.id,
+            type: 'info',
+            title: 'Agente RM respondeu',
+            body: 'Sua consulta foi processada. Clique para ver a resposta.',
+            link: `/dashboard/agente?conv=${convId}`,
+          })
+      } catch (err) {
+        console.error('[chat/onFinish] Erro ao salvar resposta em background:', err)
+      }
+    },
   })
 
   return result.toUIMessageStreamResponse()
