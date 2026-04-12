@@ -113,13 +113,13 @@ function ToolCallChip({ toolName, state }: { toolName: string; state: string }) 
 // ─── Thinking bubble com frases rotativas ────────────────────────────────────
 
 const THINKING_PHRASES = [
-  'Consultando dados operacionais…',
-  'Analisando o período selecionado…',
-  'Cruzando KPIs com a tabela de preços…',
-  'Verificando padrões de demanda…',
-  'Calculando RevPAR e giro…',
-  'Avaliando oportunidades de precificação…',
-  'Preparando a análise…',
+  'Consultando dados operacionais',
+  'Analisando o período selecionado',
+  'Cruzando KPIs com a tabela de preços',
+  'Verificando padrões de demanda',
+  'Calculando RevPAR e giro',
+  'Avaliando oportunidades de precificação',
+  'Preparando a análise',
 ]
 
 function ThinkingBubble() {
@@ -132,8 +132,8 @@ function ThinkingBubble() {
       setTimeout(() => {
         setIdx((i) => (i + 1) % THINKING_PHRASES.length)
         setVisible(true)
-      }, 250)
-    }, 2200)
+      }, 350)
+    }, 3500)
     return () => clearInterval(cycle)
   }, [])
 
@@ -142,24 +142,24 @@ function ThinkingBubble() {
       <div className="shrink-0 rounded-full bg-primary/10 p-1.5 h-7 w-7 flex items-center justify-center">
         <Bot className="size-4 text-primary" />
       </div>
-      <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center gap-2.5 min-w-[180px]">
-        {/* 3 dots bounce */}
-        <div className="flex gap-1 items-end h-4 shrink-0">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="block size-1.5 rounded-full bg-muted-foreground/50 animate-bounce"
-              style={{ animationDelay: `${i * 0.15}s`, animationDuration: '0.9s' }}
-            />
-          ))}
-        </div>
+      <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center gap-2 min-w-[180px]">
         <span
           className={cn(
-            'text-xs text-muted-foreground transition-opacity duration-200',
+            'text-xs text-muted-foreground transition-opacity duration-300',
             visible ? 'opacity-100' : 'opacity-0'
           )}
         >
           {THINKING_PHRASES[idx]}
+        </span>
+        {/* 3 dots bounce menores, logo após o texto */}
+        <span className="flex gap-[3px] items-center shrink-0 mt-px">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="block size-[3px] rounded-full bg-muted-foreground/50 animate-bounce"
+              style={{ animationDelay: `${i * 0.18}s`, animationDuration: '1.1s' }}
+            />
+          ))}
         </span>
       </div>
     </div>
@@ -211,12 +211,13 @@ interface AgenteChatInnerProps {
   onConversationCreated?: (id: string, title: string) => void
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
   onProposalSaved?: () => void
+  onNavigateToProposals?: () => void
 }
 
 function AgenteChatInner({
   unitSlug, unitId, dateFrom, dateTo,
   initialMessages, conversationId,
-  onConversationCreated, onMessagesUpdate, onProposalSaved,
+  onConversationCreated, onMessagesUpdate, onProposalSaved, onNavigateToProposals,
 }: AgenteChatInnerProps) {
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
@@ -357,7 +358,16 @@ function AgenteChatInner({
           </div>
         )}
 
-        {messages.map((msg) => (
+        {messages.map((msg) => {
+          // Ignora mensagens do assistente sem conteúdo visível ainda (step intermediário)
+          if (msg.role === 'assistant') {
+            const hasVisible = msg.parts.some(
+              (p) => (p.type === 'text' && (p as { type: 'text'; text: string }).text.length > 0) ||
+                     (isToolUIPart(p) && getToolName(p) !== 'sugerir_respostas')
+            )
+            if (!hasVisible) return null
+          }
+          return (
           <div
             key={msg.id}
             className={cn(
@@ -448,7 +458,8 @@ function AgenteChatInner({
               </div>
             )}
           </div>
-        ))}
+          )
+        })}
 
         {isStreaming && (() => {
           const last = messages[messages.length - 1]
@@ -477,7 +488,9 @@ function AgenteChatInner({
               key={i}
               className="text-xs rounded-full border px-3 py-1.5 bg-background hover:bg-accent transition-colors text-foreground"
               onClick={() => {
-                if (opt.texto) {
+                if (opt.texto === '__propostas') {
+                  onNavigateToProposals?.()
+                } else if (opt.texto) {
                   if (textareaRef.current) textareaRef.current.value = opt.texto
                   submit()
                 } else {
@@ -528,6 +541,7 @@ interface AgenteChatProps {
   onConversationCreated?: (id: string, title: string) => void
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
   onProposalSaved?: () => void
+  onNavigateToProposals?: () => void
 }
 
 export function AgenteChat({
@@ -537,6 +551,7 @@ export function AgenteChat({
   onConversationCreated: externalOnCreated,
   onMessagesUpdate: externalOnUpdate,
   onProposalSaved,
+  onNavigateToProposals,
 }: AgenteChatProps) {
   const searchParams = useSearchParams()
   const activeSlug = searchParams.get('unit') ?? unitSlug
@@ -628,6 +643,7 @@ export function AgenteChat({
         onConversationCreated={externalOnCreated}
         onMessagesUpdate={externalOnUpdate}
         onProposalSaved={onProposalSaved}
+        onNavigateToProposals={onNavigateToProposals}
       />
     </>
   )

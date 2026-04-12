@@ -307,7 +307,8 @@ export async function POST(req: NextRequest) {
         'Salva a proposta de ajuste de preços no sistema para registro e revisão pelo gerente. ' +
         'Chame IMEDIATAMENTE ao concluir a tabela de proposta — não espere o usuário aprovar. ' +
         'A aprovação final acontece na aba Propostas, nunca no chat. ' +
-        'Após salvar, sempre oriente: "A proposta foi salva. Acesse a aba Propostas para aprovar, ajustar ou rejeitar."',
+        'Após salvar, NÃO repita "a proposta foi salva" no texto — isso já aparece como chip de confirmação. ' +
+        'Apenas use sugerir_respostas com as opções de próximos passos.',
       inputSchema: z.object({
         context: z.string().describe('Resumo em 2–3 frases da lógica geral da proposta'),
         rows: z.array(z.object({

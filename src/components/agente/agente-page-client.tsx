@@ -132,6 +132,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
 
   function handleProposalSaved() {
     setProposalsRefreshKey((k) => k + 1)
+    setActiveTab('propostas')
   }
 
   function handleSelectProposal(proposalId: string) {
@@ -315,6 +316,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
             onConversationCreated={handleConversationCreated}
             onMessagesUpdate={handleMessagesUpdate}
             onProposalSaved={handleProposalSaved}
+            onNavigateToProposals={() => setActiveTab('propostas')}
           />
         </TabsContent>
 

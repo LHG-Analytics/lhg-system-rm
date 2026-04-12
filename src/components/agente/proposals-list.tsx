@@ -141,7 +141,6 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
 
   useEffect(() => {
-    if (!refreshKey) return
     fetch(`/api/agente/proposals?unitSlug=${unitSlug}`)
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data)) setProposals(data as PriceProposal[]) })
