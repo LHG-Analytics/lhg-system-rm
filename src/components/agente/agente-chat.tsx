@@ -203,6 +203,7 @@ function AgenteChatInner({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isAtBottomRef = useRef(true)
   const prevMessageCountRef = useRef(0)
+  const isSubmittingRef = useRef(false)
 
   function handleScroll() {
     const el = scrollAreaRef.current
@@ -242,7 +243,8 @@ function AgenteChatInner({
 
   async function submit() {
     const text = textareaRef.current?.value.trim()
-    if (!text || isStreaming) return
+    if (!text || isStreaming || isSubmittingRef.current) return
+    isSubmittingRef.current = true
 
     // Cria a conversa no Supabase ao enviar a primeira mensagem
     if (!convIdRef.current && unitId) {
@@ -264,6 +266,7 @@ function AgenteChatInner({
 
     sendMessage({ text })
     if (textareaRef.current) textareaRef.current.value = ''
+    isSubmittingRef.current = false
   }
 
   return (
