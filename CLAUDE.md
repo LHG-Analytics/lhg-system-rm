@@ -393,6 +393,27 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `precos-tabs.tsx`: duas seções independentes — "Tabelas de Preços" e "Tabelas de Descontos", cada uma com `PriceImportQueue(importType)` + Tabs (tabelas | histórico)
   - `ImportJobHistory`: botão Trash2 por linha + `AlertDialog` de confirmação; oculto para jobs `processing`
   - DELETE `/api/agente/import-queue?id=` com guard de status e verificação de unidade
+- **LHG-107:** Preços: Confirmação de importação antes de salvar (status needs_review)
+  - Novo status `needs_review` + coluna `parsed_preview JSONB` em `price_import_jobs` (migration)
+  - Fluxo: `pending → processing → needs_review → done/failed`
+  - PATCH com `action: 'confirm' | 'reject'` salva em `price_imports` ou descarta
+  - Polling pausa automaticamente enquanto há jobs `needs_review` (evita loop)
+  - UI: card âmbar com tabela expandível de preços/descontos extraídos + botões Confirmar/Rejeitar
+  - Notificação `info` ao chegar em `needs_review`; `success` ao confirmar
+  - GET do import-queue inclui `parsed_preview` no SELECT
+  - Fallback servidor: se modelo pôs descontos em `rows` → move para `discount_rows`
+- **LHG-108:** Descontos: rota dedicada `/dashboard/descontos` na sidebar
+  - Nova página `src/app/dashboard/descontos/page.tsx` com loading skeleton próprio
+  - Sidebar: item "Descontos" com ícone `Percent` entre Preços e Disponibilidade
+  - `precos-tabs.tsx` simplificado: remove seção de descontos e `Separator`
+  - `proposals/route.ts`: `activeImport` filtra apenas imports com `parsed_data > 0`; `activeDiscounts` coleta de TODOS os imports ativos (campo `discount_data` antigo + imports `import_type='discounts'`)
+- **LHG-109:** Fix: Prompt de extração de descontos — terça-feira e mesclagem de faixas horárias
+  - Modelo pulava dias com valores iguais (ex: terça = segunda) e não mesclava faixas horárias iguais
+  - Prompt: regra explícita "NUNCA omitir dia mesmo que valores sejam idênticos"; exemplo JSON mostra segunda E terca com valor=30
+  - Mesclagem: `00:00-17:59` + `18:00-23:59` mesmo valor → `00:00-23:59`; valores diferentes → 2 linhas
+  - Fallback: `discount_rows` vazio mas `rows` preenchido → move automaticamente
+  - Log do texto bruto nos erros de parse para facilitar diagnóstico
+  - **Armadilha:** prompts em inglês quebram extração nesses modelos gratuitos — manter em português
 
 ### 🔲 Backlog MVP (por prioridade)
 
