@@ -303,13 +303,13 @@ Campos de cada linha:
 Regras:
 - "3h, 6h e 12h" → gerar 3 linhas separadas por período
 - Se valores DIFERENTES por período (ex: 30% no 3h e 15% no 6h e 12h) → gerar 3 linhas com valores corretos
-- Incluir TODOS os dias que aparecem na planilha (domingo, segunda, terca, quarta, quinta, sexta, sabado)
+- Incluir TODOS os dias que aparecem na planilha. NUNCA omitir um dia mesmo que seus valores sejam idênticos aos de outro dia. Ex: se segunda e terça têm os mesmos descontos, gerar linhas para AMBOS os dias separadamente.
 - Se um dia aparece em dois horários (ex: 00:00-17:59 e 18:00-23:59) com O MESMO desconto → gerar UMA linha com faixa_horaria "00:00-23:59"
 - Se um dia aparece em dois horários com descontos DIFERENTES → manter 2 linhas separadas
 - Células vazias ou com "-" → ignorar
 
 Retorne SOMENTE JSON minificado, sem texto antes ou depois:
-{"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30},{"canal":"guia_moteis","categoria":"Lush POP","periodo":"6h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15}]}
+{"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30},{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30},{"canal":"guia_moteis","categoria":"Lush POP","periodo":"6h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15}]}
 
 CSV:
 ${job.csv_content.slice(0, 24000)}`
