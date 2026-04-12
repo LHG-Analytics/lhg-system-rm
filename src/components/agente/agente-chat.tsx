@@ -110,6 +110,62 @@ function ToolCallChip({ toolName, state }: { toolName: string; state: string }) 
   )
 }
 
+// ─── Thinking bubble com frases rotativas ────────────────────────────────────
+
+const THINKING_PHRASES = [
+  'Consultando dados operacionais…',
+  'Analisando o período selecionado…',
+  'Cruzando KPIs com a tabela de preços…',
+  'Verificando padrões de demanda…',
+  'Calculando RevPAR e giro…',
+  'Avaliando oportunidades de precificação…',
+  'Preparando a análise…',
+]
+
+function ThinkingBubble() {
+  const [idx, setIdx] = useState(0)
+  const [visible, setVisible] = useState(true)
+
+  useEffect(() => {
+    const cycle = setInterval(() => {
+      setVisible(false)
+      setTimeout(() => {
+        setIdx((i) => (i + 1) % THINKING_PHRASES.length)
+        setVisible(true)
+      }, 250)
+    }, 2200)
+    return () => clearInterval(cycle)
+  }, [])
+
+  return (
+    <div className="flex gap-3 justify-start">
+      <div className="shrink-0 rounded-full bg-primary/10 p-1.5 h-7 w-7 flex items-center justify-center">
+        <Bot className="size-4 text-primary" />
+      </div>
+      <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center gap-2.5 min-w-[180px]">
+        {/* 3 dots bounce */}
+        <div className="flex gap-1 items-end h-4 shrink-0">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="block size-1.5 rounded-full bg-muted-foreground/50 animate-bounce"
+              style={{ animationDelay: `${i * 0.15}s`, animationDuration: '0.9s' }}
+            />
+          ))}
+        </div>
+        <span
+          className={cn(
+            'text-xs text-muted-foreground transition-opacity duration-200',
+            visible ? 'opacity-100' : 'opacity-0'
+          )}
+        >
+          {THINKING_PHRASES[idx]}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 const PROPOSAL_STEP_LABELS = [
   'Analisando tabelas de preços…',
   'Verificando KPIs do período…',
@@ -401,16 +457,7 @@ function AgenteChatInner({
             (p) => (p.type === 'text' && (p as { type: 'text'; text: string }).text.length > 0) || isToolUIPart(p)
           )
           return !hasContent
-        })() && (
-          <div className="flex gap-3 justify-start">
-            <div className="shrink-0 rounded-full bg-primary/10 p-1.5 h-7 w-7 flex items-center justify-center">
-              <Bot className="size-4 text-primary" />
-            </div>
-            <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3">
-              <Loader2 className="size-4 animate-spin text-muted-foreground" />
-            </div>
-          </div>
-        )}
+        })() && <ThinkingBubble />}
 
         {error && (
           <div className="flex gap-2 items-center text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
