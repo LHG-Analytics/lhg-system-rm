@@ -10,7 +10,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
-import type { PriceImportForPrompt, KPIPeriod } from '@/lib/agente/system-prompt'
+import type { PriceImportForPrompt, KPIPeriod, VigenciaInfo } from '@/lib/agente/system-prompt'
 
 function getAdminClient() {
   return createAdminClient<Database>(
@@ -18,6 +18,23 @@ function getAdminClient() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 }
+
+// YYYY-MM-DD → DD/MM/YYYY (formato esperado pelo fetchCompanyKPIsFromAutomo)
+function isoToApi(yyyymmdd: string): string {
+  const [y, m, d] = yyyymmdd.split('-')
+  return `${d}/${m}/${y}`
+}
+
+// Diferença em dias entre dois YYYY-MM-DD
+function daysBetween(a: string, b: string): number {
+  const da = new Date(a)
+  const db = new Date(b)
+  return Math.max(0, Math.round(Math.abs(db.getTime() - da.getTime()) / 86400000))
+}
+
+// min/max entre dois YYYY-MM-DD strings
+function minDate(a: string, b: string) { return a < b ? a : b }
+function maxDate(a: string, b: string) { return a > b ? a : b }
 
 export async function POST(req: NextRequest) {
   // 1. Autenticação
@@ -42,12 +59,14 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as {
     messages: unknown[]
     unitSlug?: string
+    // Novo: range único em YYYY-MM-DD (UI simplificada)
+    dateFrom?: string
+    dateTo?: string
+    // Legado: DD/MM/YYYY (cron/revisoes e outras rotas)
     startDate?: string
     endDate?: string
-    priceImportIds?: string[]
-    priceAnalysisPeriods?: { startDate: string; endDate: string }[]
   }
-  const { messages, unitSlug, startDate, endDate, priceImportIds, priceAnalysisPeriods } = body
+  const { messages, unitSlug, dateFrom, dateTo, startDate, endDate } = body
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response('messages inválido', { status: 400 })
@@ -96,43 +115,131 @@ export async function POST(req: NextRequest) {
     return new Response('Nenhuma unidade disponível', { status: 400 })
   }
 
-  // 5. Buscar KPIs e imports em paralelo
-  const isComparison = priceAnalysisPeriods?.length === 2
-
-  // Imports query: por IDs específicos (modo comparativo) ou todos da unidade
-  const importsQuery = priceImportIds?.length
-    ? admin.from('price_imports').select('id, parsed_data, discount_data, valid_from, valid_until').in('id', priceImportIds)
-    : admin.from('price_imports').select('id, parsed_data, discount_data, valid_from, valid_until').eq('unit_id', unit.id).order('valid_from', { ascending: false })
+  // 5. Resolver imports e KPIs
+  type RawImport = { id: string; parsed_data: unknown; discount_data: unknown; valid_from: string; valid_until: string | null }
 
   let kpiPeriods: KPIPeriod[]
-  let rawImports: { id: string; parsed_data: unknown; discount_data: unknown; valid_from: string; valid_until: string | null }[] = []
+  let rawImports: RawImport[] = []
+  let vigenciaInfo: Parameters<typeof buildSystemPrompt>[3] = undefined
 
-  if (isComparison) {
-    const [cA, cB, importsResult] = await Promise.allSettled([
-      fetchCompanyKPIsFromAutomo(unit.slug, priceAnalysisPeriods![0].startDate, priceAnalysisPeriods![0].endDate),
-      fetchCompanyKPIsFromAutomo(unit.slug, priceAnalysisPeriods![1].startDate, priceAnalysisPeriods![1].endDate),
-      importsQuery,
+  if (dateFrom && dateTo) {
+    // ── Modo novo: range YYYY-MM-DD, backend resolve tabelas ──────────────────
+
+    // Busca a tabela de preços ativa em cada ponta do range (em paralelo)
+    // Nota: .filter() usado para `import_type` pois a coluna ainda não está nos tipos gerados
+    const [impAtFrom, impAtTo, discountImp] = await Promise.all([
+      admin
+        .from('price_imports')
+        .select('id, parsed_data, discount_data, valid_from, valid_until')
+        .eq('unit_id', unit.id)
+        .filter('import_type', 'eq', 'prices')
+        .lte('valid_from', dateFrom)
+        .or(`valid_until.is.null,valid_until.gte.${dateFrom}`)
+        .order('valid_from', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      admin
+        .from('price_imports')
+        .select('id, parsed_data, discount_data, valid_from, valid_until')
+        .eq('unit_id', unit.id)
+        .filter('import_type', 'eq', 'prices')
+        .lte('valid_from', dateTo)
+        .or(`valid_until.is.null,valid_until.gte.${dateTo}`)
+        .order('valid_from', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      admin
+        .from('price_imports')
+        .select('id, discount_data, valid_from, valid_until')
+        .eq('unit_id', unit.id)
+        .filter('import_type', 'eq', 'discounts')
+        .lte('valid_from', dateTo)
+        .or(`valid_until.is.null,valid_until.gte.${dateFrom}`)
+        .order('valid_from', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ])
-    rawImports = importsResult.status === 'fulfilled' ? (importsResult.value.data ?? []) : []
-    kpiPeriods = [
-      {
-        label: `Período A — Tabela anterior (${priceAnalysisPeriods![0].startDate} a ${priceAnalysisPeriods![0].endDate})`,
-        period: priceAnalysisPeriods![0],
-        company: cA.status === 'fulfilled' ? cA.value : null,
+
+    const importFrom = impAtFrom.data
+    const importTo   = impAtTo.data
+    const sameImport = !importFrom || !importTo || importFrom.id === importTo.id
+
+    if (sameImport) {
+      // ── Tabela única no período ──────────────────────────────────────────
+      const apiFrom = isoToApi(dateFrom)
+      const apiTo   = isoToApi(dateTo)
+      const [companyResult] = await Promise.allSettled([
+        fetchCompanyKPIsFromAutomo(unit.slug, apiFrom, apiTo),
+      ])
+      if (importTo) rawImports = [importTo]
+      else if (importFrom) rawImports = [importFrom]
+      kpiPeriods = [{
+        period: { startDate: apiFrom, endDate: apiTo },
+        company: companyResult.status === 'fulfilled' ? companyResult.value : null,
         bookings: null,
-      },
-      {
-        label: `Período B — Tabela atual (${priceAnalysisPeriods![1].startDate} a ${priceAnalysisPeriods![1].endDate})`,
-        period: priceAnalysisPeriods![1],
-        company: cB.status === 'fulfilled' ? cB.value : null,
-        bookings: null,
-      },
-    ]
+      }]
+    } else {
+      // ── Duas tabelas: período A = importFrom, período B = importTo ─────────
+      // Divisão na fronteira de vigência
+      const endA   = importFrom.valid_until ? minDate(importFrom.valid_until, dateTo) : dateTo
+      const startB = maxDate(importTo.valid_from, dateFrom)
+
+      const apiFromA = isoToApi(dateFrom)
+      const apiEndA  = isoToApi(endA)
+      const apiStartB = isoToApi(startB)
+      const apiToB   = isoToApi(dateTo)
+
+      const [cA, cB] = await Promise.allSettled([
+        fetchCompanyKPIsFromAutomo(unit.slug, apiFromA, apiEndA),
+        fetchCompanyKPIsFromAutomo(unit.slug, apiStartB, apiToB),
+      ])
+
+      rawImports = [importFrom, importTo]
+
+      const daysA = daysBetween(dateFrom, endA)
+      const daysB = daysBetween(startB, dateTo)
+
+      kpiPeriods = [
+        {
+          label: `Tabela anterior — ${apiFromA} a ${apiEndA} (${daysA} dias)`,
+          period: { startDate: apiFromA, endDate: apiEndA },
+          company: cA.status === 'fulfilled' ? cA.value : null,
+          bookings: null,
+        },
+        {
+          label: `Tabela atual — ${apiStartB} a ${apiToB} (${daysB} dias)`,
+          period: { startDate: apiStartB, endDate: apiToB },
+          company: cB.status === 'fulfilled' ? cB.value : null,
+          bookings: null,
+        },
+      ]
+
+      // Assimetria: diferença > 7 dias entre os períodos analisados
+      vigenciaInfo = {
+        importA: { valid_from: isoToApi(importFrom.valid_from), valid_until: importFrom.valid_until ? isoToApi(importFrom.valid_until) : null, analysis_days: daysA },
+        importB: { valid_from: isoToApi(importTo.valid_from),   valid_until: importTo.valid_until   ? isoToApi(importTo.valid_until)   : null, analysis_days: daysB },
+        is_asymmetric: Math.abs(daysA - daysB) > 7,
+      }
+    }
+
+    // Injeta a tabela de descontos ativa no import mais recente
+    if (discountImp.data?.discount_data) {
+      const mainImport = rawImports[rawImports.length - 1]
+      if (mainImport && !mainImport.discount_data) {
+        mainImport.discount_data = discountImp.data.discount_data
+      }
+    }
+
   } else {
+    // ── Modo legado: startDate/endDate DD/MM/YYYY (cron e retrocompat) ────────
     const kpiParams = (startDate && endDate) ? { startDate, endDate } : trailingYear()
     const [companyResult, importsResult] = await Promise.allSettled([
       fetchCompanyKPIsFromAutomo(unit.slug, kpiParams.startDate, kpiParams.endDate),
-      importsQuery,
+      admin
+        .from('price_imports')
+        .select('id, parsed_data, discount_data, valid_from, valid_until')
+        .eq('unit_id', unit.id)
+        .order('valid_from', { ascending: false }),
     ])
     rawImports = importsResult.status === 'fulfilled' ? (importsResult.value.data ?? []) : []
     kpiPeriods = [{
@@ -142,21 +249,16 @@ export async function POST(req: NextRequest) {
     }]
   }
 
-  // Montar PriceImportForPrompt com os períodos de análise como vigência de referência
-  const priceImports: PriceImportForPrompt[] = rawImports.map((imp) => {
-    const analysisPeriod = priceImportIds?.length
-      ? priceAnalysisPeriods?.[priceImportIds.indexOf(imp.id)]
-      : undefined
-    return {
-      rows: imp.parsed_data ? (imp.parsed_data as unknown as ParsedPriceRow[]) : [],
-      discount_data: imp.discount_data ? (imp.discount_data as unknown as ParsedDiscountRow[]) : null,
-      valid_from: analysisPeriod ? analysisPeriod.startDate : imp.valid_from,
-      valid_until: analysisPeriod ? analysisPeriod.endDate : imp.valid_until,
-    }
-  })
+  // Montar PriceImportForPrompt
+  const priceImports: PriceImportForPrompt[] = rawImports.map((imp) => ({
+    rows: imp.parsed_data ? (imp.parsed_data as unknown as ParsedPriceRow[]) : [],
+    discount_data: imp.discount_data ? (imp.discount_data as unknown as ParsedDiscountRow[]) : null,
+    valid_from: imp.valid_from,
+    valid_until: imp.valid_until,
+  }))
 
-  // 6. Montar system prompt com KPIs (por período) + tabelas
-  const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports)
+  // 6. Montar system prompt com KPIs (por período) + tabelas + vigência
+  const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports, vigenciaInfo)
 
   const agentTools = {
     buscar_kpis_periodo: tool({

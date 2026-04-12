@@ -186,6 +186,13 @@ export interface KPIPeriod {
   bookings: BookingsKPIResponse | null
 }
 
+export interface VigenciaInfo {
+  importA: { valid_from: string; valid_until: string | null; analysis_days: number }
+  importB: { valid_from: string; valid_until: string | null; analysis_days: number }
+  /** True se a diferença de dias analisados entre as tabelas for > 7 dias */
+  is_asymmetric: boolean
+}
+
 function buildSinglePriceTable(rows: ParsedPriceRow[], validFrom: string, validUntil: string | null): string {
   const byCanal = new Map<string, ParsedPriceRow[]>()
   for (const row of rows) {
@@ -215,7 +222,13 @@ function buildDiscountContext(imports: PriceImportForPrompt[]): string {
   const lines = discounts.map((d) =>
     `  | ${d.categoria} | ${d.periodo} | ${d.dia_semana ?? d.dia_tipo ?? '—'} | ${d.faixa_horaria ?? '—'} | ${d.tipo_desconto === 'percentual' ? `${d.valor}%` : `R$ ${d.valor.toFixed(2).replace('.', ',')}`}${d.condicao ? ` (${d.condicao})` : ''} |`
   )
-  return `### Política de descontos — Guia de Motéis\n| Categoria | Período | Dia | Horário | Desconto |\n|-----------|---------|-----|---------|----------|\n${lines.join('\n')}`
+  return `### Política de descontos — Guia de Motéis
+> ⚠️ Estes descontos aplicam-se **exclusivamente ao canal \`guia_moteis\`**. Os preços cadastrados na tabela de preços para \`guia_moteis\` são os preços BASE (antes do desconto). O Guia de Motéis aplica o desconto automaticamente ao exibir para o cliente.
+> Ao propor preços para o canal \`guia_moteis\`, considere estes descontos nas suas justificativas. Exemplo: se o preço base é R$ 100 com 20% de desconto, o cliente paga R$ 80.
+
+| Categoria | Período | Dia | Horário | Desconto |
+|-----------|---------|-----|---------|----------|
+${lines.join('\n')}`
 }
 
 function buildPriceTablesContext(imports: PriceImportForPrompt[]): string {
@@ -242,7 +255,8 @@ export { buildKPIContext }
 export function buildSystemPrompt(
   unitName: string,
   kpiData: KPIPeriod | KPIPeriod[],
-  priceImports: PriceImportForPrompt[] = []
+  priceImports: PriceImportForPrompt[] = [],
+  vigenciaInfo?: VigenciaInfo
 ): string {
   // ── Montar contexto de KPIs (1 ou N períodos) ─────────────────────────────
   const periods = Array.isArray(kpiData) ? kpiData : [kpiData]
@@ -264,6 +278,28 @@ export function buildSystemPrompt(
   const priceContext = buildPriceTablesContext(priceImports)
   const discountContext = buildDiscountContext(priceImports)
 
+  // Bloco de assimetria de vigência (só quando há duas tabelas com dias muito diferentes)
+  let vigenciaBlock = ''
+  if (vigenciaInfo) {
+    const { importA, importB, is_asymmetric } = vigenciaInfo
+    const vigA = `${importA.valid_from}${importA.valid_until ? ` → ${importA.valid_until}` : ' → em uso'}`
+    const vigB = `${importB.valid_from}${importB.valid_until ? ` → ${importB.valid_until}` : ' → em uso'}`
+    vigenciaBlock = `\n\n## Vigência das tabelas analisadas
+- **Tabela anterior**: ${vigA} — **${importA.analysis_days} dias** neste período
+- **Tabela atual**: ${vigB} — **${importB.analysis_days} dias** neste período
+${is_asymmetric
+  ? `\n⚠️ **Assimetria detectada**: a tabela atual tem ${importB.analysis_days} dias de dados vs ${importA.analysis_days} dias da tabela anterior no período selecionado. Comparar KPIs diretamente pode ser enganoso.
+
+**AÇÃO OBRIGATÓRIA antes de comparar**: use \`sugerir_respostas\` para perguntar ao usuário como quer proceder:
+- "Comparar os primeiros ${importB.analysis_days} dias de cada tabela" (períodos iguais, mais justo)
+- "Comparar o período selecionado mesmo com assimetria" (aceita diferença)
+- "Comparar com o mesmo período do ano passado" (usa \`buscar_kpis_periodo\`)
+- "Outra abordagem" (texto vazio)
+
+Após a escolha, adapte a análise ao método escolhido e informe qual limitação cada abordagem tem.`
+  : ''}`
+  }
+
   return `Você é o Agente de Revenue Management sênior da LHG Motéis — especialista em yield management para o setor moteleiro brasileiro com mais de 10 anos de experiência.
 
 ## Missão
@@ -277,6 +313,7 @@ Analisar dados operacionais e propor estratégias de precificação que maximize
 5. **Variação máxima por proposta: ±30%** — mudanças maiores exigem justificativa explícita e aprovação especial.
 6. **Responda em português brasileiro**, de forma direta e objetiva — sem enrolação.
 7. **Pergunte quando faltar informação** — se precisar de dados não fornecidos (ex: número total de suítes por categoria, total de apartamentos disponíveis, dados de concorrência, eventos locais), pergunte ao usuário antes de fazer suposições. É melhor perguntar do que inventar dados.
+8. **Descontos do Guia de Motéis são exclusivos do canal \`guia_moteis\`** — ao analisar ou propor preços para esse canal, considere sempre a política de descontos vigente nas suas justificativas. Os preços da tabela são BASE (antes do desconto aplicado pelo Guia).
 
 ## Framework de análise (use sempre nesta ordem)
 1. **Diagnóstico** — como está a performance atual? Identifique pontos fortes e fracos nos KPIs.
@@ -348,6 +385,7 @@ Após a tabela, inclua:
 ${kpiContext}
 ${priceContext ? `\n${priceContext}` : ''}
 ${discountContext ? `\n${discountContext}` : ''}
+${vigenciaBlock}
 
 ---
 Se o usuário pedir algo fora do escopo de Revenue Management, redirecione gentilmente para o foco em precificação e receita.`
