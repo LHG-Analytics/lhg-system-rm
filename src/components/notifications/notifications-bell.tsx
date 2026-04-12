@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Bell, X } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -20,6 +21,7 @@ interface Notification {
   title: string
   body: string
   type: string
+  link: string | null
   read_at: string | null
   created_at: string
 }
@@ -37,6 +39,7 @@ function fmtDate(iso: string) {
 }
 
 export function NotificationsBell() {
+  const router = useRouter()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [open, setOpen] = useState(false)
 
@@ -46,7 +49,7 @@ export function NotificationsBell() {
     const supabase = createClient()
     const { data } = await supabase
       .from('notifications')
-      .select('id, title, body, type, read_at, created_at')
+      .select('id, title, body, type, link, read_at, created_at')
       .order('created_at', { ascending: false })
       .limit(20)
     setNotifications((data ?? []) as Notification[])
@@ -161,8 +164,17 @@ export function NotificationsBell() {
                   !n.read_at && 'bg-primary/5'
                 )}>
                   <button
-                    onClick={() => { if (!n.read_at) markAsRead(n.id) }}
-                    className="flex items-start gap-2 flex-1 text-left min-w-0"
+                    onClick={() => {
+                      if (!n.read_at) markAsRead(n.id)
+                      if (n.link) {
+                        setOpen(false)
+                        router.push(n.link)
+                      }
+                    }}
+                    className={cn(
+                      'flex items-start gap-2 flex-1 text-left min-w-0',
+                      n.link && 'cursor-pointer'
+                    )}
                   >
                     {!n.read_at && (
                       <span className="mt-1.5 size-1.5 rounded-full bg-primary shrink-0" />

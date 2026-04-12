@@ -219,11 +219,13 @@ export async function PATCH(req: NextRequest) {
       ? `${preview.discount_rows.length} descontos`
       : `${preview.rows.length} preços`
 
+    const importedPage = jobImportType === 'discounts' ? 'descontos' : 'precos'
     await admin.from('notifications').insert({
       user_id: auth.user!.id,
       title: 'Planilha importada',
       body: `"${job.file_name}" foi confirmada e importada com sucesso (${resumo}).`,
       type: 'success',
+      link: `/dashboard/${importedPage}?unit=${unitSlug}`,
     })
 
     return Response.json({ success: true })
@@ -378,11 +380,13 @@ ${job.csv_content.slice(0, 24000)}`
       })
       .eq('id', job.id)
 
+    const reviewPage = jobImportType === 'discounts' ? 'descontos' : 'precos'
     await admin.from('notifications').insert({
       user_id: auth.user!.id,
       title: 'Planilha analisada — confirme a importação',
       body: `"${job.file_name}" foi analisada (${resumo}). Acesse Preços para confirmar.`,
       type: 'info',
+      link: `/dashboard/${reviewPage}?unit=${unitSlug}`,
     })
 
     return Response.json({
@@ -402,11 +406,13 @@ ${job.csv_content.slice(0, 24000)}`
       .eq('id', job.id)
 
     // Notificação de erro
+    const errorPage = jobImportType === 'discounts' ? 'descontos' : 'precos'
     await admin.from('notifications').insert({
       user_id: auth.user!.id,
       title: 'Falha na importação',
       body: `"${job.file_name}": ${msg}`,
       type: 'error',
+      link: `/dashboard/${errorPage}?unit=${unitSlug}`,
     })
 
     return Response.json({ done: false, jobId: job.id, error: msg })

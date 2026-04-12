@@ -284,6 +284,7 @@ export type Database = {
           body: string
           created_at: string
           id: string
+          link: string | null
           read_at: string | null
           title: string
           type: string
@@ -293,6 +294,7 @@ export type Database = {
           body: string
           created_at?: string
           id?: string
+          link?: string | null
           read_at?: string | null
           title: string
           type: string
@@ -302,6 +304,7 @@ export type Database = {
           body?: string
           created_at?: string
           id?: string
+          link?: string | null
           read_at?: string | null
           title?: string
           type?: string

@@ -178,6 +178,7 @@ Por favor, realize uma análise completa de acompanhamento:
         type:    'revisao_concluida',
         title:   `📅 Revisão de RM concluída — ${unit.name}`,
         body:    `A revisão agendada para ${scheduledLabel} foi executada. Confira a análise no histórico do Agente RM.`,
+        link:    `/dashboard/agente?unit=${unit.slug}&conv=${conv.id}`,
       })
 
       // ── 12. Marcar review como done ───────────────────────────────────
