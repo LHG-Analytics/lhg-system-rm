@@ -13,6 +13,85 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 
+/**
+ * Pré-processa CSV de descontos exportado do Excel com células mescladas.
+ * No CSV, células mescladas aparecem com valor apenas na PRIMEIRA célula do grupo
+ * e as demais ficam vazias. Esta função restaura os valores nas células vazias.
+ *
+ * Regras:
+ * 1. Col A (dia) vazia → herda o dia da linha anterior.
+ * 2. Linha com TODAS as colunas de desconto vazias (sem nem "-") → herda da linha anterior
+ *    (era célula mesclada multi-linha no Excel: e.g., segunda 18:00-23:59 e terça inteira).
+ * 3. Célula de desconto vazia dentro da linha → herda o último valor não-vazio à esquerda
+ *    (era célula mesclada multi-coluna: e.g., Lush Hidro/Lounge/Cine/Spa compartilham com Lush).
+ *
+ * Funciona corretamente para dias sem desconto (ex: sábado):
+ * - Os "-" explícitos de quinta/sexta 18:00-23:59 são propagados pela regra 3.
+ * - Sábado herda esses "-" via regra 2 → nenhum desconto aplicado. ✓
+ */
+function preprocessDiscountCSV(csv: string): string {
+  const lines = csv.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  if (lines.length < 2) return csv
+
+  function parseRow(line: string): string[] {
+    const cols: string[] = []
+    let cur = '', inQ = false
+    for (const ch of line) {
+      if (ch === '"') inQ = !inQ
+      else if (ch === ',' && !inQ) { cols.push(cur); cur = '' }
+      else cur += ch
+    }
+    cols.push(cur)
+    return cols
+  }
+
+  function serializeRow(cols: string[]): string {
+    return cols
+      .map((c) => (c.includes(',') || c.includes('"')) ? `"${c.replace(/"/g, '""')}"` : c)
+      .join(',')
+  }
+
+  const header = parseRow(lines[0])
+  const numCols = header.length
+  const DISCOUNT_START = 2 // col C = index 2 (primeiras 2 cols são "dia" e "horário")
+
+  let lastDay = ''
+  let lastRow: string[] = []
+  const out: string[] = [lines[0]]
+
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) { out.push(lines[i]); continue }
+
+    const row = parseRow(lines[i])
+    while (row.length < numCols) row.push('')
+
+    // 1. Preenche dia vazio
+    if (row[0].trim()) lastDay = row[0].trim()
+    else row[0] = lastDay
+
+    // 2. Se TODAS as colunas de desconto estão vazias → herda linha anterior
+    const allDiscountEmpty = row.slice(DISCOUNT_START).every((c) => !c.trim())
+    if (allDiscountEmpty && lastRow.length > 0) {
+      for (let j = DISCOUNT_START; j < numCols; j++) {
+        row[j] = lastRow[j] ?? ''
+      }
+    }
+
+    // 3. Preenche células de desconto vazias com o último valor à esquerda
+    let lastVal = ''
+    for (let j = DISCOUNT_START; j < numCols; j++) {
+      const v = row[j].trim()
+      if (v) lastVal = v
+      else if (lastVal) row[j] = lastVal
+    }
+
+    lastRow = [...row]
+    out.push(serializeRow(row))
+  }
+
+  return out.join('\n')
+}
+
 function getAdminClient() {
   return createAdminClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -286,6 +365,10 @@ export async function PATCH(req: NextRequest) {
 
   try {
     // Prompt varia por tipo de importação
+    const csvForModel = jobImportType === 'discounts'
+      ? preprocessDiscountCSV(job.csv_content)
+      : job.csv_content
+
     const prompt = jobImportType === 'discounts'
       ? `Você receberá o conteúdo de uma planilha de política de descontos de motel exportada como CSV.
 
@@ -338,7 +421,7 @@ EXEMPLO: planilha com categorias "Lush POP" e "Lush"; segunda e terça com 00:00
 Retorne SOMENTE JSON minificado, sem texto antes ou depois.
 
 CSV:
-${job.csv_content.slice(0, 24000)}`
+${csvForModel.slice(0, 24000)}`
       : `Você receberá o conteúdo de uma planilha de tabela de preços de motel exportada como CSV.
 
 Extraia as tarifas dos seguintes canais (ignore qualquer outro):
@@ -352,7 +435,7 @@ Retorne SOMENTE JSON minificado:
 {"rows":[...],"canais_encontrados":[],"discount_rows":[]}
 
 CSV:
-${job.csv_content.slice(0, 24000)}`
+${csvForModel.slice(0, 24000)}`
 
     const { text } = await generateText({
       model: ANALYSIS_MODEL,
