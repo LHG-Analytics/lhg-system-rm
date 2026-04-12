@@ -92,6 +92,88 @@ function preprocessDiscountCSV(csv: string): string {
   return out.join('\n')
 }
 
+/**
+ * Formato compacto retornado pelo modelo para descontos (reduz ~10x o número de tokens):
+ * grupos agrupam categorias com o mesmo desconto no mesmo dia/horário.
+ */
+interface DiscountGrupo {
+  categorias: string[]
+  dia_semana: string
+  faixa_horaria: string
+  descontos: Record<string, number> // { "3h": 10, "6h": 10, "12h": 10 }
+}
+
+/** Expande o formato compacto em ParsedDiscountRow[] */
+function expandCompactDiscounts(grupos: DiscountGrupo[]): ParsedDiscountRow[] {
+  const rows: ParsedDiscountRow[] = []
+  for (const g of grupos) {
+    for (const categoria of g.categorias) {
+      for (const [periodo, valor] of Object.entries(g.descontos)) {
+        rows.push({
+          canal: 'guia_moteis',
+          categoria,
+          periodo,
+          dia_semana: g.dia_semana,
+          faixa_horaria: g.faixa_horaria,
+          tipo_desconto: 'percentual',
+          valor,
+        })
+      }
+    }
+  }
+  return rows
+}
+
+/**
+ * Extrai JSON do texto do modelo.
+ * Tenta formato compacto {"grupos":[...]} primeiro,
+ * depois o formato flat {"discount_rows":[...]} como fallback.
+ */
+function extractDiscountJSON(text: string): ParsedDiscountRow[] | null {
+  const clean = text.trim()
+  const codeBlock = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+  const candidate = codeBlock ? codeBlock[1] : clean
+
+  const start = candidate.indexOf('{')
+  if (start === -1) return null
+
+  let depth = 0, end = -1
+  for (let i = start; i < candidate.length; i++) {
+    if (candidate[i] === '{') depth++
+    else if (candidate[i] === '}') { depth--; if (depth === 0) { end = i; break } }
+  }
+  if (end === -1) {
+    // JSON truncado: tenta recuperar até o último objeto completo
+    let lastComplete = -1, d = 0
+    let inStr = false, esc = false
+    for (let i = start; i < candidate.length; i++) {
+      const c = candidate[i]
+      if (esc) { esc = false; continue }
+      if (inStr) { if (c === '\\') esc = true; else if (c === '"') inStr = false; continue }
+      if (c === '"') { inStr = true; continue }
+      if (c === '{') d++
+      else if (c === '}') { d--; if (d === 1) lastComplete = i }
+    }
+    if (lastComplete === -1) return null
+    // Fecha o JSON truncado
+    try {
+      const recovered = JSON.parse(candidate.slice(start, lastComplete + 1) + ']}')
+      if (recovered.grupos) return expandCompactDiscounts(recovered.grupos)
+      if (recovered.discount_rows) return recovered.discount_rows
+    } catch {}
+    return null
+  }
+
+  try {
+    const obj = JSON.parse(candidate.slice(start, end + 1))
+    if (obj.grupos && Array.isArray(obj.grupos)) return expandCompactDiscounts(obj.grupos)
+    if (obj.discount_rows && Array.isArray(obj.discount_rows)) return obj.discount_rows
+    return null
+  } catch {
+    return null
+  }
+}
+
 function getAdminClient() {
   return createAdminClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -418,7 +500,12 @@ EXEMPLO: planilha com categorias "Lush POP" e "Lush"; segunda e terça com 00:00
 {"canal":"guia_moteis","categoria":"Lush","periodo":"12h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":10}
 ]}
 
-Retorne SOMENTE JSON minificado, sem texto antes ou depois.
+Retorne SOMENTE JSON minificado no formato compacto abaixo (agrupa categorias com mesmo desconto para economizar tokens):
+{"grupos":[{"categorias":["Cat1","Cat2"],"dia_semana":"segunda","faixa_horaria":"00:00-23:59","descontos":{"3h":15,"6h":10,"12h":10}},...]}
+
+- Agrupe categorias que tenham EXATAMENTE os mesmos descontos no mesmo dia e horário.
+- Se uma categoria tem desconto diferente, crie um grupo separado.
+- Sem texto antes ou depois do JSON.
 
 CSV:
 ${csvForModel.slice(0, 24000)}`
@@ -445,7 +532,17 @@ ${csvForModel.slice(0, 24000)}`
       temperature: 0,
     })
 
-    const parsed = extractJSON(text)
+    // Para descontos usa extractDiscountJSON (suporta formato compacto + recovery de truncamento)
+    // Para preços usa extractJSON padrão
+    let parsed: import('@/app/api/agente/import-prices/route').ParseResponse | null = null
+    if (jobImportType === 'discounts') {
+      const discountRows = extractDiscountJSON(text)
+      if (discountRows) {
+        parsed = { rows: [], canais_encontrados: ['guia_moteis'], discount_rows: discountRows }
+      }
+    } else {
+      parsed = extractJSON(text)
+    }
 
     if (!parsed) {
       console.error('[import-queue] Resposta bruta do modelo (primeiros 1000 chars):', text.slice(0, 1000))
