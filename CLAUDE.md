@@ -414,6 +414,20 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Fallback: `discount_rows` vazio mas `rows` preenchido → move automaticamente
   - Log do texto bruto nos erros de parse para facilitar diagnóstico
   - **Armadilha:** prompts em inglês quebram extração nesses modelos gratuitos — manter em português
+- **LHG-110:** Notificações: link de navegação para rota de origem + fix realtime
+  - Migration: coluna `link TEXT` em `notifications` + `ALTER PUBLICATION supabase_realtime ADD TABLE notifications`
+  - `import-queue`: link `/dashboard/precos?unit=` ou `/dashboard/descontos?unit=` nos 3 inserts (sucesso, needs_review, erro)
+  - `cron/revisoes`: link `/dashboard/agente?unit=&conv=` com ID da conversa gerada
+  - `notifications-bell`: `useRouter` + `router.push(n.link)` fecha popover e navega ao clicar
+  - Fix realtime: tabela não estava na publication `supabase_realtime`; filtro `user_id=eq.{uid}` garante entrega apenas para o usuário correto
+- **LHG-111:** Fix: Parser de descontos — novo formato de planilha + formato compacto para evitar truncamento
+  - Root cause 1: células mescladas no Excel → CSV vazio → terça ausente, categorias ausentes, Casa Lush com desconto indevido
+  - Solução: novo formato de planilha onde cada célula tem valor explícito (`"10% - PERIODO: 3H, 6H E 12H"` ou `"-"`) — sem ambiguidade
+  - Root cause 2: ~162 linhas flat excediam `maxOutputTokens`
+  - Formato compacto `{"grupos":[{"categorias":[],"dia_semana":"","faixa_horaria":"","descontos":{}}]}` → ~14 grupos (~10x menos tokens)
+  - `expandCompactDiscounts()` expande grupos → `ParsedDiscountRow[]` server-side
+  - `extractDiscountJSON()`: suporta formato compacto + recovery de JSON truncado (fecha no último item completo)
+  - Remove `preprocessDiscountCSV()` — não necessário com novo formato
 
 ### 🔲 Backlog MVP (por prioridade)
 
