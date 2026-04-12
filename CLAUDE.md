@@ -428,6 +428,37 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `expandCompactDiscounts()` expande grupos → `ParsedDiscountRow[]` server-side
   - `extractDiscountJSON()`: suporta formato compacto + recovery de JSON truncado (fecha no último item completo)
   - Remove `preprocessDiscountCSV()` — não necessário com novo formato
+- **LHG-112:** Agente RM: seletor de período único com Calendar range + resolução automática de tabelas
+  - UI: substitui "Tabela A / Tabela B" por um único `DateRangePicker` (`Calendar mode="range" numberOfMonths={2}`)
+  - Backend (`/api/agente/chat`): recebe `dateFrom`/`dateTo` (YYYY-MM-DD) e resolve qual import de preços estava vigente em cada extremo via query bi-temporal (`valid_from <= date AND valid_until IS NULL OR >= date`)
+  - Tabela única no range: KPIs para o período completo, contexto simples
+  - Duas tabelas no range: KPIs divididos na fronteira de vigência; gera `vigenciaInfo` com duração de cada período
+  - Assimetria detectada (`|diasA - diasB| > 7`): agente obrigado a usar `sugerir_respostas` para perguntar estratégia de comparação antes de analisar
+  - Desconto do Guia resolvido automaticamente (`import_type='discounts'`) e injetado no contexto
+  - Modo legado (`startDate`/`endDate` DD/MM/YYYY) mantido para retrocompat com cron
+  - `VigenciaInfo` exportado de `system-prompt.ts`
+- **LHG-113:** Fix + UX: Agente RM — envio duplicado, thinking bubble, frase duplicada, propostas
+  - Fix `isSubmittingRef`: bloqueia `submit()` durante await de criação de conversa (evita race condition Enter duplo)
+  - `ThinkingBubble`: dots bounce 3px + frase contextual rotativa (3.5s, sem reticências escritas) substitui spinner genérico
+  - Mensagem em branco eliminada: ignora mensagens assistant sem parts visíveis (step intermediário do AI SDK)
+  - Frase "A proposta foi salva" não duplica mais: system prompt instrui a não repetir no texto
+  - `handleProposalSaved` troca automaticamente para aba Propostas ao salvar
+  - Botão "Ir para aba Propostas" nos quick replies navega via `onNavigateToProposals` (texto `__propostas`)
+  - `ProposalsList` carrega na montagem independente de `refreshKey`
+- **LHG-114:** Agente RM: regra de consistência estrutural nas propostas — modelo de 2 tabelas fixas
+  - Regra 9 no system prompt: proposta deve sempre seguir estrutura da tabela ativa (`semana` e `fds_feriado`)
+  - Definição explícita: semana = dom 06:00→sex 05:59 / fds_feriado = sex 06:00→dom 05:59
+  - Nunca por hora específica nem dia individual; só altera modelo se usuário pedir explicitamente
+  - Seção "Modelo de precificação atual" com 4 regras operacionais para geração de propostas
+- **LHG-115:** fix + feat(agente): background streaming, scroll manual, conv vazia, heatmap default Todas
+  - **Heatmap:** filtro Data abre em "Todas" por padrão (era "Entrada") — `date-range-picker.tsx` e `page.tsx`
+  - **Scroll:** `userScrolledUpRef` — auto-scroll para quando usuário scrolla manualmente; retoma ao enviar nova mensagem
+  - **Bug conv vazia:** `rm_conversations` agora criada com a mensagem do usuário já salva (não `messages: []`), evitando histórico vazio ao navegar durante streaming
+  - **Background streaming:** `src/components/agente/agent-streaming-provider.tsx` + `AgentStreamingProvider` no `dashboard/layout.tsx`
+    - Ao navegar durante streaming: `AgenteChatInner` detecta no cleanup do `useEffect` e chama `startBackground(session)`
+    - `BackgroundStreamer` (invisível, `return null`) re-envia a última mensagem do usuário em segundo plano
+    - Ao concluir: salva mensagens no DB + cria notificação in-app com `link: /dashboard/agente?conv={convId}`
+    - **Armadilha:** `UIMessage` do AI SDK não tem campo `content` — usar apenas `id`, `role` e `parts`
 
 ### 🔲 Backlog MVP (por prioridade)
 
