@@ -297,21 +297,45 @@ Campos de cada linha:
 - categoria: nome exato da suíte (ex: "Lush POP", "Lush", "Lush Hidro")
 - periodo: "3h" | "6h" | "12h" | "pernoite"
 - dia_semana: "domingo" | "segunda" | "terca" | "quarta" | "quinta" | "sexta" | "sabado" | "todos"
-- faixa_horaria: ex "06:00-23:59", "00:00-17:59", "00:00-23:59"
+- faixa_horaria: string no formato "HH:MM-HH:MM"
 - tipo_desconto: "percentual" | "absoluto"
 - valor: número (ex: 10 para 10%)
 - condicao: omitir se vazio
 
-Regras:
-- "3h, 6h e 12h" → gerar 3 linhas separadas por período
-- Se valores DIFERENTES por período (ex: 30% no 3h e 15% no 6h e 12h) → gerar 3 linhas com valores corretos
-- Incluir TODOS os dias que aparecem na planilha. NUNCA omitir um dia mesmo que seus valores sejam idênticos aos de outro dia. Ex: se segunda e terça têm os mesmos descontos, gerar linhas para AMBOS os dias separadamente.
-- Se um dia aparece em dois horários (ex: 00:00-17:59 e 18:00-23:59) com O MESMO desconto → gerar UMA linha com faixa_horaria "00:00-23:59"
-- Se um dia aparece em dois horários com descontos DIFERENTES → manter 2 linhas separadas
-- Células vazias ou com "-" → ignorar
+REGRAS OBRIGATÓRIAS — leia com atenção:
 
-Retorne SOMENTE JSON minificado, sem texto antes ou depois:
-{"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30},{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30},{"canal":"guia_moteis","categoria":"Lush POP","periodo":"6h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15}]}
+1. NUNCA omitir um dia da semana. Se segunda e terça têm os mesmos valores → gere linhas para AMBOS os dias. Tratar cada dia como independente.
+
+2. NUNCA omitir uma categoria de suíte. Cada coluna de categoria na planilha é uma categoria separada. Se "Lush", "Lush Hidro", "Lush Lounge", "Lush Cine", "Lush Spa", "Lush Splash" têm o mesmo desconto, gere linhas para TODAS elas individualmente. Nunca agrupe categorias ou ignore colunas por terem valores idênticos.
+
+3. Mesclagem de horários: se um dia tem duas faixas (ex: 00:00-17:59 e 18:00-23:59) com O MESMO valor de desconto → gere UMA linha com faixa_horaria "00:00-23:59". IMPORTANTE: o campo faixa_horaria desta linha DEVE ser "00:00-23:59", nunca "00:00-17:59".
+
+4. Se as duas faixas do mesmo dia têm descontos DIFERENTES → gere 2 linhas separadas com cada faixa.
+
+5. "3h, 6h e 12h" → gere 3 linhas separadas por período.
+
+6. Se valores diferentes por período (ex: 30% no 3h e 15% no 6h e 12h) → 3 linhas com valores corretos.
+
+7. Células vazias ou com "-" → ignorar, não gerar linha.
+
+EXEMPLO: planilha com categorias "Lush POP" e "Lush"; segunda e terça com 00:00-17:59 e 18:00-23:59 (mesmo desconto → mescla em 00:00-23:59):
+
+{"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[
+{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30},
+{"canal":"guia_moteis","categoria":"Lush POP","periodo":"6h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
+{"canal":"guia_moteis","categoria":"Lush POP","periodo":"12h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
+{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30},
+{"canal":"guia_moteis","categoria":"Lush POP","periodo":"6h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
+{"canal":"guia_moteis","categoria":"Lush POP","periodo":"12h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
+{"canal":"guia_moteis","categoria":"Lush","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
+{"canal":"guia_moteis","categoria":"Lush","periodo":"6h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":10},
+{"canal":"guia_moteis","categoria":"Lush","periodo":"12h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":10},
+{"canal":"guia_moteis","categoria":"Lush","periodo":"3h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
+{"canal":"guia_moteis","categoria":"Lush","periodo":"6h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":10},
+{"canal":"guia_moteis","categoria":"Lush","periodo":"12h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":10}
+]}
+
+Retorne SOMENTE JSON minificado, sem texto antes ou depois.
 
 CSV:
 ${job.csv_content.slice(0, 24000)}`
@@ -348,6 +372,38 @@ ${job.csv_content.slice(0, 24000)}`
     // Normalização
     parsed.rows = Array.isArray(parsed.rows) ? parsed.rows : []
     parsed.discount_rows = Array.isArray(parsed.discount_rows) ? parsed.discount_rows : []
+
+    // Safety net: se temos "00:00-17:59" E "18:00-23:59" com mesmo valor para mesma
+    // (canal, categoria, periodo, dia_semana) → merge em "00:00-23:59" e remove duplicata
+    if (parsed.discount_rows.length > 0) {
+      type DR = typeof parsed.discount_rows[number]
+      const key = (r: DR) => `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_semana}`
+      const morning: Map<string, DR> = new Map()
+      const evening: Map<string, DR> = new Map()
+      const other: DR[] = []
+
+      for (const r of parsed.discount_rows) {
+        if (r.faixa_horaria === '00:00-17:59') morning.set(key(r), r)
+        else if (r.faixa_horaria === '18:00-23:59') evening.set(key(r), r)
+        else other.push(r)
+      }
+
+      const merged: DR[] = []
+      for (const [k, m] of morning) {
+        const e = evening.get(k)
+        if (e && e.valor === m.valor) {
+          // mesmo desconto nos dois horários → une em 00:00-23:59
+          merged.push({ ...m, faixa_horaria: '00:00-23:59' })
+          evening.delete(k)
+        } else {
+          merged.push(m)
+        }
+      }
+      // evening restantes (sem par no morning)
+      for (const e of evening.values()) merged.push(e)
+
+      parsed.discount_rows = [...other, ...merged]
+    }
 
     // Fallback: modelo às vezes coloca descontos em "rows" em vez de "discount_rows"
     if (jobImportType === 'discounts' && parsed.discount_rows.length === 0 && parsed.rows.length > 0) {
