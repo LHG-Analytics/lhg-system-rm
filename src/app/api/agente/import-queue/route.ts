@@ -13,84 +13,6 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 
-/**
- * Pré-processa CSV de descontos exportado do Excel com células mescladas.
- * No CSV, células mescladas aparecem com valor apenas na PRIMEIRA célula do grupo
- * e as demais ficam vazias. Esta função restaura os valores nas células vazias.
- *
- * Regras:
- * 1. Col A (dia) vazia → herda o dia da linha anterior.
- * 2. Linha com TODAS as colunas de desconto vazias (sem nem "-") → herda da linha anterior
- *    (era célula mesclada multi-linha no Excel: e.g., segunda 18:00-23:59 e terça inteira).
- * 3. Célula de desconto vazia dentro da linha → herda o último valor não-vazio à esquerda
- *    (era célula mesclada multi-coluna: e.g., Lush Hidro/Lounge/Cine/Spa compartilham com Lush).
- *
- * Funciona corretamente para dias sem desconto (ex: sábado):
- * - Os "-" explícitos de quinta/sexta 18:00-23:59 são propagados pela regra 3.
- * - Sábado herda esses "-" via regra 2 → nenhum desconto aplicado. ✓
- */
-function preprocessDiscountCSV(csv: string): string {
-  const lines = csv.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
-  if (lines.length < 2) return csv
-
-  function parseRow(line: string): string[] {
-    const cols: string[] = []
-    let cur = '', inQ = false
-    for (const ch of line) {
-      if (ch === '"') inQ = !inQ
-      else if (ch === ',' && !inQ) { cols.push(cur); cur = '' }
-      else cur += ch
-    }
-    cols.push(cur)
-    return cols
-  }
-
-  function serializeRow(cols: string[]): string {
-    return cols
-      .map((c) => (c.includes(',') || c.includes('"')) ? `"${c.replace(/"/g, '""')}"` : c)
-      .join(',')
-  }
-
-  const header = parseRow(lines[0])
-  const numCols = header.length
-  const DISCOUNT_START = 2 // col C = index 2 (primeiras 2 cols são "dia" e "horário")
-
-  let lastDay = ''
-  let lastRow: string[] = []
-  const out: string[] = [lines[0]]
-
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) { out.push(lines[i]); continue }
-
-    const row = parseRow(lines[i])
-    while (row.length < numCols) row.push('')
-
-    // 1. Preenche dia vazio
-    if (row[0].trim()) lastDay = row[0].trim()
-    else row[0] = lastDay
-
-    // 2. Se TODAS as colunas de desconto estão vazias → herda linha anterior
-    const allDiscountEmpty = row.slice(DISCOUNT_START).every((c) => !c.trim())
-    if (allDiscountEmpty && lastRow.length > 0) {
-      for (let j = DISCOUNT_START; j < numCols; j++) {
-        row[j] = lastRow[j] ?? ''
-      }
-    }
-
-    // 3. Preenche células de desconto vazias com o último valor à esquerda
-    let lastVal = ''
-    for (let j = DISCOUNT_START; j < numCols; j++) {
-      const v = row[j].trim()
-      if (v) lastVal = v
-      else if (lastVal) row[j] = lastVal
-    }
-
-    lastRow = [...row]
-    out.push(serializeRow(row))
-  }
-
-  return out.join('\n')
-}
 
 /**
  * Formato compacto retornado pelo modelo para descontos (reduz ~10x o número de tokens):
@@ -447,68 +369,28 @@ export async function PATCH(req: NextRequest) {
 
   try {
     // Prompt varia por tipo de importação
-    const csvForModel = jobImportType === 'discounts'
-      ? preprocessDiscountCSV(job.csv_content)
-      : job.csv_content
-
     const prompt = jobImportType === 'discounts'
       ? `Você receberá o conteúdo de uma planilha de política de descontos de motel exportada como CSV.
 
-POLÍTICA DE DESCONTOS (Guia de Motéis)
-Extraia UMA linha por combinação única de: categoria × período × dia_semana × faixa_horaria.
+Formato da planilha:
+- Coluna A: dia da semana (DOMINGO, SEGUNDA-FEIRA, TERCA-FEIRA, etc.)
+- Coluna B: faixa de horário (ex: "06:00 - 23:59", "00:00 - 17:59")
+- Colunas C em diante: uma coluna por categoria de suíte (LUSH POP, LUSH, LUSH HIDRO, etc.)
+- Conteúdo de cada célula de desconto: texto como "10% - PERIODO: 3H, 6H E 12H" ou "30% - PERIODO: 3H | 15% - PERIODO: 6H E 12H" ou "-" (sem desconto)
 
-Campos de cada linha:
-- canal: sempre "guia_moteis"
-- categoria: nome exato da suíte (ex: "Lush POP", "Lush", "Lush Hidro")
-- periodo: "3h" | "6h" | "12h" | "pernoite"
-- dia_semana: "domingo" | "segunda" | "terca" | "quarta" | "quinta" | "sexta" | "sabado" | "todos"
-- faixa_horaria: string no formato "HH:MM-HH:MM"
-- tipo_desconto: "percentual" | "absoluto"
-- valor: número (ex: 10 para 10%)
-- condicao: omitir se vazio
-
-REGRAS OBRIGATÓRIAS — leia com atenção:
-
-1. NUNCA omitir um dia da semana. Se segunda e terça têm os mesmos valores → gere linhas para AMBOS os dias. Tratar cada dia como independente.
-
-2. NUNCA omitir uma categoria de suíte. Cada coluna de categoria na planilha é uma categoria separada. Se "Lush", "Lush Hidro", "Lush Lounge", "Lush Cine", "Lush Spa", "Lush Splash" têm o mesmo desconto, gere linhas para TODAS elas individualmente. Nunca agrupe categorias ou ignore colunas por terem valores idênticos.
-
-3. Mesclagem de horários: se um dia tem duas faixas (ex: 00:00-17:59 e 18:00-23:59) com O MESMO valor de desconto → gere UMA linha com faixa_horaria "00:00-23:59". IMPORTANTE: o campo faixa_horaria desta linha DEVE ser "00:00-23:59", nunca "00:00-17:59".
-
-4. Se as duas faixas do mesmo dia têm descontos DIFERENTES → gere 2 linhas separadas com cada faixa.
-
-5. "3h, 6h e 12h" → gere 3 linhas separadas por período.
-
-6. Se valores diferentes por período (ex: 30% no 3h e 15% no 6h e 12h) → 3 linhas com valores corretos.
-
-7. Células vazias ou com "-" → ignorar, não gerar linha.
-
-EXEMPLO: planilha com categorias "Lush POP" e "Lush"; segunda e terça com 00:00-17:59 e 18:00-23:59 (mesmo desconto → mescla em 00:00-23:59):
-
-{"rows":[],"canais_encontrados":["guia_moteis"],"discount_rows":[
-{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30},
-{"canal":"guia_moteis","categoria":"Lush POP","periodo":"6h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
-{"canal":"guia_moteis","categoria":"Lush POP","periodo":"12h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
-{"canal":"guia_moteis","categoria":"Lush POP","periodo":"3h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":30},
-{"canal":"guia_moteis","categoria":"Lush POP","periodo":"6h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
-{"canal":"guia_moteis","categoria":"Lush POP","periodo":"12h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
-{"canal":"guia_moteis","categoria":"Lush","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
-{"canal":"guia_moteis","categoria":"Lush","periodo":"6h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":10},
-{"canal":"guia_moteis","categoria":"Lush","periodo":"12h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":10},
-{"canal":"guia_moteis","categoria":"Lush","periodo":"3h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":15},
-{"canal":"guia_moteis","categoria":"Lush","periodo":"6h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":10},
-{"canal":"guia_moteis","categoria":"Lush","periodo":"12h","dia_semana":"terca","faixa_horaria":"00:00-23:59","tipo_desconto":"percentual","valor":10}
-]}
-
-Retorne SOMENTE JSON minificado no formato compacto abaixo (agrupa categorias com mesmo desconto para economizar tokens):
+Extraia os descontos e retorne no formato compacto (agrupa categorias com mesmo desconto):
 {"grupos":[{"categorias":["Cat1","Cat2"],"dia_semana":"segunda","faixa_horaria":"00:00-23:59","descontos":{"3h":15,"6h":10,"12h":10}},...]}
 
-- Agrupe categorias que tenham EXATAMENTE os mesmos descontos no mesmo dia e horário.
-- Se uma categoria tem desconto diferente, crie um grupo separado.
-- Sem texto antes ou depois do JSON.
+Regras:
+- dia_semana: "domingo"|"segunda"|"terca"|"quarta"|"quinta"|"sexta"|"sabado"
+- faixa_horaria: normalizar para "HH:MM-HH:MM" (ex: "06:00 - 23:59" → "06:00-23:59")
+- descontos: objeto com periodo → valor numérico (ex: {"3h":10,"6h":10,"12h":10})
+- Célula com "-" ou vazia → categoria sem desconto naquele dia/horário → não incluir no grupo
+- Se categoria tem desconto diferente → grupo separado
+- Retorne SOMENTE JSON minificado, sem texto antes ou depois
 
 CSV:
-${csvForModel.slice(0, 24000)}`
+${job.csv_content.slice(0, 24000)}`
       : `Você receberá o conteúdo de uma planilha de tabela de preços de motel exportada como CSV.
 
 Extraia as tarifas dos seguintes canais (ignore qualquer outro):
@@ -522,7 +404,7 @@ Retorne SOMENTE JSON minificado:
 {"rows":[...],"canais_encontrados":[],"discount_rows":[]}
 
 CSV:
-${csvForModel.slice(0, 24000)}`
+${job.csv_content.slice(0, 24000)}`
 
     const { text } = await generateText({
       model: ANALYSIS_MODEL,
