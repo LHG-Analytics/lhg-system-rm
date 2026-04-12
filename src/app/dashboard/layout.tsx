@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { AppSidebar } from '@/components/app-sidebar'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NotificationsBell } from '@/components/notifications/notifications-bell'
+import { AgentStreamingProvider } from '@/components/agente/agent-streaming-provider'
 import {
   SidebarInset,
   SidebarProvider,
@@ -82,7 +83,9 @@ export default async function DashboardLayout({
           <ThemeToggle />
         </header>
         <main className="flex flex-1 flex-col gap-4 p-4 min-w-0 overflow-x-hidden">
-          {children}
+          <AgentStreamingProvider>
+            {children}
+          </AgentStreamingProvider>
         </main>
       </SidebarInset>
     </SidebarProvider>

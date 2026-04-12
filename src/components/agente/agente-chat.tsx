@@ -6,6 +6,7 @@ import type { UIMessage } from 'ai'
 import type { DateRange } from 'react-day-picker'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
+import { useAgentStreaming } from '@/components/agente/agent-streaming-provider'
 import { Send, Bot, User, Loader2, AlertCircle, CalendarIcon, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -227,8 +228,16 @@ function AgenteChatInner({
     messages: initialMessages,
   })
 
+  const { startBackground } = useAgentStreaming()
+
   // Ref para o ID da conversa ativa (não precisa triggerar re-render)
   const convIdRef = useRef<string | null>(conversationId ?? null)
+
+  // Refs de estado atual para uso no cleanup de unmount
+  const statusRef = useRef(status)
+  const messagesRef = useRef<UIMessage[]>(messages as UIMessage[])
+  useEffect(() => { statusRef.current = status }, [status])
+  useEffect(() => { messagesRef.current = messages as UIMessage[] }, [messages])
 
   // Salva mensagens sempre que o streaming termina
   const prevStatusRef = useRef(status)
@@ -255,23 +264,80 @@ function AgenteChatInner({
     if (saved) onProposalSaved?.()
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Ao desmontar durante streaming: passa o trabalho para o BackgroundStreamer
+  // do AgentStreamingProvider, que continua gerando em segundo plano e notifica
+  // o usuário quando terminar.
+  useEffect(() => {
+    return () => {
+      const currentStatus = statusRef.current
+      const currentMessages = messagesRef.current
+      const convId = convIdRef.current
+
+      if (
+        (currentStatus === 'streaming' || currentStatus === 'submitted') &&
+        convId
+      ) {
+        // Encontra o índice da última mensagem do usuário
+        const lastUserIdx = currentMessages.map((m) => m.role).lastIndexOf('user')
+        if (lastUserIdx < 0) return
+
+        const lastUserMsg = currentMessages[lastUserIdx]
+        const lastUserText = lastUserMsg.parts
+          .filter((p) => p.type === 'text')
+          .map((p) => (p as { type: 'text'; text: string }).text)
+          .join('')
+
+        if (!lastUserText) return
+
+        startBackground({
+          key: Date.now(),
+          convId,
+          unitId,
+          unitSlug,
+          dateFrom,
+          dateTo,
+          messagesBeforeLastUser: currentMessages.slice(0, lastUserIdx),
+          lastUserText,
+        })
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isAtBottomRef = useRef(true)
+  const userScrolledUpRef = useRef(false)
   const prevMessageCountRef = useRef(0)
   const isSubmittingRef = useRef(false)
 
   function handleScroll() {
     const el = scrollAreaRef.current
     if (!el) return
-    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    isAtBottomRef.current = atBottom
+    // Se o usuário scrollou para cima, registra a intenção
+    if (!atBottom) {
+      userScrolledUpRef.current = true
+    }
   }
 
+  // Scroll automático: só move para baixo se o usuário não scrollou manualmente
+  // para cima. Quando uma nova mensagem do USUÁRIO é enviada, reseta o controle.
   useEffect(() => {
     const newMessageAdded = messages.length > prevMessageCountRef.current
     prevMessageCountRef.current = messages.length
-    if (newMessageAdded || isAtBottomRef.current) {
+
+    if (newMessageAdded) {
+      const lastMsg = messages[messages.length - 1]
+      if (lastMsg?.role === 'user') {
+        // Nova mensagem do usuário: reseta controle e scrolla para mostrar o thinking bubble
+        userScrolledUpRef.current = false
+      }
+    }
+
+    if (!userScrolledUpRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [messages])
@@ -309,9 +375,21 @@ function AgenteChatInner({
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const title = text.slice(0, 80)
+        // Salva já com a mensagem do usuário para que o histórico não fique vazio
+        // caso o usuário navegue antes do streaming terminar
+        const initialUserMsg: UIMessage = {
+          id: Math.random().toString(36).slice(2, 12),
+          role: 'user',
+          parts: [{ type: 'text', text }],
+        }
         const { data } = await supabase
           .from('rm_conversations')
-          .insert({ unit_id: unitId, user_id: user.id, title, messages: [] })
+          .insert({
+            unit_id: unitId,
+            user_id: user.id,
+            title,
+            messages: JSON.parse(JSON.stringify([initialUserMsg])),
+          })
           .select('id')
           .single()
         if (data) {

@@ -85,7 +85,7 @@ export function DateRangePicker() {
   const [localStartHour, setLocalStartHour] = useState(() => clampHour(searchParams.get('startHour'), 6))
   const [localEndHour,   setLocalEndHour]   = useState(() => clampHour(searchParams.get('endHour'),   5))
   const [localDateType,  setLocalDateType]  = useState<DateType>(
-    () => (searchParams.get('dateType') as DateType) ?? 'checkin'
+    () => (searchParams.get('dateType') as DateType) ?? 'all'
   )
   const [localStatus, setLocalStatus] = useState<RentalStatus>(
     () => (searchParams.get('status') as RentalStatus) ?? 'FINALIZADA'
@@ -101,7 +101,7 @@ export function DateRangePicker() {
     setLocalEnd(r.endDate)
     setLocalStartHour(clampHour(searchParams.get('startHour'), 6))
     setLocalEndHour(clampHour(searchParams.get('endHour'),     5))
-    setLocalDateType((searchParams.get('dateType') as DateType) ?? 'checkin')
+    setLocalDateType((searchParams.get('dateType') as DateType) ?? 'all')
     setLocalStatus((searchParams.get('status') as RentalStatus) ?? 'FINALIZADA')
   }, [searchParams])
 
