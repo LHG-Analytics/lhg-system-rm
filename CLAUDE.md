@@ -450,6 +450,12 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Definição explícita: semana = dom 06:00→sex 05:59 / fds_feriado = sex 06:00→dom 05:59
   - Nunca por hora específica nem dia individual; só altera modelo se usuário pedir explicitamente
   - Seção "Modelo de precificação atual" com 4 regras operacionais para geração de propostas
+- **LHG-116:** fix(agente): background streaming via onFinish server-side — sem duplicação de propostas
+  - Root cause: BackgroundStreamer client-side causava propostas duplicadas (re-enviava a mesma mensagem ao servidor)
+  - `DefaultChatTransport.body` como **função**: `resolve(body)` é chamado a cada request → `convId` incluído dinamicamente sem recriar o hook
+  - `streamText.onFinish` no route: dispara mesmo com cliente desconectado (Vercel); se `req.signal.aborted && convId`, salva resposta + cria notificação in-app
+  - `BackgroundStreamer` removido; `AgentStreamingProvider` virou passthrough
+  - **Falso positivo:** hook de validação marca `"YYYY-MM-DD"` em schemas Zod como "model slug com hífens" — ignorar
 - **LHG-115:** fix + feat(agente): background streaming, scroll manual, conv vazia, heatmap default Todas
   - **Heatmap:** filtro Data abre em "Todas" por padrão (era "Entrada") — `date-range-picker.tsx` e `page.tsx`
   - **Scroll:** `userScrolledUpRef` — auto-scroll para quando usuário scrolla manualmente; retoma ao enviar nova mensagem
