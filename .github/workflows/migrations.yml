@@ -16,13 +16,13 @@ jobs:
         uses: supabase/setup-cli@v1
         with:
           # Pinado para evitar breaking changes de "latest"
-          # SUPABASE_DB_URL deve ser a URL de conexão DIRETA (porta 5432), não pooler:
-          # postgresql://postgres:[senha]@db.pvlcktqbjianrbzpqrbd.supabase.co:5432/postgres
           version: 2.84.2
 
       - name: Apply migrations to production
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          supabase db push \
-            --db-url "${{ secrets.SUPABASE_DB_URL }}"
+          # Usa link + push via Management API (HTTPS/443) em vez de conexão
+          # direta ao PostgreSQL (5432) — evita erro de IPv6 no runner do GitHub.
+          supabase link --project-ref pvlcktqbjianrbzpqrbd
+          supabase db push
