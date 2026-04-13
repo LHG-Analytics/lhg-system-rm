@@ -70,6 +70,17 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
     loadConversations()
   }, [unitId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Recarrega conversas ao voltar para a aba — captura respostas salvas em background
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === 'visible' && unitId) {
+        loadConversations()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [unitId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Abre conversa via ?conv= param (notificação in-app)
   const handledConvParam = useRef(false)
   useEffect(() => {
@@ -89,18 +100,41 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
       .eq('unit_id', unitId)
       .order('updated_at', { ascending: false })
       .limit(30)
-    setConversations((data ?? []).map((c) => ({
+    const loaded = (data ?? []).map((c) => ({
       id: c.id,
       title: c.title,
       updated_at: c.updated_at,
       messages: (c.messages as unknown as UIMessage[]) ?? [],
-    })))
+    }))
+    setConversations(loaded)
+
+    // Se havia uma conversa selecionada aguardando resposta e agora está resolvida,
+    // atualiza selectedMessages e remonta o chat para exibir a resposta
+    setSelectedConvId((currentId) => {
+      if (!currentId) return currentId
+      const fresh = loaded.find((c) => c.id === currentId)
+      if (fresh && !isAwaitingResponse(fresh.messages)) {
+        setSelectedMessages((prevMsgs) => {
+          if (isAwaitingResponse(prevMsgs)) {
+            // Estava aguardando — agora tem resposta: remonta o chat
+            setChatKey((k) => k + 1)
+            return fresh.messages
+          }
+          return prevMsgs
+        })
+      }
+      return currentId
+    })
   }
 
   // ── Realtime: escuta updates na conversa ativa ────────────────────────────
   // Quando o backend (onFinish) salva a resposta do agente no banco enquanto o
   // cliente estava desconectado, o Supabase emite UPDATE em rm_conversations.
   // Recebemos aqui e atualizamos as mensagens — a conversa "se completa" ao vivo.
+  //
+  // Race condition tratada: se o UPDATE já disparou ANTES da subscription ser criada
+  // (ex: usuário voltou depois que onFinish já salvou), fazemos um fresh fetch logo
+  // após criar o canal — se já há resposta, atualizamos sem depender do evento perdido.
   const realtimeConvIdRef = useRef<string | null>(null)
   useEffect(() => {
     if (!selectedConvId) return
@@ -109,6 +143,18 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
 
     realtimeConvIdRef.current = selectedConvId
     const supabase = createClient()
+
+    function applyFreshMsgs(newMsgs: UIMessage[], updatedAt: string, convId: string) {
+      setSelectedMessages(newMsgs)
+      setChatKey((k) => k + 1)
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convId
+            ? { ...c, messages: newMsgs, updated_at: updatedAt }
+            : c
+        )
+      )
+    }
 
     const channel = supabase
       .channel(`conv-recovery-${selectedConvId}`)
@@ -123,21 +169,28 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
         (payload) => {
           const updated = payload.new as { id: string; messages: unknown; updated_at: string; title: string | null }
           const newMsgs = (updated.messages as unknown as UIMessage[]) ?? []
-          // Só atualiza se agora há resposta do assistente
           if (!isAwaitingResponse(newMsgs)) {
-            setSelectedMessages(newMsgs)
-            setChatKey((k) => k + 1)
-            setConversations((prev) =>
-              prev.map((c) =>
-                c.id === updated.id
-                  ? { ...c, messages: newMsgs, updated_at: updated.updated_at }
-                  : c
-              )
-            )
+            applyFreshMsgs(newMsgs, updated.updated_at, updated.id)
           }
         }
       )
       .subscribe()
+
+    // Fresh fetch imediato: captura resposta já salva antes da subscription existir
+    // (race condition: onFinish disparou UPDATE antes do usuário voltar e clicar)
+    const convIdSnapshot = selectedConvId
+    supabase
+      .from('rm_conversations')
+      .select('id, messages, updated_at')
+      .eq('id', convIdSnapshot)
+      .single()
+      .then(({ data }) => {
+        if (!data || realtimeConvIdRef.current !== convIdSnapshot) return
+        const freshMsgs = (data.messages as unknown as UIMessage[]) ?? []
+        if (!isAwaitingResponse(freshMsgs)) {
+          applyFreshMsgs(freshMsgs, data.updated_at, data.id)
+        }
+      })
 
     return () => {
       supabase.removeChannel(channel)
