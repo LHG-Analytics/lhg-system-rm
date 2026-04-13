@@ -7,6 +7,7 @@ import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { fetchWeatherContext } from '@/lib/agente/weather'
+import { fetchEventsContext } from '@/lib/agente/events'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
 import type { Database } from '@/types/database.types'
@@ -265,17 +266,20 @@ export async function POST(req: NextRequest) {
     valid_until: imp.valid_until,
   }))
 
-  // 6. Buscar cidade da config e clima (não bloqueia se ausente)
+  // 6. Buscar cidade da config + clima + eventos em paralelo (não bloqueia se ausente)
   const { data: agentConfigData } = await admin
     .from('rm_agent_config')
     .select('city')
     .eq('unit_id', unit.id)
     .maybeSingle()
   const city = agentConfigData?.city ?? 'Campinas,BR'
-  const weatherContext = await fetchWeatherContext(city).catch(() => null)
+  const [weatherContext, eventsContext] = await Promise.all([
+    fetchWeatherContext(city).catch(() => null),
+    fetchEventsContext(city).catch(() => null),
+  ])
 
-  // 7. Montar system prompt com KPIs (por período) + tabelas + vigência + clima
-  const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext)
+  // 7. Montar system prompt com KPIs (por período) + tabelas + vigência + clima + eventos
+  const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext, eventsContext)
 
   const agentTools = {
     buscar_kpis_periodo: tool({
