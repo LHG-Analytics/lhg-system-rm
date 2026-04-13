@@ -483,6 +483,27 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Indicador de 3 dots na sidebar para conversas aguardando; `AwaitingBubble` com input desabilitado no chat
   - `handledConvParam` ref evita loop ao receber `?conv=` repetidamente
   - **Armadilha:** Realtime só subscreve quando `isAwaitingResponse(msgs)` — não subscrever desnecessariamente
+- **LHG-39:** fix(agente): scraping de concorrentes via calendário com clique em coluna de dia
+  - Reescrita de `buildPlaywrightPageFunction` — site moteisprime usa textbox DD/MM/YYYY e calendário JS (não `input[type="date"]`)
+  - Estratégia: clica no ícone `img[alt="Escolha a Data"]`, navega por índice de coluna da tabela (Dom=0…Sab=6)
+  - Captura terça (semana, col 2) e sábado (FDS, col 6) com fallback para outros dias
+  - Remove `nextFridayDate()` e toda lógica antiga baseada em `input[type="date"]`
+- **LHG-55:** feat(agente): contexto climático via OpenWeatherMap
+  - `src/lib/agente/weather.ts`: clima atual + previsão 3 dias; retorna null se `OPENWEATHERMAP_API_KEY` ausente
+  - `buildSystemPrompt` aceita `weatherContext` (5º param); injeta bloco `## Clima` no system prompt
+  - `chat/route.ts`: busca `city` da `rm_agent_config` + clima antes de montar o prompt
+  - `rm_agent_config.city TEXT DEFAULT 'Campinas,BR'` — migration + campo na UI do `AgentConfigManager`
+  - Cidades configuradas no banco: andar-de-cima/lush-ipiranga/lush-lapa → `Sao Paulo,BR`; altana → `Brasilia,BR`; tout → `Campinas,BR`
+  - **Variável necessária:** `OPENWEATHERMAP_API_KEY`
+- **LHG-58:** feat(agente): eventos locais via Ticketmaster/Sympla
+  - `src/lib/agente/events.ts`: Ticketmaster (primário, `TICKETMASTER_API_KEY`) e Sympla (fallback, `SYMPLA_TOKEN`)
+  - Busca eventos próximos 14 dias; retorna null se nenhuma key configurada — não quebra o agente
+  - `buildSystemPrompt` aceita `eventsContext` (6º param); clima + eventos buscados em paralelo
+  - **Variáveis opcionais:** `TICKETMASTER_API_KEY` e/ou `SYMPLA_TOKEN`
+- **fix(ci):** GitHub Actions — workflow migrations.yml
+  - Pinado CLI Supabase v2.84.2 (igual ao local) — `version: latest` causava breaking changes
+  - Adicionado `SUPABASE_ACCESS_TOKEN` como env var
+  - `SUPABASE_DB_URL` deve usar conexão direta porta 5432 (não pooler): `postgresql://postgres:[senha]@db.pvlcktqbjianrbzpqrbd.supabase.co:5432/postgres`
 
 ### 🔲 Backlog MVP (por prioridade)
 
@@ -493,4 +514,4 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 2. **LHG-31:** Dashboard: Visão de canais
 
 ### 📅 Pós-MVP (Backlog)
-LHG-51 a LHG-63: clima, eventos, trânsito, aprendizado autônomo, dynamic pricing loop, integração com canais (Guia, Site Próprio).
+LHG-51 a LHG-63: clima (✅ feito), eventos (✅ feito), trânsito (cancelado), aprendizado autônomo, dynamic pricing loop, integração com canais (Guia, Site Próprio).
