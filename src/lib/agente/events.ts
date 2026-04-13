@@ -133,9 +133,17 @@ export interface EventItem {
   source: 'ticketmaster' | 'sympla'
 }
 
-async function fetchTicketmasterStructured(city: string, postalCode?: string | null): Promise<EventItem[] | null> {
+// ─── Resultado estruturado para a UI ─────────────────────────────────────────
+
+export type EventsResult =
+  | { status: 'ok';           events: EventItem[] }
+  | { status: 'empty';        source: string }
+  | { status: 'error';        message: string }
+  | { status: 'unconfigured' }
+
+async function fetchTicketmasterStructured(city: string): Promise<EventsResult> {
   const key = process.env.TICKETMASTER_API_KEY
-  if (!key) return null
+  if (!key) return { status: 'unconfigured' }
 
   const now = new Date()
   const end = new Date(now)
@@ -144,33 +152,34 @@ async function fetchTicketmasterStructured(city: string, postalCode?: string | n
   const endIso   = end.toISOString().replace(/\.\d{3}Z$/, 'Z')
 
   try {
-    // Busca por cidade — cobre bem o Brasil; CEP é granular demais para a
-    // cobertura da Ticketmaster no BR e retorna zero na maioria das cidades.
     const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${key}&city=${encodeURIComponent(city)}&startDateTime=${startIso}&endDateTime=${endIso}&size=10&sort=date,asc&countryCode=BR`
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
-    if (!res.ok) return null
+    if (!res.ok) return { status: 'error', message: `Ticketmaster: HTTP ${res.status} ${res.statusText}` }
     const data = await res.json() as TMResponse
 
     const events = data._embedded?.events ?? []
-    if (events.length === 0) return null
+    if (events.length === 0) return { status: 'empty', source: 'Ticketmaster' }
 
-    return events.map((e): EventItem => ({
-      name:     e.name,
-      date:     e.dates.start.localDate,
-      time:     e.dates.start.localTime?.slice(0, 5),
-      venue:    e._embedded?.venues?.[0]?.name,
-      category: e.classifications?.[0]?.segment?.name,
-      url:      e.url,
-      source:   'ticketmaster',
-    }))
-  } catch {
-    return null
+    return {
+      status: 'ok',
+      events: events.map((e): EventItem => ({
+        name:     e.name,
+        date:     e.dates.start.localDate,
+        time:     e.dates.start.localTime?.slice(0, 5),
+        venue:    e._embedded?.venues?.[0]?.name,
+        category: e.classifications?.[0]?.segment?.name,
+        url:      e.url,
+        source:   'ticketmaster',
+      })),
+    }
+  } catch (e) {
+    return { status: 'error', message: `Ticketmaster: ${e instanceof Error ? e.message : 'timeout ou erro de rede'}` }
   }
 }
 
-async function fetchSymplaStructured(city: string): Promise<EventItem[] | null> {
+async function fetchSymplaStructured(city: string): Promise<EventsResult> {
   const token = process.env.SYMPLA_TOKEN
-  if (!token) return null
+  if (!token) return { status: 'unconfigured' }
 
   const now = new Date()
   const end = new Date(now)
@@ -181,41 +190,61 @@ async function fetchSymplaStructured(city: string): Promise<EventItem[] | null> 
   try {
     const url = `https://api.sympla.com.br/public/v3/events?s_token=${token}&s_start_date=${startDate}&s_end_date=${endDate}&page=1&page_size=10`
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
-    if (!res.ok) return null
+    if (!res.ok) return { status: 'error', message: `Sympla: HTTP ${res.status} ${res.statusText}` }
     const data = await res.json() as SymplaResponse
 
     const cityLower = city.toLowerCase()
     const events = (data.data ?? []).filter(
       (e) => e.address?.city?.toLowerCase().includes(cityLower) || !e.address?.city
     )
-    if (events.length === 0) return null
+    if (events.length === 0) return { status: 'empty', source: 'Sympla' }
 
-    return events.map((e): EventItem => ({
-      name:     e.name,
-      date:     e.start_date,
-      time:     e.start_time?.slice(0, 5),
-      venue:    e.address?.name,
-      category: e.categories?.[0]?.name,
-      url:      e.url,
-      source:   'sympla',
-    }))
-  } catch {
-    return null
+    return {
+      status: 'ok',
+      events: events.map((e): EventItem => ({
+        name:     e.name,
+        date:     e.start_date,
+        time:     e.start_time?.slice(0, 5),
+        venue:    e.address?.name,
+        category: e.categories?.[0]?.name,
+        url:      e.url,
+        source:   'sympla',
+      })),
+    }
+  } catch (e) {
+    return { status: 'error', message: `Sympla: ${e instanceof Error ? e.message : 'timeout ou erro de rede'}` }
   }
 }
 
-/** Retorna lista estruturada de eventos para uso na UI do dashboard.
- *  Usa CEP quando disponível (mais preciso); fallback para cidade.
- *  Retorna array vazio se nenhuma key estiver configurada. */
-export async function fetchEventsStructured(cityField: string, postalCode?: string | null): Promise<EventItem[]> {
+/** Retorna resultado estruturado de eventos para a UI do dashboard.
+ *  Tenta Ticketmaster primeiro, depois Sympla como fallback. */
+export async function fetchEventsResult(cityField: string): Promise<EventsResult> {
   const city = extractCityName(cityField)
 
   const [tm, sympla] = await Promise.allSettled([
-    fetchTicketmasterStructured(city, postalCode),
+    fetchTicketmasterStructured(city),
     fetchSymplaStructured(city),
   ])
 
-  if (tm.status === 'fulfilled' && tm.value) return tm.value
-  if (sympla.status === 'fulfilled' && sympla.value) return sympla.value
-  return []
+  const tmResult     = tm.status     === 'fulfilled' ? tm.value     : { status: 'error' as const, message: 'Ticketmaster: erro interno' }
+  const symplaResult = sympla.status === 'fulfilled' ? sympla.value : { status: 'error' as const, message: 'Sympla: erro interno' }
+
+  // Prioridade: resultado com eventos > empty > error > unconfigured
+  if (tmResult.status === 'ok')     return tmResult
+  if (symplaResult.status === 'ok') return symplaResult
+
+  // Nenhum retornou eventos — propaga o estado mais informativo
+  if (tmResult.status === 'error')     return tmResult
+  if (symplaResult.status === 'error') return symplaResult
+  if (tmResult.status === 'empty')     return tmResult
+  if (symplaResult.status === 'empty') return symplaResult
+
+  // Ambos unconfigured
+  return { status: 'unconfigured' }
+}
+
+/** @deprecated Use fetchEventsResult. Mantido para compatibilidade com o agente RM. */
+export async function fetchEventsStructured(cityField: string): Promise<EventItem[]> {
+  const result = await fetchEventsResult(cityField)
+  return result.status === 'ok' ? result.events : []
 }

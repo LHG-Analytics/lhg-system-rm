@@ -1,15 +1,15 @@
-import { Calendar, Clock, MapPin, AlertTriangle } from 'lucide-react'
-import type { EventItem } from '@/lib/agente/events'
+import { AlertTriangle, Calendar, Clock, MapPin, WifiOff, XCircle } from 'lucide-react'
+import type { EventsResult, EventItem } from '@/lib/agente/events'
 
 interface EventsWidgetProps {
-  events: EventItem[]
+  result: EventsResult
   city: string
 }
 
 function isWeekend(dateStr: string): boolean {
   const d = new Date(dateStr + 'T12:00:00Z')
   const day = d.getUTCDay()
-  return day === 0 || day === 5 || day === 6 // dom, sex, sáb
+  return day === 0 || day === 5 || day === 6
 }
 
 function ptDayFmt(dateStr: string): string {
@@ -18,7 +18,6 @@ function ptDayFmt(dateStr: string): string {
   return `${days[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
-// Agrupa eventos por data e detecta finais de semana com múltiplos eventos
 function groupByDate(events: EventItem[]) {
   const map = new Map<string, EventItem[]>()
   for (const e of events) {
@@ -28,22 +27,7 @@ function groupByDate(events: EventItem[]) {
   return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
 }
 
-export function EventsWidget({ events, city }: EventsWidgetProps) {
-  if (events.length === 0) {
-    return (
-      <div className="rounded-xl border bg-card shadow-sm">
-        <div className="px-5 py-4 flex items-center gap-2">
-          <Calendar className="size-4 text-muted-foreground shrink-0" />
-          <h2 className="text-sm font-semibold">Eventos próximos — {city}</h2>
-          <span className="text-xs text-muted-foreground ml-1">Nenhum evento encontrado nos próximos 14 dias.</span>
-        </div>
-      </div>
-    )
-  }
-
-  const grouped = groupByDate(events)
-  const highImpactDates = grouped.filter(([date, evs]) => isWeekend(date) && evs.length >= 1)
-
+function WidgetShell({ city, badge, children }: { city: string; badge?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b flex items-center justify-between gap-3">
@@ -52,22 +36,65 @@ export function EventsWidget({ events, city }: EventsWidgetProps) {
           <h2 className="text-sm font-semibold">Eventos próximos — {city}</h2>
           <span className="text-xs text-muted-foreground">(próximos 14 dias)</span>
         </div>
-        {highImpactDates.length > 0 && (
-          <div className="flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-            <AlertTriangle className="size-3 shrink-0" />
-            {highImpactDates.length} fim{highImpactDates.length > 1 ? 's' : ''} de semana com evento
-          </div>
-        )}
+        {badge}
       </div>
+      {children}
+    </div>
+  )
+}
 
+export function EventsWidget({ result, city }: EventsWidgetProps) {
+  // Não configurado — oculta silenciosamente
+  if (result.status === 'unconfigured') return null
+
+  // Erro de API
+  if (result.status === 'error') {
+    return (
+      <WidgetShell city={city}>
+        <div className="px-5 py-4 flex items-start gap-3">
+          <XCircle className="size-4 text-destructive shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-destructive">Erro ao buscar eventos</p>
+            <p className="text-xs text-muted-foreground mt-0.5 font-mono">{result.message}</p>
+          </div>
+        </div>
+      </WidgetShell>
+    )
+  }
+
+  // Sem eventos
+  if (result.status === 'empty') {
+    return (
+      <WidgetShell city={city}>
+        <div className="px-5 py-4 flex items-center gap-3">
+          <WifiOff className="size-4 text-muted-foreground shrink-0" />
+          <p className="text-sm text-muted-foreground">
+            Nenhum evento encontrado nos próximos 14 dias via {result.source}.
+          </p>
+        </div>
+      </WidgetShell>
+    )
+  }
+
+  // Com eventos
+  const grouped = groupByDate(result.events)
+  const highImpactDates = grouped.filter(([date]) => isWeekend(date))
+
+  return (
+    <WidgetShell
+      city={city}
+      badge={highImpactDates.length > 0 ? (
+        <div className="flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="size-3 shrink-0" />
+          {highImpactDates.length} fim{highImpactDates.length > 1 ? 's' : ''} de semana com evento
+        </div>
+      ) : undefined}
+    >
       <div className="divide-y">
         {grouped.map(([date, evs]) => {
           const weekend = isWeekend(date)
           return (
-            <div
-              key={date}
-              className={weekend ? 'bg-amber-500/5' : undefined}
-            >
+            <div key={date} className={weekend ? 'bg-amber-500/5' : undefined}>
               <div className="px-5 py-1.5 flex items-center gap-2">
                 <span className={`text-xs font-semibold tabular-nums ${weekend ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
                   {ptDayFmt(date)}
@@ -124,6 +151,6 @@ export function EventsWidget({ events, city }: EventsWidgetProps) {
           Eventos de grande porte em FDS tendem a elevar demanda por pernoite. Considere precificação dinâmica nessas datas.
         </p>
       </div>
-    </div>
+    </WidgetShell>
   )
 }

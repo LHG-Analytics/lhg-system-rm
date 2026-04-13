@@ -2,7 +2,7 @@ import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
-import { fetchEventsStructured } from '@/lib/agente/events'
+import { fetchEventsResult } from '@/lib/agente/events'
 import { resolvePreset, toLhgDate, fmtDisplay } from '@/lib/date-range'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
@@ -122,8 +122,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   ])
 
   const cityField = agentConfig?.city ?? 'Campinas,BR'
-  const postalCode = agentConfig?.postal_code
-  const events = await fetchEventsStructured(cityField, postalCode).catch(() => [])
+  const eventsResult = await fetchEventsResult(cityField).catch((e) => ({
+    status: 'error' as const,
+    message: e instanceof Error ? e.message : 'Erro desconhecido',
+  }))
   const cityDisplay = cityField.split(',')[0].trim()
 
   return (
@@ -146,7 +148,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <DashboardKPICards company={company} />
       <DashboardCharts company={company} />
-      <EventsWidget events={events} city={cityDisplay} />
+      <EventsWidget result={eventsResult} city={cityDisplay} />
       <Suspense fallback={null}>
         <OccupancyHeatmap
           unitSlug={activeUnit.slug}
