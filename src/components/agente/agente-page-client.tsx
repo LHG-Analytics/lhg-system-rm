@@ -13,7 +13,7 @@ import { ProposalsList } from '@/components/agente/proposals-list'
 import { ScheduledReviewsList } from '@/components/agente/scheduled-reviews-list'
 import { AgentConfigManager } from '@/app/dashboard/admin/_components/agent-config-manager'
 import type { UIMessage } from 'ai'
-import type { ConversationSummary, PriceImportSummary } from '@/components/agente/agente-chat'
+import type { ConversationSummary } from '@/components/agente/agente-chat'
 import type { PriceProposal } from '@/app/api/agente/proposals/route'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -21,7 +21,6 @@ import type { PriceProposal } from '@/app/api/agente/proposals/route'
 interface AgenteChatPageProps {
   activeUnit: { id: string; slug: string; name: string } | null
   initialProposals: PriceProposal[]
-  priceImports: PriceImportSummary[]
   userRole?: string
   units?: { id: string; slug: string; name: string }[]
 }
@@ -34,9 +33,15 @@ function isScheduledReview(title: string | null) {
   return title?.startsWith(SCHEDULED_REVIEW_PREFIX) ?? false
 }
 
+/** Retorna true se a última mensagem da conversa é do usuário (sem resposta) */
+function isAwaitingResponse(msgs: UIMessage[]): boolean {
+  if (!msgs.length) return false
+  return msgs[msgs.length - 1].role === 'user'
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function AgenteChatPage({ activeUnit, initialProposals, priceImports, userRole, units = [] }: AgenteChatPageProps) {
+export function AgenteChatPage({ activeUnit, initialProposals, userRole, units = [] }: AgenteChatPageProps) {
   const searchParams = useSearchParams()
   const unitId   = activeUnit?.id   ?? ''
   const unitSlug = searchParams.get('unit') ?? activeUnit?.slug ?? ''
@@ -57,7 +62,6 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
   useEffect(() => {
     if (!unitId) return
     if (prevUnitIdRef.current && prevUnitIdRef.current !== unitId) {
-      // Unidade trocou — começa nova conversa em branco com o novo contexto
       setSelectedConvId(null)
       setSelectedMessages([])
       setChatKey((k) => k + 1)
@@ -65,6 +69,17 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
     prevUnitIdRef.current = unitId
     loadConversations()
   }, [unitId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Abre conversa via ?conv= param (notificação in-app)
+  const handledConvParam = useRef(false)
+  useEffect(() => {
+    if (handledConvParam.current) return
+    const convParam = searchParams.get('conv')
+    if (convParam) {
+      handledConvParam.current = true
+      handleSelectConversationById(convParam)
+    }
+  }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadConversations() {
     const supabase = createClient()
@@ -82,6 +97,54 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
     })))
   }
 
+  // ── Realtime: escuta updates na conversa ativa ────────────────────────────
+  // Quando o backend (onFinish) salva a resposta do agente no banco enquanto o
+  // cliente estava desconectado, o Supabase emite UPDATE em rm_conversations.
+  // Recebemos aqui e atualizamos as mensagens — a conversa "se completa" ao vivo.
+  const realtimeConvIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!selectedConvId) return
+    const msgs = conversations.find((c) => c.id === selectedConvId)?.messages ?? selectedMessages
+    if (!isAwaitingResponse(msgs)) return  // já tem resposta — não precisa subscrever
+
+    realtimeConvIdRef.current = selectedConvId
+    const supabase = createClient()
+
+    const channel = supabase
+      .channel(`conv-recovery-${selectedConvId}`)
+      .on(
+        'postgres_changes',
+        {
+          event:  'UPDATE',
+          schema: 'public',
+          table:  'rm_conversations',
+          filter: `id=eq.${selectedConvId}`,
+        },
+        (payload) => {
+          const updated = payload.new as { id: string; messages: unknown; updated_at: string; title: string | null }
+          const newMsgs = (updated.messages as unknown as UIMessage[]) ?? []
+          // Só atualiza se agora há resposta do assistente
+          if (!isAwaitingResponse(newMsgs)) {
+            setSelectedMessages(newMsgs)
+            setChatKey((k) => k + 1)
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === updated.id
+                  ? { ...c, messages: newMsgs, updated_at: updated.updated_at }
+                  : c
+              )
+            )
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+      realtimeConvIdRef.current = null
+    }
+  }, [selectedConvId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleSelectConversation(conv: ConversationSummary) {
     setSelectedConvId(conv.id)
     setSelectedMessages(conv.messages)
@@ -94,7 +157,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
     if (conv) {
       handleSelectConversation(conv)
     } else {
-      // Conversa não está na lista local ainda — carrega do banco
+      // Conversa não está na lista local ainda — busca fresca do banco
       const supabase = createClient()
       supabase
         .from('rm_conversations')
@@ -170,6 +233,10 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
 
   const pendingCount = initialProposals.filter((p) => p.status === 'pending').length
 
+  // Determina se a conversa ativa está aguardando resposta
+  const currentMsgs = conversations.find((c) => c.id === selectedConvId)?.messages ?? selectedMessages
+  const awaitingResponse = selectedConvId ? isAwaitingResponse(currentMsgs) : false
+
   return (
     <div className="flex flex-1 min-h-0 h-full gap-4">
 
@@ -194,6 +261,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
           ) : (
             conversations.map((conv) => {
               const isReview = isScheduledReview(conv.title)
+              const convAwaiting = isAwaitingResponse(conv.messages)
               return (
                 <div
                   key={conv.id}
@@ -226,9 +294,23 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
                       <Trash2 className="size-3" />
                     </button>
                   </div>
-                  <span className="text-[10px] text-muted-foreground/60">
-                    {fmtDate(conv.updated_at)}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-muted-foreground/60">
+                      {fmtDate(conv.updated_at)}
+                    </span>
+                    {/* Indicador visual de conversa aguardando resposta */}
+                    {convAwaiting && (
+                      <span className="flex gap-[2px] items-center">
+                        {[0, 1, 2].map((i) => (
+                          <span
+                            key={i}
+                            className="block size-[3px] rounded-full bg-primary/60 animate-bounce"
+                            style={{ animationDelay: `${i * 0.18}s`, animationDuration: '1.1s' }}
+                          />
+                        ))}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )
             })
@@ -309,9 +391,9 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
             key={chatKey}
             unitSlug={unitSlug}
             unitId={unitId}
-            priceImports={priceImports}
             selectedConvId={selectedConvId}
             selectedMessages={selectedMessages}
+            isAwaitingResponse={awaitingResponse}
             onConversationCreated={handleConversationCreated}
             onMessagesUpdate={handleMessagesUpdate}
             onProposalSaved={handleProposalSaved}

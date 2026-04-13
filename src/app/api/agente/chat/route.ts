@@ -62,14 +62,11 @@ export async function POST(req: NextRequest) {
     /** ID da conversa em rm_conversations — usado pelo onFinish para salvar
      *  resultado e notificar quando o cliente desconecta antes do término */
     convId?: string
-    // Novo: range único em YYYY-MM-DD (UI simplificada)
-    dateFrom?: string
-    dateTo?: string
     // Legado: DD/MM/YYYY (cron/revisoes e outras rotas)
     startDate?: string
     endDate?: string
   }
-  const { messages, unitSlug, convId, dateFrom, dateTo, startDate, endDate } = body
+  const { messages, unitSlug, convId, startDate, endDate } = body
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response('messages inválido', { status: 400 })
@@ -125,82 +122,108 @@ export async function POST(req: NextRequest) {
   let rawImports: RawImport[] = []
   let vigenciaInfo: Parameters<typeof buildSystemPrompt>[3] = undefined
 
-  if (dateFrom && dateTo) {
-    // ── Modo novo: range YYYY-MM-DD, backend resolve tabelas ──────────────────
+  // Hoje em YYYY-MM-DD (corte operacional 06:00 — usa data de ontem se < 06h)
+  const nowBRT = new Date(Date.now() - 3 * 60 * 60 * 1000) // UTC-3
+  const todayIso = nowBRT.toISOString().slice(0, 10)
 
-    // Busca a tabela de preços ativa em cada ponta do range (em paralelo)
-    // Nota: .filter() usado para `import_type` pois a coluna ainda não está nos tipos gerados
-    const [impAtFrom, impAtTo, discountImp] = await Promise.all([
+  if (startDate && endDate) {
+    // ── Modo legado: DD/MM/YYYY (cron/revisoes) ────────────────────────────────
+    const [companyResult, importsResult] = await Promise.allSettled([
+      fetchCompanyKPIsFromAutomo(unit.slug, startDate, endDate),
       admin
         .from('price_imports')
         .select('id, parsed_data, discount_data, valid_from, valid_until')
         .eq('unit_id', unit.id)
         .filter('import_type', 'eq', 'prices')
-        .lte('valid_from', dateFrom)
-        .or(`valid_until.is.null,valid_until.gte.${dateFrom}`)
-        .order('valid_from', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+        .order('valid_from', { ascending: false }),
+    ])
+    rawImports = importsResult.status === 'fulfilled' ? (importsResult.value.data ?? []) : []
+    kpiPeriods = [{
+      period: { startDate, endDate },
+      company: companyResult.status === 'fulfilled' ? companyResult.value : null,
+      bookings: null,
+    }]
+  } else {
+    // ── Modo automático: backend detecta tabelas e monta contexto ─────────────
+    // Busca as 2 tabelas de preços mais recentes + tabela de descontos ativa
+    const [priceImpsResult, discountImpResult] = await Promise.allSettled([
       admin
         .from('price_imports')
         .select('id, parsed_data, discount_data, valid_from, valid_until')
         .eq('unit_id', unit.id)
         .filter('import_type', 'eq', 'prices')
-        .lte('valid_from', dateTo)
-        .or(`valid_until.is.null,valid_until.gte.${dateTo}`)
         .order('valid_from', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+        .limit(2),
       admin
         .from('price_imports')
         .select('id, discount_data, valid_from, valid_until')
         .eq('unit_id', unit.id)
         .filter('import_type', 'eq', 'discounts')
-        .lte('valid_from', dateTo)
-        .or(`valid_until.is.null,valid_until.gte.${dateFrom}`)
+        .lte('valid_from', todayIso)
+        .or(`valid_until.is.null,valid_until.gte.${todayIso}`)
         .order('valid_from', { ascending: false })
         .limit(1)
         .maybeSingle(),
     ])
 
-    const importFrom = impAtFrom.data
-    const importTo   = impAtTo.data
-    const sameImport = !importFrom || !importTo || importFrom.id === importTo.id
+    const priceImps = priceImpsResult.status === 'fulfilled' ? (priceImpsResult.value.data ?? []) : []
+    const discountImp = discountImpResult.status === 'fulfilled' ? discountImpResult.value.data : null
 
-    if (sameImport) {
-      // ── Tabela única no período ──────────────────────────────────────────
-      const apiFrom = isoToApi(dateFrom)
-      const apiTo   = isoToApi(dateTo)
+    if (priceImps.length === 0) {
+      // Sem tabela importada — usa trailing year
+      const kpiParams = trailingYear()
+      const [companyResult] = await Promise.allSettled([
+        fetchCompanyKPIsFromAutomo(unit.slug, kpiParams.startDate, kpiParams.endDate),
+      ])
+      kpiPeriods = [{
+        period: kpiParams,
+        company: companyResult.status === 'fulfilled' ? companyResult.value : null,
+        bookings: null,
+      }]
+    } else if (priceImps.length === 1) {
+      // Uma tabela: desde valid_from até hoje
+      const imp = priceImps[0]
+      rawImports = [imp]
+      const apiFrom = isoToApi(imp.valid_from)
+      const apiTo   = isoToApi(todayIso)
       const [companyResult] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, apiFrom, apiTo),
       ])
-      if (importTo) rawImports = [importTo]
-      else if (importFrom) rawImports = [importFrom]
       kpiPeriods = [{
         period: { startDate: apiFrom, endDate: apiTo },
         company: companyResult.status === 'fulfilled' ? companyResult.value : null,
         bookings: null,
       }]
     } else {
-      // ── Duas tabelas: período A = importFrom, período B = importTo ─────────
-      // Divisão na fronteira de vigência
-      const endA   = importFrom.valid_until ? minDate(importFrom.valid_until, dateTo) : dateTo
-      const startB = maxDate(importTo.valid_from, dateFrom)
+      // Duas tabelas: importA = anterior, importB = atual (mais recente)
+      const importB = priceImps[0]  // atual
+      const importA = priceImps[1]  // anterior
 
-      const apiFromA = isoToApi(dateFrom)
-      const apiEndA  = isoToApi(endA)
+      // Período A: valid_from do anterior → dia antes do valid_from do atual
+      const endA = importB.valid_from
+        ? (() => {
+            const d = new Date(importB.valid_from)
+            d.setDate(d.getDate() - 1)
+            return d.toISOString().slice(0, 10)
+          })()
+        : todayIso
+      // Período B: valid_from do atual → hoje
+      const startB = importB.valid_from
+
+      const apiFromA  = isoToApi(importA.valid_from)
+      const apiEndA   = isoToApi(endA)
       const apiStartB = isoToApi(startB)
-      const apiToB   = isoToApi(dateTo)
+      const apiToB    = isoToApi(todayIso)
 
       const [cA, cB] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, apiFromA, apiEndA),
         fetchCompanyKPIsFromAutomo(unit.slug, apiStartB, apiToB),
       ])
 
-      rawImports = [importFrom, importTo]
+      rawImports = [importA, importB]
 
-      const daysA = daysBetween(dateFrom, endA)
-      const daysB = daysBetween(startB, dateTo)
+      const daysA = daysBetween(importA.valid_from, endA)
+      const daysB = daysBetween(startB, todayIso)
 
       kpiPeriods = [
         {
@@ -217,39 +240,20 @@ export async function POST(req: NextRequest) {
         },
       ]
 
-      // Assimetria: diferença > 7 dias entre os períodos analisados
       vigenciaInfo = {
-        importA: { valid_from: isoToApi(importFrom.valid_from), valid_until: importFrom.valid_until ? isoToApi(importFrom.valid_until) : null, analysis_days: daysA },
-        importB: { valid_from: isoToApi(importTo.valid_from),   valid_until: importTo.valid_until   ? isoToApi(importTo.valid_until)   : null, analysis_days: daysB },
+        importA: { valid_from: apiFromA, valid_until: importA.valid_until ? isoToApi(importA.valid_until) : null, analysis_days: daysA },
+        importB: { valid_from: apiStartB, valid_until: importB.valid_until ? isoToApi(importB.valid_until) : null, analysis_days: daysB },
         is_asymmetric: Math.abs(daysA - daysB) > 7,
       }
     }
 
-    // Injeta a tabela de descontos ativa no import mais recente
-    if (discountImp.data?.discount_data) {
+    // Injeta descontos no import mais recente se disponível
+    if (discountImp?.discount_data && rawImports.length > 0) {
       const mainImport = rawImports[rawImports.length - 1]
-      if (mainImport && !mainImport.discount_data) {
-        mainImport.discount_data = discountImp.data.discount_data
+      if (!mainImport.discount_data) {
+        mainImport.discount_data = discountImp.discount_data
       }
     }
-
-  } else {
-    // ── Modo legado: startDate/endDate DD/MM/YYYY (cron e retrocompat) ────────
-    const kpiParams = (startDate && endDate) ? { startDate, endDate } : trailingYear()
-    const [companyResult, importsResult] = await Promise.allSettled([
-      fetchCompanyKPIsFromAutomo(unit.slug, kpiParams.startDate, kpiParams.endDate),
-      admin
-        .from('price_imports')
-        .select('id, parsed_data, discount_data, valid_from, valid_until')
-        .eq('unit_id', unit.id)
-        .order('valid_from', { ascending: false }),
-    ])
-    rawImports = importsResult.status === 'fulfilled' ? (importsResult.value.data ?? []) : []
-    kpiPeriods = [{
-      period: kpiParams,
-      company: companyResult.status === 'fulfilled' ? companyResult.value : null,
-      bookings: null,
-    }]
   }
 
   // Montar PriceImportForPrompt

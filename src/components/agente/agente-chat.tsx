@@ -3,18 +3,15 @@
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, isToolUIPart, getToolName } from 'ai'
 import type { UIMessage } from 'ai'
-import type { DateRange } from 'react-day-picker'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, CalendarIcon, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, CheckCircle2, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { MessageResponse } from '@/components/ai-elements/message'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Calendar } from '@/components/ui/calendar'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,52 +20,6 @@ export interface ConversationSummary {
   title: string | null
   updated_at: string
   messages: UIMessage[]
-}
-
-export interface PriceImportSummary {
-  id: string
-  imported_at: string
-  canals: string[]
-  is_active: boolean
-  valid_from: string
-  valid_until: string | null
-}
-
-// ─── Date helpers ─────────────────────────────────────────────────────────────
-
-// Date → YYYY-MM-DD
-function dateToIso(date: Date): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
-// YYYY-MM-DD → Date (local, sem timezone shift)
-function isoToDate(iso: string): Date {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
-
-// Date → "01/04/25" (label compacto)
-function fmtRange(d: Date): string {
-  const day = String(d.getDate()).padStart(2, '0')
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const year = String(d.getFullYear()).slice(2)
-  return `${day}/${month}/${year}`
-}
-
-// Retorna range padrão: vigência do import ativo ou últimos 30 dias
-function getDefaultRange(imports: PriceImportSummary[]): { from: Date; to: Date } {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const active = imports.find((i) => i.is_active) ?? imports[0]
-  if (active) {
-    return { from: isoToDate(active.valid_from), to: today }
-  }
-  const from = new Date(today)
-  from.setDate(from.getDate() - 29)
-  return { from, to: today }
 }
 
 // ─── Tool call chip (feedback visual durante execução de ferramentas) ────────
@@ -151,7 +102,6 @@ function ThinkingBubble() {
         >
           {THINKING_PHRASES[idx]}
         </span>
-        {/* 3 dots bounce menores, logo após o texto */}
         <span className="flex gap-[3px] items-center shrink-0 mt-px">
           {[0, 1, 2].map((i) => (
             <span
@@ -160,6 +110,24 @@ function ThinkingBubble() {
               style={{ animationDelay: `${i * 0.18}s`, animationDuration: '1.1s' }}
             />
           ))}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ─── Bubble "aguardando resposta" (conversa retomada sem resposta) ────────────
+
+function AwaitingBubble() {
+  return (
+    <div className="flex gap-3 justify-start">
+      <div className="shrink-0 rounded-full bg-primary/10 p-1.5 h-7 w-7 flex items-center justify-center">
+        <Bot className="size-4 text-primary" />
+      </div>
+      <div className="bg-muted/60 rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center gap-2 border border-dashed border-muted-foreground/20">
+        <Clock className="size-3.5 text-muted-foreground/50 shrink-0" />
+        <span className="text-xs text-muted-foreground/70">
+          Preparando resposta… você será notificado quando estiver pronta.
         </span>
       </div>
     </div>
@@ -204,10 +172,10 @@ function ProposalGeneratingSteps() {
 interface AgenteChatInnerProps {
   unitSlug: string
   unitId: string
-  dateFrom: string   // YYYY-MM-DD
-  dateTo: string     // YYYY-MM-DD
   initialMessages?: UIMessage[]
   conversationId?: string | null
+  /** true quando a conversa foi retomada e ainda aguarda resposta do servidor */
+  isAwaitingResponse?: boolean
   onConversationCreated?: (id: string, title: string) => void
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
   onProposalSaved?: () => void
@@ -215,19 +183,16 @@ interface AgenteChatInnerProps {
 }
 
 function AgenteChatInner({
-  unitSlug, unitId, dateFrom, dateTo,
+  unitSlug, unitId,
   initialMessages, conversationId,
+  isAwaitingResponse,
   onConversationCreated, onMessagesUpdate, onProposalSaved, onNavigateToProposals,
 }: AgenteChatInnerProps) {
-  // Ref para o ID da conversa ativa (não precisa triggerar re-render)
   const convIdRef = useRef<string | null>(conversationId ?? null)
 
-  // body como função: DefaultChatTransport chama resolve(body) a cada request,
-  // o que permite incluir convId dinamicamente (após a conversa ser criada).
+  // body como função: DefaultChatTransport chama resolve(body) a cada request
   const getBody = useRef(() => ({
     unitSlug,
-    dateFrom,
-    dateTo,
     convId: convIdRef.current ?? undefined,
   }))
 
@@ -267,7 +232,6 @@ function AgenteChatInner({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const isAtBottomRef = useRef(true)
   const userScrolledUpRef = useRef(false)
   const prevMessageCountRef = useRef(0)
   const isSubmittingRef = useRef(false)
@@ -276,27 +240,16 @@ function AgenteChatInner({
     const el = scrollAreaRef.current
     if (!el) return
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-    isAtBottomRef.current = atBottom
-    // Se o usuário scrollou para cima, registra a intenção
-    if (!atBottom) {
-      userScrolledUpRef.current = true
-    }
+    if (!atBottom) userScrolledUpRef.current = true
   }
 
-  // Scroll automático: só move para baixo se o usuário não scrollou manualmente
-  // para cima. Quando uma nova mensagem do USUÁRIO é enviada, reseta o controle.
   useEffect(() => {
     const newMessageAdded = messages.length > prevMessageCountRef.current
     prevMessageCountRef.current = messages.length
-
     if (newMessageAdded) {
       const lastMsg = messages[messages.length - 1]
-      if (lastMsg?.role === 'user') {
-        // Nova mensagem do usuário: reseta controle e scrolla para mostrar o thinking bubble
-        userScrolledUpRef.current = false
-      }
+      if (lastMsg?.role === 'user') userScrolledUpRef.current = false
     }
-
     if (!userScrolledUpRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
@@ -304,7 +257,6 @@ function AgenteChatInner({
 
   const isStreaming = status === 'streaming' || status === 'submitted'
 
-  // Deriva quick replies da última mensagem do assistant
   const lastAssistantMsg = [...messages].reverse().find((m) => m.role === 'assistant')
   const quickReplies: Array<{ label: string; texto: string }> = (() => {
     if (!lastAssistantMsg) return []
@@ -329,14 +281,11 @@ function AgenteChatInner({
     if (!text || isStreaming || isSubmittingRef.current) return
     isSubmittingRef.current = true
 
-    // Cria a conversa no Supabase ao enviar a primeira mensagem
     if (!convIdRef.current && unitId) {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const title = text.slice(0, 80)
-        // Salva já com a mensagem do usuário para que o histórico não fique vazio
-        // caso o usuário navegue antes do streaming terminar
         const initialUserMsg: UIMessage = {
           id: Math.random().toString(36).slice(2, 12),
           role: 'user',
@@ -364,9 +313,12 @@ function AgenteChatInner({
     isSubmittingRef.current = false
   }
 
+  // Conversa retomada aguardando resposta: input desabilitado até chegar
+  const awaitingOnly = isAwaitingResponse && messages.length > 0 &&
+    messages[messages.length - 1].role === 'user' && !isStreaming
+
   return (
     <>
-      {/* Área de mensagens */}
       <div ref={scrollAreaRef} onScroll={handleScroll} className="flex flex-col flex-1 overflow-y-auto p-4 gap-4 min-h-0">
         {messages.length === 0 && (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
@@ -397,7 +349,6 @@ function AgenteChatInner({
         )}
 
         {messages.map((msg) => {
-          // Ignora mensagens do assistente sem conteúdo visível ainda (step intermediário)
           if (msg.role === 'assistant') {
             const hasVisible = msg.parts.some(
               (p) => (p.type === 'text' && (p as { type: 'text'; text: string }).text.length > 0) ||
@@ -432,14 +383,12 @@ function AgenteChatInner({
                   ? 'w-full'
                   : 'max-w-[80%]'
               )}>
-                {/* Tool parts: chips de loading/done + heatmap inline */}
                 {msg.parts
                   .filter(isToolUIPart)
                   .map((p, i) => {
                     const toolName = getToolName(p)
                     const state = (p as { state: string }).state
 
-                    // Heatmap com output disponível: renderiza componente visual
                     if (toolName === 'gerar_heatmap' && state === 'output-available') {
                       const output = (p as { output: unknown }).output as
                         | { startDate: string; endDate: string; metric: 'giro' | 'ocupacao'; rangeLabel: string; unitSlug: string }
@@ -463,19 +412,15 @@ function AgenteChatInner({
                       )
                     }
 
-                    // sugerir_respostas é renderizado como quick replies, não como chip
                     if (toolName === 'sugerir_respostas') return null
 
-                    // salvar_proposta em loading: etapas animadas
                     if (toolName === 'salvar_proposta' && (state === 'call' || state === 'partial-call')) {
                       return <ProposalGeneratingSteps key={i} />
                     }
 
-                    // Outros tools: chip animado
                     return <ToolCallChip key={i} toolName={toolName} state={state} />
                   })
                 }
-                {/* Text bubble */}
                 {(() => {
                   const text = msg.parts
                     .filter((p) => p.type === 'text')
@@ -499,6 +444,9 @@ function AgenteChatInner({
           )
         })}
 
+        {/* Indicador: aguardando resposta do servidor (conversa retomada) */}
+        {awaitingOnly && <AwaitingBubble />}
+
         {isStreaming && (() => {
           const last = messages[messages.length - 1]
           if (!last || last.role === 'user') return true
@@ -519,7 +467,7 @@ function AgenteChatInner({
       </div>
 
       {/* Quick replies */}
-      {!isStreaming && quickReplies.length > 0 && (
+      {!isStreaming && !awaitingOnly && quickReplies.length > 0 && (
         <div className="px-3 pt-2 pb-1 flex flex-wrap gap-2 border-t">
           {quickReplies.map((opt, i) => (
             <button
@@ -546,16 +494,16 @@ function AgenteChatInner({
       <div className="border-t p-3 flex gap-2 items-end">
         <Textarea
           ref={textareaRef}
-          placeholder="Pergunte ao agente RM…"
+          placeholder={awaitingOnly ? 'Aguardando resposta do agente…' : 'Pergunte ao agente RM…'}
           className="min-h-[44px] max-h-32 resize-none text-sm"
           rows={1}
           onKeyDown={handleKeyDown}
-          disabled={isStreaming}
+          disabled={isStreaming || awaitingOnly}
         />
         <Button
           size="icon"
           onClick={submit}
-          disabled={isStreaming}
+          disabled={isStreaming || awaitingOnly}
           className="shrink-0 h-[44px] w-[44px]"
         >
           {isStreaming
@@ -573,9 +521,9 @@ function AgenteChatInner({
 interface AgenteChatProps {
   unitSlug: string
   unitId: string
-  priceImports?: PriceImportSummary[]
   selectedConvId?: string | null
   selectedMessages?: UIMessage[]
+  isAwaitingResponse?: boolean
   onConversationCreated?: (id: string, title: string) => void
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
   onProposalSaved?: () => void
@@ -583,9 +531,10 @@ interface AgenteChatProps {
 }
 
 export function AgenteChat({
-  unitSlug, unitId, priceImports = [],
+  unitSlug, unitId,
   selectedConvId: externalConvId,
   selectedMessages: externalMessages,
+  isAwaitingResponse,
   onConversationCreated: externalOnCreated,
   onMessagesUpdate: externalOnUpdate,
   onProposalSaved,
@@ -594,96 +543,18 @@ export function AgenteChat({
   const searchParams = useSearchParams()
   const activeSlug = searchParams.get('unit') ?? unitSlug
 
-  // ── Seletor de período único ───────────────────────────────────────────────
-  const defaultRange = getDefaultRange(priceImports)
-  const [pending, setPending] = useState<DateRange>({ from: defaultRange.from, to: defaultRange.to })
-  const [applied, setApplied] = useState<{ from: Date; to: Date }>(defaultRange)
-  const [calOpen, setCalOpen] = useState(false)
-  const [chatKey, setChatKey] = useState(0)
-
-  const rangeDirty =
-    pending.from?.getTime() !== applied.from.getTime() ||
-    pending.to?.getTime()   !== applied.to.getTime()
-
-  function apply() {
-    if (!pending.from || !pending.to) return
-    setApplied({ from: pending.from, to: pending.to })
-    setChatKey((k) => k + 1)
-  }
-
-  const dateFrom = dateToIso(applied.from)
-  const dateTo   = dateToIso(applied.to)
-
-  // Detecta troca de unidade e remonta o chat
-  const prevUnitRef = useRef(unitId)
-  useEffect(() => {
-    if (prevUnitRef.current !== unitId) {
-      prevUnitRef.current = unitId
-      const r = getDefaultRange(priceImports)
-      setPending({ from: r.from, to: r.to })
-      setApplied(r)
-      setChatKey((k) => k + 1)
-    }
-  }, [unitId, priceImports])
-
   return (
-    <>
-      {/* Barra de contexto */}
-      <div className="border-b px-4 py-3 bg-muted/20 shrink-0">
-        <div className="flex items-center justify-center gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground shrink-0">Período de análise:</span>
-          <Popover open={calOpen} onOpenChange={setCalOpen}>
-            <PopoverTrigger asChild>
-              <button className={cn(
-                'flex items-center gap-1.5 h-7 rounded-md border bg-background px-2.5 text-xs',
-                'text-foreground cursor-pointer transition-colors hover:bg-accent hover:border-accent-foreground/20',
-                'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring'
-              )}>
-                <CalendarIcon className="size-3 text-muted-foreground shrink-0" />
-                <span>
-                  {pending.from ? fmtRange(pending.from) : '—'}
-                  <span className="mx-1 text-muted-foreground/50">→</span>
-                  {pending.to ? fmtRange(pending.to) : '—'}
-                </span>
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="center">
-              <Calendar
-                mode="range"
-                selected={pending}
-                onSelect={(range) => {
-                  if (range) setPending(range)
-                  if (range?.from && range?.to) setCalOpen(false)
-                }}
-                numberOfMonths={2}
-                disabled={(date) => date > new Date()}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
-          {rangeDirty && pending.from && pending.to && (
-            <Button size="sm" variant="default" className="h-7 text-xs gap-1.5" onClick={apply}>
-              <RefreshCw className="size-3" />
-              Aplicar
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <AgenteChatInner
-        key={chatKey}
-        unitSlug={activeSlug}
-        unitId={activeSlug ? unitId : ''}
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        initialMessages={externalMessages}
-        conversationId={externalConvId}
-        onConversationCreated={externalOnCreated}
-        onMessagesUpdate={externalOnUpdate}
-        onProposalSaved={onProposalSaved}
-        onNavigateToProposals={onNavigateToProposals}
-      />
-    </>
+    <AgenteChatInner
+      unitSlug={activeSlug}
+      unitId={activeSlug ? unitId : ''}
+      initialMessages={externalMessages}
+      conversationId={externalConvId}
+      isAwaitingResponse={isAwaitingResponse}
+      onConversationCreated={externalOnCreated}
+      onMessagesUpdate={externalOnUpdate}
+      onProposalSaved={onProposalSaved}
+      onNavigateToProposals={onNavigateToProposals}
+    />
   )
 }
 
