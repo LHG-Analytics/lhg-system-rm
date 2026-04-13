@@ -143,13 +143,10 @@ async function fetchTicketmasterStructured(city: string, postalCode?: string | n
   const startIso = now.toISOString().replace(/\.\d{3}Z$/, 'Z')
   const endIso   = end.toISOString().replace(/\.\d{3}Z$/, 'Z')
 
-  // Usa CEP para precisão de bairro quando disponível; fallback para cidade
-  const locationParam = postalCode
-    ? `postalCode=${encodeURIComponent(postalCode.replace('-', ''))}`
-    : `city=${encodeURIComponent(city)}`
-
   try {
-    const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${key}&${locationParam}&startDateTime=${startIso}&endDateTime=${endIso}&size=10&sort=date,asc&countryCode=BR`
+    // Busca por cidade — cobre bem o Brasil; CEP é granular demais para a
+    // cobertura da Ticketmaster no BR e retorna zero na maioria das cidades.
+    const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${key}&city=${encodeURIComponent(city)}&startDateTime=${startIso}&endDateTime=${endIso}&size=10&sort=date,asc&countryCode=BR`
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
     if (!res.ok) return null
     const data = await res.json() as TMResponse

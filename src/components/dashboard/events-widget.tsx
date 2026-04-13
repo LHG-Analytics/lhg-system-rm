@@ -29,7 +29,17 @@ function groupByDate(events: EventItem[]) {
 }
 
 export function EventsWidget({ events, city }: EventsWidgetProps) {
-  if (events.length === 0) return null
+  if (events.length === 0) {
+    return (
+      <div className="rounded-xl border bg-card shadow-sm">
+        <div className="px-5 py-4 flex items-center gap-2">
+          <Calendar className="size-4 text-muted-foreground shrink-0" />
+          <h2 className="text-sm font-semibold">Eventos próximos — {city}</h2>
+          <span className="text-xs text-muted-foreground ml-1">Nenhum evento encontrado nos próximos 14 dias.</span>
+        </div>
+      </div>
+    )
+  }
 
   const grouped = groupByDate(events)
   const highImpactDates = grouped.filter(([date, evs]) => isWeekend(date) && evs.length >= 1)
