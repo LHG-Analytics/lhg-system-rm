@@ -256,7 +256,8 @@ export function buildSystemPrompt(
   unitName: string,
   kpiData: KPIPeriod | KPIPeriod[],
   priceImports: PriceImportForPrompt[] = [],
-  vigenciaInfo?: VigenciaInfo
+  vigenciaInfo?: VigenciaInfo,
+  weatherContext?: string | null
 ): string {
   // ── Montar contexto de KPIs (1 ou N períodos) ─────────────────────────────
   const periods = Array.isArray(kpiData) ? kpiData : [kpiData]
@@ -301,6 +302,8 @@ ${is_asymmetric
 
 Após a escolha: explique em 2–3 frases qual foi a abordagem escolhida, por que ela é adequada para o objetivo do usuário, e qual limitação ela tem. Então faça a análise.`
   }
+
+  const weatherBlock = weatherContext ? `\n\n${weatherContext}` : ''
 
   return `Você é o Agente de Revenue Management sênior da LHG Motéis — especialista em yield management para o setor moteleiro brasileiro com mais de 10 anos de experiência.
 
@@ -405,7 +408,7 @@ Após a tabela, inclua:
 ${kpiContext}
 ${priceContext ? `\n${priceContext}` : ''}
 ${discountContext ? `\n${discountContext}` : ''}
-${vigenciaBlock}
+${vigenciaBlock}${weatherBlock}
 
 ---
 Se o usuário pedir algo fora do escopo de Revenue Management, redirecione gentilmente para o foco em precificação e receita.`

@@ -165,6 +165,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
           max_variation_pct: config.max_variation_pct,
           focus_metric: config.focus_metric,
           competitor_urls: competitorUrls,
+          city: config.city,
         }),
       })
       const data = await res.json()
@@ -364,6 +365,22 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
           {error && (
             <div className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
           )}
+
+          {/* Cidade para contexto climático */}
+          <div className="rounded-xl border bg-card p-5 flex flex-col gap-3">
+            <div>
+              <Label className="text-sm font-semibold">Cidade (clima)</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Usada para injetar clima atual e previsão no contexto do agente. Formato: <code className="text-xs bg-muted px-1 rounded">Cidade,XX</code> (ex: <code className="text-xs bg-muted px-1 rounded">Campinas,BR</code>).
+              </p>
+            </div>
+            <Input
+              value={config.city ?? 'Campinas,BR'}
+              onChange={(e) => setConfig((prev) => prev ? { ...prev, city: e.target.value } : prev)}
+              placeholder="Campinas,BR"
+              className="max-w-xs"
+            />
+          </div>
 
           {/* Estratégia de precificação */}
           <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">

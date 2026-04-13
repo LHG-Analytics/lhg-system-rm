@@ -321,6 +321,8 @@ export type Database = {
           file_name: string
           finished_at: string | null
           id: string
+          import_type: string
+          parsed_preview: Json | null
           result_id: string | null
           started_at: string | null
           status: string
@@ -336,6 +338,8 @@ export type Database = {
           file_name: string
           finished_at?: string | null
           id?: string
+          import_type?: string
+          parsed_preview?: Json | null
           result_id?: string | null
           started_at?: string | null
           status?: string
@@ -351,6 +355,8 @@ export type Database = {
           file_name?: string
           finished_at?: string | null
           id?: string
+          import_type?: string
+          parsed_preview?: Json | null
           result_id?: string | null
           started_at?: string | null
           status?: string
@@ -380,6 +386,7 @@ export type Database = {
           canals: string[]
           discount_data: Json | null
           id: string
+          import_type: string
           imported_at: string
           imported_by: string
           is_active: boolean
@@ -393,6 +400,7 @@ export type Database = {
           canals?: string[]
           discount_data?: Json | null
           id?: string
+          import_type?: string
           imported_at?: string
           imported_by: string
           is_active?: boolean
@@ -406,6 +414,7 @@ export type Database = {
           canals?: string[]
           discount_data?: Json | null
           id?: string
+          import_type?: string
           imported_at?: string
           imported_by?: string
           is_active?: boolean
@@ -573,6 +582,7 @@ export type Database = {
       }
       rm_agent_config: {
         Row: {
+          city: string
           competitor_urls: Json
           created_at: string
           focus_metric: string
@@ -585,6 +595,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          city?: string
           competitor_urls?: Json
           created_at?: string
           focus_metric?: string
@@ -597,6 +608,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          city?: string
           competitor_urls?: Json
           created_at?: string
           focus_metric?: string

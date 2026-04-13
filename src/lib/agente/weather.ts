@@ -1,0 +1,102 @@
+// Módulo de contexto climático — OpenWeatherMap
+
+interface OWMCurrentResponse {
+  name: string
+  main: { temp: number; feels_like: number; humidity: number; temp_min: number; temp_max: number }
+  weather: Array<{ description: string }>
+  wind: { speed: number }
+}
+
+interface OWMForecastResponse {
+  list: Array<{
+    dt: number
+    main: { temp: number; temp_min: number; temp_max: number }
+    weather: Array<{ description: string }>
+    dt_txt: string
+  }>
+}
+
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+function ptDayName(dateStr: string): string {
+  const d = new Date(dateStr)
+  const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+  return `${days[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+/** Busca clima atual + previsão 3 dias e retorna bloco markdown para o system prompt.
+ *  Retorna null se OPENWEATHERMAP_API_KEY não estiver configurada ou houver erro. */
+export async function fetchWeatherContext(city: string): Promise<string | null> {
+  const key = process.env.OPENWEATHERMAP_API_KEY
+  if (!key) return null
+
+  try {
+    const base = 'https://api.openweathermap.org/data/2.5'
+    const params = `q=${encodeURIComponent(city)}&appid=${key}&units=metric&lang=pt`
+
+    const [currentRes, forecastRes] = await Promise.allSettled([
+      fetch(`${base}/weather?${params}`, { signal: AbortSignal.timeout(5000) }),
+      fetch(`${base}/forecast?${params}&cnt=24`, { signal: AbortSignal.timeout(5000) }),
+    ])
+
+    if (currentRes.status !== 'fulfilled' || !currentRes.value.ok) return null
+    const current = await currentRes.value.json() as OWMCurrentResponse
+
+    const cityName = current.name
+    const temp = Math.round(current.main.temp)
+    const feelsLike = Math.round(current.main.feels_like)
+    const humidity = current.main.humidity
+    const desc = capitalize(current.weather[0]?.description ?? '')
+
+    let forecastBlock = ''
+    if (forecastRes.status === 'fulfilled' && forecastRes.value.ok) {
+      const forecast = await forecastRes.value.json() as OWMForecastResponse
+
+      // Agrupa por dia (YYYY-MM-DD) e pega min/max + descrição predominante
+      const byDay = new Map<string, { min: number; max: number; descs: string[] }>()
+      for (const item of forecast.list) {
+        const day = item.dt_txt.slice(0, 10)
+        const existing = byDay.get(day)
+        if (existing) {
+          existing.min = Math.min(existing.min, item.main.temp_min)
+          existing.max = Math.max(existing.max, item.main.temp_max)
+          existing.descs.push(item.weather[0]?.description ?? '')
+        } else {
+          byDay.set(day, {
+            min: item.main.temp_min,
+            max: item.main.temp_max,
+            descs: [item.weather[0]?.description ?? ''],
+          })
+        }
+      }
+
+      // Pega próximos 3 dias (exclui hoje)
+      const today = new Date().toISOString().slice(0, 10)
+      const nextDays = [...byDay.entries()]
+        .filter(([d]) => d > today)
+        .slice(0, 3)
+
+      if (nextDays.length > 0) {
+        const lines = nextDays.map(([dateStr, d]) => {
+          const descDay = capitalize(
+            d.descs.sort((a, b) =>
+              d.descs.filter((v) => v === b).length - d.descs.filter((v) => v === a).length
+            )[0] ?? ''
+          )
+          return `- ${ptDayName(dateStr)}: ${Math.round(d.min)}–${Math.round(d.max)}°C, ${descDay}`
+        })
+        forecastBlock = `**Próximos dias:**\n${lines.join('\n')}`
+      }
+    }
+
+    return `## Clima — ${cityName}
+**Agora:** ${temp}°C (sensação ${feelsLike}°C) · ${desc} · Umidade ${humidity}%
+${forecastBlock}
+
+> Use os dados climáticos para contextualizar a demanda esperada: calor intenso e FDS tende a elevar giro em períodos curtos; chuva pesada e dias frios reduzem a demanda de curto prazo.`
+  } catch {
+    return null
+  }
+}

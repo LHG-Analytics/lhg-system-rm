@@ -25,6 +25,7 @@ export interface AgentConfig {
   focus_metric: 'balanceado' | 'agressivo' | 'revpar' | 'giro' | 'ocupacao' | 'ticket' | 'trevpar' | 'tmo'
   is_active: boolean
   competitor_urls: CompetitorUrl[]
+  city: string
 }
 
 function getAdminClient() {
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error: err } = await admin
     .from('rm_agent_config')
-    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls')
+    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city')
     .eq('unit_id', unit.id)
     .maybeSingle()
 
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
   if (!data) {
     const { data: created } = await admin.from('rm_agent_config').insert({
       unit_id: unit.id, pricing_strategy: 'moderado', max_variation_pct: 20, focus_metric: 'balanceado', is_active: true,
-    }).select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls').single()
+    }).select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city').single()
     return Response.json(created as unknown as AgentConfig)
   }
 
@@ -87,6 +88,7 @@ export async function PATCH(req: NextRequest) {
     max_variation_pct?: number
     focus_metric?: string
     competitor_urls?: CompetitorUrl[]
+    city?: string
   }
   const { unit_id, competitor_urls, ...rest } = body
   if (!unit_id) return new Response('unit_id obrigatório', { status: 400 })
@@ -101,7 +103,7 @@ export async function PATCH(req: NextRequest) {
     .from('rm_agent_config')
     .update(fields)
     .eq('unit_id', unit_id)
-    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls')
+    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city')
     .single()
 
   if (err) return Response.json({ error: err.message }, { status: 500 })

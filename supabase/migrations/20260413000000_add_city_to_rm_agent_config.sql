@@ -1,0 +1,1 @@
+ALTER TABLE rm_agent_config ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT 'Campinas,BR';
