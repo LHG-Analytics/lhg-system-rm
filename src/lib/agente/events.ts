@@ -133,7 +133,7 @@ export interface EventItem {
   source: 'ticketmaster' | 'sympla'
 }
 
-async function fetchTicketmasterStructured(city: string): Promise<EventItem[] | null> {
+async function fetchTicketmasterStructured(city: string, postalCode?: string | null): Promise<EventItem[] | null> {
   const key = process.env.TICKETMASTER_API_KEY
   if (!key) return null
 
@@ -143,8 +143,13 @@ async function fetchTicketmasterStructured(city: string): Promise<EventItem[] | 
   const startIso = now.toISOString().replace(/\.\d{3}Z$/, 'Z')
   const endIso   = end.toISOString().replace(/\.\d{3}Z$/, 'Z')
 
+  // Usa CEP para precisão de bairro quando disponível; fallback para cidade
+  const locationParam = postalCode
+    ? `postalCode=${encodeURIComponent(postalCode.replace('-', ''))}`
+    : `city=${encodeURIComponent(city)}`
+
   try {
-    const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${key}&city=${encodeURIComponent(city)}&startDateTime=${startIso}&endDateTime=${endIso}&size=10&sort=date,asc&countryCode=BR`
+    const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${key}&${locationParam}&startDateTime=${startIso}&endDateTime=${endIso}&size=10&sort=date,asc&countryCode=BR`
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
     if (!res.ok) return null
     const data = await res.json() as TMResponse
@@ -203,12 +208,13 @@ async function fetchSymplaStructured(city: string): Promise<EventItem[] | null> 
 }
 
 /** Retorna lista estruturada de eventos para uso na UI do dashboard.
+ *  Usa CEP quando disponível (mais preciso); fallback para cidade.
  *  Retorna array vazio se nenhuma key estiver configurada. */
-export async function fetchEventsStructured(cityField: string): Promise<EventItem[]> {
+export async function fetchEventsStructured(cityField: string, postalCode?: string | null): Promise<EventItem[]> {
   const city = extractCityName(cityField)
 
   const [tm, sympla] = await Promise.allSettled([
-    fetchTicketmasterStructured(city),
+    fetchTicketmasterStructured(city, postalCode),
     fetchSymplaStructured(city),
   ])
 

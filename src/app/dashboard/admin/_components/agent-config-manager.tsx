@@ -97,6 +97,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
           max_variation_pct: config.max_variation_pct,
           focus_metric: config.focus_metric,
           city: config.city,
+          postal_code: config.postal_code,
         }),
       })
       const data = await res.json()
@@ -150,20 +151,34 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
             <div className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
           )}
 
-          {/* Cidade para contexto climático */}
-          <div className="rounded-xl border bg-card p-5 flex flex-col gap-3">
+          {/* Localização — cidade + CEP */}
+          <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">
             <div>
-              <Label className="text-sm font-semibold">Cidade (clima)</Label>
+              <Label className="text-sm font-semibold">Localização</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Usada para injetar clima atual e previsão no contexto do agente. Formato: <code className="text-xs bg-muted px-1 rounded">Cidade,XX</code> (ex: <code className="text-xs bg-muted px-1 rounded">Campinas,BR</code>).
+                Usada para clima atual, previsão e eventos próximos no contexto do agente.
               </p>
             </div>
-            <Input
-              value={config.city ?? 'Campinas,BR'}
-              onChange={(e) => setConfig((prev) => prev ? { ...prev, city: e.target.value } : prev)}
-              placeholder="Campinas,BR"
-              className="max-w-xs"
-            />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs text-muted-foreground">Cidade</Label>
+                <Input
+                  value={config.city ?? 'Campinas,BR'}
+                  onChange={(e) => setConfig((prev) => prev ? { ...prev, city: e.target.value } : prev)}
+                  placeholder="Campinas,BR"
+                />
+                <p className="text-[11px] text-muted-foreground">Formato: <code className="bg-muted px-1 rounded">Cidade,UF</code></p>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs text-muted-foreground">CEP do motel</Label>
+                <Input
+                  value={config.postal_code ?? ''}
+                  onChange={(e) => setConfig((prev) => prev ? { ...prev, postal_code: e.target.value || null } : prev)}
+                  placeholder="00000-000"
+                />
+                <p className="text-[11px] text-muted-foreground">Melhora precisão dos eventos (Ticketmaster).</p>
+              </div>
+            </div>
           </div>
 
           {/* Estratégia de precificação */}

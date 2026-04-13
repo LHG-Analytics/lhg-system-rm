@@ -115,14 +115,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     Promise.resolve(
       supabase
         .from('rm_agent_config')
-        .select('city')
+        .select('city, postal_code')
         .eq('unit_id', (await supabase.from('units').select('id').eq('slug', activeUnit.slug).single()).data?.id ?? '')
         .single()
     ).then((r) => r.data).catch(() => null),
   ])
 
   const cityField = agentConfig?.city ?? 'Campinas,BR'
-  const events = await fetchEventsStructured(cityField).catch(() => [])
+  const postalCode = agentConfig?.postal_code
+  const events = await fetchEventsStructured(cityField, postalCode).catch(() => [])
   const cityDisplay = cityField.split(',')[0].trim()
 
   return (
