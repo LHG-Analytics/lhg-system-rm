@@ -457,14 +457,18 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `BackgroundStreamer` removido; `AgentStreamingProvider` virou passthrough
   - **Falso positivo:** hook de validação marca `"YYYY-MM-DD"` em schemas Zod como "model slug com hífens" — ignorar
 - **LHG-115:** fix + feat(agente): background streaming, scroll manual, conv vazia, heatmap default Todas
-  - **Heatmap:** filtro Data abre em "Todas" por padrão (era "Entrada") — `date-range-picker.tsx` e `page.tsx`
+  - **Heatmap:** filtro Data interno (`heatmap.tsx`) abre em "Todas" por padrão — `urlDateType` fallback `'all'`
+  - **Dashboard:** filtro Data do `date-range-picker.tsx` mantém "Entrada" como padrão — são controles distintos
+  - **Armadilha:** heatmap tem filtro interno próprio (independente da URL); `date-range-picker` controla o dashboard; nunca confundir os dois
   - **Scroll:** `userScrolledUpRef` — auto-scroll para quando usuário scrolla manualmente; retoma ao enviar nova mensagem
   - **Bug conv vazia:** `rm_conversations` agora criada com a mensagem do usuário já salva (não `messages: []`), evitando histórico vazio ao navegar durante streaming
-  - **Background streaming:** `src/components/agente/agent-streaming-provider.tsx` + `AgentStreamingProvider` no `dashboard/layout.tsx`
-    - Ao navegar durante streaming: `AgenteChatInner` detecta no cleanup do `useEffect` e chama `startBackground(session)`
-    - `BackgroundStreamer` (invisível, `return null`) re-envia a última mensagem do usuário em segundo plano
-    - Ao concluir: salva mensagens no DB + cria notificação in-app com `link: /dashboard/agente?conv={convId}`
+  - **Background streaming:** `streamText.onFinish` no route server-side; `BackgroundStreamer` removido (causava propostas duplicadas)
+    - Ao concluir com cliente desconectado: salva mensagens no DB + cria notificação in-app com `link: /dashboard/agente?conv={convId}`
     - **Armadilha:** `UIMessage` do AI SDK não tem campo `content` — usar apenas `id`, `role` e `parts`
+- **LHG-117:** fix(agente+dashboard): proposta não redireciona para aba + defaults corretos de filtro Data
+  - **Bug:** `handleProposalSaved` chamava `setActiveTab('propostas')` — jogava usuário para fora do chat após salvar proposta
+  - **Fix:** removido o redirect automático; aba Propostas atualiza em background; agente pode sugerir navegar via quick reply
+  - **Armadilha:** `handleProposalSaved` deve apenas atualizar dados, nunca mudar aba automaticamente
 
 ### 🔲 Backlog MVP (por prioridade)
 
