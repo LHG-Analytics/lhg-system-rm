@@ -120,3 +120,99 @@ export async function fetchEventsContext(cityField: string): Promise<string | nu
   if (sympla.status === 'fulfilled' && sympla.value) return sympla.value
   return null
 }
+
+// ─── Tipos estruturados para UI ───────────────────────────────────────────────
+
+export interface EventItem {
+  name: string
+  date: string       // YYYY-MM-DD
+  time?: string      // HH:MM
+  venue?: string
+  category?: string
+  url: string
+  source: 'ticketmaster' | 'sympla'
+}
+
+async function fetchTicketmasterStructured(city: string): Promise<EventItem[] | null> {
+  const key = process.env.TICKETMASTER_API_KEY
+  if (!key) return null
+
+  const now = new Date()
+  const end = new Date(now)
+  end.setDate(now.getDate() + 14)
+  const startIso = now.toISOString().replace(/\.\d{3}Z$/, 'Z')
+  const endIso   = end.toISOString().replace(/\.\d{3}Z$/, 'Z')
+
+  try {
+    const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${key}&city=${encodeURIComponent(city)}&startDateTime=${startIso}&endDateTime=${endIso}&size=10&sort=date,asc&countryCode=BR`
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
+    if (!res.ok) return null
+    const data = await res.json() as TMResponse
+
+    const events = data._embedded?.events ?? []
+    if (events.length === 0) return null
+
+    return events.map((e): EventItem => ({
+      name:     e.name,
+      date:     e.dates.start.localDate,
+      time:     e.dates.start.localTime?.slice(0, 5),
+      venue:    e._embedded?.venues?.[0]?.name,
+      category: e.classifications?.[0]?.segment?.name,
+      url:      e.url,
+      source:   'ticketmaster',
+    }))
+  } catch {
+    return null
+  }
+}
+
+async function fetchSymplaStructured(city: string): Promise<EventItem[] | null> {
+  const token = process.env.SYMPLA_TOKEN
+  if (!token) return null
+
+  const now = new Date()
+  const end = new Date(now)
+  end.setDate(now.getDate() + 14)
+  const startDate = now.toISOString().slice(0, 10)
+  const endDate   = end.toISOString().slice(0, 10)
+
+  try {
+    const url = `https://api.sympla.com.br/public/v3/events?s_token=${token}&s_start_date=${startDate}&s_end_date=${endDate}&page=1&page_size=10`
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
+    if (!res.ok) return null
+    const data = await res.json() as SymplaResponse
+
+    const cityLower = city.toLowerCase()
+    const events = (data.data ?? []).filter(
+      (e) => e.address?.city?.toLowerCase().includes(cityLower) || !e.address?.city
+    )
+    if (events.length === 0) return null
+
+    return events.map((e): EventItem => ({
+      name:     e.name,
+      date:     e.start_date,
+      time:     e.start_time?.slice(0, 5),
+      venue:    e.address?.name,
+      category: e.categories?.[0]?.name,
+      url:      e.url,
+      source:   'sympla',
+    }))
+  } catch {
+    return null
+  }
+}
+
+/** Retorna lista estruturada de eventos para uso na UI do dashboard.
+ *  Retorna array vazio se nenhuma key estiver configurada. */
+export async function fetchEventsStructured(cityField: string): Promise<EventItem[]> {
+  const city = extractCityName(cityField)
+
+  const [tm, sympla] = await Promise.allSettled([
+    fetchTicketmasterStructured(city),
+    fetchSymplaStructured(city),
+  ])
+
+  if (tm.status === 'fulfilled' && tm.value) return tm.value
+  if (sympla.status === 'fulfilled' && sympla.value) return sympla.value
+  return []
+}

@@ -2,11 +2,13 @@ import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
+import { fetchEventsStructured } from '@/lib/agente/events'
 import { resolvePreset, toLhgDate, fmtDisplay } from '@/lib/date-range'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
 import { DateRangePicker } from '@/components/dashboard/date-range-picker'
+import { EventsWidget } from '@/components/dashboard/events-widget'
 
 interface DashboardPageProps {
   searchParams: Promise<{
@@ -96,18 +98,32 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const startDDMMYYYY = toLhgDate(dateRange.startDate)
   const endDDMMYYYY   = toLhgDate(dateRange.endDate)
 
-  const company = await fetchCompanyKPIsFromAutomo(
-    activeUnit.slug,
-    startDDMMYYYY,
-    endDDMMYYYY,
-    startHour,
-    endHour,
-    rentalStatus,
-    dateType,
-  ).catch((e) => {
-    console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h dateType=${dateType} status=${rentalStatus}):`, e)
-    return null
-  })
+  // Busca KPIs + cidade da config (para eventos) em paralelo
+  const [company, agentConfig] = await Promise.all([
+    fetchCompanyKPIsFromAutomo(
+      activeUnit.slug,
+      startDDMMYYYY,
+      endDDMMYYYY,
+      startHour,
+      endHour,
+      rentalStatus,
+      dateType,
+    ).catch((e) => {
+      console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h dateType=${dateType} status=${rentalStatus}):`, e)
+      return null
+    }),
+    Promise.resolve(
+      supabase
+        .from('rm_agent_config')
+        .select('city')
+        .eq('unit_id', (await supabase.from('units').select('id').eq('slug', activeUnit.slug).single()).data?.id ?? '')
+        .single()
+    ).then((r) => r.data).catch(() => null),
+  ])
+
+  const cityField = agentConfig?.city ?? 'Campinas,BR'
+  const events = await fetchEventsStructured(cityField).catch(() => [])
+  const cityDisplay = cityField.split(',')[0].trim()
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -129,6 +145,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <DashboardKPICards company={company} />
       <DashboardCharts company={company} />
+      <EventsWidget events={events} city={cityDisplay} />
       <Suspense fallback={null}>
         <OccupancyHeatmap
           unitSlug={activeUnit.slug}
