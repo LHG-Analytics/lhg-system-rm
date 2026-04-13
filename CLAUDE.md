@@ -469,6 +469,15 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - **Bug:** `handleProposalSaved` chamava `setActiveTab('propostas')` — jogava usuário para fora do chat após salvar proposta
   - **Fix:** removido o redirect automático; aba Propostas atualiza em background; agente pode sugerir navegar via quick reply
   - **Armadilha:** `handleProposalSaved` deve apenas atualizar dados, nunca mudar aba automaticamente
+- **LHG-118:** feat(agente): recovery de conversa via Realtime + período automático sem date picker
+  - Removido seletor de período do chat — backend auto-detecta as 2 tabelas mais recentes e monta KPIs por vigência
+  - Se 1 tabela: KPIs desde `valid_from` até hoje; se 2 tabelas: KPIs divididos na fronteira com `vigenciaInfo`
+  - Modo legado `startDate/endDate` DD/MM/YYYY mantido para cron/revisões
+  - Realtime subscription em `rm_conversations` quando conversa ativa aguarda resposta (última msg é do usuário)
+  - Ao receber `UPDATE` do banco (onFinish do servidor), remonta o chat automaticamente
+  - Indicador de 3 dots na sidebar para conversas aguardando; `AwaitingBubble` com input desabilitado no chat
+  - `handledConvParam` ref evita loop ao receber `?conv=` repetidamente
+  - **Armadilha:** Realtime só subscreve quando `isAwaitingResponse(msgs)` — não subscrever desnecessariamente
 
 ### 🔲 Backlog MVP (por prioridade)
 
