@@ -17,11 +17,12 @@ export const strategyOptions = {
 /**
  * Modelo analítico — usado em importação de planilhas, análise de concorrentes.
  * Foco: parsing de CSV/JSON, cálculos de KPIs, comparação direta de valores.
+ * BYOK (OpenAI key via OpenRouter) — sem limite de free-models-per-day.
  * Fallback: nvidia/nemotron-3-super-120b-a12b:free
  */
-export const ANALYSIS_MODEL = openrouter('openai/gpt-oss-120b:free')
+export const ANALYSIS_MODEL = openrouter('openai/gpt-4.1-mini')
 export const analysisOptions = {
-  openrouter: { models: ['openai/gpt-oss-120b:free', 'nvidia/nemotron-3-super-120b-a12b:free'] },
+  openrouter: { models: ['nvidia/nemotron-3-super-120b-a12b:free'] },
 }
 
 // Alias retrocompatível — aponta para o modelo estratégico
