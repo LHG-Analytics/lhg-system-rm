@@ -46,103 +46,97 @@ async function requireManagerOrAbove() {
   return { error: null, status: 200 as const, supabase, user, profile }
 }
 
-// Próxima sexta-feira a partir de hoje
-function nextFridayDate(): Date {
-  const today = new Date()
-  const daysUntil = ((5 - today.getDay()) + 7) % 7 || 7
-  const friday = new Date(today)
-  friday.setDate(today.getDate() + daysUntil)
-  return friday
-}
-
 // pageFunction injetada no browser via apify/playwright-scraper
-function buildPlaywrightPageFunction(fridayDate: Date): string {
-  const fridayDay = fridayDate.getDate()
-  const fridayMonth = fridayDate.getMonth()
-  const fridayYear = fridayDate.getFullYear()
-  const fridayPadded = `${fridayYear}-${String(fridayMonth + 1).padStart(2, '0')}-${String(fridayDay).padStart(2, '0')}`
-
+// Estratégia: clica no ícone de calendário, navega para terça (semana) e sábado (FDS)
+// usando índices de coluna da tabela de calendário (Dom=0 Seg=1 Ter=2 Qua=3 Qui=4 Sex=5 Sab=6)
+function buildPlaywrightPageFunction(): string {
   return `
 async function pageFunction({ page, log }) {
-  await page.waitForTimeout(5000);
+  await page.waitForTimeout(3000);
+  const results = [];
 
-  const todayText = await page.evaluate(() => document.body.innerText);
-  log.info('Tamanho conteúdo inicial: ' + todayText.length);
-  const results = [{ label: 'hoje (dia de semana)', text: todayText.slice(0, 8000) }];
-
-  const fridayDay   = ${fridayDay};
-  const fridayIso   = '${fridayPadded}';
-  const fridayPt    = '${String(fridayDay).padStart(2, '0')}/${String(fridayMonth + 1).padStart(2, '0')}/${fridayYear}';
+  const extractPrices = async (label) => {
+    const data = await page.evaluate(() => {
+      const allInputs = document.querySelectorAll('input');
+      const dateVal = allInputs[0] ? allInputs[0].value : '';
+      const priceTable = document.querySelectorAll('table')[0];
+      if (!priceTable) return { dateVal, rows: [] };
+      const rows = Array.from(priceTable.querySelectorAll('tr')).map(tr =>
+        Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()).join(' | ')
+      ).filter(r => r.trim());
+      return { dateVal, rows };
+    });
+    log.info('Preços ' + label + ' (' + data.dateVal + '): ' + data.rows.length + ' linhas');
+    return { label, text: 'Data: ' + data.dateVal + '\\n' + data.rows.join('\\n') };
+  };
 
   try {
-    const dateInput = await page.$('input[type="date"]');
-    if (dateInput) {
-      await dateInput.fill(fridayIso);
-      await dateInput.dispatchEvent('change');
-      await dateInput.dispatchEvent('input');
-      await page.waitForTimeout(3000);
-      const t = await page.evaluate(() => document.body.innerText);
-      results.push({ label: 'sexta-feira (final de semana)', text: t.slice(0, 8000) });
-      log.info('Estratégia date input bem-sucedida');
-      return results;
-    }
+    // Abre o calendário de preços clicando no ícone
+    await page.evaluate(() => {
+      const calIcon = document.querySelector('img[alt="Escolha a Data"]');
+      if (calIcon) calIcon.click();
+    });
+    await page.waitForTimeout(800);
 
-    const triggerSelectors = [
-      '[class*="datepicker"]','[class*="date-picker"]','[class*="calendar-input"]',
-      '[class*="calendario"]','[class*="data-busca"]','input[placeholder*="data"]',
-      'input[placeholder*="Data"]','.input-group [class*="calendar"]',
-      '[data-toggle="datepicker"]','button[class*="date"]',
-    ];
-
-    let calendarOpened = false;
-    for (const sel of triggerSelectors) {
-      try {
-        const el = await page.$(sel);
-        if (el) {
-          await el.click();
-          await page.waitForTimeout(1500);
-          const popup = await page.$('.datepicker, .flatpickr-calendar, .pika-single, [class*="calendar-popup"], [class*="datepicker-dropdown"]');
-          if (popup) { calendarOpened = true; log.info('Calendário aberto via: ' + sel); break; }
-        }
-      } catch(e) { /* tenta próximo */ }
-    }
-
-    if (!calendarOpened) { log.info('Nenhum calendário interativo encontrado'); return results; }
-
-    let fridayClicked = false;
-    for (let pass = 0; pass < 2 && !fridayClicked; pass++) {
-      const cellSelectors = [
-        \`[data-date="\${fridayIso}"]\`,\`[data-date="\${fridayPt}"]\`,
-        \`td[data-day="\${fridayDay}"]:not([class*="disabled"]):not([class*="prev"]):not([class*="next"])\`,
-        \`td:not([class*="disabled"]) >> text="\${fridayDay}"\`,
-      ];
-      for (const cellSel of cellSelectors) {
-        try {
-          const cell = await page.$(cellSel);
+    // Clica numa terça-feira (col 2) para preços de dia de semana
+    // Fallback: segunda, quarta, quinta
+    const weekdayClicked = await page.evaluate(() => {
+      const calTable = document.querySelectorAll('table')[1];
+      if (!calTable) return false;
+      const rows = Array.from(calTable.querySelectorAll('tbody tr'));
+      for (const colIdx of [2, 1, 3, 4]) {
+        for (const row of rows) {
+          const cells = row.querySelectorAll('td');
+          const cell = cells[colIdx];
           if (cell) {
-            await cell.click();
-            await page.waitForTimeout(3000);
-            const t = await page.evaluate(() => document.body.innerText);
-            if (t !== todayText) {
-              results.push({ label: 'sexta-feira (final de semana)', text: t.slice(0, 8000) });
-              fridayClicked = true;
-              log.info('Sexta selecionada via: ' + cellSel);
-            }
-            break;
+            const link = cell.querySelector('a');
+            if (link) { link.click(); return true; }
           }
-        } catch(e) { /* tenta próximo */ }
+        }
       }
-      if (!fridayClicked && pass === 0) {
-        try {
-          const nextBtn = await page.$('.datepicker--nav-action[data-action="next"], .pika-next, .flatpickr-next-month, [class*="next-month"]');
-          if (nextBtn) { await nextBtn.click(); await page.waitForTimeout(1000); }
-        } catch(e) { /* ignora */ }
-      }
+      return false;
+    });
+
+    if (weekdayClicked) {
+      await page.waitForTimeout(1200);
+      results.push(await extractPrices('dia de semana'));
     }
-    if (!fridayClicked) log.info('Não conseguiu selecionar sexta-feira');
+
+    // Clica num sábado (col 6) para preços de FDS
+    // Fallback: domingo (col 0)
+    const weekendClicked = await page.evaluate(() => {
+      const calTable = document.querySelectorAll('table')[1];
+      if (!calTable) return false;
+      const rows = Array.from(calTable.querySelectorAll('tbody tr'));
+      for (const colIdx of [6, 0]) {
+        for (const row of rows) {
+          const cells = row.querySelectorAll('td');
+          const cell = cells[colIdx];
+          if (cell) {
+            const link = cell.querySelector('a');
+            if (link) { link.click(); return true; }
+          }
+        }
+      }
+      return false;
+    });
+
+    if (weekendClicked) {
+      await page.waitForTimeout(1200);
+      results.push(await extractPrices('final de semana'));
+    }
+
+    if (results.length === 0) {
+      log.info('Calendário não interagido — capturando texto geral');
+      const t = await page.evaluate(() => document.body.innerText);
+      results.push({ label: 'preços gerais', text: t.slice(0, 8000) });
+    }
   } catch(e) {
-    log.info('Erro na interação do calendário: ' + String(e));
+    log.info('Erro: ' + String(e));
+    const t = await page.evaluate(() => document.body.innerText);
+    results.push({ label: 'preços (fallback)', text: t.slice(0, 8000) });
   }
+
   return results;
 }
 `
@@ -164,7 +158,7 @@ async function extractAndSave({
     ? `\nNossas categorias de suíte: ${ourCategories.join(', ')}`
     : ''
   const modeHint = mode === 'playwright'
-    ? '\nO texto foi coletado em dois momentos: "HOJE (DIA DE SEMANA)" e "SEXTA-FEIRA (FINAL DE SEMANA)". Use essas seções para preencher corretamente o campo dia_tipo.'
+    ? '\nO texto foi coletado em dois momentos: "DIA DE SEMANA" e "FINAL DE SEMANA". Use essas seções para preencher corretamente o campo dia_tipo (semana ou fds_feriado).'
     : ''
 
   const extractionPrompt = `Você é um especialista em análise de preços de motéis. Analise o texto abaixo extraído do site de um motel concorrente e extraia as informações de preços.${categoriesHint}${modeHint}
@@ -362,10 +356,9 @@ export async function POST(req: NextRequest) {
 
   // ─── Playwright: run assíncrono ───────────────────────────────────────────
   if (mode === 'playwright') {
-    const friday = nextFridayDate()
-    const pageFunction = buildPlaywrightPageFunction(friday)
+    const pageFunction = buildPlaywrightPageFunction()
 
-    console.log('[competitor-analysis] Iniciando run Playwright — sexta alvo:', friday.toISOString().slice(0, 10))
+    console.log('[competitor-analysis] Iniciando run Playwright para', competitorUrl)
     try {
       const apifyRes = await fetch(
         `https://api.apify.com/v2/acts/apify~playwright-scraper/runs?token=${APIFY_TOKEN}&timeout=180&memory=1024`,
