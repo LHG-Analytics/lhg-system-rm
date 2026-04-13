@@ -469,6 +469,11 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - **Bug:** `handleProposalSaved` chamava `setActiveTab('propostas')` — jogava usuário para fora do chat após salvar proposta
   - **Fix:** removido o redirect automático; aba Propostas atualiza em background; agente pode sugerir navegar via quick reply
   - **Armadilha:** `handleProposalSaved` deve apenas atualizar dados, nunca mudar aba automaticamente
+- **LHG-119:** feat(agente): raciocínio explícito + período sob medida + descontos obrigatórios no prompt
+  - Regra 10: agente explica em 2–4 frases quais dados usa, por que a abordagem é adequada e hipótese central — antes de qualquer análise
+  - Framework: novo passo 1 (Raciocínio) e passo 5 (Impacto dos descontos)
+  - vigenciaBlock: SEMPRE pergunta como comparar tabelas (não só assimétrico) — 3 opções com explicação do que cada uma revela
+  - Regra 8 fortalecida: preço efetivo = base − desconto obrigatório nas justificativas do canal `guia_moteis`
 - **LHG-118:** feat(agente): recovery de conversa via Realtime + período automático sem date picker
   - Removido seletor de período do chat — backend auto-detecta as 2 tabelas mais recentes e monta KPIs por vigência
   - Se 1 tabela: KPIs desde `valid_from` até hoje; se 2 tabelas: KPIs divididos na fronteira com `vigenciaInfo`
