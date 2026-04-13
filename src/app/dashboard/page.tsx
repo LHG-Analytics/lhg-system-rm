@@ -31,7 +31,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const endHour      = Math.min(23, Math.max(0, ehParam !== undefined ? (parseInt(ehParam) || 0) : 5))
   const dateType     = (['all', 'checkin', 'checkout'] as const).includes(dtParam as 'all' | 'checkin' | 'checkout')
     ? (dtParam as 'all' | 'checkin' | 'checkout')
-    : 'all'
+    : 'checkin'
   const rentalStatus: RentalStatus = VALID_STATUSES.includes(statusParam as RentalStatus)
     ? (statusParam as RentalStatus)
     : 'FINALIZADA'

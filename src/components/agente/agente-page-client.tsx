@@ -132,7 +132,6 @@ export function AgenteChatPage({ activeUnit, initialProposals, priceImports, use
 
   function handleProposalSaved() {
     setProposalsRefreshKey((k) => k + 1)
-    setActiveTab('propostas')
   }
 
   function handleSelectProposal(proposalId: string) {
