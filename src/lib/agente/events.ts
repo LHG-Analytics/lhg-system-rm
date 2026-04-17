@@ -223,7 +223,7 @@ async function fetchSymplaStructured(city: string): Promise<EventsResult> {
 }
 
 /** Retorna resultado estruturado de eventos para a UI do dashboard.
- *  Tenta Ticketmaster primeiro, depois Sympla como fallback. */
+ *  Busca Ticketmaster e Sympla em paralelo; combina eventos de ambas as fontes quando disponíveis. */
 export async function fetchEventsResult(cityField: string): Promise<EventsResult> {
   const city = extractCityName(cityField)
 
@@ -235,9 +235,18 @@ export async function fetchEventsResult(cityField: string): Promise<EventsResult
   const tmResult     = tm.status     === 'fulfilled' ? tm.value     : { status: 'error' as const, message: 'Ticketmaster: erro interno' }
   const symplaResult = sympla.status === 'fulfilled' ? sympla.value : { status: 'error' as const, message: 'Sympla: erro interno' }
 
-  // Prioridade: resultado com eventos > empty > error > unconfigured
-  if (tmResult.status === 'ok')     return tmResult
-  if (symplaResult.status === 'ok') return symplaResult
+  const tmOk     = tmResult.status === 'ok'
+  const symplaOk = symplaResult.status === 'ok'
+
+  // Ambas as fontes com eventos → combina e ordena por data
+  if (tmOk && symplaOk) {
+    const allEvents = [...(tmResult as { status: 'ok'; events: EventItem[] }).events, ...(symplaResult as { status: 'ok'; events: EventItem[] }).events]
+    allEvents.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''))
+    return { status: 'ok', events: allEvents }
+  }
+
+  if (tmOk)     return tmResult
+  if (symplaOk) return symplaResult
 
   // Nenhum retornou eventos — propaga o estado mais informativo
   if (tmResult.status === 'error')     return tmResult
