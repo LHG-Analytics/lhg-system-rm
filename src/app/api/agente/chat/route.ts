@@ -365,11 +365,13 @@ export async function POST(req: NextRequest) {
         'Exibe botões de resposta rápida clicáveis para o usuário no chat. ' +
         'Use SEMPRE após: (1) apresentar uma proposta de preços — inclua opções de análise, "Ajustar item", "Ir à aba Propostas" (texto vazio); ' +
         '(2) fazer uma pergunta de sim/não ou múltipla escolha; (3) oferecer próximos passos. ' +
-        'Sempre inclua uma opção com texto vazio (label "Outra resposta") para o usuário digitar livremente.',
+        'Sempre inclua uma opção com texto vazio (label "Outra resposta") para o usuário digitar livremente. ' +
+        'IMPORTANTE: label é o RÓTULO CURTO visível no botão (máx 30 chars, ex: "Janela igual (5 dias)"). ' +
+        'texto é a mensagem COMPLETA enviada ao clicar (pode ser longa). NUNCA coloque frases longas no label.',
       inputSchema: z.object({
         opcoes: z.array(z.object({
-          label: z.string().describe('Rótulo curto do botão (≤ 35 chars)'),
-          texto: z.string().describe('Texto completo enviado ao clicar. String vazia = abre campo para digitar livremente.'),
+          label: z.string().max(40).describe('Rótulo curto visível no botão — máx 30 chars, sem parênteses longos'),
+          texto: z.string().describe('Mensagem completa enviada ao clicar. String vazia = usuário digita livremente.'),
         })).min(2).max(6),
       }),
       execute: async ({ opcoes }) => ({ opcoes }),

@@ -468,25 +468,36 @@ function AgenteChatInner({
 
       {/* Quick replies */}
       {!isStreaming && !awaitingOnly && quickReplies.length > 0 && (
-        <div className="px-3 pt-2 pb-1 flex flex-wrap gap-2 border-t">
-          {quickReplies.map((opt, i) => (
-            <button
-              key={i}
-              className="text-xs rounded-full border px-3 py-1.5 bg-background hover:bg-accent transition-colors text-foreground"
-              onClick={() => {
-                if (opt.texto === '__propostas') {
-                  onNavigateToProposals?.()
-                } else if (opt.texto) {
-                  if (textareaRef.current) textareaRef.current.value = opt.texto
-                  submit()
-                } else {
-                  textareaRef.current?.focus()
-                }
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="px-3 pt-2.5 pb-2 flex flex-wrap gap-1.5 border-t bg-muted/20">
+          {quickReplies.map((opt, i) => {
+            const isEmpty = !opt.texto || opt.texto === ''
+            const isNav   = opt.texto === '__propostas'
+            return (
+              <button
+                key={i}
+                onClick={() => {
+                  if (isNav) {
+                    onNavigateToProposals?.()
+                  } else if (!isEmpty) {
+                    if (textareaRef.current) textareaRef.current.value = opt.texto
+                    submit()
+                  } else {
+                    textareaRef.current?.focus()
+                  }
+                }}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium',
+                  'transition-all duration-150 cursor-pointer select-none',
+                  'hover:shadow-sm active:scale-[0.97]',
+                  isEmpty
+                    ? 'border-dashed border-muted-foreground/30 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground bg-transparent'
+                    : 'border-border/60 bg-background text-foreground/80 hover:bg-accent hover:text-foreground hover:border-border'
+                )}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
         </div>
       )}
 

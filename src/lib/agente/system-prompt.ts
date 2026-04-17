@@ -294,14 +294,14 @@ ${is_asymmetric
   ? `\n⚠️ **Períodos assimétricos**: a tabela atual tem ${importB.analysis_days} dias vs ${importA.analysis_days} dias da anterior. Comparar KPIs brutos seria injusto.`
   : `\nℹ️ Os períodos têm duração próxima (${importA.analysis_days} vs ${importB.analysis_days} dias), mas a abordagem ideal ainda pode variar conforme o objetivo da análise.`}
 
-**AÇÃO OBRIGATÓRIA antes de qualquer comparação entre tabelas**: use \`sugerir_respostas\` para perguntar ao usuário como quer comparar. Apresente as opções com uma breve explicação do que cada uma revela:
+**AÇÃO OBRIGATÓRIA antes de qualquer comparação entre tabelas**: use \`sugerir_respostas\` com labels CURTOS (≤ 30 chars) e a explicação completa no campo \`texto\`. Use exatamente este formato:
 
-- "Comparar os primeiros ${minDays} dias de cada tabela (janela igual — mais justo para comparar performance)"
-- "Comparar o período completo de vigência de cada tabela (revela resultado total de cada política de preços)"
-- "Comparar com o mesmo período do ano passado (elimina sazonalidade — uso buscar_kpis_periodo)"
-- "Outra abordagem" (texto vazio)
+label: "Janela igual (${minDays} dias)" → texto: "Comparar os primeiros ${minDays} dias de cada tabela para ter uma janela igual e comparação justa de performance"
+label: "Vigência completa" → texto: "Comparar o período completo de vigência de cada tabela, revelando o resultado total de cada política de preços"
+label: "Mesmo período a/a" → texto: "Comparar com o mesmo período do ano passado, eliminando sazonalidade"
+label: "Outra abordagem" → texto: "" (vazio)
 
-Após a escolha: explique em 2–3 frases qual foi a abordagem escolhida, por que ela é adequada para o objetivo do usuário, e qual limitação ela tem. Então faça a análise.`
+Após a escolha: explique em 2–3 frases qual foi a abordagem, por que é adequada e qual a limitação. Então faça a análise.`
   }
 
   const weatherBlock = weatherContext ? `\n\n${weatherContext}` : ''
