@@ -25,14 +25,17 @@ export async function GET(request: NextRequest) {
   }
 
   const admin = getAdminClient()
-  const now = new Date()
 
-  // ── 2. Buscar revisões pendentes cujo scheduled_at já passou ──────────────
-  // Busca tudo pendente até agora (timestamptz <= now)
+  // ── 2. Buscar revisões pendentes para hoje ou datas anteriores ───────────
+  // Usa fim do dia UTC para capturar qualquer hora agendada no dia atual,
+  // independente de quando dentro do dia o cron rodou.
+  const endOfToday = new Date()
+  endOfToday.setUTCHours(23, 59, 59, 999)
+
   const { data: reviews, error: fetchError } = await admin
     .from('scheduled_reviews')
     .select('id, unit_id, created_by, note, scheduled_at, proposal_id')
-    .lte('scheduled_at', now.toISOString())
+    .lte('scheduled_at', endOfToday.toISOString())
     .eq('status', 'pending')
 
   if (fetchError) {
