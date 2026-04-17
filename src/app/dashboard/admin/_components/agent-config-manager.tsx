@@ -150,22 +150,6 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
             <div className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
           )}
 
-          {/* Cidade */}
-          <div className="rounded-xl border bg-card p-5 flex flex-col gap-3">
-            <div>
-              <Label className="text-sm font-semibold">Cidade da unidade</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Usada em três contextos pelo agente RM: <strong>clima atual</strong> (temperatura e condições), <strong>previsão do tempo</strong> (próximos 3 dias) e <strong>eventos próximos</strong> (shows, feiras e outros no widget do dashboard). Formato: <code className="bg-muted px-1 rounded text-xs">Cidade,UF</code>
-              </p>
-            </div>
-            <Input
-              value={config.city ?? 'Campinas,BR'}
-              onChange={(e) => setConfig((prev) => prev ? { ...prev, city: e.target.value } : prev)}
-              placeholder="Campinas,BR"
-              className="max-w-xs"
-            />
-          </div>
-
           {/* Estratégia de precificação */}
           <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">
             <div>

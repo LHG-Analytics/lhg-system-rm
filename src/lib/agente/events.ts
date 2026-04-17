@@ -79,8 +79,9 @@ export async function fetchEventsFromApify(city: string): Promise<EventsResult> 
   const searchUrl = `https://www.sympla.com.br/pesquisar?d=${encodeURIComponent(city)}&online=false`
 
   try {
+    // 1. Inicia o run sem waitSecs — retorna imediatamente (status READY ou RUNNING)
     const runRes = await fetch(
-      `https://api.apify.com/v2/acts/apify~website-content-crawler/runs?token=${token}&waitSecs=35&memory=1024`,
+      `https://api.apify.com/v2/acts/apify~website-content-crawler/runs?token=${token}&memory=1024`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -89,21 +90,41 @@ export async function fetchEventsFromApify(city: string): Promise<EventsResult> 
           maxCrawlPages: 1,
           crawlerType: 'playwright:chrome',
         }),
-        signal: AbortSignal.timeout(40000),
+        signal: AbortSignal.timeout(10000),
       }
     )
 
-    if (!runRes.ok) return { status: 'error', message: `Apify: HTTP ${runRes.status}` }
+    if (!runRes.ok) return { status: 'error', message: `Apify HTTP ${runRes.status}` }
 
-    const run = await runRes.json() as { data?: { status: string; defaultDatasetId: string } }
-    if (run.data?.status !== 'SUCCEEDED') {
-      return { status: 'error', message: `Apify: run ${run.data?.status ?? 'timeout'}` }
+    const run = await runRes.json() as { data?: { id: string; status: string; defaultDatasetId: string } }
+    const runId = run.data?.id
+    if (!runId) return { status: 'error', message: 'Apify: runId ausente' }
+
+    // 2. Polling — 10 × 5s = 50s (dentro do limit de 60s da Vercel Hobby)
+    let status = run.data?.status ?? 'READY'
+    let datasetId = run.data?.defaultDatasetId ?? ''
+
+    for (let i = 0; i < 10 && status !== 'SUCCEEDED' && status !== 'FAILED' && status !== 'ABORTED'; i++) {
+      await new Promise(r => setTimeout(r, 5000))
+      const poll = await fetch(
+        `https://api.apify.com/v2/actor-runs/${runId}?token=${token}`,
+        { signal: AbortSignal.timeout(4000) }
+      ).catch(() => null)
+      if (poll?.ok) {
+        const d = await poll.json() as { data?: { status: string; defaultDatasetId: string } }
+        status = d.data?.status ?? status
+        datasetId = d.data?.defaultDatasetId ?? datasetId
+      }
     }
 
+    if (status !== 'SUCCEEDED') return { status: 'error', message: `Apify: run ${status}` }
+
     const dataRes = await fetch(
-      `https://api.apify.com/v2/datasets/${run.data.defaultDatasetId}/items?token=${token}`,
-      { signal: AbortSignal.timeout(5000) }
+      `https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}`,
+      { signal: AbortSignal.timeout(8000) }
     )
+    if (!dataRes.ok) return { status: 'error', message: `Apify dataset HTTP ${dataRes.status}` }
+
     const items = await dataRes.json() as Array<{ markdown?: string; text?: string }>
     const pageContent = items[0]?.markdown ?? items[0]?.text ?? ''
 
