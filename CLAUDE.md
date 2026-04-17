@@ -8,13 +8,14 @@
   - Local: `http://127.0.0.1:54321` (Docker via Scoop CLI v2.84.2)
   - Remoto: `https://pvlcktqbjianrbzpqrbd.supabase.co`
 - **Upstash Redis** — cache (a configurar)
-- **OpenRouter** — roteamento de IA (modelos gratuitos)
+- **OpenRouter** — roteamento de IA
   - Provider: `@openrouter/ai-sdk-provider` v2.5.1
   - Auth: `OPENROUTER_API_KEY`
   - `STRATEGY_MODEL` (chat, propostas, cron): `nvidia/nemotron-3-super-120b-a12b:free` | Fallback: `minimax/minimax-m2.5:free` — **≤ 2500 tokens**
-  - `ANALYSIS_MODEL` (import, análise de concorrentes): `openai/gpt-oss-120b:free` | Fallback: `nvidia/nemotron-3-super-120b-a12b:free` — **≤ 8000 tokens**
-  - Modelos gratuitos disponíveis: `nvidia/nemotron-3-super-120b-a12b:free`, `openai/gpt-oss-120b:free`, `minimax/minimax-m2.5:free`, `google/gemma-4-31b-it:free`
-  - **Regra obrigatória:** sempre sufixo `:free`; nunca exceder 2500 tokens em STRATEGY_MODEL nem 8000 em ANALYSIS_MODEL
+  - `ANALYSIS_MODEL` (import, análise de concorrentes): `openai/gpt-4.1-mini` (BYOK — chave OpenAI própria via OpenRouter) | Fallback: `nvidia/nemotron-3-super-120b-a12b:free` — **≤ 8000 tokens**
+  - Modelos gratuitos disponíveis (STRATEGY): `nvidia/nemotron-3-super-120b-a12b:free`, `minimax/minimax-m2.5:free`, `google/gemma-4-31b-it:free`
+  - **Regra obrigatória para STRATEGY_MODEL:** sempre sufixo `:free`; nunca exceder 2500 tokens
+  - **ANALYSIS_MODEL usa BYOK** — não precisa de sufixo `:free`; limite 8000 tokens
   - Config centralizada em `src/lib/agente/model.ts`
 - **Deploy:** Vercel + Supabase hosted
   - Projeto linkado: `danilo-dinizs-projects/lhg-system-rm`
@@ -497,13 +498,35 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - **Variável necessária:** `OPENWEATHERMAP_API_KEY`
 - **LHG-58:** feat(agente): eventos locais via Ticketmaster/Sympla
   - `src/lib/agente/events.ts`: Ticketmaster (primário, `TICKETMASTER_API_KEY`) e Sympla (fallback, `SYMPLA_TOKEN`)
+  - Busca por `city` (nome da cidade configurado em `rm_agent_config.city`) — busca por CEP foi descartada (cobertura insuficiente no Brasil)
   - Busca eventos próximos 14 dias; retorna null se nenhuma key configurada — não quebra o agente
   - `buildSystemPrompt` aceita `eventsContext` (6º param); clima + eventos buscados em paralelo
   - **Variáveis opcionais:** `TICKETMASTER_API_KEY` e/ou `SYMPLA_TOKEN`
+  - `EventsWidget` no dashboard com 4 estados: `unconfigured` (silencioso), `error` (XCircle + msg), `empty` ("Nenhum evento via {source}"), `ok` (lista agrupada por data, FDS destacado em âmbar)
+  - `fetchEventsResult` retorna discriminated union `EventsResult` — sem exceção silenciosa
+- **LHG-120:** feat: Página de Concorrentes dedicada na sidebar
+  - Análise de concorrentes extraída do `AgentConfigManager` (que ficou só com config do agente)
+  - Nova rota `/dashboard/concorrentes` — segue padrão das páginas Preços/Descontos
+  - `src/components/concorrentes/competitor-analysis-manager.tsx`: CRUD completo de URLs, polling Playwright, tabela de snapshots por concorrente
+  - `src/app/dashboard/concorrentes/page.tsx` + `loading.tsx`: server component com auth check (manager+)
+  - Sidebar: item "Concorrentes" com ícone `Globe` entre Descontos e Disponibilidade
+  - `AgentConfigManager`: campo `city` com descrição clara dos 3 usos (clima, previsão, eventos); campo `postal_code` removido
 - **fix(ci):** GitHub Actions — workflow migrations.yml
   - Pinado CLI Supabase v2.84.2 (igual ao local) — `version: latest` causava breaking changes
   - Adicionado `SUPABASE_ACCESS_TOKEN` como env var
-  - `SUPABASE_DB_URL` deve usar conexão direta porta 5432 (não pooler): `postgresql://postgres:[senha]@db.pvlcktqbjianrbzpqrbd.supabase.co:5432/postgres`
+  - **Fix IPv6:** runners do GitHub não têm IPv6 — `--db-url` (TCP/5432) falhava com `connect: no route to host`
+  - Substituído `supabase db push --db-url "$SUPABASE_DB_URL"` por `supabase link --project-ref pvlcktqbjianrbzpqrbd && supabase db push` (usa HTTPS/443)
+- **LHG-121:** fix(agente): recovery de resposta em background — race condition de Realtime
+  - Root cause: `onFinish` salvava UPDATE no banco enquanto usuário ainda não havia clicado na conversa → evento Realtime disparava antes da subscription existir → UPDATE perdido → `AwaitingBubble` permanente
+  - Fix 1 — fresh fetch após criar subscription: logo após criar o canal Realtime, consulta o banco diretamente; se já há resposta, aplica sem depender do evento
+  - Fix 2 — `visibilitychange` listener: ao voltar para a aba, recarrega conversas — captura respostas já salvas em background
+  - Fix 3 — `loadConversations` detecta conversa selecionada que estava aguardando e agora está resolvida → atualiza `selectedMessages` + incrementa `chatKey` (remonta o chat)
+  - **Armadilha:** subscription deve ser criada ANTES do fresh fetch para não perder evento durante a janela de transição
+- **LHG-122:** fix(model): ANALYSIS_MODEL → openai/gpt-4.1-mini via BYOK OpenRouter
+  - Root cause: `openai/gpt-oss-120b:free` atingia limite diário de `free-models-per-day` do OpenRouter
+  - Usuário adicionou chave OpenAI própria como BYOK no OpenRouter → sem limite de quota gratuita
+  - `ANALYSIS_MODEL = openrouter('openai/gpt-4.1-mini')` — sem sufixo `:free`; faturado pela chave BYOK do usuário
+  - Fallback mantido em `nvidia/nemotron-3-super-120b-a12b:free` para degradação segura
 
 ### 🔲 Backlog MVP (por prioridade)
 
