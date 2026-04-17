@@ -46,37 +46,35 @@ export async function GET(req: NextRequest) {
     results.ticketmaster = { error: 'TICKETMASTER_API_KEY não configurada' }
   }
 
-  // ── Sympla ────────────────────────────────────────────────────────────────
+  // ── Sympla: testa 3 variações para diagnosticar ──────────────────────────
   if (symToken) {
+    const symplaTests: Record<string, unknown> = {}
+
+    // Variação 1: sem filtro de data (confirma se a API retorna eventos do organizador)
+    try {
+      const url = `https://api.sympla.com.br/public/v3/events?page=1&page_size=5`
+      const res = await fetch(url, { headers: { 's_token': symToken }, signal: AbortSignal.timeout(8000) })
+      const body = await res.json()
+      symplaTests.sem_data = { status: res.status, total: (body?.data ?? []).length, raw: body }
+    } catch (e) { symplaTests.sem_data = { error: String(e) } }
+
+    // Variação 2: com start_date/end_date
     try {
       const url = `https://api.sympla.com.br/public/v3/events?start_date=${startDate}&end_date=${endDate}&page=1&page_size=5`
-      const res = await fetch(url, {
-        headers: { 's_token': symToken },
-        signal: AbortSignal.timeout(8000),
-      })
+      const res = await fetch(url, { headers: { 's_token': symToken }, signal: AbortSignal.timeout(8000) })
       const body = await res.json()
-      const events = body?.data ?? []
-      const cityLower = city.toLowerCase()
-      const filtered = events.filter((e: { address?: { city?: string } }) =>
-        e.address?.city?.toLowerCase().includes(cityLower) || !e.address?.city
-      )
-      results.sympla = {
-        status: res.status,
-        total_returned: events.length,
-        total_after_city_filter: filtered.length,
-        sample_cities: events.slice(0, 5).map((e: { name: string; address?: { city?: string } }) => ({
-          name: e.name,
-          city: e.address?.city,
-        })),
-        filtered_events: filtered.slice(0, 3).map((e: { name: string; address?: { city?: string; name?: string } }) => ({
-          name: e.name,
-          city: e.address?.city,
-        })),
-        error: body?.message ?? null,
-      }
-    } catch (e) {
-      results.sympla = { error: String(e) }
-    }
+      symplaTests.com_data = { status: res.status, total: (body?.data ?? []).length, events: (body?.data ?? []).map((e: { name: string; address?: { city?: string } }) => ({ name: e.name, city: e.address?.city })) }
+    } catch (e) { symplaTests.com_data = { error: String(e) } }
+
+    // Variação 3: token como query param (formato original)
+    try {
+      const url = `https://api.sympla.com.br/public/v3/events?s_token=${symToken}&start_date=${startDate}&end_date=${endDate}&page=1&page_size=5`
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+      const body = await res.json()
+      symplaTests.token_query_param = { status: res.status, total: (body?.data ?? []).length }
+    } catch (e) { symplaTests.token_query_param = { error: String(e) } }
+
+    results.sympla = symplaTests
   } else {
     results.sympla = { error: 'SYMPLA_TOKEN não configurada' }
   }
