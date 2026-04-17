@@ -81,8 +81,11 @@ async function fetchSympla(city: string): Promise<string | null> {
   const endDate   = end.toISOString().slice(0, 10)
 
   try {
-    const url = `https://api.sympla.com.br/public/v3/events?s_token=${token}&s_start_date=${startDate}&s_end_date=${endDate}&page=1&page_size=8`
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
+    const url = `https://api.sympla.com.br/public/v3/events?start_date=${startDate}&end_date=${endDate}&page=1&page_size=8`
+    const res = await fetch(url, {
+      headers: { 's_token': token },
+      signal: AbortSignal.timeout(5000),
+    })
     if (!res.ok) return null
     const data = await res.json() as SymplaResponse
 
@@ -188,8 +191,11 @@ async function fetchSymplaStructured(city: string): Promise<EventsResult> {
   const endDate   = end.toISOString().slice(0, 10)
 
   try {
-    const url = `https://api.sympla.com.br/public/v3/events?s_token=${token}&s_start_date=${startDate}&s_end_date=${endDate}&page=1&page_size=10`
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
+    const url = `https://api.sympla.com.br/public/v3/events?start_date=${startDate}&end_date=${endDate}&page=1&page_size=10`
+    const res = await fetch(url, {
+      headers: { 's_token': token },
+      signal: AbortSignal.timeout(5000),
+    })
     if (!res.ok) return { status: 'error', message: `Sympla: HTTP ${res.status} ${res.statusText}` }
     const data = await res.json() as SymplaResponse
 
