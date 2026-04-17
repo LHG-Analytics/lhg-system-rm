@@ -1,9 +1,14 @@
-import { AlertTriangle, Calendar, Clock, MapPin, WifiOff, XCircle } from 'lucide-react'
+'use client'
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { AlertTriangle, Calendar, Clock, MapPin, RefreshCw, WifiOff, XCircle } from 'lucide-react'
 import type { EventsResult, EventItem } from '@/lib/agente/events'
 
 interface EventsWidgetProps {
   result: EventsResult
   city: string
+  unitId?: string
 }
 
 function isWeekend(dateStr: string): boolean {
@@ -27,7 +32,13 @@ function groupByDate(events: EventItem[]) {
   return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
 }
 
-function WidgetShell({ city, badge, children }: { city: string; badge?: React.ReactNode; children: React.ReactNode }) {
+function WidgetShell({ city, badge, onRefresh, refreshing, children }: {
+  city: string
+  badge?: React.ReactNode
+  onRefresh?: () => void
+  refreshing?: boolean
+  children: React.ReactNode
+}) {
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b flex items-center justify-between gap-3">
@@ -36,21 +47,53 @@ function WidgetShell({ city, badge, children }: { city: string; badge?: React.Re
           <h2 className="text-sm font-semibold">Eventos próximos — {city}</h2>
           <span className="text-xs text-muted-foreground">(próximos 14 dias)</span>
         </div>
-        {badge}
+        <div className="flex items-center gap-2">
+          {badge}
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`size-3 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Buscando…' : 'Atualizar'}
+            </button>
+          )}
+        </div>
       </div>
       {children}
     </div>
   )
 }
 
-export function EventsWidget({ result, city }: EventsWidgetProps) {
-  // Não configurado — oculta silenciosamente
+export function EventsWidget({ result, city, unitId }: EventsWidgetProps) {
+  const [refreshing, setRefreshing] = useState(false)
+  const router = useRouter()
+
+  async function handleRefresh() {
+    if (!unitId || refreshing) return
+    setRefreshing(true)
+    try {
+      await fetch('/api/agente/events-refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unitId }),
+      })
+      router.refresh()
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const canRefresh = !!unitId
+
+  // Não configurado — oculta silenciosamente (cache ainda vazio, Apify ainda não rodou)
   if (result.status === 'unconfigured') return null
 
   // Erro de API
   if (result.status === 'error') {
     return (
-      <WidgetShell city={city}>
+      <WidgetShell city={city} onRefresh={canRefresh ? handleRefresh : undefined} refreshing={refreshing}>
         <div className="px-5 py-4 flex items-start gap-3">
           <XCircle className="size-4 text-destructive shrink-0 mt-0.5" />
           <div>
@@ -65,11 +108,11 @@ export function EventsWidget({ result, city }: EventsWidgetProps) {
   // Sem eventos
   if (result.status === 'empty') {
     return (
-      <WidgetShell city={city}>
+      <WidgetShell city={city} onRefresh={canRefresh ? handleRefresh : undefined} refreshing={refreshing}>
         <div className="px-5 py-4 flex items-center gap-3">
           <WifiOff className="size-4 text-muted-foreground shrink-0" />
           <p className="text-sm text-muted-foreground">
-            Nenhum evento encontrado nos próximos 14 dias via {result.source}.
+            Nenhum evento relevante encontrado nos próximos 14 dias via {result.source}.
           </p>
         </div>
       </WidgetShell>
@@ -83,6 +126,8 @@ export function EventsWidget({ result, city }: EventsWidgetProps) {
   return (
     <WidgetShell
       city={city}
+      onRefresh={canRefresh ? handleRefresh : undefined}
+      refreshing={refreshing}
       badge={highImpactDates.length > 0 ? (
         <div className="flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
           <AlertTriangle className="size-3 shrink-0" />

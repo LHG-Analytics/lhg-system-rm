@@ -3,6 +3,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { generateText, tool } from 'ai'
 import { z } from 'zod'
 import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
+import { refreshEventsForUnit } from '@/lib/agente/events'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt } from '@/lib/agente/system-prompt'
@@ -206,5 +207,22 @@ Por favor, realize uma análise completa de acompanhamento:
   const done   = results.filter((r) => r.status === 'done').length
   const failed = results.filter((r) => r.status === 'failed').length
 
-  return NextResponse.json({ ok: true, executed: results.length, done, failed, results })
+  // ── Refreshar cache de eventos para todas as unidades ─────────────────────
+  const { data: allConfigs } = await admin
+    .from('rm_agent_config')
+    .select('unit_id, city')
+    .not('city', 'is', null)
+
+  const eventsRefreshed: string[] = []
+  for (const cfg of allConfigs ?? []) {
+    try {
+      const city = (cfg.city as string).split(',')[0].trim()
+      await refreshEventsForUnit(cfg.unit_id, city)
+      eventsRefreshed.push(cfg.unit_id)
+    } catch {
+      // Ignora falha de eventos — não bloqueia o cron
+    }
+  }
+
+  return NextResponse.json({ ok: true, executed: results.length, done, failed, results, eventsRefreshed })
 }

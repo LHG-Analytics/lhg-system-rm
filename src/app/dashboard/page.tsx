@@ -48,12 +48,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   if (!profile) redirect('/login')
 
   // Resolve active unit
-  let activeUnit: { slug: string; name: string } | null = null
+  let activeUnit: { id: string; slug: string; name: string } | null = null
 
   if (unitSlug) {
     const { data } = await supabase
       .from('units')
-      .select('slug, name')
+      .select('id, slug, name')
       .eq('slug', unitSlug)
       .eq('is_active', true)
       .single()
@@ -63,7 +63,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   if (!activeUnit && profile.unit_id) {
     const { data } = await supabase
       .from('units')
-      .select('slug, name')
+      .select('id, slug, name')
       .eq('id', profile.unit_id)
       .single()
     activeUnit = data
@@ -72,7 +72,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   if (!activeUnit) {
     const { data } = await supabase
       .from('units')
-      .select('slug, name')
+      .select('id, slug, name')
       .eq('is_active', true)
       .order('name')
       .limit(1)
@@ -116,13 +116,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       supabase
         .from('rm_agent_config')
         .select('city, postal_code')
-        .eq('unit_id', (await supabase.from('units').select('id').eq('slug', activeUnit.slug).single()).data?.id ?? '')
+        .eq('unit_id', activeUnit.id)
         .single()
-    ).then((r) => r.data).catch(() => null),
+    ).then((r) => r.data ?? null).catch(() => null),
   ])
 
   const cityField = agentConfig?.city ?? 'Campinas,BR'
-  const eventsResult = await fetchEventsResult(cityField).catch((e) => ({
+  const eventsResult = await fetchEventsResult(cityField, activeUnit.id).catch((e) => ({
     status: 'error' as const,
     message: e instanceof Error ? e.message : 'Erro desconhecido',
   }))
@@ -148,7 +148,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <DashboardKPICards company={company} />
       <DashboardCharts company={company} />
-      <EventsWidget result={eventsResult} city={cityDisplay} />
+      <EventsWidget result={eventsResult} city={cityDisplay} unitId={activeUnit.id} />
       <Suspense fallback={null}>
         <OccupancyHeatmap
           unitSlug={activeUnit.slug}

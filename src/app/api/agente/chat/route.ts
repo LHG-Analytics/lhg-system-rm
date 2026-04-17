@@ -275,7 +275,7 @@ export async function POST(req: NextRequest) {
   const city = agentConfigData?.city ?? 'Campinas,BR'
   const [weatherContext, eventsContext] = await Promise.all([
     fetchWeatherContext(city).catch(() => null),
-    fetchEventsContext(city).catch(() => null),
+    fetchEventsContext(city, unit.id).catch(() => null),
   ])
 
   // 7. Montar system prompt com KPIs (por período) + tabelas + vigência + clima + eventos
