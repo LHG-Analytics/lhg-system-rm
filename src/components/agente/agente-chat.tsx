@@ -236,11 +236,21 @@ function AgenteChatInner({
   const prevMessageCountRef = useRef(0)
   const isSubmittingRef = useRef(false)
 
-  function handleScroll() {
+  function scrollToBottom() {
     const el = scrollAreaRef.current
-    if (!el) return
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-    if (!atBottom) userScrolledUpRef.current = true
+    if (el) el.scrollTop = el.scrollHeight
+  }
+
+  function isNearBottom() {
+    const el = scrollAreaRef.current
+    if (!el) return true
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 150
+  }
+
+  function handleScroll() {
+    // Se o usuário scrollou para cima (longe do fundo), para o auto-scroll
+    // Se voltou perto do fundo, reativa
+    userScrolledUpRef.current = !isNearBottom()
   }
 
   useEffect(() => {
@@ -248,10 +258,16 @@ function AgenteChatInner({
     prevMessageCountRef.current = messages.length
     if (newMessageAdded) {
       const lastMsg = messages[messages.length - 1]
-      if (lastMsg?.role === 'user') userScrolledUpRef.current = false
+      // Nova mensagem do usuário → sempre scroll pro fundo
+      if (lastMsg?.role === 'user') {
+        userScrolledUpRef.current = false
+        scrollToBottom()
+        return
+      }
     }
+    // Durante streaming ou nova msg do assistente: só scrolla se estiver perto do fundo
     if (!userScrolledUpRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      scrollToBottom()
     }
   }, [messages])
 
