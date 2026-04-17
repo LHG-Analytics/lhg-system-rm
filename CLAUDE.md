@@ -527,6 +527,14 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Usuário adicionou chave OpenAI própria como BYOK no OpenRouter → sem limite de quota gratuita
   - `ANALYSIS_MODEL = openrouter('openai/gpt-4.1-mini')` — sem sufixo `:free`; faturado pela chave BYOK do usuário
   - Fallback mantido em `nvidia/nemotron-3-super-120b-a12b:free` para degradação segura
+- **LHG-123:** fix(eventos): substituir Ticketmaster/Sympla por Apify scraping + filtro de relevância
+  - Root causes: Ticketmaster sem cobertura no Brasil (0 eventos); Sympla `s_token` é API de organização — retorna apenas eventos próprios, não descoberta pública
+  - `events.ts` reescrito: usa Apify `website-content-crawler` em modo Playwright na busca pública do Sympla (`sympla.com.br/pesquisar?d={city}`)
+  - `parseEventsWithAI`: usa `ANALYSIS_MODEL` com filtro de relevância — só shows, concerts, esportes, festivais, eventos culturais >500 pessoas (exclui workshops, cursos, meetups)
+  - Cache em `rm_agent_config.events_cache JSONB` com TTL 4h; refresh em background via `after()` do Next.js
+  - `POST /api/agente/events-refresh`: endpoint on-demand para o botão "Atualizar" no widget
+  - `events-widget.tsx`: prop `unitId?`, botão "Atualizar" com spinner nos 3 estados (error/empty/ok)
+  - `cron/revisoes`: fix timing — `lte(endOfToday)` evita perder revisões agendadas mais tarde no dia; refresh de eventos para todas as unidades ao final do cron
 
 ### 🔲 Backlog MVP (por prioridade)
 
