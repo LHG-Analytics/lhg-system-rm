@@ -351,11 +351,10 @@ export async function POST(req: NextRequest) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
   }
 
-  const APIFY_TOKEN = process.env.APIFY_API_TOKEN
-  if (!APIFY_TOKEN) return new Response('APIFY_API_TOKEN não configurado', { status: 500 })
-
-  // ─── Playwright: run assíncrono ───────────────────────────────────────────
+  // ─── Playwright: run assíncrono (requer Apify) ───────────────────────────
   if (mode === 'playwright') {
+    const APIFY_TOKEN = process.env.APIFY_API_TOKEN
+    if (!APIFY_TOKEN) return new Response('APIFY_API_TOKEN não configurado', { status: 500 })
     const pageFunction = buildPlaywrightPageFunction()
 
     console.log('[competitor-analysis] Iniciando run Playwright para', competitorUrl)
@@ -410,39 +409,22 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ─── Cheerio: scraping estático (síncrono) ────────────────────────────────
+  // ─── Jina.ai Reader: scraping gratuito e sem configuração ───────────────
   let rawText = ''
   try {
-    const apifyRes = await fetch(
-      `https://api.apify.com/v2/acts/apify~website-content-crawler/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=50&memory=256`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          startUrls: [{ url: competitorUrl }],
-          crawlerType: 'cheerio',
-          maxCrawlPages: 3,
-        }),
-        signal: AbortSignal.timeout(55000),
-      }
-    )
+    const jinaRes = await fetch(`https://r.jina.ai/${competitorUrl}`, {
+      headers: { 'Accept': 'text/markdown' },
+      signal: AbortSignal.timeout(20000),
+    })
 
-    if (!apifyRes.ok) {
-      const errText = await apifyRes.text()
-      console.error('[competitor-analysis] Apify cheerio error:', apifyRes.status, errText.slice(0, 200))
-      return Response.json({ error: `Erro ao acessar o site: ${apifyRes.statusText}` }, { status: 502 })
+    if (!jinaRes.ok) {
+      return Response.json({ error: `Erro ao acessar o site: HTTP ${jinaRes.status}` }, { status: 502 })
     }
 
-    const items = await apifyRes.json() as Array<{ text?: string; markdown?: string }>
-    rawText = items
-      .map((item) => item.text ?? item.markdown ?? '')
-      .filter(Boolean)
-      .join('\n\n---\n\n')
-      .slice(0, 15000)
-
-    console.log('[competitor-analysis] Cheerio:', items.length, 'páginas,', rawText.length, 'chars')
+    rawText = (await jinaRes.text()).slice(0, 15000)
+    console.log('[competitor-analysis] Jina.ai:', rawText.length, 'chars de', competitorUrl)
   } catch (e) {
-    console.error('[competitor-analysis] Cheerio timeout/error:', e)
+    console.error('[competitor-analysis] Jina.ai error:', e)
     return Response.json({ error: 'Tempo limite excedido ao acessar o site. Tente novamente ou verifique a URL.' }, { status: 504 })
   }
 

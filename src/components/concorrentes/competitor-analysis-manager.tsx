@@ -477,7 +477,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                   onClick={() => setNewMode('cheerio')}
                   className={cn('px-3 py-1.5 transition-colors', newMode === 'cheerio' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent')}
                 >
-                  Estático
+                  Padrão
                 </button>
                 <button
                   onClick={() => setNewMode('playwright')}
@@ -488,8 +488,8 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
               </div>
               <p className="text-[11px] text-muted-foreground">
                 {newMode === 'playwright'
-                  ? 'Renderiza JS + calendário para capturar semana e FDS (~45s). Roda em segundo plano.'
-                  : 'Scraping estático rápido (~15s). Use para sites com tabela de preços fixa.'}
+                  ? 'Renderiza JS + calendário para capturar semana e FDS (~45s). Requer Apify.'
+                  : 'Via Jina.ai — gratuito, rápido (~5s). Use para sites com preços no HTML.'}
               </p>
             </div>
 
