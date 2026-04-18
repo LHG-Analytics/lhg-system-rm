@@ -422,20 +422,27 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                               else groups[p.categoria_concorrente][p.periodo].todos = p.preco
                             }
 
-                            const PERIOD_ORDER = ['3h', '6h', '12h', 'pernoite']
                             const fmt = (n?: number) => n !== undefined ? `R$\u00a0${n.toFixed(0)}` : '—'
 
+                            // Ordena períodos: crescente por horas, pernoite sempre por último
+                            const sortPeriods = (keys: string[]) =>
+                              [...keys].sort((a, b) => {
+                                if (a === 'pernoite') return 1
+                                if (b === 'pernoite') return -1
+                                return parseInt(a) - parseInt(b)
+                              })
+
                             return (
-                              <div className="rounded-md border overflow-hidden divide-y">
-                                {Object.entries(groups).map(([suiteName, periods]) => {
+                              <div className="rounded-md border overflow-hidden">
+                                {Object.entries(groups).map(([suiteName, periods], idx, arr) => {
                                   const amenities = amenityMap[suiteName] ?? []
-                                  const periodKeys = PERIOD_ORDER.filter(k => periods[k])
+                                  const periodKeys = sortPeriods(Object.keys(periods))
                                   const hasDist = periodKeys.some(k => periods[k].semana !== undefined || periods[k].fds !== undefined)
                                   return (
-                                    <div key={suiteName}>
+                                    <div key={suiteName} className={cn(idx < arr.length - 1 && 'border-b-2 border-border')}>
                                       {/* Header da suíte + comodidades */}
-                                      <div className="px-3 py-2 bg-muted/30 flex flex-col gap-1.5">
-                                        <span className="text-xs font-semibold">{suiteName}</span>
+                                      <div className="px-3 pt-3 pb-2 bg-muted/40 flex flex-col gap-1.5">
+                                        <span className="text-xs font-bold tracking-wide">{suiteName}</span>
                                         {amenities.length > 0 && (
                                           <div className="flex flex-wrap gap-1">
                                             {amenities.map((a) => (
@@ -444,18 +451,18 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                                           </div>
                                         )}
                                       </div>
-                                      {/* Tabela pivotada: período × semana/FDS */}
+                                      {/* Tabela pivotada: período × Dom–Qui / Sex–Sáb */}
                                       <table className="w-full text-xs">
                                         <thead>
                                           <tr className="border-b bg-muted/10">
-                                            <th className="px-3 py-1 text-left font-medium text-muted-foreground">Período</th>
+                                            <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Período</th>
                                             {hasDist ? (
                                               <>
-                                                <th className="px-3 py-1 text-right font-medium text-muted-foreground">Seg–Qui</th>
-                                                <th className="px-3 py-1 text-right font-medium text-muted-foreground">Sex–Dom</th>
+                                                <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">Dom–Qui</th>
+                                                <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">Sex–Sáb</th>
                                               </>
                                             ) : (
-                                              <th className="px-3 py-1 text-right font-medium text-muted-foreground">Preço</th>
+                                              <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">Preço</th>
                                             )}
                                           </tr>
                                         </thead>
@@ -468,9 +475,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                                                 {hasDist ? (
                                                   <>
                                                     <td className="px-3 py-1.5 text-right tabular-nums">{fmt(cell.semana ?? cell.todos)}</td>
-                                                    <td className={cn('px-3 py-1.5 text-right tabular-nums', cell.fds && cell.semana && cell.fds > cell.semana ? 'text-amber-500 font-medium' : '')}>
-                                                      {fmt(cell.fds ?? cell.todos)}
-                                                    </td>
+                                                    <td className="px-3 py-1.5 text-right tabular-nums">{fmt(cell.fds ?? cell.todos)}</td>
                                                   </>
                                                 ) : (
                                                   <td className="px-3 py-1.5 text-right font-medium tabular-nums">{fmt(cell.todos)}</td>

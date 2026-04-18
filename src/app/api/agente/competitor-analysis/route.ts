@@ -387,12 +387,10 @@ export async function POST(req: NextRequest) {
       return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`
     })()
 
+    // Usa o valor real do tempo (ex: "2" → "2h", "4" → "4h")
     const tempoToPeriod = (tempo: string): string => {
       const h = parseInt(tempo)
-      if (h <= 3) return '3h'
-      if (h <= 6) return '6h'
-      if (h <= 12) return '12h'
-      return 'pernoite'
+      return isNaN(h) ? tempo : `${h}h`
     }
 
     // dataExibicao pode vir como "DD/MM/YYYY", "DD-MM-YYYY" ou "YYYY-MM-DD"
@@ -403,8 +401,8 @@ export async function POST(req: NextRequest) {
       if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3])).getDay()
       return -1
     }
-    // sex=5, sab=6, dom=0
-    const isFds = (dateStr: string) => { const d = parseDayOfWeek(dateStr); return d === 5 || d === 6 || d === 0 }
+    // FDS = sex(5) e sáb(6) — dom(0) é semana (dom–qui)
+    const isFds = (dateStr: string) => { const d = parseDayOfWeek(dateStr); return d === 5 || d === 6 }
 
     const median = (arr: number[]) => {
       if (!arr.length) return null
