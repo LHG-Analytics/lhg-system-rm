@@ -560,14 +560,14 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - UI: seção "Comodidades das suítes" no `AgentConfigManager` — textarea por categoria (uma comodidade por linha), save dedicado
   - Chat + propostas: bloco `## Comodidades das nossas suítes` injetado no system prompt em paralelo com clima e concorrentes
   - Regras 11 e 12 no system prompt: agente só compara comodidades quando o bloco estiver presente; nunca inventa
+- **LHG-50:** Deploy produção + onboarding unidades piloto ✅
+  - App em produção na Vercel; acesso controlado via sistema invite-only (LHG-83)
+  - Onboarding operacional: convites enviados via `/dashboard/admin` pelo super_admin
 
-### 🔲 Backlog MVP (por prioridade)
-
-#### 🚀 Deploy e CI/CD
-1. **LHG-50:** Deploy produção + onboarding unidades piloto
+### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
-2. **LHG-31:** Dashboard: Visão de canais
+1. **LHG-31:** Dashboard: Visão de canais
 
 ### 📅 Pós-MVP (Backlog)
 LHG-51 a LHG-63: clima (✅ feito), eventos (✅ feito), trânsito (cancelado), aprendizado autônomo, dynamic pricing loop, integração com canais (Guia, Site Próprio).
