@@ -386,7 +386,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle(),
     supabase
       .from('competitor_snapshots')
-      .select('competitor_name, mapped_prices, scraped_at')
+      .select('competitor_name, mapped_prices, scraped_at, raw_text')
       .eq('unit_id', unit.id)
       .gte('scraped_at', snapshotCutoff)
       .order('scraped_at', { ascending: false }),
@@ -438,20 +438,29 @@ export async function POST(req: NextRequest) {
 
   // Bloco de preços de concorrentes (snapshots dos últimos 7 dias)
   interface MappedPrice { categoria_concorrente: string; categoria_nossa: string | null; periodo: string; preco: number; dia_tipo?: string; notas?: string }
+  interface GuiaMeta { mode: 'guia'; suiteId: string; suiteName: string; amenities: string[] }
+
   const competitorBlock = competitorSnapshotsData?.length
     ? `## Preços de concorrentes (referência — última análise)
 
-${competitorSnapshotsData.map((snap) => {
-  const prices = (snap.mapped_prices as unknown as MappedPrice[]) ?? []
+${(competitorSnapshotsData as unknown as Array<{ competitor_name: string; mapped_prices: unknown; scraped_at: string; raw_text?: string }>).map((snap) => {
+  const prices = (snap.mapped_prices as MappedPrice[]) ?? []
   if (!prices.length) return `**${snap.competitor_name}**: sem preços extraídos`
   const date = new Date(snap.scraped_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
   const lines = prices.map((p) =>
     `  | ${p.categoria_nossa ?? p.categoria_concorrente} | ${p.periodo} | ${p.dia_tipo ?? 'todos'} | R$ ${p.preco.toFixed(2)} |`
   ).join('\n')
-  return `**${snap.competitor_name}** (analisado em ${date})\n  | Categoria | Período | Dia | Preço |\n  |-----------|---------|-----|-------|\n${lines}`
+  let amenitiesLine = ''
+  try {
+    const meta = JSON.parse(snap.raw_text ?? '') as GuiaMeta
+    if (meta.mode === 'guia' && meta.amenities?.length) {
+      amenitiesLine = `\n  Comodidades: ${meta.amenities.join(', ')}`
+    }
+  } catch { /* não é JSON */ }
+  return `**${snap.competitor_name}** (analisado em ${date})${amenitiesLine}\n  | Categoria | Período | Dia | Preço |\n  |-----------|---------|-----|-------|\n${lines}`
 }).join('\n\n')}
 
-> Use estes preços como referência de posicionamento de mercado, não como limite rígido.`
+> Use estes preços como referência de posicionamento de mercado. Ao comparar categorias com comodidades, priorize comparações equivalentes (ex: nossa suíte com hidro vs. concorrente com hidro).`
     : ''
 
   const guardrailsBlock = guardrailsData?.length

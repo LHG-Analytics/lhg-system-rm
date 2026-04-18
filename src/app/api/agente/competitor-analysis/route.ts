@@ -24,6 +24,14 @@ export interface CompetitorSnapshot {
   scraped_at: string
   status: 'processing' | 'done' | 'failed'
   apify_run_id: string | null
+  amenities?: string[]
+}
+
+interface GuiaMeta {
+  mode: 'guia'
+  suiteId: string
+  suiteName: string
+  amenities: string[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -314,13 +322,22 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await auth.supabase!
     .from('competitor_snapshots')
-    .select('id, competitor_name, competitor_url, mapped_prices, scraped_at, status, apify_run_id')
+    .select('id, competitor_name, competitor_url, mapped_prices, scraped_at, status, apify_run_id, raw_text')
     .eq('unit_id', unit.id)
     .order('scraped_at', { ascending: false })
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
-  return Response.json(data as unknown as CompetitorSnapshot[])
+  const snapshots: CompetitorSnapshot[] = (data as unknown as (CompetitorSnapshot & { raw_text?: string })[]).map(({ raw_text, ...snap }) => {
+    let amenities: string[] = []
+    try {
+      const meta = JSON.parse(raw_text ?? '') as GuiaMeta
+      if (meta.mode === 'guia' && Array.isArray(meta.amenities)) amenities = meta.amenities
+    } catch { /* raw_text não é JSON */ }
+    return { ...snap, amenities }
+  })
+
+  return Response.json(snapshots)
 }
 
 // ─── POST: scraping + extração via IA ────────────────────────────────────────
@@ -335,7 +352,7 @@ export async function POST(req: NextRequest) {
     competitorUrl: string
     competitorLabel?: string
     ourCategories?: string[]
-    mode?: 'cheerio' | 'playwright'
+    mode?: 'cheerio' | 'playwright' | 'guia'
   }
 
   const { unitSlug, competitorName, competitorUrl, ourCategories = [], mode = 'cheerio' } = body
@@ -349,6 +366,138 @@ export async function POST(req: NextRequest) {
 
   if (auth.profile!.role !== 'super_admin' && auth.profile!.unit_id !== unit.id) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
+  }
+
+  // ─── Guia de Motéis: API estruturada gratuita ────────────────────────────
+  if (mode === 'guia') {
+    let html = ''
+    try {
+      const pageRes = await fetch(competitorUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LHG-RM/1.0; +https://lhg.com.br)' },
+        signal: AbortSignal.timeout(15000),
+      })
+      if (!pageRes.ok) return Response.json({ error: `Não foi possível acessar o site: HTTP ${pageRes.status}` }, { status: 502 })
+      html = await pageRes.text()
+    } catch (e) {
+      return Response.json({ error: 'Tempo limite ao acessar a URL. Verifique se é válida.' }, { status: 504 })
+    }
+
+    // Extrai suite ID do script server-rendered
+    const idMatch = html.match(/var\s+suiteid\s*=\s*(\d+)/i) ?? html.match(/data-suite="(\d+)"/)
+    if (!idMatch) {
+      return Response.json({ error: 'ID da suíte não encontrado na página. Confirme que a URL é de uma suíte do Guia de Motéis.' }, { status: 422 })
+    }
+    const suiteId = idMatch[1]
+
+    // Extrai nome da suíte (título da página ou primeiro h1)
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
+    const suiteName = titleMatch ? titleMatch[1].split('|')[0].trim() : competitorName
+
+    // Extrai comodidades: "Essa suíte tem: X, Y, Z"
+    const amenText = html.match(/[Ee]ssa\s+su[ií]te\s+tem[^:]*:([^<]{10,600})/)?.[1] ?? ''
+    const amenities = amenText.split(',').map((a) => a.replace(/\s+/g, ' ').trim()).filter((a) => a.length > 2)
+
+    // Calcula próxima terça (semana) e próximo sábado (FDS)
+    const nextWeekday = (day: number) => {
+      const d = new Date()
+      const diff = (day - d.getDay() + 7) % 7 || 7
+      d.setDate(d.getDate() + diff)
+      return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`
+    }
+    const tuesdayStr = nextWeekday(2)
+    const saturdayStr = nextWeekday(6)
+    const guiaBase = `https://guiasites.guiademoteis.com.br/api/suites/Periodos/${suiteId}`
+
+    type GuiaPeriodo = { tempo: string; valor: number; descricao: string; dataExibicao: string }
+    type GuiaResponse = { periodos?: GuiaPeriodo[]; pernoites?: GuiaPeriodo[] }
+
+    const fetchGuia = async (dateStr: string): Promise<GuiaResponse | null> => {
+      try {
+        const r = await fetch(`${guiaBase}?data=${dateStr}`, { signal: AbortSignal.timeout(8000) })
+        if (!r.ok) return null
+        return await r.json() as GuiaResponse
+      } catch { return null }
+    }
+
+    const [weekdayData, weekendData] = await Promise.all([
+      fetchGuia(tuesdayStr),
+      fetchGuia(saturdayStr),
+    ])
+
+    // Fallback: sem parâmetro de data
+    const baseData = weekdayData ?? await (async () => {
+      try {
+        const r = await fetch(guiaBase, { signal: AbortSignal.timeout(8000) })
+        return r.ok ? await r.json() as GuiaResponse : null
+      } catch { return null }
+    })()
+
+    if (!baseData) {
+      return Response.json({ error: 'Não foi possível buscar preços na API do Guia de Motéis.' }, { status: 502 })
+    }
+
+    const tempoToPeriod = (tempo: string): string => {
+      const h = parseInt(tempo)
+      if (h <= 3) return '3h'
+      if (h <= 6) return '6h'
+      if (h <= 12) return '12h'
+      return 'pernoite'
+    }
+
+    const mappedPrices: MappedPrice[] = []
+
+    const addPrices = (data: GuiaResponse, diaType: 'semana' | 'fds_feriado' | 'todos') => {
+      data.periodos?.forEach((p) => mappedPrices.push({
+        categoria_concorrente: suiteName,
+        categoria_nossa: ourCategories[0] ?? null,
+        periodo: tempoToPeriod(p.tempo),
+        preco: p.valor,
+        dia_tipo: diaType,
+        notas: p.descricao,
+      }))
+      data.pernoites?.forEach((p) => mappedPrices.push({
+        categoria_concorrente: suiteName,
+        categoria_nossa: ourCategories[0] ?? null,
+        periodo: 'pernoite',
+        preco: p.valor,
+        dia_tipo: diaType,
+        notas: p.descricao,
+      }))
+    }
+
+    // Verifica se preços de semana e FDS diferem
+    const wdTotal = (weekdayData ?? baseData).periodos?.reduce((s, p) => s + p.valor, 0) ?? 0
+    const weTotal = (weekendData ?? baseData).periodos?.reduce((s, p) => s + p.valor, 0) ?? 0
+    const hasDiff = weekdayData && weekendData && Math.abs(wdTotal - weTotal) > 0.01
+
+    if (hasDiff) {
+      addPrices(weekdayData!, 'semana')
+      addPrices(weekendData!, 'fds_feriado')
+    } else {
+      addPrices(baseData, 'todos')
+    }
+
+    console.log('[competitor-analysis/guia] suíte', suiteId, '— preços:', mappedPrices.length, '— comodidades:', amenities.length)
+
+    const meta: GuiaMeta = { mode: 'guia', suiteId, suiteName, amenities }
+
+    const { data: saved, error: saveError } = await admin
+      .from('competitor_snapshots')
+      .upsert({
+        unit_id: unit.id,
+        competitor_name: competitorName,
+        competitor_url: competitorUrl,
+        mapped_prices: mappedPrices as unknown as Database['public']['Tables']['competitor_snapshots']['Insert']['mapped_prices'],
+        raw_text: JSON.stringify(meta),
+        scraped_at: new Date().toISOString(),
+        status: 'done',
+        apify_run_id: null,
+      }, { onConflict: 'unit_id,competitor_url' })
+      .select('id, competitor_name, competitor_url, mapped_prices, scraped_at, status, apify_run_id')
+      .single()
+
+    if (saveError) return Response.json({ error: saveError.message }, { status: 500 })
+    return Response.json({ ...saved, amenities } as unknown as CompetitorSnapshot)
   }
 
   // ─── Playwright: run assíncrono (requer Apify) ───────────────────────────

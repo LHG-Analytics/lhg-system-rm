@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Globe, Plus, Trash2, RefreshCw, CheckCircle2,
-  AlertCircle, Zap, Link2, Loader2, Building2,
+  AlertCircle, Zap, Link2, Loader2, Building2, Sparkles, Tag,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -49,6 +49,10 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d atrás`
 }
 
+function isGuiaSite(url: string): boolean {
+  return /guiademoteis\.com\.br|moteisprime\.com|guia/i.test(url)
+}
+
 function normalizeCompetitor(c: CompetitorUrl): CompetitorUrl {
   if (c.urls && c.urls.length > 0) return c
   // eslint-disable-next-line @typescript-eslint/no-deprecated
@@ -74,7 +78,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
   const [newName, setNewName] = useState('')
   const [newUrl, setNewUrl] = useState('')
   const [newLabel, setNewLabel] = useState('')
-  const [newMode, setNewMode] = useState<'cheerio' | 'playwright'>('cheerio')
+  const [newMode, setNewMode] = useState<'cheerio' | 'playwright' | 'guia'>('cheerio')
   const [addingCompetitor, setAddingCompetitor] = useState(false)
   const [analyzingUrls, setAnalyzingUrls] = useState<Set<string>>(new Set())
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
@@ -168,7 +172,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
   const analyzeUrl = useCallback(async (
     competitorName: string,
     entry: CompetitorUrlEntry,
-    mode: 'cheerio' | 'playwright',
+    mode: 'cheerio' | 'playwright' | 'guia',
   ) => {
     const url = entry.url.trim()
     if (!url) return
@@ -232,7 +236,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
     if (!ok) return
     setExtraUrl(''); setExtraLabel(''); setAddingUrlTo(null)
     const competitor = competitorUrls.find((c) => c.name === competitorName)
-    analyzeUrl(competitorName, entry, competitor?.mode ?? 'cheerio')
+    analyzeUrl(competitorName, entry, (competitor?.mode as 'cheerio' | 'playwright' | 'guia') ?? 'cheerio')
   }, [config, competitorUrls, extraUrl, extraLabel, saveCompetitors, analyzeUrl])
 
   const handleRemoveUrl = useCallback(async (competitorName: string, url: string) => {
@@ -302,6 +306,11 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                 <div key={c.name} className="rounded-lg border bg-muted/20 p-3 flex flex-col gap-2">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-semibold flex-1">{c.name}</p>
+                    {c.mode === 'guia' && (
+                      <span className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                        <Sparkles className="size-2.5" /> Guia GM
+                      </span>
+                    )}
                     {c.mode === 'playwright' && (
                       <span className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium bg-violet-500/10 text-violet-500 border border-violet-500/20">
                         <Zap className="size-2.5" /> Interativo
@@ -373,7 +382,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                           </div>
 
                           {snap && expandedPricesUrl === entry.url && (
-                            <div className="rounded-md border bg-muted/20 overflow-hidden">
+                            <div className="rounded-md border bg-muted/20 overflow-hidden flex flex-col">
                               {(snap.mapped_prices as unknown as MappedPrice[]).length === 0 ? (
                                 <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum preço estruturado extraído.</p>
                               ) : (
@@ -403,6 +412,16 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                                     ))}
                                   </tbody>
                                 </table>
+                              )}
+                              {snap.amenities && snap.amenities.length > 0 && (
+                                <div className="border-t px-3 py-2 flex flex-wrap gap-1">
+                                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium mr-1">
+                                    <Tag className="size-3" /> Comodidades:
+                                  </span>
+                                  {snap.amenities.map((a) => (
+                                    <span key={a} className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground/80">{a}</span>
+                                  ))}
+                                </div>
                               )}
                             </div>
                           )}
@@ -461,7 +480,10 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
             <Input
               placeholder="URL da página de preços"
               value={newUrl}
-              onChange={(e) => setNewUrl(e.target.value)}
+              onChange={(e) => {
+                setNewUrl(e.target.value)
+                if (isGuiaSite(e.target.value)) setNewMode('guia')
+              }}
               className="h-8 text-xs"
             />
             <Input
@@ -480,6 +502,12 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                   Padrão
                 </button>
                 <button
+                  onClick={() => setNewMode('guia')}
+                  className={cn('px-3 py-1.5 transition-colors flex items-center gap-1', newMode === 'guia' ? 'bg-emerald-600 text-white' : 'hover:bg-accent')}
+                >
+                  <Sparkles className="size-3" /> Guia GM
+                </button>
+                <button
                   onClick={() => setNewMode('playwright')}
                   className={cn('px-3 py-1.5 transition-colors flex items-center gap-1', newMode === 'playwright' ? 'bg-violet-500 text-white' : 'hover:bg-accent')}
                 >
@@ -487,9 +515,11 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                 </button>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                {newMode === 'playwright'
-                  ? 'Renderiza JS + calendário para capturar semana e FDS (~45s). Requer Apify.'
-                  : 'Via Jina.ai — gratuito, rápido (~5s). Use para sites com preços no HTML.'}
+                {newMode === 'guia'
+                  ? 'API estruturada do Guia de Motéis — gratuito, instantâneo, retorna comodidades.'
+                  : newMode === 'playwright'
+                    ? 'Renderiza JS + calendário para capturar semana e FDS (~45s). Requer Apify.'
+                    : 'Via Jina.ai — gratuito, rápido (~5s). Use para sites com preços no HTML.'}
               </p>
             </div>
 
