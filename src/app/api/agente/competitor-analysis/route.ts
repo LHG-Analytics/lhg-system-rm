@@ -382,14 +382,10 @@ export async function POST(req: NextRequest) {
 
     const UA = 'Mozilla/5.0 (compatible; LHG-RM/1.0; +https://lhg.com.br)'
 
-    const nextWeekdayStr = (day: number) => {
+    const todayStr = (() => {
       const d = new Date()
-      const diff = (day - d.getDay() + 7) % 7 || 7
-      d.setDate(d.getDate() + diff)
       return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`
-    }
-    const tuesdayStr = nextWeekdayStr(2) // semana: seg–qui
-    const fridayStr  = nextWeekdayStr(5) // fds: sex–dom
+    })()
 
     const tempoToPeriod = (tempo: string): string => {
       const h = parseInt(tempo)
@@ -397,6 +393,23 @@ export async function POST(req: NextRequest) {
       if (h <= 6) return '6h'
       if (h <= 12) return '12h'
       return 'pernoite'
+    }
+
+    // dataExibicao pode vir como "DD/MM/YYYY", "DD-MM-YYYY" ou "YYYY-MM-DD"
+    const parseDayOfWeek = (dateStr: string): number => {
+      const m = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+      if (m) return new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1])).getDay()
+      const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3])).getDay()
+      return -1
+    }
+    // sex=5, sab=6, dom=0
+    const isFds = (dateStr: string) => { const d = parseDayOfWeek(dateStr); return d === 5 || d === 6 || d === 0 }
+
+    const median = (arr: number[]) => {
+      if (!arr.length) return null
+      const s = [...arr].sort((a, b) => a - b)
+      return s[Math.floor(s.length / 2)]
     }
 
     // Deriva nome legível do slug de URL (fallback confiável quando HTML não tem h2)
@@ -414,11 +427,11 @@ export async function POST(req: NextRequest) {
       const h2Raw = html.match(/<h2[^>]*>([^<]{3,80})<\/h2>/i)?.[1] ?? ''
       const suiteName = h2Raw.replace(/\s*\|.*/, '').trim() || fallbackName
 
-      // Amenidades: <p>amenities X, Y, Z</p> logo após "Essa suíte tem:"
+      // Amenidades: primeiro <p> após "Essa suíte tem:" (sem requerer palavra "amenities" no texto)
       const amenIdx = html.search(/[Ee]ssa\s+su[ií]te\s+tem/i)
       let amenities: string[] = []
       if (amenIdx >= 0) {
-        const pMatch = html.slice(amenIdx).match(/<p[^>]*>\s*amenities\s+([^<]{5,600})/i)
+        const pMatch = html.slice(amenIdx).match(/<p[^>]*>([^<]{5,600})<\/p>/i)
         if (pMatch) {
           amenities = pMatch[1].split(',').map((a) => a.replace(/\s+/g, ' ').trim()).filter((a) => a.length > 2)
         }
@@ -427,35 +440,53 @@ export async function POST(req: NextRequest) {
       return { suiteId, suiteName, amenities }
     }
 
-    // Busca preços da API do Guia para uma suíte e um dia específico
-    const fetchGuiaForDate = async (suiteId: string, dateStr: string): Promise<GuiaResponse | null> => {
+    // Busca preços da API do Guia — a API retorna múltiplos dias futuros em uma chamada
+    const fetchGuiaPrices = async (suiteId: string): Promise<GuiaResponse | null> => {
       try {
         const r = await fetch(
-          `https://guiasites.guiademoteis.com.br/api/suites/Periodos/${suiteId}?data=${dateStr}`,
+          `https://guiasites.guiademoteis.com.br/api/suites/Periodos/${suiteId}?data=${todayStr}`,
           { signal: AbortSignal.timeout(8000) }
         )
         return r.ok ? (await r.json() as GuiaResponse) : null
       } catch { return null }
     }
 
-    // Converte dados da API em MappedPrice[]
-    const buildPrices = (
-      suiteNameStr: string,
-      weekday: GuiaResponse | null,
-      weekend: GuiaResponse | null,
-    ): MappedPrice[] => {
-      const base = weekday ?? weekend
-      if (!base) return []
+    // Converte resposta da API em MappedPrice[] classificando por dia da semana via dataExibicao
+    const buildPrices = (suiteNameStr: string, data: GuiaResponse): MappedPrice[] => {
+      if (!data) return []
       const out: MappedPrice[] = []
-      const wdSum = weekday?.periodos?.reduce((s, p) => s + p.valor, 0) ?? 0
-      const weSum = weekend?.periodos?.reduce((s, p) => s + p.valor, 0) ?? 0
-      const hasDiff = weekday && weekend && Math.abs(wdSum - weSum) > 0.01
-      const addData = (data: GuiaResponse, dia: 'semana' | 'fds_feriado' | 'todos') => {
-        data.periodos?.forEach((p) => out.push({ categoria_concorrente: suiteNameStr, categoria_nossa: null, periodo: tempoToPeriod(p.tempo), preco: p.valor, dia_tipo: dia, notas: p.descricao }))
-        data.pernoites?.forEach((p) => out.push({ categoria_concorrente: suiteNameStr, categoria_nossa: null, periodo: 'pernoite', preco: p.valor, dia_tipo: dia, notas: p.descricao }))
+
+      // Agrupa valores por periodo × semana/fds
+      const wdPeriod: Record<string, number[]> = {}
+      const wePeriod: Record<string, number[]> = {}
+      data.periodos?.forEach((p) => {
+        const key = tempoToPeriod(p.tempo)
+        const bucket = isFds(p.dataExibicao) ? wePeriod : wdPeriod
+        if (!bucket[key]) bucket[key] = []
+        bucket[key].push(p.valor)
+      })
+
+      const wdPern: number[] = []
+      const wePern: number[] = []
+      data.pernoites?.forEach((p) => {
+        if (isFds(p.dataExibicao)) wePern.push(p.valor)
+        else wdPern.push(p.valor)
+      })
+
+      const push = (periodo: string, wd: number | null, we: number | null) => {
+        if (wd !== null && we !== null && Math.abs(wd - we) > 1) {
+          out.push({ categoria_concorrente: suiteNameStr, categoria_nossa: null, periodo, preco: wd, dia_tipo: 'semana' })
+          out.push({ categoria_concorrente: suiteNameStr, categoria_nossa: null, periodo, preco: we, dia_tipo: 'fds_feriado' })
+        } else {
+          const preco = wd ?? we
+          if (preco !== null) out.push({ categoria_concorrente: suiteNameStr, categoria_nossa: null, periodo, preco, dia_tipo: 'todos' })
+        }
       }
-      if (hasDiff) { addData(weekday!, 'semana'); addData(weekend!, 'fds_feriado') }
-      else addData(base, 'todos')
+
+      const allPeriods = new Set([...Object.keys(wdPeriod), ...Object.keys(wePeriod)])
+      allPeriods.forEach((p) => push(p, median(wdPeriod[p] ?? []), median(wePeriod[p] ?? [])))
+      push('pernoite', median(wdPern), median(wePern))
+
       return out
     }
 
@@ -468,8 +499,9 @@ export async function POST(req: NextRequest) {
         const html = await res.text()
         const { suiteId, suiteName, amenities } = parseSuiteHtml(html, slugName)
         if (!suiteId) return null
-        const [wd, we] = await Promise.all([fetchGuiaForDate(suiteId, tuesdayStr), fetchGuiaForDate(suiteId, fridayStr)])
-        const prices = buildPrices(suiteName, wd, we)
+        const data = await fetchGuiaPrices(suiteId)
+        if (!data) return null
+        const prices = buildPrices(suiteName, data)
         return { prices, amenities, suiteName, suiteId }
       } catch { return null }
     }
