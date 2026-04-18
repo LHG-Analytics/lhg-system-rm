@@ -2,13 +2,11 @@ import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
-import { fetchEventsResult } from '@/lib/agente/events'
 import { resolvePreset, toLhgDate, fmtDisplay } from '@/lib/date-range'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
 import { DateRangePicker } from '@/components/dashboard/date-range-picker'
-import { EventsWidget } from '@/components/dashboard/events-widget'
 
 interface DashboardPageProps {
   searchParams: Promise<{
@@ -98,35 +96,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const startDDMMYYYY = toLhgDate(dateRange.startDate)
   const endDDMMYYYY   = toLhgDate(dateRange.endDate)
 
-  // Busca KPIs + cidade da config (para eventos) em paralelo
-  const [company, agentConfig] = await Promise.all([
-    fetchCompanyKPIsFromAutomo(
-      activeUnit.slug,
-      startDDMMYYYY,
-      endDDMMYYYY,
-      startHour,
-      endHour,
-      rentalStatus,
-      dateType,
-    ).catch((e) => {
-      console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h dateType=${dateType} status=${rentalStatus}):`, e)
-      return null
-    }),
-    Promise.resolve(
-      supabase
-        .from('rm_agent_config')
-        .select('city, postal_code')
-        .eq('unit_id', activeUnit.id)
-        .single()
-    ).then((r) => r.data ?? null).catch(() => null),
-  ])
-
-  const cityField = agentConfig?.city ?? 'Campinas,BR'
-  const eventsResult = await fetchEventsResult(cityField, activeUnit.id).catch((e) => ({
-    status: 'error' as const,
-    message: e instanceof Error ? e.message : 'Erro desconhecido',
-  }))
-  const cityDisplay = cityField.split(',')[0].trim()
+  const company = await fetchCompanyKPIsFromAutomo(
+    activeUnit.slug,
+    startDDMMYYYY,
+    endDDMMYYYY,
+    startHour,
+    endHour,
+    rentalStatus,
+    dateType,
+  ).catch((e) => {
+    console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h dateType=${dateType} status=${rentalStatus}):`, e)
+    return null
+  })
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -148,7 +129,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <DashboardKPICards company={company} />
       <DashboardCharts company={company} />
-      <EventsWidget result={eventsResult} city={cityDisplay} unitId={activeUnit.id} />
       <Suspense fallback={null}>
         <OccupancyHeatmap
           unitSlug={activeUnit.slug}
