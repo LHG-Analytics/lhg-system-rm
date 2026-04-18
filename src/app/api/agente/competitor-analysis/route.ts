@@ -410,11 +410,11 @@ export async function POST(req: NextRequest) {
       return s[Math.floor(s.length / 2)]
     }
 
-    // Deriva nome legível do slug de URL (fallback confiável quando HTML não tem h2)
+    // Deriva nome legível do slug de URL — aceita "suite-xxx" e "suites-xxx"
     const nameFromSlug = (url: string): string => {
       const slug = url.split('/').filter(Boolean).pop() ?? ''
-      if (!slug.startsWith('suite-')) return slug
-      return 'Suíte ' + slug.replace(/^suite-/, '').split('-')
+      if (!/^suites?-/i.test(slug)) return slug
+      return 'Suíte ' + slug.replace(/^suites?-/i, '').split('-')
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
     }
 
@@ -503,7 +503,7 @@ export async function POST(req: NextRequest) {
 
     // ── Detecta se é URL de motel (principal) ou de suíte individual ──────
     const urlObj = new URL(competitorUrl)
-    const isSuitePage = /suite-/i.test(urlObj.pathname)
+    const isSuitePage = /suites?-/i.test(urlObj.pathname)
 
     let allPrices: MappedPrice[] = []
     const allAmenities: Record<string, string[]> = {}   // suiteName → amenidades
@@ -525,10 +525,9 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: 'Tempo limite ao acessar o site.' }, { status: 504 })
       }
 
-      // Extrai URLs de suítes — suporta href relativo ("suite-xxx"), absoluto ("/suite-xxx")
-      // e URL completa ("https://motel.com/suite-xxx") via new URL(href, base)
+      // Extrai URLs de suítes — suporta "suite-xxx", "suites-xxx", absolutos e URLs completas
       const suiteUrls = new Set<string>()
-      for (const [, href] of mainHtml.matchAll(/href=["']([^"']*suite-[a-z0-9-]+[^"']*)["']/gi)) {
+      for (const [, href] of mainHtml.matchAll(/href=["']([^"']*suites?-[a-z0-9-]+[^"']*)["']/gi)) {
         try { suiteUrls.add(new URL(href, competitorUrl).href) } catch { /* href inválido */ }
       }
       if (!suiteUrls.size) return Response.json({ error: 'Nenhuma suíte encontrada nesta página. Tente a URL de uma suíte específica.' }, { status: 422 })
