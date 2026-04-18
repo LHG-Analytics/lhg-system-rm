@@ -127,8 +127,10 @@ Por favor, realize uma análise completa de acompanhamento:
 1. Diagnóstico dos últimos 7 dias vs histórico de 12 meses
 2. Identifique tendências e anomalias desde a última mudança de tabela
 3. Avalie se os preços atuais estão calibrados para a demanda observada
-4. Proponha ajustes se necessário (tabela markdown obrigatória)
-5. Indique próximos passos e métricas a monitorar`
+4. Se necessário, proponha ajustes em tabela markdown (categoria | período | preço atual | preço proposto | variação | justificativa)
+5. Indique próximos passos e métricas a monitorar
+
+IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em texto corrido e tabelas markdown. Não use nenhuma ferramenta (não chame salvar_proposta, agendar_revisao nem qualquer outra).`
 
       const agentResult = await generateText({
         model: PRIMARY_MODEL,
