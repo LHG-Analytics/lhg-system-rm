@@ -555,6 +555,12 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `CompetitorUrl.mode` atualizado para `'cheerio' | 'playwright' | 'guia'` em `agent-config/route.ts`
   - `chat/route.ts`: snapshots dos últimos 7 dias buscados em paralelo com clima; `competitorBlock` markdown appended ao system prompt
 
+- **LHG-125:** feat(admin+agente): comodidades das suítes por categoria
+  - `suite_amenities JSONB DEFAULT '{}'` em `rm_agent_config` — estrutura `{ "CATEGORIA": ["Comodidade 1", ...] }`
+  - UI: seção "Comodidades das suítes" no `AgentConfigManager` — textarea por categoria (uma comodidade por linha), save dedicado
+  - Chat + propostas: bloco `## Comodidades das nossas suítes` injetado no system prompt em paralelo com clima e concorrentes
+  - Regras 11 e 12 no system prompt: agente só compara comodidades quando o bloco estiver presente; nunca inventa
+
 ### 🔲 Backlog MVP (por prioridade)
 
 #### 🚀 Deploy e CI/CD
