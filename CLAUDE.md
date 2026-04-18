@@ -569,5 +569,14 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 #### 📊 Dashboard — enriquecimento
 1. **LHG-31:** Dashboard: Visão de canais
 
+#### ⚙️ Configurações
+2. **LHG-126:** feat(configurações): página de configurações do sistema
+  - Rota `/dashboard/configuracoes` — sidebar já tem o item (opaco/desabilitado até implementar)
+  - Perfil do usuário: trocar nome de exibição / senha (não afeta Google SSO)
+  - Preferências da unidade: fuso horário, nome de exibição, cidade
+  - Integrações: status de cada API externa (Apify, OpenWeather, Ticketmaster/Sympla) — configurada/não configurada
+  - Notificações: preferências por tipo (revisões, importações, erros)
+  - Acesso: `super_admin` e `admin`; `viewer`/`manager` redirecionam para `/dashboard`
+
 ### 📅 Pós-MVP (Backlog)
 LHG-51 a LHG-63: clima (✅ feito), eventos (✅ feito), trânsito (cancelado), aprendizado autônomo, dynamic pricing loop, integração com canais (Guia, Site Próprio).
