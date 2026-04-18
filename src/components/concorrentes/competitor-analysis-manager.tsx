@@ -398,61 +398,94 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                             </div>
                           </div>
 
-                          {snap && expandedPricesUrl === entry.url && (
-                            <div className="rounded-md border bg-muted/20 overflow-hidden flex flex-col">
-                              {(snap.mapped_prices as unknown as MappedPrice[]).length === 0 ? (
-                                <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum preço estruturado extraído.</p>
-                              ) : (
-                                <table className="w-full text-xs">
-                                  <thead>
-                                    <tr className="border-b bg-muted/40">
-                                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Categoria</th>
-                                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Período</th>
-                                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Dia</th>
-                                      <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">Preço</th>
-                                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Nossa categ.</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {(snap.mapped_prices as unknown as MappedPrice[]).map((p, i) => (
-                                      <tr key={i} className="border-b last:border-0">
-                                        <td className="px-3 py-1.5">{p.categoria_concorrente}</td>
-                                        <td className="px-3 py-1.5">{p.periodo}</td>
-                                        <td className="px-3 py-1.5 text-muted-foreground">
-                                          {p.dia_tipo === 'semana' ? 'Semana' : p.dia_tipo === 'fds_feriado' ? 'FDS' : 'Todos'}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-right font-medium tabular-nums">
-                                          R$ {p.preco.toFixed(2)}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-muted-foreground">{p.categoria_nossa ?? '—'}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              )}
-                              {snap.amenities && snap.amenities.length > 0 && (
-                                <div className="border-t px-3 py-2 flex flex-col gap-1.5">
-                                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
-                                    <Tag className="size-3" /> Comodidades
-                                  </span>
-                                  {snap.amenities.map((a) => {
-                                    const [suite, ...rest] = a.split(': ')
-                                    const hasSuitePrefix = rest.length > 0
-                                    return hasSuitePrefix ? (
-                                      <div key={a} className="flex flex-wrap items-center gap-1">
-                                        <span className="text-[10px] font-medium text-foreground/70 shrink-0">{suite}:</span>
-                                        {rest.join(': ').split(', ').map((item) => (
-                                          <span key={item} className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground/80">{item}</span>
-                                        ))}
+                          {snap && expandedPricesUrl === entry.url && (() => {
+                            const prices = snap.mapped_prices as unknown as MappedPrice[]
+                            if (prices.length === 0) return (
+                              <p className="rounded-md border px-3 py-2 text-xs text-muted-foreground">Nenhum preço extraído.</p>
+                            )
+
+                            // Mapa de comodidades por suíte: "Suite X: a, b, c" → {suiteName: [a, b, c]}
+                            const amenityMap: Record<string, string[]> = {}
+                            for (const a of (snap.amenities ?? [])) {
+                              const colonIdx = a.indexOf(': ')
+                              if (colonIdx > 0) amenityMap[a.slice(0, colonIdx)] = a.slice(colonIdx + 2).split(', ').filter(Boolean)
+                            }
+
+                            // Agrupa preços por suíte → período → {semana, fds, todos}
+                            type PCell = { semana?: number; fds?: number; todos?: number }
+                            const groups: Record<string, Record<string, PCell>> = {}
+                            for (const p of prices) {
+                              if (!groups[p.categoria_concorrente]) groups[p.categoria_concorrente] = {}
+                              if (!groups[p.categoria_concorrente][p.periodo]) groups[p.categoria_concorrente][p.periodo] = {}
+                              if (p.dia_tipo === 'semana') groups[p.categoria_concorrente][p.periodo].semana = p.preco
+                              else if (p.dia_tipo === 'fds_feriado') groups[p.categoria_concorrente][p.periodo].fds = p.preco
+                              else groups[p.categoria_concorrente][p.periodo].todos = p.preco
+                            }
+
+                            const PERIOD_ORDER = ['3h', '6h', '12h', 'pernoite']
+                            const fmt = (n?: number) => n !== undefined ? `R$\u00a0${n.toFixed(0)}` : '—'
+
+                            return (
+                              <div className="rounded-md border overflow-hidden divide-y">
+                                {Object.entries(groups).map(([suiteName, periods]) => {
+                                  const amenities = amenityMap[suiteName] ?? []
+                                  const periodKeys = PERIOD_ORDER.filter(k => periods[k])
+                                  const hasDist = periodKeys.some(k => periods[k].semana !== undefined || periods[k].fds !== undefined)
+                                  return (
+                                    <div key={suiteName}>
+                                      {/* Header da suíte + comodidades */}
+                                      <div className="px-3 py-2 bg-muted/30 flex flex-col gap-1.5">
+                                        <span className="text-xs font-semibold">{suiteName}</span>
+                                        {amenities.length > 0 && (
+                                          <div className="flex flex-wrap gap-1">
+                                            {amenities.map((a) => (
+                                              <span key={a} className="rounded-full border bg-background px-2 py-0.5 text-[10px] text-foreground/60">{a}</span>
+                                            ))}
+                                          </div>
+                                        )}
                                       </div>
-                                    ) : (
-                                      <span key={a} className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground/80 w-fit">{a}</span>
-                                    )
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )}
+                                      {/* Tabela pivotada: período × semana/FDS */}
+                                      <table className="w-full text-xs">
+                                        <thead>
+                                          <tr className="border-b bg-muted/10">
+                                            <th className="px-3 py-1 text-left font-medium text-muted-foreground">Período</th>
+                                            {hasDist ? (
+                                              <>
+                                                <th className="px-3 py-1 text-right font-medium text-muted-foreground">Seg–Qui</th>
+                                                <th className="px-3 py-1 text-right font-medium text-muted-foreground">Sex–Dom</th>
+                                              </>
+                                            ) : (
+                                              <th className="px-3 py-1 text-right font-medium text-muted-foreground">Preço</th>
+                                            )}
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {periodKeys.map((period) => {
+                                            const cell = periods[period]
+                                            return (
+                                              <tr key={period} className="border-b last:border-0 hover:bg-muted/10">
+                                                <td className="px-3 py-1.5 font-medium">{period}</td>
+                                                {hasDist ? (
+                                                  <>
+                                                    <td className="px-3 py-1.5 text-right tabular-nums">{fmt(cell.semana ?? cell.todos)}</td>
+                                                    <td className={cn('px-3 py-1.5 text-right tabular-nums', cell.fds && cell.semana && cell.fds > cell.semana ? 'text-amber-500 font-medium' : '')}>
+                                                      {fmt(cell.fds ?? cell.todos)}
+                                                    </td>
+                                                  </>
+                                                ) : (
+                                                  <td className="px-3 py-1.5 text-right font-medium tabular-nums">{fmt(cell.todos)}</td>
+                                                )}
+                                              </tr>
+                                            )
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })()}
                         </div>
                       )
                     })}
