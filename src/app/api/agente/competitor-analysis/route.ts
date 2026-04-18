@@ -388,8 +388,8 @@ export async function POST(req: NextRequest) {
       d.setDate(d.getDate() + diff)
       return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`
     }
-    const tuesdayStr  = nextWeekdayStr(2)
-    const saturdayStr = nextWeekdayStr(6)
+    const tuesdayStr = nextWeekdayStr(2) // semana: seg–qui
+    const fridayStr  = nextWeekdayStr(5) // fds: sex–dom
 
     const tempoToPeriod = (tempo: string): string => {
       const h = parseInt(tempo)
@@ -459,7 +459,7 @@ export async function POST(req: NextRequest) {
         const html = await res.text()
         const { suiteId, suiteName, amenities } = parseSuiteHtml(html, suiteUrl)
         if (!suiteId) return null
-        const [wd, we] = await Promise.all([fetchGuiaForDate(suiteId, tuesdayStr), fetchGuiaForDate(suiteId, saturdayStr)])
+        const [wd, we] = await Promise.all([fetchGuiaForDate(suiteId, tuesdayStr), fetchGuiaForDate(suiteId, fridayStr)])
         const prices = buildPrices(suiteName, wd, we)
         return { prices, amenities, suiteName, suiteId }
       } catch { return null }

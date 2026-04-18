@@ -53,6 +53,23 @@ function isGuiaSite(url: string): boolean {
   return /guiademoteis\.com\.br|moteisprime\.com|guia/i.test(url)
 }
 
+function suggestNameFromUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    const parts = u.pathname.split('/').filter(Boolean)
+    const last = parts[parts.length - 1] ?? ''
+    if (last.startsWith('suite-')) {
+      return last.replace(/^suite-/, '').split('-')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+    }
+    // Página do motel: usa a cidade do path
+    const city = parts[0] ?? ''
+    const brand = u.hostname.replace(/^www\./, '').split('.')[0]
+    const brandLabel = brand.charAt(0).toUpperCase() + brand.slice(1)
+    return city ? `${brandLabel} ${city}` : brandLabel
+  } catch { return '' }
+}
+
 function normalizeCompetitor(c: CompetitorUrl): CompetitorUrl {
   if (c.urls && c.urls.length > 0) return c
   // eslint-disable-next-line @typescript-eslint/no-deprecated
@@ -492,8 +509,15 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
               placeholder="URL da página de preços"
               value={newUrl}
               onChange={(e) => {
-                setNewUrl(e.target.value)
-                if (isGuiaSite(e.target.value)) setNewMode('guia')
+                const url = e.target.value
+                setNewUrl(url)
+                if (isGuiaSite(url)) {
+                  setNewMode('guia')
+                  if (!newName.trim()) {
+                    const suggested = suggestNameFromUrl(url)
+                    if (suggested) setNewName(suggested)
+                  }
+                }
               }}
               className="h-8 text-xs"
             />
