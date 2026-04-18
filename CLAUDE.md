@@ -560,6 +560,17 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - UI: seção "Comodidades das suítes" no `AgentConfigManager` — textarea por categoria (uma comodidade por linha), save dedicado
   - Chat + propostas: bloco `## Comodidades das nossas suítes` injetado no system prompt em paralelo com clima e concorrentes
   - Regras 11 e 12 no system prompt: agente só compara comodidades quando o bloco estiver presente; nunca inventa
+- **LHG-126:** feat(configurações): página de configurações do sistema
+  - Migração: `display_name TEXT` + `notification_preferences JSONB` em `profiles`; `timezone TEXT DEFAULT 'America/Sao_Paulo'` em `rm_agent_config`
+  - `GET /api/admin/integrations`: status de 10 integrações (ERP, OpenRouter, Apify, OpenWeather, Ticketmaster, Sympla, Guia, E-Commerce, Booking, Expedia) — verifica presença de env vars server-side
+  - `PATCH /api/admin/profile`: atualiza `display_name`
+  - `PATCH /api/admin/notification-preferences`: salva preferências por tipo de notificação
+  - `/dashboard/configuracoes` com 4 abas: Perfil (todos), Notificações (todos), Unidade (admin+), Integrações (super_admin)
+  - Auto-save nos toggles de notificação via Switch shadcn
+  - Unidade: fuso horário (9 fusos BR) + cidade para clima/eventos por unidade
+  - Integrações futuras ("Em breve"): Guia de Motéis, Site E-Commerce, Booking.com, Expedia
+  - Sidebar: item Configurações habilitado (era opaco/não clicável)
+
 - **LHG-50:** Deploy produção + onboarding unidades piloto ✅
   - App em produção na Vercel; acesso controlado via sistema invite-only (LHG-83)
   - Onboarding operacional: convites enviados via `/dashboard/admin` pelo super_admin
@@ -569,14 +580,6 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 #### 📊 Dashboard — enriquecimento
 1. **LHG-31:** Dashboard: Visão de canais
 
-#### ⚙️ Configurações
-2. **LHG-126:** feat(configurações): página de configurações do sistema
-  - Rota `/dashboard/configuracoes` — sidebar já tem o item (opaco/desabilitado até implementar)
-  - Perfil do usuário: trocar nome de exibição / senha (não afeta Google SSO)
-  - Preferências da unidade: fuso horário, nome de exibição, cidade
-  - Integrações: status de cada API externa (Apify, OpenWeather, Ticketmaster/Sympla) — configurada/não configurada
-  - Notificações: preferências por tipo (revisões, importações, erros)
-  - Acesso: `super_admin` e `admin`; `viewer`/`manager` redirecionam para `/dashboard`
 
 ### 📅 Pós-MVP (Backlog)
 LHG-51 a LHG-63: clima (✅ feito), eventos (✅ feito), trânsito (cancelado), aprendizado autônomo, dynamic pricing loop, integração com canais (Guia, Site Próprio).
