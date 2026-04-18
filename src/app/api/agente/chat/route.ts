@@ -265,17 +265,53 @@ export async function POST(req: NextRequest) {
     valid_until: imp.valid_until,
   }))
 
-  // 6. Buscar cidade da config + clima + eventos em paralelo (não bloqueia se ausente)
-  const { data: agentConfigData } = await admin
-    .from('rm_agent_config')
-    .select('city')
-    .eq('unit_id', unit.id)
-    .maybeSingle()
-  const city = agentConfigData?.city ?? 'Campinas,BR'
+  // 6. Buscar cidade + clima + snapshots de concorrentes em paralelo
+  const snapshotCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const [agentConfigResult, competitorResult] = await Promise.allSettled([
+    admin.from('rm_agent_config').select('city').eq('unit_id', unit.id).maybeSingle(),
+    admin
+      .from('competitor_snapshots')
+      .select('competitor_name, mapped_prices, scraped_at, raw_text')
+      .eq('unit_id', unit.id)
+      .eq('status', 'done')
+      .gte('scraped_at', snapshotCutoff)
+      .order('scraped_at', { ascending: false }),
+  ])
+  const city = agentConfigResult.status === 'fulfilled' ? (agentConfigResult.value.data?.city ?? 'Campinas,BR') : 'Campinas,BR'
   const weatherContext = await fetchWeatherContext(city).catch(() => null)
 
-  // 7. Montar system prompt com KPIs (por período) + tabelas + vigência + clima
-  const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext)
+  // Monta bloco de concorrentes para o system prompt
+  interface CMappedPrice { categoria_concorrente: string; periodo: string; preco: number; dia_tipo?: string }
+  interface CGuiaMeta { mode: 'guia'; amenitiesBySuite?: Record<string, string[]>; amenities?: string[] }
+  const competitorSnaps = competitorResult.status === 'fulfilled' ? (competitorResult.value.data ?? []) : []
+  const competitorBlock = competitorSnaps.length
+    ? `## Preços de concorrentes (última análise — referência de mercado)\n\n` +
+      competitorSnaps.map((snap) => {
+        const prices = (snap.mapped_prices as unknown as CMappedPrice[]) ?? []
+        if (!prices.length) return `**${snap.competitor_name}**: sem preços extraídos`
+        const date = new Date(snap.scraped_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+        let amenitiesBlock = ''
+        try {
+          const meta = JSON.parse((snap as { raw_text?: string }).raw_text ?? '') as CGuiaMeta
+          if (meta.mode === 'guia') {
+            if (meta.amenitiesBySuite && Object.keys(meta.amenitiesBySuite).length) {
+              const lines = Object.entries(meta.amenitiesBySuite)
+                .map(([s, ams]) => `  - **${s}**: ${ams.join(', ')}`).join('\n')
+              amenitiesBlock = `\n  Comodidades:\n${lines}`
+            }
+          }
+        } catch { /* não é JSON */ }
+        const lines = prices.map((p) =>
+          `  | ${p.categoria_concorrente} | ${p.periodo} | ${p.dia_tipo ?? 'todos'} | R$ ${p.preco.toFixed(2)} |`
+        ).join('\n')
+        return `**${snap.competitor_name}** (${date})${amenitiesBlock}\n  | Suíte | Período | Dia | Preço |\n  |-------|---------|-----|-------|\n${lines}`
+      }).join('\n\n') +
+      '\n\n> Compare comodidades equivalentes ao sugerir posicionamento de preço.'
+    : ''
+
+  // 7. Montar system prompt com KPIs + tabelas + vigência + clima + concorrentes
+  const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext) +
+    (competitorBlock ? `\n\n${competitorBlock}` : '')
 
   const agentTools = {
     buscar_kpis_periodo: tool({
