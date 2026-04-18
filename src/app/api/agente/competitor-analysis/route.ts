@@ -418,14 +418,11 @@ export async function POST(req: NextRequest) {
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
     }
 
-    // Extrai dados de uma suíte a partir do HTML da sua página
-    // título e h1 retornam o nome do motel (ex: "Prime Campinas") — usar h2
-    const parseSuiteHtml = (html: string, fallbackName: string) => {
+    // Extrai suiteId e amenidades do HTML — nome sempre via slug (h2 retorna seções genéricas)
+    const parseSuiteHtml = (html: string, suiteName: string) => {
       const suiteId = (html.match(/var\s+suiteid\s*=\s*(\d+)/i) ?? html.match(/data-suite="(\d+)"/))?.[1] ?? null
-      const h2Raw = html.match(/<h2[^>]*>([^<]{3,80})<\/h2>/i)?.[1] ?? ''
-      const suiteName = h2Raw.replace(/\s*\|.*/, '').trim() || fallbackName
 
-      // Amenidades: primeiro <p> após "Essa suíte tem:" (sem requerer palavra "amenities" no texto)
+      // Amenidades: primeiro <p> após "Essa suíte tem:"
       const amenIdx = html.search(/[Ee]ssa\s+su[ií]te\s+tem/i)
       let amenities: string[] = []
       if (amenIdx >= 0) {
@@ -528,20 +525,22 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: 'Tempo limite ao acessar o site.' }, { status: 504 })
       }
 
-      // Extrai slugs únicos de suítes (href="suite-xxx")
-      const slugMatches = [...mainHtml.matchAll(/href=["'](suite-[a-z0-9-]+)["']/gi)]
-      const slugs = [...new Set(slugMatches.map((m) => m[1]))]
-      if (!slugs.length) return Response.json({ error: 'Nenhuma suíte encontrada nesta página. Tente a URL de uma suíte específica.' }, { status: 422 })
+      // Extrai URLs de suítes — suporta href relativo ("suite-xxx"), absoluto ("/suite-xxx")
+      // e URL completa ("https://motel.com/suite-xxx") via new URL(href, base)
+      const suiteUrls = new Set<string>()
+      for (const [, href] of mainHtml.matchAll(/href=["']([^"']*suite-[a-z0-9-]+[^"']*)["']/gi)) {
+        try { suiteUrls.add(new URL(href, competitorUrl).href) } catch { /* href inválido */ }
+      }
+      if (!suiteUrls.size) return Response.json({ error: 'Nenhuma suíte encontrada nesta página. Tente a URL de uma suíte específica.' }, { status: 422 })
 
-      // Base URL sem barra final
-      const baseUrl = competitorUrl.replace(/\/$/, '')
-      console.log(`[competitor-analysis/guia] Motel com ${slugs.length} suítes detectadas`)
+      console.log(`[competitor-analysis/guia] Motel com ${suiteUrls.size} suítes detectadas`)
 
       // Processa todas as suítes em paralelo (limite de 5 simultâneas para não sobrecarregar)
       const CHUNK = 5
-      for (let i = 0; i < slugs.length; i += CHUNK) {
-        const chunk = slugs.slice(i, i + CHUNK)
-        const results = await Promise.all(chunk.map((slug) => processSuiteUrl(`${baseUrl}/${slug}`)))
+      const suiteUrlList = [...suiteUrls]
+      for (let i = 0; i < suiteUrlList.length; i += CHUNK) {
+        const chunk = suiteUrlList.slice(i, i + CHUNK)
+        const results = await Promise.all(chunk.map((url) => processSuiteUrl(url)))
         results.forEach((r) => {
           if (!r) return
           allPrices.push(...r.prices)
