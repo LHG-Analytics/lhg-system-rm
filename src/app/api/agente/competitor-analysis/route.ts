@@ -422,8 +422,8 @@ export async function POST(req: NextRequest) {
     const parseSuiteHtml = (html: string, suiteName: string) => {
       const suiteId = (html.match(/var\s+suiteid\s*=\s*(\d+)/i) ?? html.match(/data-suite="(\d+)"/))?.[1] ?? null
 
-      // Amenidades: primeiro <p> após "Essa suíte tem:"
-      const amenIdx = html.search(/[Ee]ssa\s+su[ií]te\s+tem/i)
+      // Amenidades: primeiro <p> após "Essa suíte tem:" (Guia GM) ou "A suíte possui:" (Drops)
+      const amenIdx = html.search(/[Ee]ssa\s+su[ií]te\s+tem|[Aa]\s+su[ií]te\s+possui/i)
       let amenities: string[] = []
       if (amenIdx >= 0) {
         const pMatch = html.slice(amenIdx).match(/<p[^>]*>([^<]{5,600})<\/p>/i)
