@@ -105,13 +105,13 @@ const navItems = [
   { label: 'Preços', href: '/dashboard/precos', icon: Tags },
   { label: 'Descontos', href: '/dashboard/descontos', icon: Percent },
   { label: 'Concorrentes', href: '/dashboard/concorrentes', icon: Globe },
-  { label: 'Disponibilidade', href: '/dashboard/disponibilidade', icon: Warehouse },
+  { label: 'Disponibilidade', href: '/dashboard/disponibilidade', icon: Warehouse, disabled: true },
   { label: 'Agente RM', href: '/dashboard/agente', icon: BotMessageSquare },
-  { label: 'Relatórios', href: '/dashboard/relatorios', icon: BarChart3 },
+  { label: 'Relatórios', href: '/dashboard/relatorios', icon: BarChart3, disabled: true },
 ]
 
 const adminNavItems = [
-  { label: 'Configurações', href: '/dashboard/configuracoes', icon: Settings },
+  { label: 'Configurações', href: '/dashboard/configuracoes', icon: Settings, disabled: true },
   { label: 'Administração', href: '/dashboard/admin', icon: Building2 },
 ]
 
@@ -204,6 +204,19 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
           <SidebarMenu>
             {navItems.map((item) => {
               const href = `${item.href}?unit=${activeUnit.slug}`
+              if (item.disabled) {
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      tooltip={item.label}
+                      className="opacity-40 cursor-not-allowed pointer-events-none"
+                    >
+                      <item.icon />
+                      <span>{item.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )
+              }
               return (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
@@ -228,6 +241,19 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
             <SidebarMenu>
               {adminNavItems.map((item) => {
                 const href = `${item.href}?unit=${activeUnit.slug}`
+                if (item.disabled) {
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        tooltip={item.label}
+                        className="opacity-40 cursor-not-allowed pointer-events-none"
+                      >
+                        <item.icon />
+                        <span>{item.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )
+                }
                 return (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
