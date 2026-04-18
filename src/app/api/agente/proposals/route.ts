@@ -438,7 +438,7 @@ export async function POST(req: NextRequest) {
 
   // Bloco de preços de concorrentes (snapshots dos últimos 7 dias)
   interface MappedPrice { categoria_concorrente: string; categoria_nossa: string | null; periodo: string; preco: number; dia_tipo?: string; notas?: string }
-  interface GuiaMeta { mode: 'guia'; suiteId: string; suiteName: string; amenities: string[] }
+  interface GuiaMeta { mode: 'guia'; amenities?: string[]; amenitiesBySuite?: Record<string, string[]> }
 
   const competitorBlock = competitorSnapshotsData?.length
     ? `## Preços de concorrentes (referência — última análise)
@@ -448,19 +448,26 @@ ${(competitorSnapshotsData as unknown as Array<{ competitor_name: string; mapped
   if (!prices.length) return `**${snap.competitor_name}**: sem preços extraídos`
   const date = new Date(snap.scraped_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
   const lines = prices.map((p) =>
-    `  | ${p.categoria_nossa ?? p.categoria_concorrente} | ${p.periodo} | ${p.dia_tipo ?? 'todos'} | R$ ${p.preco.toFixed(2)} |`
+    `  | ${p.categoria_concorrente} | ${p.periodo} | ${p.dia_tipo ?? 'todos'} | R$ ${p.preco.toFixed(2)} |`
   ).join('\n')
-  let amenitiesLine = ''
+  let amenitiesBlock = ''
   try {
     const meta = JSON.parse(snap.raw_text ?? '') as GuiaMeta
-    if (meta.mode === 'guia' && meta.amenities?.length) {
-      amenitiesLine = `\n  Comodidades: ${meta.amenities.join(', ')}`
+    if (meta.mode === 'guia') {
+      if (meta.amenitiesBySuite && Object.keys(meta.amenitiesBySuite).length) {
+        const lines2 = Object.entries(meta.amenitiesBySuite)
+          .map(([suite, ams]) => `  - **${suite}**: ${ams.join(', ')}`)
+          .join('\n')
+        amenitiesBlock = `\n  Comodidades por suíte:\n${lines2}`
+      } else if (meta.amenities?.length) {
+        amenitiesBlock = `\n  Comodidades: ${meta.amenities.join(', ')}`
+      }
     }
   } catch { /* não é JSON */ }
-  return `**${snap.competitor_name}** (analisado em ${date})${amenitiesLine}\n  | Categoria | Período | Dia | Preço |\n  |-----------|---------|-----|-------|\n${lines}`
+  return `**${snap.competitor_name}** (analisado em ${date})${amenitiesBlock}\n  | Suíte | Período | Dia | Preço |\n  |-------|---------|-----|-------|\n${lines}`
 }).join('\n\n')}
 
-> Use estes preços como referência de posicionamento de mercado. Ao comparar categorias com comodidades, priorize comparações equivalentes (ex: nossa suíte com hidro vs. concorrente com hidro).`
+> Compare categorias com comodidades equivalentes (ex: suíte com hidro vs. concorrente com hidro; piscina vs. piscina).`
     : ''
 
   const guardrailsBlock = guardrailsData?.length

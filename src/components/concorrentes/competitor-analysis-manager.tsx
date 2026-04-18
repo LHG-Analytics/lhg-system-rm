@@ -414,13 +414,24 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                                 </table>
                               )}
                               {snap.amenities && snap.amenities.length > 0 && (
-                                <div className="border-t px-3 py-2 flex flex-wrap gap-1">
-                                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium mr-1">
-                                    <Tag className="size-3" /> Comodidades:
+                                <div className="border-t px-3 py-2 flex flex-col gap-1.5">
+                                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
+                                    <Tag className="size-3" /> Comodidades
                                   </span>
-                                  {snap.amenities.map((a) => (
-                                    <span key={a} className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground/80">{a}</span>
-                                  ))}
+                                  {snap.amenities.map((a) => {
+                                    const [suite, ...rest] = a.split(': ')
+                                    const hasSuitePrefix = rest.length > 0
+                                    return hasSuitePrefix ? (
+                                      <div key={a} className="flex flex-wrap items-center gap-1">
+                                        <span className="text-[10px] font-medium text-foreground/70 shrink-0">{suite}:</span>
+                                        {rest.join(': ').split(', ').map((item) => (
+                                          <span key={item} className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground/80">{item}</span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <span key={a} className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground/80 w-fit">{a}</span>
+                                    )
+                                  })}
                                 </div>
                               )}
                             </div>
