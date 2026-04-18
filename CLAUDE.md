@@ -539,12 +539,21 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
 - **LHG-124:** feat(concorrentes): modo Guia GM — API estruturada + comodidades automáticas
   - Novo modo `'guia'` em `competitor-analysis/route.ts`: detecta `var suiteid = \d+` no HTML da página, chama `guiasites.guiademoteis.com.br/api/suites/Periodos/{id}` diretamente
   - Sem IA, sem Apify — gratuito e instantâneo; retorna periodos (3h/6h/12h) + pernoites com valor e descrição
+  - API retorna dados para ~20 dias futuros (não só a data solicitada) — usar `dataExibicao` para classificar dia da semana; mediana por grupo período×dia_tipo elimina duplicatas
+  - `tempoToPeriod`: usa valor literal da API (`${h}h`) — não faz bucketing; FDS = apenas sex(5)+sáb(6); dom(0) = semana
+  - `nameFromSlug`: regex `suites?-` (singular E plural) para extrair nome do slug — sem depender do `<title>` ou `<h2>`
+  - `isSuitePage`: `/suites?-/i.test(pathname)` — detecta páginas de suíte em ambos os formatos
+  - Regex de href para descoberta de suítes: `suites?-[a-z0-9-]+` + `new URL(href, base)` para resolver URLs relativas
+  - Amenities regex: `/[Ee]ssa\s+su[ií]te\s+tem|[Aa]\s+su[ií]te\s+possui/i` — compatível com Drops Campinas e Moteisprime
+  - `amenitiesBySuite: Record<string, string[]>` salvo no `raw_text` JSON do snapshot
+  - **Armadilha:** `<title>` e `<h2>` em páginas de motel retornam o nome do motel, não da suíte — slug é a única fonte confiável
+  - **Armadilha:** API do Guia retorna múltiplos dias, não apenas a data solicitada — somar tudo gera duplicatas
   - Chama API duas vezes (próxima terça + próximo sábado com `?data=DD-MM-YYYY`); se preços divergem → semana/fds_feriado; se iguais → todos
-  - Extrai comodidades de "Essa suíte tem:" no HTML via regex; salva em `raw_text` como `{"mode":"guia","suiteId":...,"amenities":[...]}`
   - `CompetitorSnapshot.amenities?: string[]` populado no GET handler via parse do `raw_text`
-  - Frontend: toggle de 3 botões (Padrão/Guia GM/Interativo), auto-detecção de URLs moteisprime/guiademoteis, pills de comodidades no painel expandido
-  - Prompt de propostas: inclui comodidades e instrução de comparação equivalente (hidro vs hidro, piscina vs piscina)
+  - Frontend: toggle de 3 botões (Padrão/Guia GM/Interativo), auto-detecção de URLs moteisprime/guiademoteis, blocos por suíte com pills de comodidades + tabela pivotada (Período × Dom–Qui | Sex–Sáb)
+  - Prompt de propostas E prompt de chat: incluem comodidades e instrução de comparação equivalente (hidro vs hidro, piscina vs piscina)
   - `CompetitorUrl.mode` atualizado para `'cheerio' | 'playwright' | 'guia'` em `agent-config/route.ts`
+  - `chat/route.ts`: snapshots dos últimos 7 dias buscados em paralelo com clima; `competitorBlock` markdown appended ao system prompt
 
 ### 🔲 Backlog MVP (por prioridade)
 
