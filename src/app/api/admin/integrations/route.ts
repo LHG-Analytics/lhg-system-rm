@@ -47,7 +47,7 @@ export async function GET() {
       id: 'openweather',
       name: 'OpenWeather',
       description: 'Clima em tempo real e previsão de 3 dias injetados no contexto do agente.',
-      category: 'dados',
+      category: 'eventos',
       status: process.env.OPENWEATHERMAP_API_KEY ? 'connected' : 'not_configured',
       envVar: 'OPENWEATHERMAP_API_KEY',
     },

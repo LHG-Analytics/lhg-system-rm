@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   Loader2, CalendarClock, Trash2, Pencil, Save, X,
-  CheckCircle2, XCircle, Clock, Play, CalendarCheck,
+  CheckCircle2, XCircle, Clock, Play, CalendarCheck, Zap,
 } from 'lucide-react'
 import { format, parseISO, isPast } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -58,6 +58,8 @@ export function ScheduledReviewsList({ unitSlug, unitId, onSelectConversation, o
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deleting, setDeleting]       = useState(false)
   const [calendarOpen, setCalendarOpen] = useState(false)
+  const [running, setRunning]         = useState(false)
+  const [runResult, setRunResult]     = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -105,6 +107,28 @@ export function ScheduledReviewsList({ unitSlug, unitId, onSelectConversation, o
     }
   }, [editing])
 
+  const handleRunNow = useCallback(async () => {
+    setRunning(true)
+    setRunResult(null)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/run-pending-reviews', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Erro ao executar')
+      const { done = 0, failed = 0 } = data
+      setRunResult(done > 0
+        ? `${done} revisão(ões) executada(s) com sucesso.`
+        : failed > 0
+        ? `${failed} revisão(ões) falharam. Verifique os logs.`
+        : 'Nenhuma revisão pendente encontrada.')
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setRunning(false)
+    }
+  }, [load])
+
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) return
     setDeleting(true)
@@ -142,6 +166,11 @@ export function ScheduledReviewsList({ unitSlug, unitId, onSelectConversation, o
       {error && (
         <div className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
       )}
+      {runResult && (
+        <div className="rounded-lg bg-emerald-500/10 px-4 py-3 text-sm text-emerald-500 flex items-center gap-2">
+          <CheckCircle2 className="size-4 shrink-0" />{runResult}
+        </div>
+      )}
 
       {reviews.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
@@ -157,7 +186,23 @@ export function ScheduledReviewsList({ unitSlug, unitId, onSelectConversation, o
           {/* Agendadas (futuras/pendentes) */}
           {pending.length > 0 && (
             <div className="flex flex-col gap-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Próximas revisões</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Próximas revisões</h3>
+                {pending.some((r) => isPast(parseISO(r.scheduled_at))) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs h-7 border-yellow-500/40 text-yellow-600 hover:bg-yellow-500/10"
+                    onClick={handleRunNow}
+                    disabled={running}
+                  >
+                    {running
+                      ? <Loader2 className="size-3 animate-spin" />
+                      : <Zap className="size-3" />}
+                    Executar agora
+                  </Button>
+                )}
+              </div>
               {pending.map((review) => {
                 const isEditingThis = editing?.id === review.id
                 const overdue = isPast(parseISO(review.scheduled_at))
