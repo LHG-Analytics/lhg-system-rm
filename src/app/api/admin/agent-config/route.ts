@@ -27,6 +27,8 @@ export interface AgentConfig {
   competitor_urls: CompetitorUrl[]
   city: string
   postal_code: string | null
+  /** Comodidades por categoria: { "CLUB": ["Piscina", "Hidro", ...] } */
+  suite_amenities: Record<string, string[]>
 }
 
 function getAdminClient() {
@@ -60,7 +62,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error: err } = await admin
     .from('rm_agent_config')
-    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, postal_code')
+    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, postal_code, suite_amenities')
     .eq('unit_id', unit.id)
     .maybeSingle()
 
@@ -70,7 +72,7 @@ export async function GET(req: NextRequest) {
   if (!data) {
     const { data: created } = await admin.from('rm_agent_config').insert({
       unit_id: unit.id, pricing_strategy: 'moderado', max_variation_pct: 20, focus_metric: 'balanceado', is_active: true,
-    }).select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, postal_code').single()
+    }).select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, postal_code, suite_amenities').single()
     return Response.json(created as unknown as AgentConfig)
   }
 
@@ -91,13 +93,16 @@ export async function PATCH(req: NextRequest) {
     competitor_urls?: CompetitorUrl[]
     city?: string
     postal_code?: string | null
+    suite_amenities?: Record<string, string[]>
   }
-  const { unit_id, competitor_urls, ...rest } = body
+  const { unit_id, competitor_urls, suite_amenities, ...rest } = body
   if (!unit_id) return new Response('unit_id obrigatório', { status: 400 })
 
-  const fields = {
+  type DbUpdate = import('@/types/database.types').Database['public']['Tables']['rm_agent_config']['Update']
+  const fields: DbUpdate = {
     ...rest,
-    ...(competitor_urls !== undefined ? { competitor_urls: competitor_urls as unknown as import('@/types/database.types').Database['public']['Tables']['rm_agent_config']['Update']['competitor_urls'] } : {}),
+    ...(competitor_urls !== undefined ? { competitor_urls: competitor_urls as unknown as DbUpdate['competitor_urls'] } : {}),
+    ...(suite_amenities !== undefined ? { suite_amenities: suite_amenities as unknown as DbUpdate['suite_amenities'] } : {}),
   }
 
   const admin = getAdminClient()
@@ -105,7 +110,7 @@ export async function PATCH(req: NextRequest) {
     .from('rm_agent_config')
     .update(fields)
     .eq('unit_id', unit_id)
-    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, postal_code')
+    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, postal_code, suite_amenities, suite_amenities')
     .single()
 
   if (err) return Response.json({ error: err.message }, { status: 500 })

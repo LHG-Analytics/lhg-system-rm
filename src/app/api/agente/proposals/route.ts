@@ -381,7 +381,7 @@ export async function POST(req: NextRequest) {
       .eq('unit_id', unit.id),
     supabase
       .from('rm_agent_config')
-      .select('pricing_strategy, max_variation_pct, focus_metric')
+      .select('pricing_strategy, max_variation_pct, focus_metric, suite_amenities')
       .eq('unit_id', unit.id)
       .maybeSingle(),
     supabase
@@ -404,6 +404,7 @@ export async function POST(req: NextRequest) {
   const strategy = agentConfigData?.pricing_strategy ?? 'moderado'
   const maxVar   = agentConfigData?.max_variation_pct ?? 20
   const focus    = agentConfigData?.focus_metric ?? 'balanceado'
+  const suiteAmenities = (agentConfigData?.suite_amenities ?? {}) as Record<string, string[]>
 
   const STRATEGY_GUIDE: Record<string, string> = {
     conservador: 'Priorize estabilidade: proponha variações menores (≤10%), evite mudanças simultâneas em muitos itens e prefira ajustes incrementais.',
@@ -506,6 +507,13 @@ ${activeDiscounts.map((d) => {
 > Os preços propostos para guia_moteis devem ser os preços BASE (antes do desconto). O desconto é aplicado automaticamente pelo canal.`
     : ''
 
+  const ownAmenitiesBlock = Object.keys(suiteAmenities).length
+    ? `## Comodidades das nossas suítes (${unit.name})\n` +
+      Object.entries(suiteAmenities)
+        .map(([cat, list]) => `- **${cat}**: ${list.join(', ')}`)
+        .join('\n')
+    : ''
+
   const prompt = `Você é um especialista em Revenue Management para motéis. Analise os dados abaixo e gere uma proposta de ajuste de preços.
 
 ## Dados operacionais — ${unit.name}
@@ -513,7 +521,7 @@ ${activeDiscounts.map((d) => {
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}
+${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}

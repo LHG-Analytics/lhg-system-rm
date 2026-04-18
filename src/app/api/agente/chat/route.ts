@@ -265,10 +265,10 @@ export async function POST(req: NextRequest) {
     valid_until: imp.valid_until,
   }))
 
-  // 6. Buscar cidade + clima + snapshots de concorrentes em paralelo
+  // 6. Buscar cidade + suite_amenities + clima + snapshots de concorrentes em paralelo
   const snapshotCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const [agentConfigResult, competitorResult] = await Promise.allSettled([
-    admin.from('rm_agent_config').select('city').eq('unit_id', unit.id).maybeSingle(),
+    admin.from('rm_agent_config').select('city, suite_amenities').eq('unit_id', unit.id).maybeSingle(),
     admin
       .from('competitor_snapshots')
       .select('competitor_name, mapped_prices, scraped_at, raw_text')
@@ -277,7 +277,9 @@ export async function POST(req: NextRequest) {
       .gte('scraped_at', snapshotCutoff)
       .order('scraped_at', { ascending: false }),
   ])
-  const city = agentConfigResult.status === 'fulfilled' ? (agentConfigResult.value.data?.city ?? 'Campinas,BR') : 'Campinas,BR'
+  const agentConfigData = agentConfigResult.status === 'fulfilled' ? agentConfigResult.value.data : null
+  const city = agentConfigData?.city ?? 'Campinas,BR'
+  const suiteAmenities = (agentConfigData?.suite_amenities ?? {}) as Record<string, string[]>
   const weatherContext = await fetchWeatherContext(city).catch(() => null)
 
   // Monta bloco de concorrentes para o system prompt
@@ -309,8 +311,17 @@ export async function POST(req: NextRequest) {
       '\n\n> Compare comodidades equivalentes ao sugerir posicionamento de preço.'
     : ''
 
-  // 7. Montar system prompt com KPIs + tabelas + vigência + clima + concorrentes
+  // Bloco de comodidades das nossas suítes
+  const ownAmenitiesBlock = Object.keys(suiteAmenities).length
+    ? `## Comodidades das nossas suítes (${unit.name})\n` +
+      Object.entries(suiteAmenities)
+        .map(([cat, list]) => `- **${cat}**: ${list.join(', ')}`)
+        .join('\n')
+    : ''
+
+  // 7. Montar system prompt com KPIs + tabelas + vigência + clima + concorrentes + comodidades
   const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext) +
+    (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
     (competitorBlock ? `\n\n${competitorBlock}` : '')
 
   const agentTools = {

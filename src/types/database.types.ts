@@ -610,6 +610,7 @@ export type Database = {
           city: string
           competitor_urls: Json
           created_at: string
+          events_cache: Json | null
           focus_metric: string
           id: string
           is_active: boolean
@@ -617,6 +618,7 @@ export type Database = {
           max_variation_pct: number
           postal_code: string | null
           pricing_strategy: string
+          suite_amenities: Json
           unit_id: string
           updated_at: string
         }
@@ -624,6 +626,7 @@ export type Database = {
           city?: string
           competitor_urls?: Json
           created_at?: string
+          events_cache?: Json | null
           focus_metric?: string
           id?: string
           is_active?: boolean
@@ -631,6 +634,7 @@ export type Database = {
           max_variation_pct?: number
           postal_code?: string | null
           pricing_strategy?: string
+          suite_amenities?: Json
           unit_id: string
           updated_at?: string
         }
@@ -638,6 +642,7 @@ export type Database = {
           city?: string
           competitor_urls?: Json
           created_at?: string
+          events_cache?: Json | null
           focus_metric?: string
           id?: string
           is_active?: boolean
@@ -645,6 +650,7 @@ export type Database = {
           max_variation_pct?: number
           postal_code?: string | null
           pricing_strategy?: string
+          suite_amenities?: Json
           unit_id?: string
           updated_at?: string
         }

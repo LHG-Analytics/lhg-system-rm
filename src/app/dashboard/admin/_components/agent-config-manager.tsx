@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Settings2, Loader2, Building2, Save } from 'lucide-react'
+import { Settings2, Loader2, Building2, Save, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -15,6 +15,12 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import type { AgentConfig } from '@/app/api/admin/agent-config/route'
+
+interface AmenityCategory {
+  name: string
+  amenities: string
+  expanded: boolean
+}
 
 interface Unit {
   id: string
@@ -66,6 +72,24 @@ const METRIC_OPTIONS = [
   { value: 'tmo',        label: 'TMO',          description: 'Tempo médio de ocupação — útil para otimizar giro em horários de pico' },
 ] as const
 
+function configToCategories(amenities: Record<string, string[]> | undefined): AmenityCategory[] {
+  if (!amenities) return []
+  return Object.entries(amenities).map(([name, list]) => ({
+    name,
+    amenities: list.join('\n'),
+    expanded: true,
+  }))
+}
+
+function categoriesToRecord(cats: AmenityCategory[]): Record<string, string[]> {
+  const result: Record<string, string[]> = {}
+  for (const c of cats) {
+    if (!c.name.trim()) continue
+    result[c.name.trim()] = c.amenities.split('\n').map((s) => s.trim()).filter(Boolean)
+  }
+  return result
+}
+
 export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, compact = false }: AgentConfigManagerProps) {
   const router = useRouter()
   const [config, setConfig] = useState<AgentConfig | null>(initialConfig)
@@ -73,14 +97,46 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [amenityCategories, setAmenityCategories] = useState<AmenityCategory[]>(() =>
+    configToCategories(initialConfig?.suite_amenities)
+  )
+  const [savingAmenities, setSavingAmenities] = useState(false)
+  const [savedAmenities, setSavedAmenities] = useState(false)
+
   // Auto-fetch config quando não recebida via props (ex: usado em Sheet no agente)
   useEffect(() => {
     if (config !== null) return
     fetch(`/api/admin/agent-config?unitSlug=${unitSlug}`)
       .then((r) => r.ok ? r.json() : null)
-      .then((data) => data && setConfig(data as AgentConfig))
+      .then((data) => {
+        if (!data) return
+        setConfig(data as AgentConfig)
+        setAmenityCategories(configToCategories((data as AgentConfig).suite_amenities))
+      })
       .catch(() => {})
   }, [unitSlug]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSaveAmenities = useCallback(async () => {
+    if (!config) return
+    setSavingAmenities(true)
+    try {
+      const suite_amenities = categoriesToRecord(amenityCategories)
+      const res = await fetch('/api/admin/agent-config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit_id: config.unit_id, suite_amenities }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Erro ao salvar')
+      setConfig(data as AgentConfig)
+      setSavedAmenities(true)
+      setTimeout(() => setSavedAmenities(false), 2500)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setSavingAmenities(false)
+    }
+  }, [config, amenityCategories])
 
   const selectedStrategy = STRATEGY_OPTIONS.find((s) => s.value === (config?.pricing_strategy ?? 'moderado'))
 
@@ -242,6 +298,79 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
                 )
               })}
             </div>
+          </div>
+
+          {/* Comodidades das suítes */}
+          <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <Label className="text-sm font-semibold">Comodidades das suítes</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Uma comodidade por linha. Usadas pelo agente para comparar com concorrentes.
+                </p>
+              </div>
+              <Button
+                size="sm" variant="outline"
+                className="gap-1.5 shrink-0 text-xs"
+                onClick={() => setAmenityCategories((prev) => [...prev, { name: '', amenities: '', expanded: true }])}
+              >
+                <Plus className="size-3.5" /> Categoria
+              </Button>
+            </div>
+
+            {amenityCategories.length === 0 && (
+              <p className="text-xs text-muted-foreground italic">Nenhuma categoria cadastrada.</p>
+            )}
+
+            <div className="flex flex-col gap-3">
+              {amenityCategories.map((cat, idx) => (
+                <div key={idx} className="rounded-lg border bg-background">
+                  <div className="flex items-center gap-2 px-3 py-2">
+                    <Input
+                      value={cat.name}
+                      onChange={(e) => setAmenityCategories((prev) => prev.map((c, i) => i === idx ? { ...c, name: e.target.value } : c))}
+                      placeholder="Nome da categoria (ex: CLUB)"
+                      className="h-7 text-xs font-semibold flex-1 uppercase"
+                    />
+                    <button
+                      onClick={() => setAmenityCategories((prev) => prev.map((c, i) => i === idx ? { ...c, expanded: !c.expanded } : c))}
+                      className="text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {cat.expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                    </button>
+                    <button
+                      onClick={() => setAmenityCategories((prev) => prev.filter((_, i) => i !== idx))}
+                      className="text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                  {cat.expanded && (
+                    <div className="px-3 pb-3">
+                      <textarea
+                        value={cat.amenities}
+                        onChange={(e) => setAmenityCategories((prev) => prev.map((c, i) => i === idx ? { ...c, amenities: e.target.value } : c))}
+                        placeholder={'Piscina aquecida\nHidromassagem\nSauna a vapor\n...'}
+                        rows={6}
+                        className="w-full resize-none rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        {cat.amenities.split('\n').filter((s) => s.trim()).length} comodidades
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {amenityCategories.length > 0 && (
+              <div className="flex justify-end">
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={handleSaveAmenities} disabled={savingAmenities}>
+                  {savingAmenities ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                  {savedAmenities ? 'Salvo!' : 'Salvar comodidades'}
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Resumo + salvar */}
