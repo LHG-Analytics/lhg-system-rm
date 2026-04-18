@@ -100,7 +100,9 @@ function UnitLogo({ slug, name, size = 32 }: { slug: string; name: string; size?
   )
 }
 
-const navItems = [
+type NavItem = { label: string; href: string; icon: React.ElementType; disabled?: boolean }
+
+const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Preços', href: '/dashboard/precos', icon: Tags },
   { label: 'Descontos', href: '/dashboard/descontos', icon: Percent },
@@ -110,8 +112,8 @@ const navItems = [
   { label: 'Relatórios', href: '/dashboard/relatorios', icon: BarChart3, disabled: true },
 ]
 
-const adminNavItems = [
-  { label: 'Configurações', href: '/dashboard/configuracoes', icon: Settings, disabled: true },
+const adminNavItems: NavItem[] = [
+  { label: 'Configurações', href: '/dashboard/configuracoes', icon: Settings },
   { label: 'Administração', href: '/dashboard/admin', icon: Building2 },
 ]
 

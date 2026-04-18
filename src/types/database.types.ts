@@ -576,21 +576,27 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
+          display_name: string | null
           id: string
+          notification_preferences: Json
           role: Database["public"]["Enums"]["user_role"]
           unit_id: string | null
           user_id: string
         }
         Insert: {
           created_at?: string
+          display_name?: string | null
           id?: string
+          notification_preferences?: Json
           role?: Database["public"]["Enums"]["user_role"]
           unit_id?: string | null
           user_id: string
         }
         Update: {
           created_at?: string
+          display_name?: string | null
           id?: string
+          notification_preferences?: Json
           role?: Database["public"]["Enums"]["user_role"]
           unit_id?: string | null
           user_id?: string
@@ -614,6 +620,7 @@ export type Database = {
           focus_metric: string
           id: string
           is_active: boolean
+          timezone: string
           last_context_update: string | null
           max_variation_pct: number
           postal_code: string | null
@@ -635,6 +642,7 @@ export type Database = {
           postal_code?: string | null
           pricing_strategy?: string
           suite_amenities?: Json
+          timezone?: string
           unit_id: string
           updated_at?: string
         }
@@ -651,6 +659,7 @@ export type Database = {
           postal_code?: string | null
           pricing_strategy?: string
           suite_amenities?: Json
+          timezone?: string
           unit_id?: string
           updated_at?: string
         }
