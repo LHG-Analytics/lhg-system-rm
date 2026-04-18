@@ -535,6 +535,16 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `POST /api/agente/events-refresh`: endpoint on-demand para o botão "Atualizar" no widget
   - `events-widget.tsx`: prop `unitId?`, botão "Atualizar" com spinner nos 3 estados (error/empty/ok)
   - `cron/revisoes`: fix timing — `lte(endOfToday)` evita perder revisões agendadas mais tarde no dia; refresh de eventos para todas as unidades ao final do cron
+  - **Desabilitado temporariamente** (Apify atingiu limite mensal 2026-04-17) — eventos removidos do dashboard e do system prompt do agente; código dormante em `events.ts` para reativação futura
+- **LHG-124:** feat(concorrentes): modo Guia GM — API estruturada + comodidades automáticas
+  - Novo modo `'guia'` em `competitor-analysis/route.ts`: detecta `var suiteid = \d+` no HTML da página, chama `guiasites.guiademoteis.com.br/api/suites/Periodos/{id}` diretamente
+  - Sem IA, sem Apify — gratuito e instantâneo; retorna periodos (3h/6h/12h) + pernoites com valor e descrição
+  - Chama API duas vezes (próxima terça + próximo sábado com `?data=DD-MM-YYYY`); se preços divergem → semana/fds_feriado; se iguais → todos
+  - Extrai comodidades de "Essa suíte tem:" no HTML via regex; salva em `raw_text` como `{"mode":"guia","suiteId":...,"amenities":[...]}`
+  - `CompetitorSnapshot.amenities?: string[]` populado no GET handler via parse do `raw_text`
+  - Frontend: toggle de 3 botões (Padrão/Guia GM/Interativo), auto-detecção de URLs moteisprime/guiademoteis, pills de comodidades no painel expandido
+  - Prompt de propostas: inclui comodidades e instrução de comparação equivalente (hidro vs hidro, piscina vs piscina)
+  - `CompetitorUrl.mode` atualizado para `'cheerio' | 'playwright' | 'guia'` em `agent-config/route.ts`
 
 ### 🔲 Backlog MVP (por prioridade)
 
