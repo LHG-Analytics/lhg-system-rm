@@ -399,12 +399,20 @@ export async function POST(req: NextRequest) {
       return 'pernoite'
     }
 
+    // Deriva nome legível do slug de URL (fallback confiável quando HTML não tem h2)
+    const nameFromSlug = (url: string): string => {
+      const slug = url.split('/').filter(Boolean).pop() ?? ''
+      if (!slug.startsWith('suite-')) return slug
+      return 'Suíte ' + slug.replace(/^suite-/, '').split('-')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+    }
+
     // Extrai dados de uma suíte a partir do HTML da sua página
+    // título e h1 retornam o nome do motel (ex: "Prime Campinas") — usar h2
     const parseSuiteHtml = (html: string, fallbackName: string) => {
       const suiteId = (html.match(/var\s+suiteid\s*=\s*(\d+)/i) ?? html.match(/data-suite="(\d+)"/))?.[1] ?? null
-      const titleRaw = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] ?? ''
-      const h1Raw    = html.match(/<h1[^>]*>([^<]+)<\/h1>/i)?.[1] ?? ''
-      const suiteName = (titleRaw || h1Raw).replace(/\s*\|.*/, '').trim() || fallbackName
+      const h2Raw = html.match(/<h2[^>]*>([^<]{3,80})<\/h2>/i)?.[1] ?? ''
+      const suiteName = h2Raw.replace(/\s*\|.*/, '').trim() || fallbackName
 
       // Amenidades: <p>amenities X, Y, Z</p> logo após "Essa suíte tem:"
       const amenIdx = html.search(/[Ee]ssa\s+su[ií]te\s+tem/i)
@@ -454,10 +462,11 @@ export async function POST(req: NextRequest) {
     // Processa uma única URL de suíte → retorna preços + amenidades
     const processSuiteUrl = async (suiteUrl: string): Promise<{ prices: MappedPrice[]; amenities: string[]; suiteName: string; suiteId: string } | null> => {
       try {
+        const slugName = nameFromSlug(suiteUrl)
         const res = await fetch(suiteUrl, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(12000) })
         if (!res.ok) return null
         const html = await res.text()
-        const { suiteId, suiteName, amenities } = parseSuiteHtml(html, suiteUrl)
+        const { suiteId, suiteName, amenities } = parseSuiteHtml(html, slugName)
         if (!suiteId) return null
         const [wd, we] = await Promise.all([fetchGuiaForDate(suiteId, tuesdayStr), fetchGuiaForDate(suiteId, fridayStr)])
         const prices = buildPrices(suiteName, wd, we)
