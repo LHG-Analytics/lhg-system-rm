@@ -143,7 +143,15 @@ function UserRow({ u, units, isMe, onUpdate, onDelete }: UserRowProps) {
             )}
           </div>
           <div className="flex items-center gap-3 mt-1">
-            {hasLoggedIn ? (
+            {isMe ? (
+              <span className="flex items-center gap-1.5 text-[11px] text-emerald-500">
+                <span className="relative flex size-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full size-2 bg-emerald-500" />
+                </span>
+                Online agora
+              </span>
+            ) : hasLoggedIn ? (
               <span className="flex items-center gap-1 text-[11px] text-emerald-500">
                 <CheckCircle2 className="size-3" />
                 Último acesso {fmtDate(u.last_sign_in)}
