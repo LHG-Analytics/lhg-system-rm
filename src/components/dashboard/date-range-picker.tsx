@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils'
 // ─── Dados estáticos ──────────────────────────────────────────────────────────
 
 const PRESETS: { value: Exclude<DatePreset, 'custom'>; label: string }[] = [
-  { value: '7d',         label: 'Últimos 7 dias'     },
+  { value: '7d',         label: 'Últ. 7 dias'       },
   { value: 'this-month', label: 'Este mês'           },
   { value: 'last-month', label: 'Último mês fechado' },
 ]
@@ -44,7 +44,6 @@ function clampHour(v: string | null, fallback: number): number {
   return isNaN(n) || n < 0 || n > 23 ? fallback : n
 }
 
-// YYYY-MM-DD → Date (local)
 function parseIso(s: string): Date | undefined {
   if (!s) return undefined
   try { return parse(s, 'yyyy-MM-dd', new Date()) } catch { return undefined }
@@ -117,8 +116,9 @@ export function DateRangePicker() {
     router.push(`${pathname}?${params.toString()}`)
   }
 
-  function handlePresetChange(value: string) {
-    const resolved = resolvePreset(value as DatePreset)
+  // Preset fixo clicado → navega imediatamente
+  function handlePresetClick(value: Exclude<DatePreset, 'custom'>) {
+    const resolved = resolvePreset(value)
     setLocalStart(resolved.startDate)
     setLocalEnd(resolved.endDate)
     navigate({
@@ -132,18 +132,31 @@ export function DateRangePicker() {
     })
   }
 
+  // Range personalizado selecionado → navega ao completar
   function handleRangeSelect(range: DateRange | undefined) {
     const from = range?.from ? format(range.from, 'yyyy-MM-dd') : ''
     const to   = range?.to   ? format(range.to,   'yyyy-MM-dd') : ''
     setLocalStart(from)
     setLocalEnd(to)
-    if (from && to) setCalendarOpen(false)
+    if (from && to) {
+      setCalendarOpen(false)
+      navigate({
+        preset:    'custom',
+        start:     from,
+        end:       to,
+        startHour: String(localStartHour),
+        endHour:   String(localEndHour),
+        dateType:  localDateType,
+        status:    localStatus,
+      })
+    }
   }
 
+  // Aplicar horário + filtros mantendo o preset atual
   function handleApply() {
     if (!localStart || !localEnd) return
     navigate({
-      preset:    'custom',
+      preset:    preset,
       start:     localStart,
       end:       localEnd,
       startHour: String(localStartHour),
@@ -153,42 +166,50 @@ export function DateRangePicker() {
     })
   }
 
-  // Label do botão de calendário
-  const calendarLabel = localStart && localEnd
-    ? `${format(parse(localStart, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy')} → ${format(parse(localEnd, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy')}`
-    : 'Selecionar período'
+  const isCustom = preset === 'custom'
+
+  const customLabel = isCustom && localStart && localEnd
+    ? `${format(parse(localStart, 'yyyy-MM-dd', new Date()), 'dd/MM')} → ${format(parse(localEnd, 'yyyy-MM-dd', new Date()), 'dd/MM')}`
+    : 'Personalizado'
 
   const today = new Date()
 
   return (
     <div className="flex items-end gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
 
-      {/* Período */}
+      {/* Período — presets fixos + personalizado */}
       <div className="flex flex-col gap-1.5 shrink-0">
         <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Período</Label>
-        <div className="flex items-center gap-2">
-          <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
-          <Select value={(PRESETS.find(p => p.value === preset)?.value) ?? 'this-month'} onValueChange={handlePresetChange}>
-            <SelectTrigger size="sm" className="w-[160px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PRESETS.map((p) => (
-                <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-1">
+          {/* Botões de preset fixo */}
+          {PRESETS.map((p) => (
+            <Button
+              key={p.value}
+              size="sm"
+              variant={preset === p.value ? 'default' : 'outline'}
+              onClick={() => handlePresetClick(p.value)}
+              className="h-7 px-3 text-xs"
+            >
+              {p.label}
+            </Button>
+          ))}
 
-          {/* Range calendar em popover */}
+          {/* Separador visual */}
+          <div className="w-px h-5 bg-border mx-1 shrink-0" />
+
+          {/* Personalizado — abre calendar em popover */}
           <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
             <PopoverTrigger asChild>
               <Button
-                variant="outline"
                 size="sm"
-                className={cn('h-7 px-2 text-xs font-normal gap-1.5', !localStart && 'text-muted-foreground')}
+                variant={isCustom ? 'default' : 'outline'}
+                className={cn(
+                  'h-7 px-2.5 text-xs gap-1.5',
+                  !isCustom && 'text-muted-foreground hover:text-foreground',
+                )}
               >
-                <CalendarIcon className="size-3" />
-                {calendarLabel}
+                <CalendarIcon className="size-3 shrink-0" />
+                {customLabel}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
@@ -208,7 +229,7 @@ export function DateRangePicker() {
 
       <Separator orientation="vertical" className="h-8 shrink-0" />
 
-      {/* Horas */}
+      {/* Horário */}
       <div className="flex flex-col gap-1.5 shrink-0">
         <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Horário</Label>
         <div className="flex items-center gap-2">
@@ -238,7 +259,7 @@ export function DateRangePicker() {
 
       <Separator orientation="vertical" className="h-8 shrink-0" />
 
-      {/* Data tipo + Status */}
+      {/* Filtros */}
       <div className="flex flex-col gap-1.5 shrink-0">
         <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Filtros</Label>
         <div className="flex items-center gap-2">
