@@ -167,6 +167,17 @@ function ProposalGeneratingSteps() {
   )
 }
 
+// ─── Saudação personalizada ───────────────────────────────────────────────────
+
+function computeGreeting(displayName?: string | null, timezone?: string | null): string {
+  const tz = timezone ?? 'America/Sao_Paulo'
+  const hourStr = new Date().toLocaleString('pt-BR', { timeZone: tz, hour: '2-digit', hour12: false })
+  const hour = parseInt(hourStr, 10)
+  const period = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite'
+  const firstName = displayName?.trim().split(' ')[0]
+  return firstName ? `${period}, ${firstName}` : `${period}!`
+}
+
 // ─── Inner chat (recriado quando key muda) ────────────────────────────────────
 
 interface AgenteChatInnerProps {
@@ -176,6 +187,8 @@ interface AgenteChatInnerProps {
   conversationId?: string | null
   /** true quando a conversa foi retomada e ainda aguarda resposta do servidor */
   isAwaitingResponse?: boolean
+  displayName?: string | null
+  timezone?: string | null
   onConversationCreated?: (id: string, title: string) => void
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
   onProposalSaved?: () => void
@@ -186,6 +199,7 @@ function AgenteChatInner({
   unitSlug, unitId,
   initialMessages, conversationId,
   isAwaitingResponse,
+  displayName, timezone,
   onConversationCreated, onMessagesUpdate, onProposalSaved, onNavigateToProposals,
 }: AgenteChatInnerProps) {
   const convIdRef = useRef<string | null>(conversationId ?? null)
@@ -337,17 +351,19 @@ function AgenteChatInner({
     <>
       <div ref={scrollAreaRef} onScroll={handleScroll} className="flex flex-col flex-1 overflow-y-auto p-4 gap-4 min-h-0">
         {messages.length === 0 && (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-            <div className="rounded-full bg-primary/10 p-4">
-              <Bot className="size-8 text-primary" />
+          <div className="flex flex-1 flex-col items-center justify-center gap-5 text-center px-4">
+            <div className="rounded-full bg-primary/10 p-4 shadow-sm">
+              <Bot className="size-9 text-primary" />
             </div>
-            <div>
-              <p className="font-medium">Agente de Revenue Management</p>
-              <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-                Pergunte sobre ocupação, precificação, RevPAR ou peça uma análise de desempenho da unidade.
+            <div className="flex flex-col gap-1.5">
+              <h2 className="text-2xl font-semibold tracking-tight">
+                {computeGreeting(displayName, timezone)}
+              </h2>
+              <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
+                Como posso ajudar com a gestão de receitas hoje?
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 justify-center mt-2">
+            <div className="flex flex-wrap gap-2 justify-center max-w-lg">
               {SUGESTOES.map((s) => (
                 <button
                   key={s}
@@ -355,7 +371,7 @@ function AgenteChatInner({
                     if (textareaRef.current) textareaRef.current.value = s
                     textareaRef.current?.focus()
                   }}
-                  className="text-xs rounded-full border px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+                  className="text-xs rounded-full border px-3.5 py-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:border-border transition-colors"
                 >
                   {s}
                 </button>
@@ -551,6 +567,8 @@ interface AgenteChatProps {
   selectedConvId?: string | null
   selectedMessages?: UIMessage[]
   isAwaitingResponse?: boolean
+  displayName?: string | null
+  timezone?: string | null
   onConversationCreated?: (id: string, title: string) => void
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
   onProposalSaved?: () => void
@@ -562,6 +580,7 @@ export function AgenteChat({
   selectedConvId: externalConvId,
   selectedMessages: externalMessages,
   isAwaitingResponse,
+  displayName, timezone,
   onConversationCreated: externalOnCreated,
   onMessagesUpdate: externalOnUpdate,
   onProposalSaved,
@@ -577,6 +596,8 @@ export function AgenteChat({
       initialMessages={externalMessages}
       conversationId={externalConvId}
       isAwaitingResponse={isAwaitingResponse}
+      displayName={displayName}
+      timezone={timezone}
       onConversationCreated={externalOnCreated}
       onMessagesUpdate={externalOnUpdate}
       onProposalSaved={onProposalSaved}

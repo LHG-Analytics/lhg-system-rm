@@ -66,8 +66,8 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
     activeUnit = data
   }
 
-  // Buscar propostas, perfil e unidades em paralelo
-  const [proposalsResult, profileResult, unitsResult] = await Promise.all([
+  // Buscar propostas, perfil, unidades e timezone em paralelo
+  const [proposalsResult, profileResult, unitsResult, agentConfigResult] = await Promise.all([
     activeUnit
       ? supabase
           .from('price_proposals')
@@ -76,12 +76,17 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
           .order('created_at', { ascending: false })
           .limit(20)
       : Promise.resolve({ data: [] }),
-    supabase.from('profiles').select('role').eq('user_id', user.id).single(),
+    supabase.from('profiles').select('role, display_name').eq('user_id', user.id).single(),
     admin.from('units').select('id, slug, name').eq('is_active', true).order('name'),
+    activeUnit
+      ? supabase.from('rm_agent_config').select('timezone').eq('unit_id', activeUnit.id).single()
+      : Promise.resolve({ data: null }),
   ])
 
   const initialProposals = (proposalsResult.data ?? []) as unknown as PriceProposal[]
   const userRole = profileResult.data?.role ?? 'viewer'
+  const displayName = profileResult.data?.display_name ?? null
+  const timezone = agentConfigResult.data?.timezone ?? 'America/Sao_Paulo'
   const allUnits = (unitsResult.data ?? []).map((u) => ({ id: u.id, slug: u.slug, name: u.name }))
 
   return (
@@ -91,6 +96,8 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
         initialProposals={initialProposals}
         userRole={userRole}
         units={allUnits}
+        displayName={displayName}
+        timezone={timezone}
       />
     </Suspense>
   )

@@ -23,6 +23,8 @@ interface AgenteChatPageProps {
   initialProposals: PriceProposal[]
   userRole?: string
   units?: { id: string; slug: string; name: string }[]
+  displayName?: string | null
+  timezone?: string | null
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -41,12 +43,13 @@ function isAwaitingResponse(msgs: UIMessage[]): boolean {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function AgenteChatPage({ activeUnit, initialProposals, userRole, units = [] }: AgenteChatPageProps) {
+export function AgenteChatPage({ activeUnit, initialProposals, userRole, units = [], displayName, timezone }: AgenteChatPageProps) {
   const searchParams = useSearchParams()
   const unitId   = activeUnit?.id   ?? ''
   const unitSlug = searchParams.get('unit') ?? activeUnit?.slug ?? ''
   const [configOpen, setConfigOpen] = useState(false)
   const canConfig = userRole === 'super_admin' || userRole === 'admin'
+  const canManageProposals = userRole === 'super_admin' || userRole === 'admin'
 
   // ── Histórico de conversas ─────────────────────────────────────────────────
   const [conversations,    setConversations]    = useState<ConversationSummary[]>([])
@@ -447,6 +450,8 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
             selectedConvId={selectedConvId}
             selectedMessages={selectedMessages}
             isAwaitingResponse={awaitingResponse}
+            displayName={displayName}
+            timezone={timezone}
             onConversationCreated={handleConversationCreated}
             onMessagesUpdate={handleMessagesUpdate}
             onProposalSaved={handleProposalSaved}
@@ -461,6 +466,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
             initialProposals={initialProposals}
             refreshKey={proposalsRefreshKey}
             selectedProposalId={selectedProposalId}
+            canManage={canManageProposals}
           />
         </TabsContent>
 

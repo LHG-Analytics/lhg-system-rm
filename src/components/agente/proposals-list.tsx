@@ -51,6 +51,8 @@ interface ProposalsListProps {
   initialProposals: PriceProposal[]
   refreshKey?: number
   selectedProposalId?: string | null
+  /** false = gerente: só visualiza + pode agendar/reagendar revisão da última proposta aprovada */
+  canManage?: boolean
 }
 
 const STATUS_CONFIG = {
@@ -113,7 +115,7 @@ function ExpandableText({ text, maxLength = 120 }: { text: string; maxLength?: n
   )
 }
 
-export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, selectedProposalId }: ProposalsListProps) {
+export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, selectedProposalId, canManage = true }: ProposalsListProps) {
   const supabase = useMemo(() => createClient(), [])
   const [proposals, setProposals] = useState<PriceProposal[]>(initialProposals)
   const [generating, setGenerating] = useState(false)
@@ -396,14 +398,18 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            O agente analisa KPIs da tabela atual e anterior para gerar propostas otimizadas.
+            {canManage
+              ? 'O agente analisa KPIs da tabela atual e anterior para gerar propostas otimizadas.'
+              : 'Visualização de propostas — apenas admins podem gerar, aprovar ou rejeitar.'}
           </p>
-          <Button onClick={handleGenerate} disabled={generating} className="gap-2 shrink-0">
-            {generating
-              ? <><Loader2 className="size-4 animate-spin" />Analisando…</>
-              : <><Sparkles className="size-4" />Gerar Nova Proposta</>
-            }
-          </Button>
+          {canManage && (
+            <Button onClick={handleGenerate} disabled={generating} className="gap-2 shrink-0">
+              {generating
+                ? <><Loader2 className="size-4 animate-spin" />Analisando…</>
+                : <><Sparkles className="size-4" />Gerar Nova Proposta</>
+              }
+            </Button>
+          )}
         </div>
 
         {/* Filtro de status */}
@@ -615,16 +621,18 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                       </Popover>
                     )}
 
-                    {/* Botão excluir */}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => setConfirmDelete(proposal.id)}
-                      title="Excluir proposta"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
+                    {/* Botão excluir — apenas admins */}
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setConfirmDelete(proposal.id)}
+                        title="Excluir proposta"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    )}
                     {/* Toggle expand */}
                     <Button
                       variant="ghost"
@@ -732,7 +740,7 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                     )}
 
                     {/* Barra de ações */}
-                    {isEditing ? (
+                    {canManage && isEditing ? (
                       <div className="flex justify-end gap-2 p-4 border-t">
                         <Button
                           variant="outline"
@@ -757,7 +765,7 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                           Salvar Edições
                         </Button>
                       </div>
-                    ) : isPending ? (
+                    ) : canManage && isPending ? (
                       <div className="flex justify-end gap-2 p-4 border-t">
                         <Button
                           variant="outline"
