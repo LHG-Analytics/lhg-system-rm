@@ -89,8 +89,13 @@ export function DateRangePicker() {
   const [localStatus, setLocalStatus] = useState<RentalStatus>(
     () => (searchParams.get('status') as RentalStatus) ?? 'FINALIZADA'
   )
-  const [calendarOpen, setCalendarOpen] = useState(false)
+  const [calendarOpen,  setCalendarOpen]  = useState(false)
+  const [pendingFilter, setPendingFilter] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+
+  useEffect(() => {
+    if (!isPending) setPendingFilter(null)
+  }, [isPending])
 
   useEffect(() => {
     const p = (searchParams.get('preset') ?? 'this-month') as DatePreset
@@ -119,7 +124,6 @@ export function DateRangePicker() {
     })
   }
 
-  // Helper: navega com estado atual + overrides pontuais
   function navigateWith(overrides: Partial<Record<string, string>>) {
     navigate({
       preset:    preset,
@@ -133,15 +137,14 @@ export function DateRangePicker() {
     })
   }
 
-  // Preset fixo clicado → navega imediatamente
   function handlePresetClick(value: Exclude<DatePreset, 'custom'>) {
+    setPendingFilter(`preset-${value}`)
     const resolved = resolvePreset(value)
     setLocalStart(resolved.startDate)
     setLocalEnd(resolved.endDate)
     navigateWith({ preset: value, start: resolved.startDate, end: resolved.endDate })
   }
 
-  // Range personalizado selecionado → navega ao completar
   function handleRangeSelect(range: DateRange | undefined) {
     const from = range?.from ? format(range.from, 'yyyy-MM-dd') : ''
     const to   = range?.to   ? format(range.to,   'yyyy-MM-dd') : ''
@@ -149,6 +152,7 @@ export function DateRangePicker() {
     setLocalEnd(to)
     if (from && to) {
       setCalendarOpen(false)
+      setPendingFilter('preset-custom')
       navigateWith({ preset: 'custom', start: from, end: to })
     }
   }
@@ -161,6 +165,8 @@ export function DateRangePicker() {
 
   const today = new Date()
 
+  const spin = (key: string) => isPending && pendingFilter === key
+
   return (
     <div className={cn(
       'flex items-end gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none] transition-opacity',
@@ -171,20 +177,21 @@ export function DateRangePicker() {
       <div className="flex flex-col gap-1.5 shrink-0">
         <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Período</Label>
         <div className="flex items-center gap-1">
-          {/* Botões de preset fixo */}
           {PRESETS.map((p) => (
             <Button
               key={p.value}
               size="sm"
               variant={preset === p.value ? 'default' : 'outline'}
               onClick={() => handlePresetClick(p.value)}
-              className="h-7 px-3 text-xs"
+              className="h-7 px-3 text-xs min-w-0"
             >
-              {p.label}
+              {spin(`preset-${p.value}`)
+                ? <Loader2 className="size-3 animate-spin" />
+                : p.label
+              }
             </Button>
           ))}
 
-          {/* Separador visual */}
           <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
           {/* Personalizado — abre calendar em popover */}
@@ -194,12 +201,14 @@ export function DateRangePicker() {
                 size="sm"
                 variant={isCustom ? 'default' : 'outline'}
                 className={cn(
-                  'h-7 px-2.5 text-xs gap-1.5',
+                  'h-7 px-2.5 text-xs gap-1.5 min-w-0',
                   !isCustom && 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                <CalendarIcon className="size-3 shrink-0" />
-                {customLabel}
+                {spin('preset-custom')
+                  ? <Loader2 className="size-3 animate-spin" />
+                  : <><CalendarIcon className="size-3 shrink-0" />{customLabel}</>
+                }
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
@@ -225,9 +234,14 @@ export function DateRangePicker() {
         <div className="flex items-center gap-2">
           <Select
             value={String(localStartHour)}
-            onValueChange={(v) => { setLocalStartHour(Number(v)); navigateWith({ startHour: v }) }}
+            onValueChange={(v) => { setLocalStartHour(Number(v)); setPendingFilter('startHour'); navigateWith({ startHour: v }) }}
           >
-            <SelectTrigger size="sm" className="w-[108px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger size="sm" className="w-[108px]">
+              {spin('startHour')
+                ? <Loader2 className="size-3 animate-spin mx-auto" />
+                : <SelectValue />
+              }
+            </SelectTrigger>
             <SelectContent className="max-h-48">
               {HOURS.map((h) => <SelectItem key={h} value={String(h)}>{fmtStartHour(h)}</SelectItem>)}
             </SelectContent>
@@ -235,9 +249,14 @@ export function DateRangePicker() {
           <span className="text-xs text-muted-foreground">→</span>
           <Select
             value={String(localEndHour)}
-            onValueChange={(v) => { setLocalEndHour(Number(v)); navigateWith({ endHour: v }) }}
+            onValueChange={(v) => { setLocalEndHour(Number(v)); setPendingFilter('endHour'); navigateWith({ endHour: v }) }}
           >
-            <SelectTrigger size="sm" className="w-[108px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger size="sm" className="w-[108px]">
+              {spin('endHour')
+                ? <Loader2 className="size-3 animate-spin mx-auto" />
+                : <SelectValue />
+              }
+            </SelectTrigger>
             <SelectContent className="max-h-48">
               {HOURS.map((h) => <SelectItem key={h} value={String(h)}>{fmtEndHour(h)}</SelectItem>)}
             </SelectContent>
@@ -254,20 +273,30 @@ export function DateRangePicker() {
           <ToggleGroup
             type="single"
             value={localDateType}
-            onValueChange={(v) => { if (v) { setLocalDateType(v as DateType); navigateWith({ dateType: v }) } }}
+            onValueChange={(v) => { if (v) { setLocalDateType(v as DateType); setPendingFilter(`dateType-${v}`); navigateWith({ dateType: v }) } }}
             variant="outline"
             size="sm"
           >
             {DATE_TYPE_OPTIONS.map((o) => (
-              <ToggleGroupItem key={o.value} value={o.value}>{o.label}</ToggleGroupItem>
+              <ToggleGroupItem key={o.value} value={o.value} className="min-w-[52px]">
+                {spin(`dateType-${o.value}`)
+                  ? <Loader2 className="size-3 animate-spin" />
+                  : o.label
+                }
+              </ToggleGroupItem>
             ))}
           </ToggleGroup>
 
           <Select
             value={localStatus}
-            onValueChange={(v) => { setLocalStatus(v as RentalStatus); navigateWith({ status: v }) }}
+            onValueChange={(v) => { setLocalStatus(v as RentalStatus); setPendingFilter('status'); navigateWith({ status: v }) }}
           >
-            <SelectTrigger size="sm" className="w-[130px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger size="sm" className="w-[130px]">
+              {spin('status')
+                ? <Loader2 className="size-3 animate-spin mx-auto" />
+                : <SelectValue />
+              }
+            </SelectTrigger>
             <SelectContent>
               {STATUS_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
@@ -276,10 +305,6 @@ export function DateRangePicker() {
           </Select>
         </div>
       </div>
-
-      {isPending && (
-        <Loader2 className="size-4 animate-spin text-muted-foreground self-center shrink-0 ml-1" />
-      )}
     </div>
   )
 }
