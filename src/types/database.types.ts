@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       agent_price_guardrails: {
@@ -620,14 +595,15 @@ export type Database = {
           focus_metric: string
           id: string
           is_active: boolean
-          timezone: string
           last_context_update: string | null
           max_variation_pct: number
           postal_code: string | null
           pricing_strategy: string
           suite_amenities: Json
+          timezone: string
           unit_id: string
           updated_at: string
+          weather_insight_cache: Json | null
         }
         Insert: {
           city?: string
@@ -645,6 +621,7 @@ export type Database = {
           timezone?: string
           unit_id: string
           updated_at?: string
+          weather_insight_cache?: Json | null
         }
         Update: {
           city?: string
@@ -662,6 +639,7 @@ export type Database = {
           timezone?: string
           unit_id?: string
           updated_at?: string
+          weather_insight_cache?: Json | null
         }
         Relationships: [
           {
@@ -1021,6 +999,62 @@ export type Database = {
           },
           {
             foreignKeyName: "rm_weather_demand_patterns_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rm_weather_observations: {
+        Row: {
+          created_at: string | null
+          giro: number | null
+          id: string
+          is_weekend: boolean | null
+          observed_date: string
+          occupancy_rate: number | null
+          revpar: number | null
+          temp_avg: number | null
+          ticket_avg: number | null
+          total_rentals: number | null
+          unit_id: string
+          weather_condition: string
+          weather_description: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          giro?: number | null
+          id?: string
+          is_weekend?: boolean | null
+          observed_date: string
+          occupancy_rate?: number | null
+          revpar?: number | null
+          temp_avg?: number | null
+          ticket_avg?: number | null
+          total_rentals?: number | null
+          unit_id: string
+          weather_condition: string
+          weather_description?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          giro?: number | null
+          id?: string
+          is_weekend?: boolean | null
+          observed_date?: string
+          occupancy_rate?: number | null
+          revpar?: number | null
+          temp_avg?: number | null
+          ticket_avg?: number | null
+          total_rentals?: number | null
+          unit_id?: string
+          weather_condition?: string
+          weather_description?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rm_weather_observations_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "units"
@@ -1396,9 +1430,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       channel_name: [

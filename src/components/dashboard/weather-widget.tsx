@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ChevronDown, ChevronUp, Droplets, Thermometer, Wind } from 'lucide-react'
+import { ChevronDown, ChevronUp, Droplets, Sparkles, Thermometer, Wind } from 'lucide-react'
 import type { WeatherResult } from '@/lib/agente/weather'
 
 interface WeatherWidgetProps {
   result: WeatherResult
+  insight?: string | null
 }
 
 const WEATHER_ICONS: Record<string, string> = {
@@ -42,7 +43,7 @@ function ptDayShort(dateStr: string): string {
   return `${days[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
-export function WeatherWidget({ result }: WeatherWidgetProps) {
+export function WeatherWidget({ result, insight }: WeatherWidgetProps) {
   const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
@@ -148,10 +149,13 @@ export function WeatherWidget({ result }: WeatherWidgetProps) {
             )}
           </div>
 
-          <div className="px-5 py-2 border-t bg-muted/20">
-            <p className="text-[11px] text-muted-foreground">
-              Calor intenso em FDS tende a elevar giro em períodos curtos. Chuva e frio reduzem demanda de curto prazo.
-            </p>
+          <div className="px-5 py-2 border-t bg-muted/20 flex items-start gap-1.5">
+            <Sparkles className="size-3 text-primary/60 shrink-0 mt-0.5" />
+            {insight ? (
+              <p className="text-[11px] text-muted-foreground">{insight}</p>
+            ) : (
+              <p className="text-[11px] text-muted-foreground/50 italic">Gerando análise de impacto climático…</p>
+            )}
           </div>
         </>
       )}

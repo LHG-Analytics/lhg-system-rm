@@ -9,6 +9,7 @@ import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
 import { DateRangePicker } from '@/components/dashboard/date-range-picker'
 import { WeatherWidget } from '@/components/dashboard/weather-widget'
 import { fetchWeatherData } from '@/lib/agente/weather'
+import { getWeatherInsight } from '@/lib/agente/weather-insight'
 
 interface DashboardPageProps {
   searchParams: Promise<{
@@ -120,6 +121,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     agentConfig?.city ? fetchWeatherData(agentConfig.city) : Promise.resolve({ status: 'unconfigured' as const }),
   ])
 
+  // Insight IA clima × demanda — usa cache de 4h; regenera em background se vencido
+  const weatherInsight = await getWeatherInsight(activeUnit.id, weatherResult, company)
+
   return (
     <div className="flex flex-1 flex-col gap-6">
       {/* Header */}
@@ -138,7 +142,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </Suspense>
       </div>
 
-      <WeatherWidget result={weatherResult} />
+      <WeatherWidget result={weatherResult} insight={weatherInsight} />
       <DashboardKPICards company={company} />
       <DashboardCharts company={company} />
       <Suspense fallback={null}>

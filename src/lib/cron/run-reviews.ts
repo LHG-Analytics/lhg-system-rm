@@ -3,6 +3,7 @@ import { generateText, tool } from 'ai'
 import { z } from 'zod'
 import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
 import { refreshEventsForUnit } from '@/lib/agente/events'
+import { recordWeatherObservation } from '@/lib/agente/weather-insight'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt } from '@/lib/agente/system-prompt'
@@ -195,20 +196,38 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
     }
   }
 
-  // Refreshar cache de eventos para todas as unidades
+  // Refreshar cache de eventos + registrar observação clima × demanda para todas as unidades
   const { data: allConfigs } = await admin
     .from('rm_agent_config')
-    .select('unit_id, city')
+    .select('unit_id, city, units(slug)')
     .not('city', 'is', null)
 
   const eventsRefreshed: string[] = []
   for (const cfg of allConfigs ?? []) {
+    const city     = (cfg.city as string).split(',')[0].trim()
+    const unitSlug = (cfg.units as { slug: string } | null)?.slug ?? ''
+
     try {
-      const city = (cfg.city as string).split(',')[0].trim()
       await refreshEventsForUnit(cfg.unit_id, city)
       eventsRefreshed.push(cfg.unit_id)
     } catch {
       // Não bloqueia o cron
+    }
+
+    if (unitSlug) {
+      try {
+        await recordWeatherObservation({
+          unitId:   cfg.unit_id,
+          unitSlug,
+          city,
+          fetchKPIs: async (slug, date) => {
+            const { fetchCompanyKPIsFromAutomo } = await import('@/lib/automo/company-kpis')
+            return fetchCompanyKPIsFromAutomo(slug, date, date).catch(() => null)
+          },
+        })
+      } catch {
+        // Não bloqueia o cron
+      }
     }
   }
 
