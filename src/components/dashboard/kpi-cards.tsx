@@ -1,7 +1,24 @@
 'use client'
 
-import { useState } from 'react'
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { TrendingUp, TrendingDown, Minus, GripVertical } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -34,7 +51,7 @@ function delta(current: number, previous: number) {
   return ((current - previous) / previous) * 100
 }
 
-// ─── Componente de card individual ───────────────────────────────────────────
+// ─── KPI Card ─────────────────────────────────────────────────────────────────
 
 type CompareMode = 'aa' | 'mm'
 
@@ -45,6 +62,7 @@ interface KPICardProps {
   previousValue?: string
   compareMode: CompareMode
   forecast?: string
+  dragHandleProps?: React.HTMLAttributes<HTMLDivElement>
 }
 
 function DeltaBadge({ pct, mode }: { pct: number; mode: CompareMode }) {
@@ -71,13 +89,24 @@ function DeltaBadge({ pct, mode }: { pct: number; mode: CompareMode }) {
   )
 }
 
-function KPICard({ label, value, deltaPct, previousValue, compareMode, forecast }: KPICardProps) {
+function KPICard({ label, value, deltaPct, previousValue, compareMode, forecast, dragHandleProps }: KPICardProps) {
   return (
-    <Card className="flex flex-col gap-0 py-0 overflow-hidden">
-      <CardHeader className="px-5 pt-5 pb-3 space-y-0">
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
-          {label}
-        </p>
+    <Card className="flex flex-col gap-0 py-0 overflow-hidden group">
+      <CardHeader className="px-5 pt-4 pb-3 space-y-0">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
+            {label}
+          </p>
+          {dragHandleProps && (
+            <div
+              {...dragHandleProps}
+              className="opacity-0 group-hover:opacity-30 hover:!opacity-80 cursor-grab active:cursor-grabbing p-0.5 rounded transition-opacity shrink-0"
+              title="Arrastar para reordenar"
+            >
+              <GripVertical className="size-3.5 text-muted-foreground" />
+            </div>
+          )}
+        </div>
       </CardHeader>
 
       <CardContent className="px-5 pb-5 flex flex-col gap-3">
@@ -85,7 +114,6 @@ function KPICard({ label, value, deltaPct, previousValue, compareMode, forecast 
           {value}
         </p>
 
-        {/* Comparação */}
         <div className="flex items-center gap-2 flex-wrap">
           {deltaPct != null && (
             <DeltaBadge pct={deltaPct} mode={compareMode} />
@@ -111,7 +139,43 @@ function KPICard({ label, value, deltaPct, previousValue, compareMode, forecast 
   )
 }
 
+// ─── Sortable wrapper ─────────────────────────────────────────────────────────
+
+function SortableKPICard({ id, ...props }: { id: string } & Omit<KPICardProps, 'dragHandleProps'>) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      className={cn(isDragging && 'opacity-60 scale-[1.02] shadow-xl')}
+    >
+      <KPICard {...props} dragHandleProps={{ ...attributes, ...listeners } as React.HTMLAttributes<HTMLDivElement>} />
+    </div>
+  )
+}
+
 // ─── Container principal ──────────────────────────────────────────────────────
+
+const DEFAULT_ORDER = [
+  'Taxa de Ocupação', 'RevPAR', 'Ticket Médio', 'TRevPAR',
+  'Locações', 'Faturamento', 'Giro', 'Tempo Médio',
+]
+
+function loadOrder(): string[] {
+  try {
+    const stored = localStorage.getItem('kpi-cards-order')
+    if (stored) {
+      const parsed = JSON.parse(stored) as string[]
+      if (Array.isArray(parsed) && DEFAULT_ORDER.every((l) => parsed.includes(l))) return parsed
+    }
+  } catch {}
+  return DEFAULT_ORDER
+}
 
 interface DashboardKPICardsProps {
   company: CompanyKPIResponse | null
@@ -119,21 +183,50 @@ interface DashboardKPICardsProps {
 
 export function DashboardKPICards({ company }: DashboardKPICardsProps) {
   const [compareMode, setCompareMode] = useState<CompareMode>('aa')
+  const [order, setOrder] = useState<string[]>(DEFAULT_ORDER)
+
+  useEffect(() => { setOrder(loadOrder()) }, [])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    setOrder((prev) => {
+      const oldIdx = prev.indexOf(active.id as string)
+      const newIdx = prev.indexOf(over.id as string)
+      const next = arrayMove(prev, oldIdx, newIdx)
+      try { localStorage.setItem('kpi-cards-order', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
 
   if (!company) {
     return (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {['Taxa de Ocupação', 'RevPAR', 'Ticket Médio', 'TRevPAR', 'Locações', 'Faturamento', 'Giro', 'Tempo Médio'].map((label) => (
-          <Card key={label} className="py-0 overflow-hidden">
-            <CardHeader className="px-5 pt-5 pb-3">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">{label}</p>
-            </CardHeader>
-            <CardContent className="px-5 pb-5 flex flex-col gap-3">
-              <p className="text-3xl font-bold text-muted-foreground">—</p>
-              <p className="text-xs text-muted-foreground">Dados indisponíveis</p>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">Comparar com</p>
+          <ToggleGroup type="single" value={compareMode} onValueChange={(v) => v && setCompareMode(v as CompareMode)} variant="outline" size="sm">
+            <ToggleGroupItem value="aa">a/a</ToggleGroupItem>
+            <ToggleGroupItem value="mm">m/m</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {DEFAULT_ORDER.map((label) => (
+            <Card key={label} className="py-0 overflow-hidden">
+              <CardHeader className="px-5 pt-5 pb-3">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">{label}</p>
+              </CardHeader>
+              <CardContent className="px-5 pb-5 flex flex-col gap-3">
+                <p className="text-3xl font-bold text-muted-foreground">—</p>
+                <p className="text-xs text-muted-foreground">Dados indisponíveis</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     )
   }
@@ -154,73 +247,66 @@ export function DashboardKPICards({ company }: DashboardKPICardsProps) {
   const cmpGiro    = compareMode === 'aa' ? prev?.totalAllGiroPreviousData               : prevM?.totalAllGiroPrevMonth
   const cmpOccTime = compareMode === 'aa' ? prev?.totalAverageOccupationTimePreviousData : prevM?.totalAverageOccupationTimePrevMonth
 
-  const cards: KPICardProps[] = [
-    {
-      label:         'Taxa de Ocupação',
+  const cardsMap: Record<string, KPICardProps> = {
+    'Taxa de Ocupação': {
+      label: 'Taxa de Ocupação', compareMode,
       value:         formatPercent(r.totalOccupancyRate),
       deltaPct:      cmpOccRate != null ? delta(r.totalOccupancyRate, cmpOccRate) : null,
       previousValue: cmpOccRate != null ? formatPercent(cmpOccRate) : undefined,
-      compareMode,
       forecast:      fc ? formatPercent(fc.totalAllOccupancyRateForecast) : undefined,
     },
-    {
-      label:         'RevPAR',
+    'RevPAR': {
+      label: 'RevPAR', compareMode,
       value:         formatCurrency(r.totalRevpar),
       deltaPct:      cmpRevpar != null ? delta(r.totalRevpar, cmpRevpar) : null,
       previousValue: cmpRevpar != null ? formatCurrency(cmpRevpar) : undefined,
-      compareMode,
       forecast:      fc ? formatCurrency(fc.totalAllRevparForecast) : undefined,
     },
-
-    {
-      label:         'Ticket Médio',
+    'Ticket Médio': {
+      label: 'Ticket Médio', compareMode,
       value:         formatCurrency(r.totalAllTicketAverage),
       deltaPct:      cmpTicket != null ? delta(cur.totalAllTicketAverage, cmpTicket) : null,
       previousValue: cmpTicket != null ? formatCurrency(cmpTicket) : undefined,
-      compareMode,
       forecast:      fc ? formatCurrency(fc.totalAllTicketAverageForecast) : undefined,
     },
-    {
-      label:         'TRevPAR',
+    'TRevPAR': {
+      label: 'TRevPAR', compareMode,
       value:         formatCurrency(r.totalTrevpar),
       deltaPct:      cmpTrevpar != null ? delta(cur.totalAllTrevpar, cmpTrevpar) : null,
       previousValue: cmpTrevpar != null ? formatCurrency(cmpTrevpar) : undefined,
-      compareMode,
       forecast:      fc ? formatCurrency(fc.totalAllTrevparForecast) : undefined,
     },
-    {
-      label:         'Locações',
+    'Locações': {
+      label: 'Locações', compareMode,
       value:         formatNumber(r.totalAllRentalsApartments),
       deltaPct:      cmpRentals != null ? delta(cur.totalAllRentalsApartments, cmpRentals) : null,
       previousValue: cmpRentals != null ? formatNumber(cmpRentals) : undefined,
-      compareMode,
       forecast:      fc ? formatNumber(fc.totalAllRentalsApartmentsForecast) : undefined,
     },
-    {
-      label:         'Faturamento',
+    'Faturamento': {
+      label: 'Faturamento', compareMode,
       value:         formatCurrency(r.totalAllValue),
       deltaPct:      cmpValue != null ? delta(cur.totalAllValue, cmpValue) : null,
       previousValue: cmpValue != null ? formatCurrency(cmpValue) : undefined,
-      compareMode,
       forecast:      fc ? formatCurrency(fc.totalAllValueForecast) : undefined,
     },
-    {
-      label:         'Giro',
+    'Giro': {
+      label: 'Giro', compareMode,
       value:         r.totalGiro.toFixed(2),
       deltaPct:      cmpGiro != null ? delta(cur.totalAllGiro, cmpGiro) : null,
       previousValue: cmpGiro != null ? cmpGiro.toFixed(2) : undefined,
-      compareMode,
       forecast:      fc ? fc.totalAllGiroForecast.toFixed(2) : undefined,
     },
-    {
-      label:         'Tempo Médio',
+    'Tempo Médio': {
+      label: 'Tempo Médio', compareMode,
       value:         formatTime(r.totalAverageOccupationTime),
       deltaPct:      cmpOccTime != null ? delta(timeToSeconds(cur.totalAverageOccupationTime), timeToSeconds(cmpOccTime)) : null,
       previousValue: cmpOccTime != null ? formatTime(cmpOccTime) : undefined,
-      compareMode,
       forecast:      fc ? formatTime(fc.totalAverageOccupationTimeForecast) : undefined,
     },
-  ]
+  }
+
+  const sortedCards = order.map((label) => cardsMap[label]).filter(Boolean)
 
   return (
     <div className="space-y-3">
@@ -238,11 +324,15 @@ export function DashboardKPICards({ company }: DashboardKPICardsProps) {
         </ToggleGroup>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map((card) => (
-          <KPICard key={card.label} {...card} />
-        ))}
-      </div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={order} strategy={rectSortingStrategy}>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {sortedCards.map((card) => (
+              <SortableKPICard key={card.label} id={card.label} {...card} />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
     </div>
   )
 }
