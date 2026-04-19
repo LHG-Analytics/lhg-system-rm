@@ -1,8 +1,8 @@
 'use client'
 
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
-import { useState, useEffect } from 'react'
-import { CalendarIcon } from 'lucide-react'
+import { useState, useEffect, useTransition } from 'react'
+import { CalendarIcon, Loader2 } from 'lucide-react'
 import { format, parse } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { DateRange } from 'react-day-picker'
@@ -90,6 +90,7 @@ export function DateRangePicker() {
     () => (searchParams.get('status') as RentalStatus) ?? 'FINALIZADA'
   )
   const [calendarOpen, setCalendarOpen] = useState(false)
+  const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
     const p = (searchParams.get('preset') ?? 'this-month') as DatePreset
@@ -113,7 +114,9 @@ export function DateRangePicker() {
     for (const [k, v] of Object.entries(extra)) {
       if (v !== '') params.set(k, v)
     }
-    router.push(`${pathname}?${params.toString()}`)
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`)
+    })
   }
 
   // Helper: navega com estado atual + overrides pontuais
@@ -159,7 +162,10 @@ export function DateRangePicker() {
   const today = new Date()
 
   return (
-    <div className="flex items-end gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
+    <div className={cn(
+      'flex items-end gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none] transition-opacity',
+      isPending && 'opacity-60 pointer-events-none',
+    )}>
 
       {/* Período — presets fixos + personalizado */}
       <div className="flex flex-col gap-1.5 shrink-0">
@@ -270,6 +276,10 @@ export function DateRangePicker() {
           </Select>
         </div>
       </div>
+
+      {isPending && (
+        <Loader2 className="size-4 animate-spin text-muted-foreground self-center shrink-0 ml-1" />
+      )}
     </div>
   )
 }
