@@ -571,6 +571,13 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Integrações futuras ("Em breve"): Guia de Motéis, Site E-Commerce, Booking.com, Expedia
   - Sidebar: item Configurações habilitado (era opaco/não clicável)
 
+- **LHG-126:** feat(dashboard): widget de clima com previsão 5 dias e destaque de FDS
+  - `fetchWeatherData()` em `weather.ts` retorna `WeatherResult` estruturado (ok/error/unconfigured)
+  - `WeatherWidget`: temperatura atual, descrição, umidade, vento + cards de previsão 5 dias
+  - Fins de semana (Sex/Sáb/Dom) destacados em âmbar — relevante para precificação dinâmica
+  - Fetched em paralelo com KPIs no server component via `Promise.all`; oculto se `OPENWEATHERMAP_API_KEY` ausente
+  - Posicionado entre os filtros de data e os cards de KPI no dashboard
+
 - **LHG-50:** Deploy produção + onboarding unidades piloto ✅
   - App em produção na Vercel; acesso controlado via sistema invite-only (LHG-83)
   - Onboarding operacional: convites enviados via `/dashboard/admin` pelo super_admin
