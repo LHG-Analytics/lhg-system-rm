@@ -571,12 +571,20 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Integrações futuras ("Em breve"): Guia de Motéis, Site E-Commerce, Booking.com, Expedia
   - Sidebar: item Configurações habilitado (era opaco/não clicável)
 
-- **LHG-126:** feat(dashboard): widget de clima com previsão 5 dias e destaque de FDS
-  - `fetchWeatherData()` em `weather.ts` retorna `WeatherResult` estruturado (ok/error/unconfigured)
-  - `WeatherWidget`: temperatura atual, descrição, umidade, vento + cards de previsão 5 dias
+- **LHG-126:** feat(dashboard): widget de clima com previsão 6 dias, colapso e insight de IA
+  - `fetchWeatherData()` em `weather.ts` retorna `WeatherResult` estruturado (ok/error/unconfigured); previsão `cnt=56` → 6 dias
+  - `WeatherWidget`: temperatura atual, descrição, umidade, vento + cards de previsão 6 dias (hoje + 6 = 1 semana)
   - Fins de semana (Sex/Sáb/Dom) destacados em âmbar — relevante para precificação dinâmica
+  - Header clicável para colapsar — estado persiste em `localStorage['weather-collapsed']`; inline temp/descrição quando colapsado
+  - Prop `insight?: string | null` — footer dinâmico com ícone Sparkles; null mostra "Gerando análise…" em itálico
   - Fetched em paralelo com KPIs no server component via `Promise.all`; oculto se `OPENWEATHERMAP_API_KEY` ausente
   - Posicionado entre os filtros de data e os cards de KPI no dashboard
+  - `src/lib/agente/weather-insight.ts`: `getWeatherInsight` verifica cache 4h em `rm_agent_config.weather_insight_cache`; se vencido dispara `after()` background com `generateAndSave`; `buildCorrelationContext` lê `rm_weather_observations` (≥7 dias) e calcula médias reais por condição para enriquecer o prompt da IA
+  - `rm_weather_observations`: tabela com RLS — registra diariamente clima + KPIs de ontem via cron (`recordWeatherObservation`); `categorizeWeather()` classifica descrição PT em 6 buckets
+  - `run-reviews.ts`: após refresh de eventos, registra observação por unidade com KPIs do dia anterior
+  - KPI cards drag-and-drop: `@dnd-kit/core` + `@dnd-kit/sortable` com `rectSortingStrategy`; ordem persiste em `localStorage['kpi-cards-order']`
+  - Agente RM: tela inicial personalizada com saudação dinâmica (Bom dia/tarde/noite + primeiro nome) baseada no fuso horário da unidade
+  - Propostas: `manager` só pode visualizar e agendar/reagendar revisão; `admin`/`super_admin` têm acesso completo (gerar, aprovar, rejeitar, editar, excluir)
 
 - **LHG-50:** Deploy produção + onboarding unidades piloto ✅
   - App em produção na Vercel; acesso controlado via sistema invite-only (LHG-83)
