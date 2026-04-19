@@ -7,6 +7,8 @@ import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
 import { DateRangePicker } from '@/components/dashboard/date-range-picker'
+import { WeatherWidget } from '@/components/dashboard/weather-widget'
+import { fetchWeatherData } from '@/lib/agente/weather'
 
 interface DashboardPageProps {
   searchParams: Promise<{
@@ -96,18 +98,27 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const startDDMMYYYY = toLhgDate(dateRange.startDate)
   const endDDMMYYYY   = toLhgDate(dateRange.endDate)
 
-  const company = await fetchCompanyKPIsFromAutomo(
-    activeUnit.slug,
-    startDDMMYYYY,
-    endDDMMYYYY,
-    startHour,
-    endHour,
-    rentalStatus,
-    dateType,
-  ).catch((e) => {
-    console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h dateType=${dateType} status=${rentalStatus}):`, e)
-    return null
-  })
+  const { data: agentConfig } = await supabase
+    .from('rm_agent_config')
+    .select('city')
+    .eq('unit_id', activeUnit.id)
+    .single()
+
+  const [company, weatherResult] = await Promise.all([
+    fetchCompanyKPIsFromAutomo(
+      activeUnit.slug,
+      startDDMMYYYY,
+      endDDMMYYYY,
+      startHour,
+      endHour,
+      rentalStatus,
+      dateType,
+    ).catch((e) => {
+      console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h dateType=${dateType} status=${rentalStatus}):`, e)
+      return null
+    }),
+    agentConfig?.city ? fetchWeatherData(agentConfig.city) : Promise.resolve({ status: 'unconfigured' as const }),
+  ])
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -127,6 +138,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </Suspense>
       </div>
 
+      <WeatherWidget result={weatherResult} />
       <DashboardKPICards company={company} />
       <DashboardCharts company={company} />
       <Suspense fallback={null}>

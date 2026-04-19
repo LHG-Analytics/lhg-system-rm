@@ -1,5 +1,88 @@
 // Módulo de contexto climático — OpenWeatherMap
 
+export interface WeatherDay {
+  date: string   // YYYY-MM-DD
+  min: number
+  max: number
+  description: string
+}
+
+export interface WeatherCurrent {
+  temp: number
+  feelsLike: number
+  humidity: number
+  windSpeed: number
+  description: string
+}
+
+export type WeatherResult =
+  | { status: 'unconfigured' }
+  | { status: 'error'; message: string }
+  | { status: 'ok'; city: string; current: WeatherCurrent; forecast: WeatherDay[] }
+
+/** Busca clima atual + previsão 5 dias e retorna dados estruturados para o widget. */
+export async function fetchWeatherData(city: string): Promise<WeatherResult> {
+  const key = process.env.OPENWEATHERMAP_API_KEY
+  if (!key) return { status: 'unconfigured' }
+
+  try {
+    const base = 'https://api.openweathermap.org/data/2.5'
+    const params = `q=${encodeURIComponent(city)}&appid=${key}&units=metric&lang=pt`
+
+    const [currentRes, forecastRes] = await Promise.allSettled([
+      fetch(`${base}/weather?${params}`, { signal: AbortSignal.timeout(5000) }),
+      fetch(`${base}/forecast?${params}&cnt=40`, { signal: AbortSignal.timeout(5000) }),
+    ])
+
+    if (currentRes.status !== 'fulfilled' || !currentRes.value.ok) {
+      return { status: 'error', message: 'Falha ao conectar com OpenWeatherMap' }
+    }
+
+    const current = await currentRes.value.json() as OWMCurrentResponse
+
+    const forecast: WeatherDay[] = []
+    if (forecastRes.status === 'fulfilled' && forecastRes.value.ok) {
+      const forecastData = await forecastRes.value.json() as OWMForecastResponse
+      const byDay = new Map<string, { min: number; max: number; descs: string[] }>()
+      for (const item of forecastData.list) {
+        const day = item.dt_txt.slice(0, 10)
+        const existing = byDay.get(day)
+        if (existing) {
+          existing.min = Math.min(existing.min, item.main.temp_min)
+          existing.max = Math.max(existing.max, item.main.temp_max)
+          existing.descs.push(item.weather[0]?.description ?? '')
+        } else {
+          byDay.set(day, { min: item.main.temp_min, max: item.main.temp_max, descs: [item.weather[0]?.description ?? ''] })
+        }
+      }
+      const today = new Date().toISOString().slice(0, 10)
+      for (const [date, d] of byDay) {
+        if (date <= today) continue
+        const modeDesc = d.descs.sort((a, b) =>
+          d.descs.filter((v) => v === b).length - d.descs.filter((v) => v === a).length
+        )[0] ?? ''
+        forecast.push({ date, min: Math.round(d.min), max: Math.round(d.max), description: capitalize(modeDesc) })
+        if (forecast.length >= 5) break
+      }
+    }
+
+    return {
+      status: 'ok',
+      city: current.name,
+      current: {
+        temp: Math.round(current.main.temp),
+        feelsLike: Math.round(current.main.feels_like),
+        humidity: current.main.humidity,
+        windSpeed: Math.round(current.wind.speed * 3.6),
+        description: capitalize(current.weather[0]?.description ?? ''),
+      },
+      forecast,
+    }
+  } catch (err) {
+    return { status: 'error', message: err instanceof Error ? err.message : 'Erro desconhecido' }
+  }
+}
+
 interface OWMCurrentResponse {
   name: string
   main: { temp: number; feels_like: number; humidity: number; temp_min: number; temp_max: number }
