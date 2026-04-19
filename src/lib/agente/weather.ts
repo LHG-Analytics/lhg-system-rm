@@ -31,7 +31,7 @@ export async function fetchWeatherData(city: string): Promise<WeatherResult> {
 
     const [currentRes, forecastRes] = await Promise.allSettled([
       fetch(`${base}/weather?${params}`, { signal: AbortSignal.timeout(5000) }),
-      fetch(`${base}/forecast?${params}&cnt=40`, { signal: AbortSignal.timeout(5000) }),
+      fetch(`${base}/forecast?${params}&cnt=56`, { signal: AbortSignal.timeout(5000) }),
     ])
 
     if (currentRes.status !== 'fulfilled' || !currentRes.value.ok) {
@@ -62,7 +62,7 @@ export async function fetchWeatherData(city: string): Promise<WeatherResult> {
           d.descs.filter((v) => v === b).length - d.descs.filter((v) => v === a).length
         )[0] ?? ''
         forecast.push({ date, min: Math.round(d.min), max: Math.round(d.max), description: capitalize(modeDesc) })
-        if (forecast.length >= 5) break
+        if (forecast.length >= 6) break
       }
     }
 
