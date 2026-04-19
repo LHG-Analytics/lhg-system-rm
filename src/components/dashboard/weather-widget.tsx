@@ -119,8 +119,9 @@ export function WeatherWidget({ result, insight }: WeatherWidgetProps) {
             {/* Previsão — cards preenchem todo o espaço disponível */}
             {forecast.length > 0 && (
               <div className="flex-1 flex gap-2 sm:border-l sm:pl-5">
-                {forecast.map((day) => {
+                {forecast.map((day, idx) => {
                   const weekend = isWeekend(day.date)
+                  const isToday = idx === 0
                   return (
                     <div
                       key={day.date}
@@ -131,7 +132,7 @@ export function WeatherWidget({ result, insight }: WeatherWidgetProps) {
                       }`}
                     >
                       <span className={`text-[11px] font-semibold leading-tight ${weekend ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
-                        {ptDayShort(day.date)}
+                        {isToday ? 'Hoje' : ptDayShort(day.date)}
                       </span>
                       <span className="text-lg leading-none">{weatherIcon(day.description)}</span>
                       <span className="text-xs tabular-nums text-foreground/70">

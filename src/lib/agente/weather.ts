@@ -55,9 +55,11 @@ export async function fetchWeatherData(city: string): Promise<WeatherResult> {
           byDay.set(day, { min: item.main.temp_min, max: item.main.temp_max, descs: [item.weather[0]?.description ?? ''] })
         }
       }
-      const today = new Date().toISOString().slice(0, 10)
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      const cutoff = yesterday.toISOString().slice(0, 10)
       for (const [date, d] of byDay) {
-        if (date <= today) continue
+        if (date <= cutoff) continue
         const modeDesc = d.descs.sort((a, b) =>
           d.descs.filter((v) => v === b).length - d.descs.filter((v) => v === a).length
         )[0] ?? ''
