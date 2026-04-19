@@ -30,7 +30,7 @@ export function ConfiguracoesPageClient({
   const isSuperAdmin = userRole === 'super_admin'
 
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-2xl">
+    <div className="flex flex-col gap-6 p-6 max-w-2xl mx-auto w-full">
       <div>
         <h1 className="text-xl font-bold">Configurações</h1>
         <p className="text-sm text-muted-foreground">Gerencie seu perfil, preferências e integrações.</p>
