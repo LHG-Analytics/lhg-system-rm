@@ -116,20 +116,26 @@ export function DateRangePicker() {
     router.push(`${pathname}?${params.toString()}`)
   }
 
+  // Helper: navega com estado atual + overrides pontuais
+  function navigateWith(overrides: Partial<Record<string, string>>) {
+    navigate({
+      preset:    preset,
+      start:     localStart,
+      end:       localEnd,
+      startHour: String(localStartHour),
+      endHour:   String(localEndHour),
+      dateType:  localDateType,
+      status:    localStatus,
+      ...overrides,
+    })
+  }
+
   // Preset fixo clicado → navega imediatamente
   function handlePresetClick(value: Exclude<DatePreset, 'custom'>) {
     const resolved = resolvePreset(value)
     setLocalStart(resolved.startDate)
     setLocalEnd(resolved.endDate)
-    navigate({
-      preset:    value,
-      start:     resolved.startDate,
-      end:       resolved.endDate,
-      startHour: String(localStartHour),
-      endHour:   String(localEndHour),
-      dateType:  localDateType,
-      status:    localStatus,
-    })
+    navigateWith({ preset: value, start: resolved.startDate, end: resolved.endDate })
   }
 
   // Range personalizado selecionado → navega ao completar
@@ -140,30 +146,8 @@ export function DateRangePicker() {
     setLocalEnd(to)
     if (from && to) {
       setCalendarOpen(false)
-      navigate({
-        preset:    'custom',
-        start:     from,
-        end:       to,
-        startHour: String(localStartHour),
-        endHour:   String(localEndHour),
-        dateType:  localDateType,
-        status:    localStatus,
-      })
+      navigateWith({ preset: 'custom', start: from, end: to })
     }
-  }
-
-  // Aplicar horário + filtros mantendo o preset atual
-  function handleApply() {
-    if (!localStart || !localEnd) return
-    navigate({
-      preset:    preset,
-      start:     localStart,
-      end:       localEnd,
-      startHour: String(localStartHour),
-      endHour:   String(localEndHour),
-      dateType:  localDateType,
-      status:    localStatus,
-    })
   }
 
   const isCustom = preset === 'custom'
@@ -233,25 +217,23 @@ export function DateRangePicker() {
       <div className="flex flex-col gap-1.5 shrink-0">
         <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Horário</Label>
         <div className="flex items-center gap-2">
-          <Select value={String(localStartHour)} onValueChange={(v) => setLocalStartHour(Number(v))}>
-            <SelectTrigger size="sm" className="w-[108px]">
-              <SelectValue />
-            </SelectTrigger>
+          <Select
+            value={String(localStartHour)}
+            onValueChange={(v) => { setLocalStartHour(Number(v)); navigateWith({ startHour: v }) }}
+          >
+            <SelectTrigger size="sm" className="w-[108px]"><SelectValue /></SelectTrigger>
             <SelectContent className="max-h-48">
-              {HOURS.map((h) => (
-                <SelectItem key={h} value={String(h)}>{fmtStartHour(h)}</SelectItem>
-              ))}
+              {HOURS.map((h) => <SelectItem key={h} value={String(h)}>{fmtStartHour(h)}</SelectItem>)}
             </SelectContent>
           </Select>
           <span className="text-xs text-muted-foreground">→</span>
-          <Select value={String(localEndHour)} onValueChange={(v) => setLocalEndHour(Number(v))}>
-            <SelectTrigger size="sm" className="w-[108px]">
-              <SelectValue />
-            </SelectTrigger>
+          <Select
+            value={String(localEndHour)}
+            onValueChange={(v) => { setLocalEndHour(Number(v)); navigateWith({ endHour: v }) }}
+          >
+            <SelectTrigger size="sm" className="w-[108px]"><SelectValue /></SelectTrigger>
             <SelectContent className="max-h-48">
-              {HOURS.map((h) => (
-                <SelectItem key={h} value={String(h)}>{fmtEndHour(h)}</SelectItem>
-              ))}
+              {HOURS.map((h) => <SelectItem key={h} value={String(h)}>{fmtEndHour(h)}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -266,7 +248,7 @@ export function DateRangePicker() {
           <ToggleGroup
             type="single"
             value={localDateType}
-            onValueChange={(v) => v && setLocalDateType(v as DateType)}
+            onValueChange={(v) => { if (v) { setLocalDateType(v as DateType); navigateWith({ dateType: v }) } }}
             variant="outline"
             size="sm"
           >
@@ -275,10 +257,11 @@ export function DateRangePicker() {
             ))}
           </ToggleGroup>
 
-          <Select value={localStatus} onValueChange={(v) => setLocalStatus(v as RentalStatus)}>
-            <SelectTrigger size="sm" className="w-[130px]">
-              <SelectValue />
-            </SelectTrigger>
+          <Select
+            value={localStatus}
+            onValueChange={(v) => { setLocalStatus(v as RentalStatus); navigateWith({ status: v }) }}
+          >
+            <SelectTrigger size="sm" className="w-[130px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               {STATUS_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
@@ -287,15 +270,6 @@ export function DateRangePicker() {
           </Select>
         </div>
       </div>
-
-      <Button
-        size="sm"
-        onClick={handleApply}
-        disabled={!localStart || !localEnd}
-        className="self-end shrink-0"
-      >
-        Aplicar
-      </Button>
     </div>
   )
 }
