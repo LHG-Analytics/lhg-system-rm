@@ -32,13 +32,13 @@ export function resolvePreset(
 
   switch (preset) {
     case '7d': {
-      const start = new Date(yest)
+      const start = new Date(today)
       start.setDate(start.getDate() - 6)
-      return { startDate: fmt(start), endDate: fmt(yest), preset: '7d', label: 'Últimos 7 dias' }
+      return { startDate: fmt(start), endDate: fmt(today), preset: '7d', label: 'Últimos 7 dias' }
     }
     case 'this-month': {
       const start = new Date(today.getFullYear(), today.getMonth(), 1)
-      return { startDate: fmt(start), endDate: fmt(yest), preset: 'this-month', label: 'Este mês' }
+      return { startDate: fmt(start), endDate: fmt(today), preset: 'this-month', label: 'Este mês' }
     }
     case 'last-month': {
       const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
@@ -66,7 +66,7 @@ export function resolvePreset(
 
   // Default: este mês
   const start = new Date(today.getFullYear(), today.getMonth(), 1)
-  return { startDate: fmt(start), endDate: fmt(yest), preset: 'this-month', label: 'Este mês' }
+  return { startDate: fmt(start), endDate: fmt(today), preset: 'this-month', label: 'Este mês' }
 }
 
 /** YYYY-MM-DD → DD/MM/YYYY (formato de período KPI / Automo) */
