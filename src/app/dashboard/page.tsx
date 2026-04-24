@@ -8,6 +8,7 @@ import { DashboardCharts } from '@/components/dashboard/charts'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
 import { DateRangePicker } from '@/components/dashboard/date-range-picker'
 import { WeatherWidget } from '@/components/dashboard/weather-widget'
+import { CompareButton } from '@/components/dashboard/compare-button'
 import { fetchWeatherData } from '@/lib/agente/weather'
 import { getWeatherInsight } from '@/lib/agente/weather-insight'
 
@@ -128,14 +129,29 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     <div className="flex flex-1 flex-col gap-6">
       {/* Header */}
       <div className="flex flex-col gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{activeUnit.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {dateRange.preset === 'custom'
-              ? dateRange.label
-              : `${dateRange.label} · ${fmtDisplay(dateRange.startDate)} até ${fmtDisplay(dateRange.endDate)}`
-            }
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">{activeUnit.name}</h1>
+            <p className="text-sm text-muted-foreground">
+              {dateRange.preset === 'custom'
+                ? dateRange.label
+                : `${dateRange.label} · ${fmtDisplay(dateRange.startDate)} até ${fmtDisplay(dateRange.endDate)}`
+              }
+            </p>
+          </div>
+          <CompareButton
+            unitSlug={activeUnit.slug}
+            unitName={activeUnit.name}
+            filters={{
+              preset:    (preset ?? 'this-month') as import('@/lib/date-range').DatePreset,
+              startDate: dateRange.startDate,
+              endDate:   dateRange.endDate,
+              startHour,
+              endHour,
+              dateType,
+              status:    rentalStatus,
+            }}
+          />
         </div>
         <Suspense fallback={null}>
           <DateRangePicker />

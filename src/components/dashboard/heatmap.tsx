@@ -70,17 +70,19 @@ function formatValue(value: number | undefined, metric: HeatmapMetric): string {
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 interface HeatmapProps {
-  unitSlug:   string
-  startDate:  string  // YYYY-MM-DD
-  endDate:    string  // YYYY-MM-DD
-  rangeLabel: string
+  unitSlug:          string
+  startDate:         string  // YYYY-MM-DD
+  endDate:           string  // YYYY-MM-DD
+  rangeLabel:        string
+  statusOverride?:   string
+  dateTypeOverride?: HeatmapDateType
 }
 
-export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel }: HeatmapProps) {
+export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, statusOverride, dateTypeOverride }: HeatmapProps) {
   const searchParams = useSearchParams()
-  const rentalStatus = searchParams.get('status') ?? 'FINALIZADA'
+  const rentalStatus = statusOverride ?? searchParams.get('status') ?? 'FINALIZADA'
 
-  const urlDateType = (searchParams.get('dateType') ?? 'all') as HeatmapDateType
+  const urlDateType = dateTypeOverride ?? (searchParams.get('dateType') ?? 'all') as HeatmapDateType
   const [metric,     setMetric]     = useState<HeatmapMetric>('giro')
   const [dateType,   setDateType]   = useState<HeatmapDateType>(urlDateType)
   const [categoryId, setCategoryId] = useState<string | null>(null)
