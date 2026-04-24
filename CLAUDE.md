@@ -609,6 +609,7 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - **Previsão de fechamento:** `monIsoStart = dia 1 06:00`; `monIsoEnd = hoje 06:00` (eram meia-noite); alinha com Analytics
   - **`queryDataTableSuiteCategory` — Faturamento:** substituído `la.valorliquidolocacao` por `la.valortotal` (locação + consumo - desconto, pré-calculado no ERP); CTE `receita_consumo` e LEFT JOIN removidos; `rental_revenue = valorliquidolocacao` mantido como coluna separada para base do RevPAR
   - **Armadilha:** `la.valortotal` já inclui consumo (`vendalocacao`) e exclui vendas diretas (`vendadireta`); nunca usar fórmula manual com joins de consumo
+  - **Total da tabela de categorias:** linha "Total" de Faturamento/Locações/Ticket Médio agora soma as linhas das categorias (`rawRows`) em vez de usar `TotalResult.totalAllValue` (que incluía venda direta); Giro/RevPAR/Ocupação/TMO continuam usando `TotalResult`
 
 ### 🔲 Backlog
 
