@@ -586,6 +586,10 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Agente RM: tela inicial personalizada com saudação dinâmica (Bom dia/tarde/noite + primeiro nome) baseada no fuso horário da unidade
   - Propostas: `manager` só pode visualizar e agendar/reagendar revisão; `admin`/`super_admin` têm acesso completo (gerar, aprovar, rejeitar, editar, excluir)
 
+- **LHG-126:** fix(kpis): alinhar cálculo de previsão e filtro de status com o Analytics
+  - Boundary do mês-a-mês corrigido: `monIsoStart` usa corte operacional `06:00` (era meia-noite); `monIsoEnd = hoje 06:00:00` (era `ontem+1 meia-noite`) — alinha com Analytics
+  - `queryDataTableSuiteCategory`: `FINALIZADA` hardcoded no WHERE principal substituído por `${statusFilter}` dinâmico
+
 - **LHG-50:** Deploy produção + onboarding unidades piloto ✅
   - App em produção na Vercel; acesso controlado via sistema invite-only (LHG-83)
   - Onboarding operacional: convites enviados via `/dashboard/admin` pelo super_admin
