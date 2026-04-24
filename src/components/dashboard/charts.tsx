@@ -208,11 +208,13 @@ function renderSuiteCell(row: SuiteRow, key: string): React.ReactNode {
   }
 }
 
-function renderSuiteTotalCell(total: CompanyTotalResult, key: string): React.ReactNode {
+function renderSuiteTotalCell(total: CompanyTotalResult, rows: SuiteRow[], key: string): React.ReactNode {
+  const sumRentals = rows.reduce((s, r) => s + r.totalRentalsApartments, 0)
+  const sumValue   = rows.reduce((s, r) => s + r.totalValue, 0)
   switch (key) {
-    case 'rentals':   return total.totalAllRentalsApartments
-    case 'value':     return fmt.format(total.totalAllValue)
-    case 'ticket':    return fmt.format(total.totalAllTicketAverage)
+    case 'rentals':   return sumRentals
+    case 'value':     return fmt.format(sumValue)
+    case 'ticket':    return sumRentals > 0 ? fmt.format(sumValue / sumRentals) : '–'
     case 'giro':      return total.totalGiro.toFixed(2)
     case 'revpar':    return fmt.format(total.totalRevpar)
     case 'occupancy': return `${total.totalOccupancyRate.toFixed(1)}%`
@@ -356,7 +358,7 @@ function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
                 <td className="px-4 py-3">Total</td>
                 {orderedCols.map((col) => (
                   <td key={col.key} className="px-4 py-3 text-right tabular-nums">
-                    {renderSuiteTotalCell(total, col.key)}
+                    {renderSuiteTotalCell(total, rows, col.key)}
                   </td>
                 ))}
               </tr>
