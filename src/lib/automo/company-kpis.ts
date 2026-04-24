@@ -309,7 +309,7 @@ async function queryDataTableSuiteCategory(
     INNER JOIN suites_por_cat sc    ON ca.descricao = sc.descricao
     WHERE ${dateCol} >= $1
       AND ${dateCol} <  $2
-      AND la.fimocupacaotipo = 'FINALIZADA'
+      ${statusFilter}
       AND ca.id IN (${catIds})
       ${timeFilter}
     GROUP BY ca.descricao, sc.total_suites
@@ -575,14 +575,18 @@ export async function fetchCompanyKPIsFromAutomo(
   const prevMonIsoEnd   = shiftMonths(isoEnd,   -1)
 
   // Dados do mês atual até ontem (para previsão de fechamento)
+  // Usa corte operacional 06:00 para coincidir com o Analytics:
+  //   monthStart = dia 1 do mês às 06:00 (início do dia operacional)
+  //   monthEnd   = dia seguinte a ontem às 05:59:59 ≈ exclusive bound às 06:00 do dia
   const nowBR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
   const monthStart = new Date(nowBR.getFullYear(), nowBR.getMonth(), 1)
   const yesterday  = new Date(nowBR.getFullYear(), nowBR.getMonth(), nowBR.getDate() - 1)
-  const monIsoStart = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-01 00:00:00`
-  const monIsoEnd   = addDays(
-    `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')} 00:00:00`,
-    1
-  )
+  // Início: dia 1 do mês às 06:00 (Analytics: currentMonthStart.set({ hour: 6 }))
+  const monIsoStart = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-01 06:00:00`
+  // Fim: hoje às 06:00 (exclusive) — inclui o dia operacional de ontem (06:00 ontem → 05:59 hoje)
+  // Equivalente ao Analytics: yesterday.set({h:5,m:59,s:59}).add(1,'day') que dá "hoje às 05:59"
+  const monIsoEnd = `${nowBR.getFullYear()}-${String(nowBR.getMonth() + 1).padStart(2, '0')}-${String(nowBR.getDate()).padStart(2, '0')} 06:00:00`
+  // daysElapsed = dias operacionais completos: de dia 1 às 06:00 até ontem às 05:59:59
   const daysElapsed = yesterday.getDate()
   const totalDaysInMonth = new Date(nowBR.getFullYear(), nowBR.getMonth() + 1, 0).getDate()
   const remainingDays = totalDaysInMonth - daysElapsed
