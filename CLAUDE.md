@@ -590,6 +590,14 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - App em produção na Vercel; acesso controlado via sistema invite-only (LHG-83)
   - Onboarding operacional: convites enviados via `/dashboard/admin` pelo super_admin
 
+- **LHG-127 (Linear: LHG-125):** Dashboard: UX polish — seletor de período, filtros imediatos e tabelas interativas
+  - **Seletor de período redesenhado:** presets fixos (Últ. 7 dias / Este mês / Último mês fechado) como botões com variant `default` quando ativo; botão Personalizado exibe `DD/MM → DD/MM` quando ativo; separador visual entre fixos e personalizado
+  - **Filtros imediatos:** botão "Aplicar" removido — clicar em qualquer preset, alterar horário, status ou tipo de data navega imediatamente; `useTransition` + `pendingFilter` controlam estado de loading
+  - **Loading inline:** `Loader2` (spin) aparece apenas no botão/controle clicado; container fica `opacity-60 pointer-events-none` durante transição; `isPending && setPendingFilter(null)` limpa ao concluir
+  - **Fix presets:** `7d` e `this-month` usam `today` como upper bound (alinhado ao LHG Analytics); antes usava `yesterday`, causando 13+ locações / ~R$ 13k de diferença
+  - **Sort + drag-and-drop nas 3 tabelas de categorias** (`charts.tsx` → `'use client'`): headers clicáveis (1° desc, 2° asc, 3° reset), `GripVertical` ao hover reordena via `@dnd-kit`; sort e drag são mutuamente exclusivos; ordens persistem em `localStorage` (`suite-cat-order`, `giro-week-order`, `revpar-week-order`)
+  - **fix(weather):** `forecast` filtra com `date > cutoff` (era `>= cutoff`); garante que "hoje" entra como 1° card mesmo que a API já tenha dados parciais — previsão 6 dias reais (hoje + 5 dias futuros)
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
