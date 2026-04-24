@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ChevronUp, ChevronDown, ChevronsUpDown, GripVertical } from 'lucide-react'
+import { ChevronUp, ChevronDown, ChevronsUpDown, GripVertical, GripHorizontal } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -20,7 +20,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { cn } from '@/lib/utils'
-import type { CompanyKPIResponse, DataTableGiroByWeek, DataTableRevparByWeek } from '@/lib/kpis/types'
+import type { CompanyKPIResponse, DataTableGiroByWeek, DataTableRevparByWeek, CompanyTotalResult } from '@/lib/kpis/types'
 
 const fmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -38,31 +38,113 @@ function nextSort(cur: SortState, key: string): SortState {
   return null
 }
 
-// ─── Header clicável com ícone de sort ────────────────────────────────────────
+// ─── Hook: drag de colunas via HTML5 drag API ─────────────────────────────────
 
-function SortTh({ children, colKey, sort, onSort, right = false }: {
+function useColDrag(storageKey: string, defaultCols: string[]) {
+  const [colOrder, setColOrder] = useState<string[]>(defaultCols)
+  const [dragCol, setDragCol] = useState<string | null>(null)
+  const [overCol, setOverCol] = useState<string | null>(null)
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(storageKey)
+      if (stored) {
+        const parsed = JSON.parse(stored) as string[]
+        if (Array.isArray(parsed) && defaultCols.every((c) => parsed.includes(c)) && parsed.length === defaultCols.length) {
+          setColOrder(parsed)
+          return
+        }
+      }
+    } catch {}
+    setColOrder(defaultCols)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function onColDragStart(col: string) { setDragCol(col) }
+  function onColDragEnter(col: string) { if (dragCol) setOverCol(col) }
+  function onColDrop() {
+    if (dragCol && overCol && dragCol !== overCol) {
+      setColOrder((prev) => {
+        const next = arrayMove(prev, prev.indexOf(dragCol), prev.indexOf(overCol))
+        try { localStorage.setItem(storageKey, JSON.stringify(next)) } catch {}
+        return next
+      })
+    }
+    setDragCol(null)
+    setOverCol(null)
+  }
+
+  return { colOrder, dragCol, overCol, onColDragStart, onColDragEnter, onColDrop }
+}
+
+// ─── Header de coluna: sort clicável + drag horizontal ────────────────────────
+
+function DragColTh({ colKey, label, right, sort, onSort, dragCol, overCol, onColDragStart, onColDragEnter, onColDrop }: {
+  colKey: string
+  label: string
+  right?: boolean
+  sort: SortState
+  onSort: (k: string) => void
+  dragCol: string | null
+  overCol: string | null
+  onColDragStart: (col: string) => void
+  onColDragEnter: (col: string) => void
+  onColDrop: () => void
+}) {
+  const active   = sort?.key === colKey
+  const isDragging = dragCol === colKey
+  const isOver     = overCol === colKey && dragCol !== colKey
+
+  return (
+    <th
+      draggable
+      onDragStart={() => onColDragStart(colKey)}
+      onDragEnter={() => onColDragEnter(colKey)}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onColDrop}
+      onDragEnd={onColDrop}
+      className={cn(
+        'px-4 py-3 font-medium text-muted-foreground select-none whitespace-nowrap group/col transition-colors',
+        right && 'text-right',
+        isDragging && 'opacity-40',
+        isOver && 'border-l-2 border-primary bg-primary/5',
+      )}
+    >
+      <div className={cn('flex items-center gap-1', right && 'justify-end')}>
+        <GripHorizontal className="size-3 opacity-0 group-hover/col:opacity-30 hover:!opacity-80 cursor-grab active:cursor-grabbing shrink-0 transition-opacity" />
+        <button
+          type="button"
+          onClick={() => onSort(colKey)}
+          className={cn('flex items-center gap-1 hover:text-foreground transition-colors', active && 'text-foreground')}
+        >
+          {label}
+          {active
+            ? sort!.dir === 'desc' ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />
+            : <ChevronsUpDown className="size-3 opacity-30" />
+          }
+        </button>
+      </div>
+    </th>
+  )
+}
+
+// ─── Header fixo (Categorias — não arrastável) ────────────────────────────────
+
+function SortTh({ children, colKey, sort, onSort }: {
   children: React.ReactNode
   colKey: string
   sort: SortState
   onSort: (k: string) => void
-  right?: boolean
 }) {
   const active = sort?.key === colKey
   return (
     <th
       onClick={() => onSort(colKey)}
-      className={cn(
-        'px-4 py-3 font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap',
-        'hover:text-foreground transition-colors',
-        right && 'text-right',
-      )}
+      className="px-4 py-3 font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap hover:text-foreground transition-colors"
     >
-      <div className={cn('flex items-center gap-1', right && 'justify-end')}>
+      <div className="flex items-center gap-1">
         {children}
         {active
-          ? sort!.dir === 'desc'
-            ? <ChevronDown className="size-3" />
-            : <ChevronUp className="size-3" />
+          ? sort!.dir === 'desc' ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />
           : <ChevronsUpDown className="size-3 opacity-30" />
         }
       </div>
@@ -70,7 +152,7 @@ function SortTh({ children, colKey, sort, onSort, right = false }: {
   )
 }
 
-// ─── TR sortável com handle de drag ───────────────────────────────────────────
+// ─── TR sortável com handle de drag de linha ──────────────────────────────────
 
 function SortableTR({ id, disabled, children }: {
   id: string
@@ -90,7 +172,7 @@ function SortableTR({ id, disabled, children }: {
   )
 }
 
-// ─── Tabela Desempenho por Categoria ──────────────────────────────────────────
+// ─── Tabela Desempenho por Categoria de Suíte ─────────────────────────────────
 
 type SuiteRow = {
   category: string
@@ -103,14 +185,52 @@ type SuiteRow = {
   averageOccupationTime: string
 }
 
+const SUITE_COLS = [
+  { key: 'rentals',   label: 'Locações' },
+  { key: 'value',     label: 'Faturamento' },
+  { key: 'ticket',    label: 'Ticket Médio' },
+  { key: 'giro',      label: 'Giro' },
+  { key: 'revpar',    label: 'RevPAR' },
+  { key: 'occupancy', label: 'Ocupação' },
+  { key: 'tmo',       label: 'TMO' },
+]
+
+function renderSuiteCell(row: SuiteRow, key: string): React.ReactNode {
+  switch (key) {
+    case 'rentals':   return row.totalRentalsApartments
+    case 'value':     return fmt.format(row.totalValue)
+    case 'ticket':    return fmt.format(row.totalTicketAverage)
+    case 'giro':      return row.giro.toFixed(2)
+    case 'revpar':    return fmt.format(row.revpar)
+    case 'occupancy': return `${row.occupancyRate.toFixed(1)}%`
+    case 'tmo':       return row.averageOccupationTime
+    default:          return '–'
+  }
+}
+
+function renderSuiteTotalCell(total: CompanyTotalResult, key: string): React.ReactNode {
+  switch (key) {
+    case 'rentals':   return total.totalAllRentalsApartments
+    case 'value':     return fmt.format(total.totalAllValue)
+    case 'ticket':    return fmt.format(total.totalAllTicketAverage)
+    case 'giro':      return total.totalGiro.toFixed(2)
+    case 'revpar':    return fmt.format(total.totalRevpar)
+    case 'occupancy': return `${total.totalOccupancyRate.toFixed(1)}%`
+    case 'tmo':       return total.totalAverageOccupationTime
+    default:          return '–'
+  }
+}
+
 function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
   const rawRows: SuiteRow[] = (company.DataTableSuiteCategory ?? []).flatMap((item) =>
     Object.entries(item).map(([category, kpi]) => ({ category, ...kpi }))
   )
   const total = company.TotalResult
 
-  const [sort, setSort] = useState<SortState>(null)
+  const [sort, setSort]   = useState<SortState>(null)
   const [order, setOrder] = useState<string[]>([])
+
+  const colDrag = useColDrag('suite-cat-cols', SUITE_COLS.map((c) => c.key))
 
   useEffect(() => {
     try {
@@ -155,7 +275,7 @@ function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
 
   const rows = sortRows(rawRows)
 
-  function handleDragEnd({ active, over }: DragEndEvent) {
+  function handleRowDragEnd({ active, over }: DragEndEvent) {
     if (!over || active.id === over.id) return
     const ids = rows.map((r) => r.category)
     const next = arrayMove(ids, ids.indexOf(active.id as string), ids.indexOf(over.id as string))
@@ -165,6 +285,8 @@ function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
   }
 
   const sp = { sort, onSort: (k: string) => setSort((p) => nextSort(p, k)) }
+  const orderedCols = SUITE_COLS.filter((c) => colDrag.colOrder.includes(c.key))
+    .sort((a, b) => colDrag.colOrder.indexOf(a.key) - colDrag.colOrder.indexOf(b.key))
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -175,17 +297,25 @@ function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
-              <SortTh colKey="category"  {...sp}>Categoria</SortTh>
-              <SortTh colKey="rentals"   right {...sp}>Locações</SortTh>
-              <SortTh colKey="value"     right {...sp}>Faturamento</SortTh>
-              <SortTh colKey="ticket"    right {...sp}>Ticket Médio</SortTh>
-              <SortTh colKey="giro"      right {...sp}>Giro</SortTh>
-              <SortTh colKey="revpar"    right {...sp}>RevPAR</SortTh>
-              <SortTh colKey="occupancy" right {...sp}>Ocupação</SortTh>
-              <SortTh colKey="tmo"       right {...sp}>TMO</SortTh>
+              <SortTh colKey="category" {...sp}>Categoria</SortTh>
+              {orderedCols.map((col) => (
+                <DragColTh
+                  key={col.key}
+                  colKey={col.key}
+                  label={col.label}
+                  right
+                  sort={sort}
+                  onSort={(k) => setSort((p) => nextSort(p, k))}
+                  dragCol={colDrag.dragCol}
+                  overCol={colDrag.overCol}
+                  onColDragStart={colDrag.onColDragStart}
+                  onColDragEnter={colDrag.onColDragEnter}
+                  onColDrop={colDrag.onColDrop}
+                />
+              ))}
             </tr>
           </thead>
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
             <SortableContext items={rows.map((r) => r.category)} strategy={verticalListSortingStrategy}>
               <tbody>
                 {rows.map((row) => (
@@ -208,13 +338,11 @@ function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
                             {row.category}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right tabular-nums">{row.totalRentalsApartments}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{fmt.format(row.totalValue)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{fmt.format(row.totalTicketAverage)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{row.giro.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{fmt.format(row.revpar)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{row.occupancyRate.toFixed(1)}%</td>
-                        <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{row.averageOccupationTime}</td>
+                        {orderedCols.map((col) => (
+                          <td key={col.key} className="px-4 py-3 text-right tabular-nums">
+                            {renderSuiteCell(row, col.key)}
+                          </td>
+                        ))}
                       </>
                     )}
                   </SortableTR>
@@ -226,13 +354,11 @@ function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
             <tfoot>
               <tr className="bg-muted/40 border-t-2 border-border font-semibold">
                 <td className="px-4 py-3">Total</td>
-                <td className="px-4 py-3 text-right tabular-nums">{total.totalAllRentalsApartments}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(total.totalAllValue)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(total.totalAllTicketAverage)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{total.totalGiro.toFixed(2)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(total.totalRevpar)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{total.totalOccupancyRate.toFixed(1)}%</td>
-                <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{total.totalAverageOccupationTime}</td>
+                {orderedCols.map((col) => (
+                  <td key={col.key} className="px-4 py-3 text-right tabular-nums">
+                    {renderSuiteTotalCell(total, col.key)}
+                  </td>
+                ))}
               </tr>
             </tfoot>
           )}
@@ -261,8 +387,10 @@ function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWe
     return { cat, days }
   })
 
-  const [sort, setSort] = useState<SortState>(null)
+  const [sort, setSort]   = useState<SortState>(null)
   const [order, setOrder] = useState<string[]>([])
+
+  const colDrag = useColDrag('giro-week-cols', DAY_ORDER)
 
   useEffect(() => {
     try {
@@ -278,7 +406,9 @@ function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWe
 
   if (!rawRows.length) return null
 
-  const dayCols = DAY_ORDER.filter((d) => d in rawRows[0].days)
+  const dayCols      = DAY_ORDER.filter((d) => d in rawRows[0].days)
+  const visibleCols  = colDrag.colOrder.filter((d) => dayCols.includes(d))
+
   const totalByDay: Record<string, number> = {}
   for (const d of dayCols) {
     const v = rawRows.find((r) => r.days[d] !== undefined)?.days[d]
@@ -307,7 +437,7 @@ function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWe
 
   const rows = sortRows(rawRows)
 
-  function handleDragEnd({ active, over }: DragEndEvent) {
+  function handleRowDragEnd({ active, over }: DragEndEvent) {
     if (!over || active.id === over.id) return
     const ids = rows.map((r) => r.cat)
     const next = arrayMove(ids, ids.indexOf(active.id as string), ids.indexOf(over.id as string))
@@ -315,8 +445,6 @@ function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWe
     setSort(null)
     try { localStorage.setItem('giro-week-order', JSON.stringify(next)) } catch {}
   }
-
-  const sp = { sort, onSort: (k: string) => setSort((p) => nextSort(p, k)) }
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -327,13 +455,25 @@ function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWe
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
-              <SortTh colKey="category" {...sp}>Categorias</SortTh>
-              {dayCols.map((d) => (
-                <SortTh key={d} colKey={d} right {...sp}>{DAY_LABEL[d] ?? d}</SortTh>
+              <SortTh colKey="category" sort={sort} onSort={(k) => setSort((p) => nextSort(p, k))}>Categorias</SortTh>
+              {visibleCols.map((d) => (
+                <DragColTh
+                  key={d}
+                  colKey={d}
+                  label={DAY_LABEL[d] ?? d}
+                  right
+                  sort={sort}
+                  onSort={(k) => setSort((p) => nextSort(p, k))}
+                  dragCol={colDrag.dragCol}
+                  overCol={colDrag.overCol}
+                  onColDragStart={colDrag.onColDragStart}
+                  onColDragEnter={colDrag.onColDragEnter}
+                  onColDrop={colDrag.onColDrop}
+                />
               ))}
             </tr>
           </thead>
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
             <SortableContext items={rows.map((r) => r.cat)} strategy={verticalListSortingStrategy}>
               <tbody>
                 {rows.map(({ cat, days }) => (
@@ -356,7 +496,7 @@ function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWe
                             {cat}
                           </div>
                         </td>
-                        {dayCols.map((d) => (
+                        {visibleCols.map((d) => (
                           <td key={d} className="px-4 py-3 text-right tabular-nums">
                             {days[d] !== undefined ? days[d].giro.toFixed(2) : '–'}
                           </td>
@@ -371,7 +511,7 @@ function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWe
           <tfoot>
             <tr className="bg-muted/40 border-t-2 border-border font-semibold">
               <td className="px-4 py-3 whitespace-nowrap">Total</td>
-              {dayCols.map((d) => (
+              {visibleCols.map((d) => (
                 <td key={d} className="px-4 py-3 text-right tabular-nums">
                   {totalByDay[d] !== undefined ? totalByDay[d].toFixed(2) : '–'}
                 </td>
@@ -394,8 +534,10 @@ function RevparWeekTable({ title, data }: { title: string; data: DataTableRevpar
     return { cat, days }
   })
 
-  const [sort, setSort] = useState<SortState>(null)
+  const [sort, setSort]   = useState<SortState>(null)
   const [order, setOrder] = useState<string[]>([])
+
+  const colDrag = useColDrag('revpar-week-cols', DAY_ORDER)
 
   useEffect(() => {
     try {
@@ -411,7 +553,9 @@ function RevparWeekTable({ title, data }: { title: string; data: DataTableRevpar
 
   if (!rawRows.length) return null
 
-  const dayCols = DAY_ORDER.filter((d) => d in rawRows[0].days)
+  const dayCols     = DAY_ORDER.filter((d) => d in rawRows[0].days)
+  const visibleCols = colDrag.colOrder.filter((d) => dayCols.includes(d))
+
   const totalByDay: Record<string, number> = {}
   for (const d of dayCols) {
     const v = rawRows.find((r) => r.days[d] !== undefined)?.days[d]
@@ -440,7 +584,7 @@ function RevparWeekTable({ title, data }: { title: string; data: DataTableRevpar
 
   const rows = sortRows(rawRows)
 
-  function handleDragEnd({ active, over }: DragEndEvent) {
+  function handleRowDragEnd({ active, over }: DragEndEvent) {
     if (!over || active.id === over.id) return
     const ids = rows.map((r) => r.cat)
     const next = arrayMove(ids, ids.indexOf(active.id as string), ids.indexOf(over.id as string))
@@ -448,8 +592,6 @@ function RevparWeekTable({ title, data }: { title: string; data: DataTableRevpar
     setSort(null)
     try { localStorage.setItem('revpar-week-order', JSON.stringify(next)) } catch {}
   }
-
-  const sp = { sort, onSort: (k: string) => setSort((p) => nextSort(p, k)) }
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -460,13 +602,25 @@ function RevparWeekTable({ title, data }: { title: string; data: DataTableRevpar
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
-              <SortTh colKey="category" {...sp}>Categorias</SortTh>
-              {dayCols.map((d) => (
-                <SortTh key={d} colKey={d} right {...sp}>{DAY_LABEL[d] ?? d}</SortTh>
+              <SortTh colKey="category" sort={sort} onSort={(k) => setSort((p) => nextSort(p, k))}>Categorias</SortTh>
+              {visibleCols.map((d) => (
+                <DragColTh
+                  key={d}
+                  colKey={d}
+                  label={DAY_LABEL[d] ?? d}
+                  right
+                  sort={sort}
+                  onSort={(k) => setSort((p) => nextSort(p, k))}
+                  dragCol={colDrag.dragCol}
+                  overCol={colDrag.overCol}
+                  onColDragStart={colDrag.onColDragStart}
+                  onColDragEnter={colDrag.onColDragEnter}
+                  onColDrop={colDrag.onColDrop}
+                />
               ))}
             </tr>
           </thead>
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
             <SortableContext items={rows.map((r) => r.cat)} strategy={verticalListSortingStrategy}>
               <tbody>
                 {rows.map(({ cat, days }) => (
@@ -489,7 +643,7 @@ function RevparWeekTable({ title, data }: { title: string; data: DataTableRevpar
                             {cat}
                           </div>
                         </td>
-                        {dayCols.map((d) => (
+                        {visibleCols.map((d) => (
                           <td key={d} className="px-4 py-3 text-right tabular-nums">
                             {days[d] !== undefined ? fmt.format(days[d].revpar) : '–'}
                           </td>
@@ -504,7 +658,7 @@ function RevparWeekTable({ title, data }: { title: string; data: DataTableRevpar
           <tfoot>
             <tr className="bg-muted/40 border-t-2 border-border font-semibold">
               <td className="px-4 py-3 whitespace-nowrap">Total</td>
-              {dayCols.map((d) => (
+              {visibleCols.map((d) => (
                 <td key={d} className="px-4 py-3 text-right tabular-nums">
                   {totalByDay[d] !== undefined ? fmt.format(totalByDay[d]) : '–'}
                 </td>
