@@ -232,7 +232,6 @@ interface SuiteCatRow {
   category: string
   total_rentals: string
   total_value: string
-  rental_revenue: string
   trevpar_revenue: string
   total_occupied_time: string
   total_suites: string
@@ -281,14 +280,8 @@ async function queryDataTableSuiteCategory(
       ca.descricao                       AS category,
       COUNT(*)                           AS total_rentals,
       COALESCE(SUM(
-        COALESCE(CAST(la.valortotalpermanencia   AS DECIMAL(15,4)), 0) +
-        COALESCE(CAST(la.valortotalocupadicional AS DECIMAL(15,4)), 0) +
-        COALESCE(rc.valor_consumo_bruto,                             0) -
-        COALESCE(CAST(la.desconto                AS DECIMAL(15,4)), 0)
-      ), 0)                              AS total_value,
-      COALESCE(SUM(
         COALESCE(CAST(la.valorliquidolocacao     AS DECIMAL(15,4)), 0)
-      ), 0)                              AS rental_revenue,
+      ), 0)                              AS total_value,
       COALESCE(SUM(
         COALESCE(CAST(la.valortotalpermanencia   AS DECIMAL(15,4)), 0) +
         COALESCE(CAST(la.valortotalocupadicional AS DECIMAL(15,4)), 0) +
@@ -318,16 +311,15 @@ async function queryDataTableSuiteCategory(
   const { rows } = await pool.query<SuiteCatRow>(sql, [isoStart, isoEnd])
 
   return rows.map((r) => {
-    const totalRentals    = Number(r.total_rentals)    || 0
-    const totalValue      = Number(r.total_value)       || 0
-    const rentalRevenue   = Number(r.rental_revenue)    || 0
-    const trevparRevenue  = Number(r.trevpar_revenue)   || 0
+    const totalRentals    = Number(r.total_rentals)      || 0
+    const totalValue      = Number(r.total_value)         || 0  // valorliquidolocacao (sem consumo/venda direta)
+    const trevparRevenue  = Number(r.trevpar_revenue)    || 0
     const occupiedTime    = Number(r.total_occupied_time) || 0
-    const suitesInCat     = Number(r.total_suites)      || 1
+    const suitesInCat     = Number(r.total_suites)        || 1
 
     const ticketAverage   = totalRentals > 0 ? +(totalValue / totalRentals).toFixed(2) : 0
     const giro            = +(totalRentals / suitesInCat / daysDiff).toFixed(2)
-    const revpar          = +(rentalRevenue / suitesInCat / daysDiff).toFixed(2)
+    const revpar          = +(totalValue   / suitesInCat / daysDiff).toFixed(2)
     const trevpar         = +(trevparRevenue / suitesInCat / daysDiff).toFixed(2)
     const availableTime   = suitesInCat * daysDiff * 86_400
     const occupancyRate   = availableTime > 0 ? +((occupiedTime / availableTime) * 100).toFixed(2) : 0
@@ -560,10 +552,19 @@ export async function fetchCompanyKPIsFromAutomo(
   const catIds = (UNIT_CATEGORY_IDS[unitSlug] ?? []).join(',')
   if (!catIds) throw new Error(`Nenhum category ID configurado para ${unitSlug}`)
 
+  // Hoje no fuso BRT (DD/MM/YYYY) — distingue período aberto (endDate=hoje) de fechado
+  const nowBR      = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+  const todayBRStr = `${String(nowBR.getDate()).padStart(2, '0')}/${String(nowBR.getMonth() + 1).padStart(2, '0')}/${nowBR.getFullYear()}`
+
   // Período atual
-  const isoStart  = ddmmyyyyToIso(startDateDDMMYYYY)
-  const isoEnd    = addDays(ddmmyyyyToIso(endDateDDMMYYYY), 1) // exclusive upper bound
-  const daysDiff  = daysBetween(isoStart, isoEnd)
+  const isoStart = ddmmyyyyToIso(startDateDDMMYYYY)
+  // Período aberto (endDate = hoje): usar hoje 06:00 como bound exclusivo — só dias completos,
+  // igual ao Analytics e à previsão de fechamento (monIsoEnd).
+  // Período fechado (endDate no passado): usar (endDate+1) 06:00 para incluir o último dia inteiro.
+  const isoEnd   = endDateDDMMYYYY === todayBRStr
+    ? ddmmyyyyToIso(endDateDDMMYYYY)
+    : addDays(ddmmyyyyToIso(endDateDDMMYYYY), 1)
+  const daysDiff = daysBetween(isoStart, isoEnd)
 
   // Período anterior a/a (mesmo período do ano passado)
   const prevIsoStart = isoStart.replace(/^(\d{4})/, (y) => String(Number(y) - 1))
@@ -574,18 +575,10 @@ export async function fetchCompanyKPIsFromAutomo(
   const prevMonIsoEnd   = shiftMonths(isoEnd,   -1)
 
   // Dados do mês atual até ontem (para previsão de fechamento)
-  // Usa corte operacional 06:00 para coincidir com o Analytics:
-  //   monthStart = dia 1 do mês às 06:00 (início do dia operacional)
-  //   monthEnd   = dia seguinte a ontem às 05:59:59 ≈ exclusive bound às 06:00 do dia
-  const nowBR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
   const monthStart = new Date(nowBR.getFullYear(), nowBR.getMonth(), 1)
   const yesterday  = new Date(nowBR.getFullYear(), nowBR.getMonth(), nowBR.getDate() - 1)
-  // Início: dia 1 do mês às 06:00 (Analytics: currentMonthStart.set({ hour: 6 }))
   const monIsoStart = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-01 06:00:00`
-  // Fim: hoje às 06:00 (exclusive) — inclui o dia operacional de ontem (06:00 ontem → 05:59 hoje)
-  // Equivalente ao Analytics: yesterday.set({h:5,m:59,s:59}).add(1,'day') que dá "hoje às 05:59"
-  const monIsoEnd = `${nowBR.getFullYear()}-${String(nowBR.getMonth() + 1).padStart(2, '0')}-${String(nowBR.getDate()).padStart(2, '0')} 06:00:00`
-  // daysElapsed = dias operacionais completos: de dia 1 às 06:00 até ontem às 05:59:59
+  const monIsoEnd   = `${nowBR.getFullYear()}-${String(nowBR.getMonth() + 1).padStart(2, '0')}-${String(nowBR.getDate()).padStart(2, '0')} 06:00:00`
   const daysElapsed = yesterday.getDate()
   const totalDaysInMonth = new Date(nowBR.getFullYear(), nowBR.getMonth() + 1, 0).getDate()
   const remainingDays = totalDaysInMonth - daysElapsed

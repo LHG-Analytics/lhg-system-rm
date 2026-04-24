@@ -11,12 +11,6 @@ function fmt(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
-function yesterday(): Date {
-  const d = new Date()
-  d.setDate(d.getDate() - 1)
-  return d
-}
-
 /** Validates that a string is a safe YYYY-MM-DD date (used before SQL interpolation) */
 export function isValidIsoDate(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s))
@@ -28,12 +22,11 @@ export function resolvePreset(
   customEnd?: string | null,
 ): DateRange {
   const today = new Date()
-  const yest  = yesterday()
 
   switch (preset) {
     case '7d': {
       const start = new Date(today)
-      start.setDate(start.getDate() - 6)
+      start.setDate(start.getDate() - 7)
       return { startDate: fmt(start), endDate: fmt(today), preset: '7d', label: 'Últimos 7 dias' }
     }
     case 'this-month': {
