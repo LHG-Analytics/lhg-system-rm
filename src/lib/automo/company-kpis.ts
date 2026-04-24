@@ -12,28 +12,27 @@ import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
-/** DD/MM/YYYY → ISO string para uso em SQL (UTC midnight) */
+/** DD/MM/YYYY → ISO string para uso em SQL (corte operacional 06:00, igual ao Analytics) */
 function ddmmyyyyToIso(ddmmyyyy: string): string {
   const [d, m, y] = ddmmyyyy.split('/').map(Number)
-  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} 00:00:00`
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} 06:00:00`
 }
 
-/** Adiciona N dias a uma string ISO 'YYYY-MM-DD 00:00:00' */
+/** Adiciona N dias a uma string ISO 'YYYY-MM-DD HH:MM:SS' preservando horário 06:00 */
 function addDays(iso: string, n: number): string {
-  const d = new Date(iso.replace(' ', 'T') + 'Z')
-  d.setUTCDate(d.getUTCDate() + n)
-  return d.toISOString().slice(0, 10) + ' 00:00:00'
+  const [y, mo, d] = iso.slice(0, 10).split('-').map(Number)
+  const dt = new Date(y, mo - 1, d + n)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 06:00:00`
 }
 
-/** Desloca N meses em uma string ISO 'YYYY-MM-DD 00:00:00' (clampeia dia ao último do mês destino) */
+/** Desloca N meses em uma string ISO 'YYYY-MM-DD HH:MM:SS' (clampeia dia ao último do mês destino) */
 function shiftMonths(iso: string, months: number): string {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
   const dt = new Date(y, m - 1 + months, d)
-  // Se o dia ultrapassar o último dia do mês destino, vai para o último
   if (dt.getMonth() !== ((m - 1 + months + 12) % 12)) {
-    dt.setDate(0) // volta para o último dia do mês anterior ao overflow
+    dt.setDate(0)
   }
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 00:00:00`
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 06:00:00`
 }
 
 /** Número de dias entre duas strings ISO */
