@@ -5,7 +5,6 @@ import { X, Columns2, GripVertical } from 'lucide-react'
 import { ComparisonPanel } from '@/components/dashboard/comparison-panel'
 import type { ComparisonFilters } from '@/components/dashboard/comparison-filter'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 
 // ─── Filtro padrão do Período B: mês anterior ─────────────────────────────────
@@ -109,8 +108,8 @@ export function ComparisonModal({ open, onClose, unitSlug, unitName, filtersA }:
         )}
       >
         {/* Painel A */}
-        <ScrollArea
-          className="h-full shrink-0"
+        <div
+          className="h-full shrink-0 overflow-x-hidden overflow-y-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent"
           style={{ width: `${split}%` }}
         >
           <div className="px-5 py-5">
@@ -121,7 +120,7 @@ export function ComparisonModal({ open, onClose, unitSlug, unitName, filtersA }:
               initial={filtersA}
             />
           </div>
-        </ScrollArea>
+        </div>
 
         {/* Divisor arrastável */}
         <div
@@ -143,8 +142,8 @@ export function ComparisonModal({ open, onClose, unitSlug, unitName, filtersA }:
         </div>
 
         {/* Painel B */}
-        <ScrollArea
-          className="h-full shrink-0"
+        <div
+          className="h-full shrink-0 overflow-x-hidden overflow-y-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent"
           style={{ width: `${100 - split}%` }}
         >
           <div className="px-5 py-5">
@@ -155,7 +154,7 @@ export function ComparisonModal({ open, onClose, unitSlug, unitName, filtersA }:
               initial={filtersB}
             />
           </div>
-        </ScrollArea>
+        </div>
       </div>
     </div>
   )

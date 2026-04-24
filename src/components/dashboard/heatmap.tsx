@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import type { HeatmapCell, HeatmapMetric, HeatmapDateType, HeatmapCategory } from '@/app/api/heatmap/route'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -145,70 +144,73 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3">
       {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
+      <div className="flex flex-col gap-2">
         <div>
           <h3 className="font-semibold text-sm">Mapa de calor — {rangeLabel.toLowerCase()}</h3>
           <p className="text-xs text-muted-foreground">{subtitle}</p>
         </div>
 
-        <div className="flex items-end gap-3 flex-wrap">
-          {/* Filtro de categoria */}
-          {categories.length > 0 && (
+        {/* Controles — scroll horizontal invisível para não quebrar linha */}
+        <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex items-end gap-3 min-w-max">
+            {/* Filtro de categoria */}
+            {categories.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                  Categoria
+                </span>
+                <select
+                  value={categoryId ?? ''}
+                  onChange={(e) => setCategoryId(e.target.value || null)}
+                  className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="">Total Geral</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={String(cat.id)}>
+                      {cat.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Filtro de tipo de data */}
             <div className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
-                Categoria
+                Data
               </span>
               <select
-                value={categoryId ?? ''}
-                onChange={(e) => setCategoryId(e.target.value || null)}
+                value={dateType}
+                onChange={(e) => setDateType(e.target.value as HeatmapDateType)}
                 className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
               >
-                <option value="">Total Geral</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={String(cat.id)}>
-                    {cat.nome}
-                  </option>
+                {(Object.keys(DATE_TYPE_LABELS) as HeatmapDateType[]).map((dt) => (
+                  <option key={dt} value={dt}>{DATE_TYPE_LABELS[dt]}</option>
                 ))}
               </select>
             </div>
-          )}
 
-          {/* Filtro de tipo de data */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
-              Data
-            </span>
-            <select
-              value={dateType}
-              onChange={(e) => setDateType(e.target.value as HeatmapDateType)}
-              className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-            >
-              {(Object.keys(DATE_TYPE_LABELS) as HeatmapDateType[]).map((dt) => (
-                <option key={dt} value={dt}>{DATE_TYPE_LABELS[dt]}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Toggle métrica */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
-              KPI
-            </span>
-            <div className="flex gap-1 rounded-lg border p-0.5 text-xs">
-              {(['giro', 'ocupacao', 'revpar', 'trevpar'] as HeatmapMetric[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMetric(m)}
-                  className={cn(
-                    'px-3 py-1 rounded-md transition-colors capitalize',
-                    metric === m
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  {m === 'ocupacao' ? 'Ocup.' : m.charAt(0).toUpperCase() + m.slice(1)}
-                </button>
-              ))}
+            {/* Toggle métrica */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                KPI
+              </span>
+              <div className="flex gap-1 rounded-lg border p-0.5 text-xs">
+                {(['giro', 'ocupacao', 'revpar', 'trevpar'] as HeatmapMetric[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMetric(m)}
+                    className={cn(
+                      'px-3 py-1 rounded-md transition-colors capitalize whitespace-nowrap',
+                      metric === m
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {m === 'ocupacao' ? 'Ocup.' : m.charAt(0).toUpperCase() + m.slice(1)}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -261,7 +263,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
 
       {/* Grid */}
       {!loading && !error && (
-        <ScrollArea>
+        <div className="overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent">
           <div className="min-w-[600px]">
             <div className="flex">
               <div className="w-10 shrink-0" />
@@ -308,8 +310,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
               </div>
             ))}
           </div>
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
+        </div>
       )}
 
       {!loading && !error && rows.length === 0 && (
