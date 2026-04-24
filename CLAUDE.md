@@ -602,6 +602,14 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - **Sort + drag-and-drop nas 3 tabelas de categorias** (`charts.tsx` → `'use client'`): headers clicáveis (1° desc, 2° asc, 3° reset), `GripVertical` ao hover reordena via `@dnd-kit`; sort e drag são mutuamente exclusivos; ordens persistem em `localStorage` (`suite-cat-order`, `giro-week-order`, `revpar-week-order`)
   - **fix(weather):** `forecast` filtra com `date > cutoff` (era `>= cutoff`); garante que "hoje" entra como 1° card mesmo que a API já tenha dados parciais — previsão 6 dias reais (hoje + 5 dias futuros)
 
+- **LHG-128:** fix(kpis): alinhar corte operacional 06:00 em todas as queries + valortotal na categoria
+  - **Corte operacional 06:00 em helpers:** `ddmmyyyyToIso`, `addDays`, `shiftMonths` — todos retornam `YYYY-MM-DD 06:00:00` em vez de meia-noite; alinha com Analytics
+  - **Período aberto vs fechado:** `isoEnd` usa `today 06:00` quando `endDate = hoje BRT` (este-mês, 7d) — inclui apenas dias operacionais completos; usa `(endDate+1) 06:00` para períodos fechados (último mês, custom passado)
+  - **"Últimos 7 dias":** `start = today - 7` (era `-6`) → 7 dias completos; upper bound `today 06:00` (era `addDays(today,1)` = amanhã 06:00)
+  - **Previsão de fechamento:** `monIsoStart = dia 1 06:00`; `monIsoEnd = hoje 06:00` (eram meia-noite); alinha com Analytics
+  - **`queryDataTableSuiteCategory` — Faturamento:** substituído `la.valorliquidolocacao` por `la.valortotal` (locação + consumo - desconto, pré-calculado no ERP); CTE `receita_consumo` e LEFT JOIN removidos; `rental_revenue = valorliquidolocacao` mantido como coluna separada para base do RevPAR
+  - **Armadilha:** `la.valortotal` já inclui consumo (`vendalocacao`) e exclui vendas diretas (`vendadireta`); nunca usar fórmula manual com joins de consumo
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
