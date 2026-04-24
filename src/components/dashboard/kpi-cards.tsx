@@ -179,9 +179,10 @@ function loadOrder(): string[] {
 
 interface DashboardKPICardsProps {
   company: CompanyKPIResponse | null
+  compact?: boolean
 }
 
-export function DashboardKPICards({ company }: DashboardKPICardsProps) {
+export function DashboardKPICards({ company, compact }: DashboardKPICardsProps) {
   const [compareMode, setCompareMode] = useState<CompareMode>('aa')
   const [order, setOrder] = useState<string[]>(DEFAULT_ORDER)
 
@@ -214,7 +215,7 @@ export function DashboardKPICards({ company }: DashboardKPICardsProps) {
             <ToggleGroupItem value="mm">m/m</ToggleGroupItem>
           </ToggleGroup>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className={compact ? 'grid gap-3 grid-cols-2' : 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4'}>
           {DEFAULT_ORDER.map((label) => (
             <Card key={label} className="py-0 overflow-hidden">
               <CardHeader className="px-5 pt-5 pb-3">
@@ -326,7 +327,7 @@ export function DashboardKPICards({ company }: DashboardKPICardsProps) {
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={order} strategy={rectSortingStrategy}>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className={compact ? 'grid gap-3 grid-cols-2' : 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4'}>
             {sortedCards.map((card) => (
               <SortableKPICard key={card.label} id={card.label} {...card} />
             ))}

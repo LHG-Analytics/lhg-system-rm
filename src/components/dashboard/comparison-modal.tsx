@@ -5,6 +5,7 @@ import { X, Columns2 } from 'lucide-react'
 import { ComparisonPanel } from '@/components/dashboard/comparison-panel'
 import type { ComparisonFilters } from '@/components/dashboard/comparison-filter'
 import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 // ─── Filtro padrão do Período B: mês anterior ─────────────────────────────────
 
@@ -65,24 +66,28 @@ export function ComparisonModal({ open, onClose, unitSlug, unitName, filtersA }:
       {/* ── Painéis lado a lado ─────────────────────────────────────────────── */}
       <div className="flex flex-1 divide-x overflow-hidden">
         {/* Painel A */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          <ComparisonPanel
-            label="Período A"
-            accent="blue"
-            unitSlug={unitSlug}
-            initial={filtersA}
-          />
-        </div>
+        <ScrollArea className="flex-1">
+          <div className="px-6 py-5">
+            <ComparisonPanel
+              label="Período A"
+              accent="blue"
+              unitSlug={unitSlug}
+              initial={filtersA}
+            />
+          </div>
+        </ScrollArea>
 
         {/* Painel B */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          <ComparisonPanel
-            label="Período B"
-            accent="purple"
-            unitSlug={unitSlug}
-            initial={filtersB}
-          />
-        </div>
+        <ScrollArea className="flex-1">
+          <div className="px-6 py-5">
+            <ComparisonPanel
+              label="Período B"
+              accent="purple"
+              unitSlug={unitSlug}
+              initial={filtersB}
+            />
+          </div>
+        </ScrollArea>
       </div>
     </div>
   )

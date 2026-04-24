@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import type { HeatmapCell, HeatmapMetric, HeatmapDateType, HeatmapCategory } from '@/app/api/heatmap/route'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -260,7 +261,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
 
       {/* Grid */}
       {!loading && !error && (
-        <div className="overflow-x-auto">
+        <ScrollArea>
           <div className="min-w-[600px]">
             <div className="flex">
               <div className="w-10 shrink-0" />
@@ -307,7 +308,8 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
               </div>
             ))}
           </div>
-        </div>
+          <ScrollBar orientation="horizontal" />
+        </ScrollArea>
       )}
 
       {!loading && !error && rows.length === 0 && (

@@ -103,7 +103,7 @@ export function ComparisonPanel({ label, accent, unitSlug, initial }: Props) {
       {/* Conteúdo do dashboard */}
       {!loading && !error && (
         <div className="flex flex-col gap-6">
-          <DashboardKPICards company={company} />
+          <DashboardKPICards company={company} compact />
           <DashboardCharts   company={company} />
           <OccupancyHeatmap
             unitSlug={unitSlug}
