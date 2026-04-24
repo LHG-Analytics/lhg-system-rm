@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 
@@ -42,6 +41,20 @@ const PRESETS: { value: Exclude<DatePreset, 'custom'>; label: string }[] = [
   { value: '7d',         label: '7 dias'   },
   { value: 'this-month', label: 'Este mês' },
   { value: 'last-month', label: 'Mês ant.' },
+]
+
+const DATE_TYPE_OPTIONS: { value: CompDateType; label: string }[] = [
+  { value: 'checkin',  label: 'Entrada' },
+  { value: 'checkout', label: 'Saída'   },
+  { value: 'all',      label: 'Todas'   },
+]
+
+const STATUS_OPTIONS: { value: CompRentalStatus; label: string }[] = [
+  { value: 'FINALIZADA',  label: 'Finalizadas'  },
+  { value: 'TRANSFERIDA', label: 'Transferidas' },
+  { value: 'CANCELADA',   label: 'Canceladas'   },
+  { value: 'ABERTA',      label: 'Em aberto'    },
+  { value: 'TODAS',       label: 'Todas'        },
 ]
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
@@ -82,14 +95,15 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
   const isCustom    = filters.preset === 'custom'
   const customLabel = isCustom && filters.startDate && filters.endDate
     ? `${format(parse(filters.startDate, 'yyyy-MM-dd', new Date()), 'dd/MM')} → ${format(parse(filters.endDate, 'yyyy-MM-dd', new Date()), 'dd/MM')}`
-    : 'Personalizado'
+    : 'Custom'
 
   const today = new Date()
 
   return (
-    <div className="rounded-lg border bg-muted/30 p-3 flex flex-col gap-3">
-      {/* Período */}
-      <div className="flex flex-col gap-1.5">
+    <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5">
+
+      {/* ── Linha 1: Período ──────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-1">
         <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Período</Label>
         <div className="flex items-center gap-1 flex-wrap">
           {PRESETS.map((p) => (
@@ -103,13 +117,12 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
               {p.label}
             </Button>
           ))}
-
           <Popover open={calOpen} onOpenChange={setCalOpen}>
             <PopoverTrigger asChild>
               <Button
                 size="sm"
                 variant={isCustom ? 'default' : 'outline'}
-                className={cn('h-7 px-2.5 text-xs gap-1.5', !isCustom && 'text-muted-foreground')}
+                className={cn('h-7 px-2.5 text-xs gap-1', !isCustom && 'text-muted-foreground')}
               >
                 <CalendarIcon className="size-3 shrink-0" />
                 {customLabel}
@@ -121,7 +134,7 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
                 defaultMonth={parseIso(filters.startDate)}
                 selected={{ from: parseIso(filters.startDate), to: parseIso(filters.endDate) }}
                 onSelect={handleRange}
-                numberOfMonths={2}
+                numberOfMonths={1}
                 disabled={(date) => date > today || date < new Date('2020-01-01')}
                 locale={ptBR}
               />
@@ -130,8 +143,9 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
         </div>
       </div>
 
-      {/* Horário + Filtros + Buscar */}
-      <div className="flex items-end gap-2 flex-wrap">
+      {/* ── Linha 2: Grade de filtros ─────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-2">
+
         {/* Horário */}
         <div className="flex flex-col gap-1">
           <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Horário</Label>
@@ -140,7 +154,7 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
               value={String(filters.startHour)}
               onValueChange={(v) => update({ startHour: Number(v) })}
             >
-              <SelectTrigger size="sm" className="w-[76px]">
+              <SelectTrigger size="sm" className="flex-1 min-w-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="max-h-48">
@@ -149,12 +163,12 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
                 ))}
               </SelectContent>
             </Select>
-            <span className="text-xs text-muted-foreground">→</span>
+            <span className="text-xs text-muted-foreground shrink-0">→</span>
             <Select
               value={String(filters.endHour)}
               onValueChange={(v) => update({ endHour: Number(v) })}
             >
-              <SelectTrigger size="sm" className="w-[76px]">
+              <SelectTrigger size="sm" className="flex-1 min-w-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="max-h-48">
@@ -166,22 +180,6 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
           </div>
         </div>
 
-        {/* Tipo de data */}
-        <div className="flex flex-col gap-1">
-          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Data</Label>
-          <ToggleGroup
-            type="single"
-            value={filters.dateType}
-            onValueChange={(v) => { if (v) update({ dateType: v as CompDateType }) }}
-            variant="outline"
-            size="sm"
-          >
-            <ToggleGroupItem value="checkin"  className="text-xs px-2">Entrada</ToggleGroupItem>
-            <ToggleGroupItem value="checkout" className="text-xs px-2">Saída</ToggleGroupItem>
-            <ToggleGroupItem value="all"      className="text-xs px-2">Todas</ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-
         {/* Status */}
         <div className="flex flex-col gap-1">
           <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Status</Label>
@@ -189,28 +187,52 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
             value={filters.status}
             onValueChange={(v) => update({ status: v as CompRentalStatus })}
           >
-            <SelectTrigger size="sm" className="w-[120px]">
+            <SelectTrigger size="sm" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="FINALIZADA">Finalizadas</SelectItem>
-              <SelectItem value="TRANSFERIDA">Transferidas</SelectItem>
-              <SelectItem value="CANCELADA">Canceladas</SelectItem>
-              <SelectItem value="ABERTA">Em aberto</SelectItem>
-              <SelectItem value="TODAS">Todas</SelectItem>
+              {STATUS_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
 
-        <Button
-          size="sm"
-          onClick={() => onSearch(filters)}
-          disabled={loading}
-          className="h-8 gap-1.5 self-end"
-        >
-          <Search className="size-3.5" />
-          Buscar
-        </Button>
+        {/* Tipo de data */}
+        <div className="flex flex-col gap-1">
+          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Data</Label>
+          <div className="flex gap-1">
+            {DATE_TYPE_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                onClick={() => update({ dateType: o.value })}
+                className={cn(
+                  'flex-1 h-8 rounded-md border text-xs font-medium transition-colors',
+                  filters.dateType === o.value
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-background text-muted-foreground border-input hover:text-foreground hover:bg-muted/50',
+                )}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Botão Buscar */}
+        <div className="flex flex-col gap-1">
+          <Label className="text-[10px] uppercase tracking-wide text-transparent select-none">-</Label>
+          <Button
+            size="sm"
+            onClick={() => onSearch(filters)}
+            disabled={loading}
+            className="w-full h-8 gap-1.5"
+          >
+            <Search className="size-3.5" />
+            Buscar
+          </Button>
+        </div>
+
       </div>
     </div>
   )

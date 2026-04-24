@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect } from 'react'
-import { X, Columns2 } from 'lucide-react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { X, Columns2, GripVertical } from 'lucide-react'
 import { ComparisonPanel } from '@/components/dashboard/comparison-panel'
 import type { ComparisonFilters } from '@/components/dashboard/comparison-filter'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { cn } from '@/lib/utils'
 
 // ─── Filtro padrão do Período B: mês anterior ─────────────────────────────────
 
@@ -29,7 +30,15 @@ interface Props {
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
+const MIN_SPLIT = 25   // % mínima de cada painel
+const MAX_SPLIT = 75   // % máxima do painel esquerdo
+
 export function ComparisonModal({ open, onClose, unitSlug, unitName, filtersA }: Props) {
+  const [split, setSplit]           = useState(50)      // % do painel A
+  const [dragging, setDragging]     = useState(false)
+  const isDragging                  = useRef(false)
+  const containerRef                = useRef<HTMLDivElement>(null)
+
   // Bloqueia scroll do body enquanto aberto
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : ''
@@ -44,12 +53,40 @@ export function ComparisonModal({ open, onClose, unitSlug, unitName, filtersA }:
     return () => window.removeEventListener('keydown', handler)
   }, [open, onClose])
 
+  // Lógica do drag do divisor
+  const onMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging.current || !containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
+    const pct  = ((e.clientX - rect.left) / rect.width) * 100
+    setSplit(Math.round(Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, pct))))
+  }, [])
+
+  const onMouseUp = useCallback(() => {
+    isDragging.current = false
+    setDragging(false)
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [onMouseMove, onMouseUp])
+
+  function startDrag() {
+    isDragging.current = true
+    setDragging(true)
+  }
+
   if (!open) return null
 
   const filtersB = defaultFiltersB(filtersA)
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
+
       {/* ── Barra do topo ───────────────────────────────────────────────────── */}
       <div className="flex shrink-0 items-center justify-between border-b px-6 py-3">
         <div className="flex items-center gap-2 text-sm">
@@ -63,11 +100,20 @@ export function ComparisonModal({ open, onClose, unitSlug, unitName, filtersA }:
         </Button>
       </div>
 
-      {/* ── Painéis lado a lado ─────────────────────────────────────────────── */}
-      <div className="flex flex-1 divide-x overflow-hidden">
+      {/* ── Painéis com divisor arrastável ──────────────────────────────────── */}
+      <div
+        ref={containerRef}
+        className={cn(
+          'flex flex-1 overflow-hidden min-h-0',
+          dragging && 'select-none cursor-col-resize',
+        )}
+      >
         {/* Painel A */}
-        <ScrollArea className="flex-1">
-          <div className="px-6 py-5">
+        <ScrollArea
+          className="h-full shrink-0"
+          style={{ width: `${split}%` }}
+        >
+          <div className="px-5 py-5">
             <ComparisonPanel
               label="Período A"
               accent="blue"
@@ -77,9 +123,31 @@ export function ComparisonModal({ open, onClose, unitSlug, unitName, filtersA }:
           </div>
         </ScrollArea>
 
+        {/* Divisor arrastável */}
+        <div
+          onMouseDown={startDrag}
+          className={cn(
+            'relative flex shrink-0 w-1 cursor-col-resize items-center justify-center bg-border transition-colors z-10',
+            'hover:bg-primary/50',
+            dragging && 'bg-primary/60',
+          )}
+        >
+          {/* Handle visual */}
+          <div className={cn(
+            'absolute flex flex-col gap-[3px] rounded-full p-1.5 transition-opacity',
+            'bg-background border shadow-sm',
+            dragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 hover:opacity-100',
+          )}>
+            <GripVertical className="size-3.5 text-muted-foreground" />
+          </div>
+        </div>
+
         {/* Painel B */}
-        <ScrollArea className="flex-1">
-          <div className="px-6 py-5">
+        <ScrollArea
+          className="h-full shrink-0"
+          style={{ width: `${100 - split}%` }}
+        >
+          <div className="px-5 py-5">
             <ComparisonPanel
               label="Período B"
               accent="purple"
