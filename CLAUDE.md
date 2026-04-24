@@ -611,6 +611,18 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - **Armadilha:** `la.valortotal` já inclui consumo (`vendalocacao`) e exclui vendas diretas (`vendadireta`); nunca usar fórmula manual com joins de consumo
   - **Total da tabela de categorias:** linha "Total" de Faturamento/Locações/Ticket Médio agora soma as linhas das categorias (`rawRows`) em vez de usar `TotalResult.totalAllValue` (que incluía venda direta); Giro/RevPAR/Ocupação/TMO continuam usando `TotalResult`
 
+- **LHG-129 (Linear: LHG-128):** feat(dashboard): modo de comparação lado a lado entre dois períodos
+  - Botão "Comparar períodos" no header do dashboard abre overlay full-screen (`fixed inset-0 z-50`)
+  - Dois painéis independentes (Período A e B) com divisor arrastável (min 25% / max 75%)
+  - Cada painel contém filtros próprios + KPI cards + tabelas de categoria + heatmap
+  - Painel B inicia com mês anterior como default; ESC fecha; scroll do body bloqueado enquanto aberto
+  - `src/app/api/dashboard/kpis/route.ts`: nova rota com autenticação por sessão (diferente de `/api/kpis/[unitSlug]` que usa admin client)
+  - `comparison-modal.tsx`: split via `style={{ width: \`${split}%\` }}` explícito — `flex-1` não distribui corretamente com Radix internals
+  - `kpi-cards.tsx`: prop `compact` força `grid-cols-2` nos painéis — `lg:grid-cols-4` dispara por viewport, não por container
+  - `heatmap.tsx`: props `statusOverride` e `dateTypeOverride` para controle independente da URL
+  - Painéis usam `div` nativo com `overflow-y-auto` (não Radix ScrollArea) — evita clipping de conteúdo horizontal
+  - Scrollbars estilizados via `.scrollbar-thin` e `.scrollbar-none` em `globals.css` (cross-browser, substitui classes Tailwind arbitrárias)
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
