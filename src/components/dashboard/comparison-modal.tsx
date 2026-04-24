@@ -109,7 +109,7 @@ export function ComparisonModal({ open, onClose, unitSlug, unitName, filtersA }:
       >
         {/* Painel A */}
         <div
-          className="h-full shrink-0 overflow-x-hidden overflow-y-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent"
+          className="h-full shrink-0 overflow-x-hidden overflow-y-auto scrollbar-thin"
           style={{ width: `${split}%` }}
         >
           <div className="px-5 py-5">
@@ -143,7 +143,7 @@ export function ComparisonModal({ open, onClose, unitSlug, unitName, filtersA }:
 
         {/* Painel B */}
         <div
-          className="h-full shrink-0 overflow-x-hidden overflow-y-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent"
+          className="h-full shrink-0 overflow-x-hidden overflow-y-auto scrollbar-thin"
           style={{ width: `${100 - split}%` }}
         >
           <div className="px-5 py-5">

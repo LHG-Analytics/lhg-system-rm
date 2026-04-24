@@ -151,7 +151,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
         </div>
 
         {/* Controles — scroll horizontal invisível para não quebrar linha */}
-        <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="overflow-x-auto scrollbar-none">
           <div className="flex items-end gap-3 min-w-max">
             {/* Filtro de categoria */}
             {categories.length > 0 && (
@@ -263,7 +263,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
 
       {/* Grid */}
       {!loading && !error && (
-        <div className="overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent">
+        <div className="overflow-x-auto scrollbar-thin">
           <div className="min-w-[600px]">
             <div className="flex">
               <div className="w-10 shrink-0" />

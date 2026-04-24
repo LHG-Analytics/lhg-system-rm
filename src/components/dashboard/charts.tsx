@@ -295,7 +295,7 @@ function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
       <div className="px-5 py-4 border-b">
         <h2 className="text-sm font-semibold">Desempenho por Categoria de Suíte</h2>
       </div>
-      <div className="overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent">
+      <div className="overflow-x-auto scrollbar-thin">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
@@ -453,7 +453,7 @@ function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWe
       <div className="px-5 py-4 border-b">
         <h2 className="text-sm font-semibold">{title}</h2>
       </div>
-      <div className="overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent">
+      <div className="overflow-x-auto scrollbar-thin">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
@@ -600,7 +600,7 @@ function RevparWeekTable({ title, data }: { title: string; data: DataTableRevpar
       <div className="px-5 py-4 border-b">
         <h2 className="text-sm font-semibold">{title}</h2>
       </div>
-      <div className="overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent">
+      <div className="overflow-x-auto scrollbar-thin">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
