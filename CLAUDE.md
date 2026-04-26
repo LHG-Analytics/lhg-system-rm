@@ -634,10 +634,30 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - **Armadilha:** `reserva.dataatendimento` usa faixa 00:00–23:59 (diferente das queries de locação que usam 06:00 como corte operacional)
   - **Armadilha:** channel KPIs não filtram por `catIds` (categoria de suíte) — são globais por unidade, pois a tabela `reserva` não tem essa granularidade
 
+- **LHG-131:** feat(dashboard): widgets de mix por canal e período de locação
+  - `queryChannelKPIs` chamado em paralelo no server component do dashboard — sem latência extra
+  - `ChannelMixTable`: Canal | Reservas | Receita | Ticket Médio | % Receita (sort por coluna, ordem fixa padrão por CANAL_ORDER)
+  - `PeriodMixTable`: 3h/6h/12h/Pernoite | Receita | % do Total (usa `BillingRentalType` já presente em `CompanyKPIResponse`)
+  - `channelKPIs` prop opcional em `DashboardCharts` — `comparison-panel.tsx` não quebra
+  - Ambas as tabelas ocultadas automaticamente quando não há dados (sem tabela vazia)
+
+- **LHG-132:** feat(descontos): fluxo completo de propostas de desconto com aprovação
+  - Migration `discount_proposals` (unit_id, status pending/approved/rejected, context, rows JSONB, conv_id, RLS, Realtime)
+  - Tipos regenerados em `database.types.ts` com nova tabela
+  - `GET /api/agente/discount-proposals?unitSlug=` — lista propostas por unidade
+  - `POST /api/agente/discount-proposals` — gera proposta via IA com contexto canal + preços base + guardrails; clamp server-side garante preco_efetivo >= guardrail_minimo; usa ANALYSIS_MODEL
+  - `PATCH /api/agente/discount-proposals` — aprova/rejeita (admin+) ou edita rows (pendente)
+  - `DELETE /api/agente/discount-proposals?id=` — exclui proposta (admin+)
+  - Tool `salvar_proposta_desconto` no chat: agente salva proposta de desconto quando share do Guia < 15% ou > 40%
+  - `DiscountProposalsList`: filtro por status, expand/collapse, tabela com Δ p.p., aprovar/rejeitar/excluir, Realtime
+  - Página Descontos: nova aba "Propostas de desconto" como default; importação/histórico em abas secundárias
+  - system-prompt: instrução de quando usar `salvar_proposta_desconto` + regra de guardrail
+  - **Armadilha:** `supabase gen types typescript --linked` inclui texto do CLI na 1ª e última linha — sempre limpar manualmente
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
-1. **LHG-31:** Dashboard: Visão de canais
+1. **LHG-31:** Dashboard: Visão de canais (parcialmente feito via LHG-131)
 
 
 ### 📅 Pós-MVP (Backlog)
