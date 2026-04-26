@@ -223,7 +223,7 @@ function renderSuiteTotalCell(total: CompanyTotalResult, rows: SuiteRow[], key: 
   }
 }
 
-function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
+function SuiteCategoryTable({ company, dragHandle }: { company: CompanyKPIResponse; dragHandle?: React.ReactNode }) {
   const rawRows: SuiteRow[] = (company.DataTableSuiteCategory ?? []).flatMap((item) =>
     Object.entries(item).map(([category, kpi]) => ({ category, ...kpi }))
   )
@@ -292,7 +292,8 @@ function SuiteCategoryTable({ company }: { company: CompanyKPIResponse }) {
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b">
+      <div className="px-5 py-4 border-b flex items-center gap-2">
+        {dragHandle}
         <h2 className="text-sm font-semibold">Desempenho por Categoria de Suíte</h2>
       </div>
       <div className="overflow-x-auto scrollbar-thin">
@@ -383,7 +384,7 @@ const DAY_LABEL: Record<string, string> = {
 
 type GiroRow = { cat: string; days: DataTableGiroByWeek[string] }
 
-function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWeek[] }) {
+function GiroWeekTable({ title, data, dragHandle }: { title: string; data: DataTableGiroByWeek[]; dragHandle?: React.ReactNode }) {
   const rawRows: GiroRow[] = (data ?? []).map((item) => {
     const [cat, days] = Object.entries(item)[0]
     return { cat, days }
@@ -450,7 +451,8 @@ function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWe
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b">
+      <div className="px-5 py-4 border-b flex items-center gap-2">
+        {dragHandle}
         <h2 className="text-sm font-semibold">{title}</h2>
       </div>
       <div className="overflow-x-auto scrollbar-thin">
@@ -530,7 +532,7 @@ function GiroWeekTable({ title, data }: { title: string; data: DataTableGiroByWe
 
 type RevparRow = { cat: string; days: DataTableRevparByWeek[string] }
 
-function RevparWeekTable({ title, data }: { title: string; data: DataTableRevparByWeek[] }) {
+function RevparWeekTable({ title, data, dragHandle }: { title: string; data: DataTableRevparByWeek[]; dragHandle?: React.ReactNode }) {
   const rawRows: RevparRow[] = (data ?? []).map((item) => {
     const [cat, days] = Object.entries(item)[0]
     return { cat, days }
@@ -597,7 +599,8 @@ function RevparWeekTable({ title, data }: { title: string; data: DataTableRevpar
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b">
+      <div className="px-5 py-4 border-b flex items-center gap-2">
+        {dragHandle}
         <h2 className="text-sm font-semibold">{title}</h2>
       </div>
       <div className="overflow-x-auto scrollbar-thin">
@@ -694,7 +697,7 @@ function renderChannelCell(r: ChannelKPIRow, key: string): React.ReactNode {
   }
 }
 
-function ChannelMixTable({ rows }: { rows: ChannelKPIRow[] }) {
+function ChannelMixTable({ rows, dragHandle }: { rows: ChannelKPIRow[]; dragHandle?: React.ReactNode }) {
   const [sort, setSort]   = useState<SortState>(null)
   const [order, setOrder] = useState<string[]>([])
 
@@ -758,7 +761,8 @@ function ChannelMixTable({ rows }: { rows: ChannelKPIRow[] }) {
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b">
+      <div className="px-5 py-4 border-b flex items-center gap-2">
+        {dragHandle}
         <h2 className="text-sm font-semibold">Mix por Canal de Reserva</h2>
       </div>
       <div className="overflow-x-auto scrollbar-thin">
@@ -848,7 +852,7 @@ const PERIOD_COLS = [
   { key: 'percent',  label: '% do Total' },
 ]
 
-function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
+function PeriodMixTable({ rows, dragHandle }: { rows: BillingRentalTypeItem[]; dragHandle?: React.ReactNode }) {
   const [sort, setSort]   = useState<SortState>(null)
   const [order, setOrder] = useState<string[]>([])
 
@@ -912,7 +916,8 @@ function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
 
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b">
+      <div className="px-5 py-4 border-b flex items-center gap-2">
+        {dragHandle}
         <h2 className="text-sm font-semibold">Mix por Período de Locação</h2>
       </div>
       <div className="overflow-x-auto scrollbar-thin">
@@ -997,23 +1002,25 @@ function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
 
 // ─── Wrapper arrastável para tabelas ─────────────────────────────────────────
 
-function SortableTableWrapper({ id, children }: { id: string; children: React.ReactNode }) {
+function SortableTableWrapper({ id, children }: { id: string; children: (handle: React.ReactNode) => React.ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const handle = (
+    <div
+      {...attributes}
+      {...listeners}
+      className="p-0.5 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover/table:opacity-30 hover:!opacity-70 transition-opacity shrink-0"
+      title="Arrastar tabela"
+    >
+      <GripHorizontal className="size-4 text-muted-foreground" />
+    </div>
+  )
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn('relative group/table', isDragging && 'z-50 opacity-80 shadow-2xl')}
+      className={cn('group/table', isDragging && 'z-50 opacity-80 shadow-2xl')}
     >
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute left-0 top-0 bottom-0 w-5 flex items-center justify-center cursor-grab active:cursor-grabbing opacity-0 group-hover/table:opacity-40 hover:!opacity-80 transition-opacity z-10"
-        title="Arrastar tabela"
-      >
-        <GripVertical className="size-4 text-muted-foreground" />
-      </div>
-      {children}
+      {children(handle)}
     </div>
   )
 }
@@ -1060,28 +1067,25 @@ export function DashboardCharts({ company, channelKPIs, periodMix }: DashboardCh
 
   if (!company) return null
 
-  const tableMap: Record<string, React.ReactNode> = {
-    'suite-category': <SuiteCategoryTable key="suite-category" company={company} />,
-    'period-mix':     periodMix && periodMix.length > 0
-                        ? <PeriodMixTable key="period-mix" rows={periodMix} />
-                        : null,
-    'channel-mix':    channelKPIs && channelKPIs.length > 0
-                        ? <ChannelMixTable key="channel-mix" rows={channelKPIs} />
-                        : null,
-    'revpar-week':    <RevparWeekTable key="revpar-week" title="RevPAR por Dia da Semana" data={company.DataTableRevparByWeek ?? []} />,
-    'giro-week':      <GiroWeekTable key="giro-week" title="Giro por Dia da Semana" data={company.DataTableGiroByWeek ?? []} />,
-  }
-
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleTableDragEnd}>
       <SortableContext items={tableOrder} strategy={verticalListSortingStrategy}>
         <div className="flex flex-col gap-6">
           {tableOrder.map((id) => {
-            const content = tableMap[id]
-            if (!content) return null
+            if (id === 'period-mix'  && (!periodMix   || periodMix.length   === 0)) return null
+            if (id === 'channel-mix' && (!channelKPIs || channelKPIs.length === 0)) return null
             return (
               <SortableTableWrapper key={id} id={id}>
-                {content}
+                {(handle) => {
+                  switch (id) {
+                    case 'suite-category': return <SuiteCategoryTable company={company} dragHandle={handle} />
+                    case 'period-mix':     return <PeriodMixTable rows={periodMix!} dragHandle={handle} />
+                    case 'channel-mix':    return <ChannelMixTable rows={channelKPIs!} dragHandle={handle} />
+                    case 'revpar-week':    return <RevparWeekTable title="RevPAR por Dia da Semana" data={company.DataTableRevparByWeek ?? []} dragHandle={handle} />
+                    case 'giro-week':      return <GiroWeekTable title="Giro por Dia da Semana" data={company.DataTableGiroByWeek ?? []} dragHandle={handle} />
+                    default:               return null
+                  }
+                }}
               </SortableTableWrapper>
             )
           })}
