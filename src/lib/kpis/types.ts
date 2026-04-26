@@ -71,6 +71,8 @@ export interface BillingRentalTypeItem {
   rentalType: string
   value: number
   percent: number
+  locacoes: number
+  ticket: number
 }
 
 export interface SuiteCategoryDataPoint {

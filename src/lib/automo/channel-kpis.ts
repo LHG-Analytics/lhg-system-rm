@@ -123,21 +123,21 @@ export async function queryChannelKPIs(
   }
 }
 
+// ─── Períodos válidos por unidade ────────────────────────────────────────────
+
+export const UNIT_VALID_PERIODS: Record<string, string[]> = {
+  'altana':        ['1 hora', '2 horas', '4 horas', '12 horas'],
+  'lush-ipiranga': ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
+  'lush-lapa':     ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
+  'tout':          ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
+  'andar-de-cima': ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
+}
+
 // ─── Mix por período de locação ───────────────────────────────────────────────
 
 /**
  * Classifica locações por período usando duração + hora de check-in.
- * Períodos esperados por unidade:
- *   Lush/Tout/Andar de Cima: 1h, 3h, 6h, 12h, Day Use, Pernoite, Diária
- *   Altana:                   1h, 2h, 4h, 12h
- *
- * A distinção Day Use / Pernoite / 12h usa a hora do check-in:
- *   - check-in 08h–17h + duração 8–14h → Day Use
- *   - check-in 18h–05h + duração 8–14h → Pernoite
- *   - duração < 8h                     → período em horas (1h, 2h, 3h, 4h, 6h)
- *   - duração ≥ 20h                    → Diária
- *   - resto (12h fora dos rangos)      → 12h
- *
+ * Retorna apenas os períodos válidos para a unidade (UNIT_VALID_PERIODS).
  * Usa `datainicialdaocupacao` com corte operacional 06:00 (igual às demais queries).
  */
 export async function queryPeriodMix(
@@ -210,7 +210,12 @@ export async function queryPeriodMix(
     )
     SELECT
       periodo,
-      ROUND(SUM(receita)::numeric, 2) AS value,
+      ROUND(SUM(receita)::numeric, 2)              AS value,
+      COUNT(*)                                      AS locacoes,
+      CASE WHEN COUNT(*) > 0
+           THEN ROUND((SUM(receita) / COUNT(*))::numeric, 2)
+           ELSE 0
+      END AS ticket,
       CASE WHEN (SELECT total FROM totais) > 0
            THEN ROUND((SUM(receita) / (SELECT total FROM totais) * 100)::numeric, 1)
            ELSE 0
@@ -220,15 +225,36 @@ export async function queryPeriodMix(
     ORDER BY value DESC
   `
 
+  const validPeriods = UNIT_VALID_PERIODS[unitSlug]
+
   try {
-    const { rows } = await pool.query<{ periodo: string; value: string; percent: string }>(
-      sql, [isoStart, isoEnd]
-    )
-    return rows.map((r) => ({
+    const { rows } = await pool.query<{
+      periodo: string; value: string; locacoes: string; ticket: string; percent: string
+    }>(sql, [isoStart, isoEnd])
+
+    const all = rows.map((r) => ({
       rentalType: r.periodo,
-      value:      Number(r.value)   || 0,
-      percent:    Number(r.percent) || 0,
+      value:      Number(r.value)    || 0,
+      locacoes:   Number(r.locacoes) || 0,
+      ticket:     Number(r.ticket)   || 0,
+      percent:    Number(r.percent)  || 0,
     }))
+
+    // Filtra e reordena conforme períodos válidos da unidade
+    if (validPeriods?.length) {
+      const ordered = validPeriods
+        .map((p) => all.find((r) => r.rentalType === p))
+        .filter((r): r is BillingRentalTypeItem => !!r)
+
+      // Recalcula % sobre o total filtrado
+      const totalFiltered = ordered.reduce((s, r) => s + r.value, 0)
+      return ordered.map((r) => ({
+        ...r,
+        percent: totalFiltered > 0 ? +((r.value / totalFiltered) * 100).toFixed(1) : 0,
+      }))
+    }
+
+    return all
   } catch (err) {
     console.error('[PeriodMix] Query falhou:', err instanceof Error ? err.message : err)
     return []

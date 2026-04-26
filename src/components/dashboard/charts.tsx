@@ -842,8 +842,10 @@ function ChannelMixTable({ rows }: { rows: ChannelKPIRow[] }) {
 
 
 const PERIOD_COLS = [
-  { key: 'value',   label: 'Receita' },
-  { key: 'percent', label: '% do Total' },
+  { key: 'locacoes', label: 'Locações' },
+  { key: 'value',    label: 'Receita' },
+  { key: 'ticket',   label: 'Ticket Médio' },
+  { key: 'percent',  label: '% do Total' },
 ]
 
 function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
@@ -864,7 +866,9 @@ function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  const totalValue = rows.reduce((s, r) => s + r.value, 0)
+  const totalValue    = rows.reduce((s, r) => s + r.value, 0)
+  const totalLocacoes = rows.reduce((s, r) => s + r.locacoes, 0)
+  const totalTicket   = totalLocacoes > 0 ? totalValue / totalLocacoes : 0
 
   function applyOrder(rs: BillingRentalTypeItem[]): BillingRentalTypeItem[] {
     if (!order.length) return rs
@@ -880,9 +884,11 @@ function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
     const m = sort.dir === 'asc' ? 1 : -1
     return [...rs].sort((a, b) => {
       switch (sort.key) {
-        case 'periodo': return m * a.rentalType.localeCompare(b.rentalType, 'pt-BR')
-        case 'value':   return m * (a.value - b.value)
-        case 'percent': return m * (a.percent - b.percent)
+        case 'periodo':  return m * a.rentalType.localeCompare(b.rentalType, 'pt-BR')
+        case 'value':    return m * (a.value - b.value)
+        case 'percent':  return m * (a.percent - b.percent)
+        case 'locacoes': return m * (a.locacoes - b.locacoes)
+        case 'ticket':   return m * (a.ticket - b.ticket)
         default: return 0
       }
     })
@@ -956,7 +962,9 @@ function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
                         </td>
                         {orderedCols.map((col) => (
                           <td key={col.key} className="px-4 py-3 text-right tabular-nums">
-                            {col.key === 'value'   ? fmt.format(row.value)
+                            {col.key === 'value'    ? fmt.format(row.value)
+                            : col.key === 'ticket'  ? fmt.format(row.ticket)
+                            : col.key === 'locacoes' ? row.locacoes.toLocaleString('pt-BR')
                             : col.key === 'percent' ? `${row.percent.toFixed(1)}%`
                             : '–'}
                           </td>
@@ -973,7 +981,10 @@ function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
               <td className="px-4 py-3">Total</td>
               {orderedCols.map((col) => (
                 <td key={col.key} className="px-4 py-3 text-right tabular-nums">
-                  {col.key === 'value' ? fmt.format(totalValue) : '100%'}
+                  {col.key === 'value'    ? fmt.format(totalValue)
+                  : col.key === 'ticket'  ? fmt.format(totalTicket)
+                  : col.key === 'locacoes' ? totalLocacoes.toLocaleString('pt-BR')
+                  : '100%'}
                 </td>
               ))}
             </tr>
@@ -987,7 +998,7 @@ function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
 // ─── Export principal ──────────────────────────────────────────────────────────
 
 interface DashboardChartsProps {
-  company:     CompanyKPIResponse | null
+  company:      CompanyKPIResponse | null
   channelKPIs?: ChannelKPIRow[]
   periodMix?:   BillingRentalTypeItem[]
 }
