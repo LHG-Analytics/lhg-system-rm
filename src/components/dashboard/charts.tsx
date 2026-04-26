@@ -675,37 +675,89 @@ function RevparWeekTable({ title, data }: { title: string; data: DataTableRevpar
 
 // ─── Mix por Canal de Reserva ─────────────────────────────────────────────────
 
-const CANAL_ORDER = ['INTERNAL', 'GUIA_GO', 'GUIA_SCHEDULED', 'WEBSITE_IMMEDIATE', 'WEBSITE_SCHEDULED', 'BOOKING', 'EXPEDIA']
+const CANAL_DEFAULT_ORDER = ['INTERNAL', 'GUIA_GO', 'GUIA_SCHEDULED', 'WEBSITE_IMMEDIATE', 'WEBSITE_SCHEDULED', 'BOOKING', 'EXPEDIA']
+
+const CHANNEL_COLS = [
+  { key: 'reservas',          label: 'Reservas' },
+  { key: 'receita',           label: 'Receita' },
+  { key: 'ticket',            label: 'Ticket Médio' },
+  { key: 'representatividade', label: '% Receita' },
+]
+
+function renderChannelCell(r: ChannelKPIRow, key: string): React.ReactNode {
+  switch (key) {
+    case 'reservas':           return r.reservas.toLocaleString('pt-BR')
+    case 'receita':            return fmt.format(r.receita)
+    case 'ticket':             return fmt.format(r.ticket)
+    case 'representatividade': return `${r.representatividade.toFixed(1)}%`
+    default:                   return '–'
+  }
+}
 
 function ChannelMixTable({ rows }: { rows: ChannelKPIRow[] }) {
-  const [sort, setSort] = useState<SortState>(null)
+  const [sort, setSort]   = useState<SortState>(null)
+  const [order, setOrder] = useState<string[]>([])
 
-  const sorted = [...rows].sort((a, b) => {
-    if (!sort) return CANAL_ORDER.indexOf(a.canal) - CANAL_ORDER.indexOf(b.canal)
-    const { key, dir } = sort
-    let va: number, vb: number
-    if (key === 'label')            { va = 0; vb = 0 }
-    else if (key === 'reservas')    { va = a.reservas; vb = b.reservas }
-    else if (key === 'receita')     { va = a.receita; vb = b.receita }
-    else if (key === 'ticket')      { va = a.ticket; vb = b.ticket }
-    else                            { va = a.representatividade; vb = b.representatividade }
-    if (key === 'label') return dir === 'asc' ? a.label.localeCompare(b.label) : b.label.localeCompare(a.label)
-    return dir === 'asc' ? va - vb : vb - va
-  })
+  const colDrag = useColDrag('channel-mix-cols', CHANNEL_COLS.map((c) => c.key))
 
-  const totalReceita = rows.reduce((s, r) => s + r.receita, 0)
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('channel-mix-order')
+      if (v) setOrder(JSON.parse(v))
+    } catch {}
+  }, [])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  const totalReceita  = rows.reduce((s, r) => s + r.receita,  0)
   const totalReservas = rows.reduce((s, r) => s + r.reservas, 0)
-  const totalTicket = totalReservas > 0 ? totalReceita / totalReservas : 0
+  const totalTicket   = totalReservas > 0 ? totalReceita / totalReservas : 0
 
-  const cols: { key: string; label: string }[] = [
-    { key: 'reservas', label: 'Reservas' },
-    { key: 'receita', label: 'Receita' },
-    { key: 'ticket', label: 'Ticket Médio' },
-    { key: 'representatividade', label: '% Receita' },
-  ]
+  function applyOrder(rs: ChannelKPIRow[]): ChannelKPIRow[] {
+    const canonical = order.length ? order : CANAL_DEFAULT_ORDER
+    const map = new Map(rs.map((r) => [r.canal, r]))
+    return [
+      ...(canonical.map((c) => map.get(c)).filter(Boolean) as ChannelKPIRow[]),
+      ...rs.filter((r) => !canonical.includes(r.canal)),
+    ]
+  }
+
+  function sortRows(rs: ChannelKPIRow[]): ChannelKPIRow[] {
+    if (!sort) return applyOrder(rs)
+    const m = sort.dir === 'asc' ? 1 : -1
+    return [...rs].sort((a, b) => {
+      switch (sort.key) {
+        case 'canal':              return m * a.label.localeCompare(b.label, 'pt-BR')
+        case 'reservas':           return m * (a.reservas - b.reservas)
+        case 'receita':            return m * (a.receita - b.receita)
+        case 'ticket':             return m * (a.ticket - b.ticket)
+        case 'representatividade': return m * (a.representatividade - b.representatividade)
+        default: return 0
+      }
+    })
+  }
+
+  const sorted = sortRows(rows)
+
+  function handleRowDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return
+    const ids = sorted.map((r) => r.canal)
+    const next = arrayMove(ids, ids.indexOf(active.id as string), ids.indexOf(over.id as string))
+    setOrder(next)
+    setSort(null)
+    try { localStorage.setItem('channel-mix-order', JSON.stringify(next)) } catch {}
+  }
+
+  const sp = { sort, onSort: (k: string) => setSort((p) => nextSort(p, k)) }
+  const orderedCols = CHANNEL_COLS
+    .filter((c) => colDrag.colOrder.includes(c.key))
+    .sort((a, b) => colDrag.colOrder.indexOf(a.key) - colDrag.colOrder.indexOf(b.key))
 
   return (
-    <div className="rounded-xl border bg-card text-card-foreground">
+    <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b">
         <h2 className="text-sm font-semibold">Mix por Canal de Reserva</h2>
       </div>
@@ -713,41 +765,71 @@ function ChannelMixTable({ rows }: { rows: ChannelKPIRow[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
-              <th className="px-4 py-3 font-medium text-muted-foreground text-left whitespace-nowrap">Canal</th>
-              {cols.map((c) => (
-                <th
-                  key={c.key}
-                  onClick={() => setSort((p) => nextSort(p, c.key))}
-                  className="px-4 py-3 font-medium text-muted-foreground text-right whitespace-nowrap cursor-pointer select-none hover:text-foreground transition-colors"
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    {c.label}
-                    {sort?.key === c.key
-                      ? sort.dir === 'desc' ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />
-                      : <ChevronsUpDown className="size-3 opacity-30" />}
-                  </div>
-                </th>
+              <SortTh colKey="canal" {...sp}>Canal</SortTh>
+              {orderedCols.map((col) => (
+                <DragColTh
+                  key={col.key}
+                  colKey={col.key}
+                  label={col.label}
+                  right
+                  sort={sort}
+                  onSort={(k) => setSort((p) => nextSort(p, k))}
+                  dragCol={colDrag.dragCol}
+                  overCol={colDrag.overCol}
+                  onColDragStart={colDrag.onColDragStart}
+                  onColDragEnter={colDrag.onColDragEnter}
+                  onColDrop={colDrag.onColDrop}
+                />
               ))}
             </tr>
           </thead>
-          <tbody>
-            {sorted.map((r) => (
-              <tr key={r.canal} className="border-b hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3 font-medium whitespace-nowrap">{r.label}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{r.reservas.toLocaleString('pt-BR')}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(r.receita)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(r.ticket)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{r.representatividade.toFixed(1)}%</td>
-              </tr>
-            ))}
-          </tbody>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
+            <SortableContext items={sorted.map((r) => r.canal)} strategy={verticalListSortingStrategy}>
+              <tbody>
+                {sorted.map((row) => (
+                  <SortableTR key={row.canal} id={row.canal} disabled={!!sort}>
+                    {(h) => (
+                      <>
+                        <td className="px-4 py-3 font-medium whitespace-nowrap">
+                          <div className="flex items-center gap-2 group">
+                            <div
+                              {...h}
+                              className={cn(
+                                'p-0.5 rounded shrink-0 transition-opacity',
+                                sort
+                                  ? 'hidden'
+                                  : 'opacity-0 group-hover:opacity-30 hover:!opacity-80 cursor-grab active:cursor-grabbing',
+                              )}
+                            >
+                              <GripVertical className="size-3.5 text-muted-foreground" />
+                            </div>
+                            {row.label}
+                          </div>
+                        </td>
+                        {orderedCols.map((col) => (
+                          <td key={col.key} className="px-4 py-3 text-right tabular-nums">
+                            {renderChannelCell(row, col.key)}
+                          </td>
+                        ))}
+                      </>
+                    )}
+                  </SortableTR>
+                ))}
+              </tbody>
+            </SortableContext>
+          </DndContext>
           <tfoot>
             <tr className="bg-muted/40 border-t-2 border-border font-semibold">
               <td className="px-4 py-3">Total</td>
-              <td className="px-4 py-3 text-right tabular-nums">{totalReservas.toLocaleString('pt-BR')}</td>
-              <td className="px-4 py-3 text-right tabular-nums">{fmt.format(totalReceita)}</td>
-              <td className="px-4 py-3 text-right tabular-nums">{fmt.format(totalTicket)}</td>
-              <td className="px-4 py-3 text-right tabular-nums">100%</td>
+              {orderedCols.map((col) => (
+                <td key={col.key} className="px-4 py-3 text-right tabular-nums">
+                  {col.key === 'reservas'           ? totalReservas.toLocaleString('pt-BR')
+                  : col.key === 'receita'           ? fmt.format(totalReceita)
+                  : col.key === 'ticket'            ? fmt.format(totalTicket)
+                  : col.key === 'representatividade' ? '100%'
+                  : '–'}
+                </td>
+              ))}
             </tr>
           </tfoot>
         </table>
@@ -758,29 +840,72 @@ function ChannelMixTable({ rows }: { rows: ChannelKPIRow[] }) {
 
 // ─── Mix por Período (3h/6h/12h/Pernoite) ────────────────────────────────────
 
-const PERIOD_LABEL: Record<string, string> = {
-  '3H': '3 horas',
-  '6H': '6 horas',
-  '12H': '12 horas',
-  'PERNOITE': 'Pernoite',
-}
+
+const PERIOD_COLS = [
+  { key: 'value',   label: 'Receita' },
+  { key: 'percent', label: '% do Total' },
+]
 
 function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
-  const [sort, setSort] = useState<SortState>(null)
+  const [sort, setSort]   = useState<SortState>(null)
+  const [order, setOrder] = useState<string[]>([])
 
-  const sorted = [...rows].sort((a, b) => {
-    if (!sort) return 0
-    const { key, dir } = sort
-    if (key === 'rentalType') return dir === 'asc' ? a.rentalType.localeCompare(b.rentalType) : b.rentalType.localeCompare(a.rentalType)
-    const va = key === 'value' ? a.value : a.percent
-    const vb = key === 'value' ? b.value : b.percent
-    return dir === 'asc' ? va - vb : vb - va
-  })
+  const colDrag = useColDrag('period-mix-cols', PERIOD_COLS.map((c) => c.key))
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('period-mix-order')
+      if (v) setOrder(JSON.parse(v))
+    } catch {}
+  }, [])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   const totalValue = rows.reduce((s, r) => s + r.value, 0)
 
+  function applyOrder(rs: BillingRentalTypeItem[]): BillingRentalTypeItem[] {
+    if (!order.length) return rs
+    const map = new Map(rs.map((r) => [r.rentalType, r]))
+    return [
+      ...(order.map((k) => map.get(k)).filter(Boolean) as BillingRentalTypeItem[]),
+      ...rs.filter((r) => !order.includes(r.rentalType)),
+    ]
+  }
+
+  function sortRows(rs: BillingRentalTypeItem[]): BillingRentalTypeItem[] {
+    if (!sort) return applyOrder(rs)
+    const m = sort.dir === 'asc' ? 1 : -1
+    return [...rs].sort((a, b) => {
+      switch (sort.key) {
+        case 'periodo': return m * a.rentalType.localeCompare(b.rentalType, 'pt-BR')
+        case 'value':   return m * (a.value - b.value)
+        case 'percent': return m * (a.percent - b.percent)
+        default: return 0
+      }
+    })
+  }
+
+  const sorted = sortRows(rows)
+
+  function handleRowDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return
+    const ids = sorted.map((r) => r.rentalType)
+    const next = arrayMove(ids, ids.indexOf(active.id as string), ids.indexOf(over.id as string))
+    setOrder(next)
+    setSort(null)
+    try { localStorage.setItem('period-mix-order', JSON.stringify(next)) } catch {}
+  }
+
+  const sp = { sort, onSort: (k: string) => setSort((p) => nextSort(p, k)) }
+  const orderedCols = PERIOD_COLS
+    .filter((c) => colDrag.colOrder.includes(c.key))
+    .sort((a, b) => colDrag.colOrder.indexOf(a.key) - colDrag.colOrder.indexOf(b.key))
+
   return (
-    <div className="rounded-xl border bg-card text-card-foreground">
+    <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b">
         <h2 className="text-sm font-semibold">Mix por Período de Locação</h2>
       </div>
@@ -788,43 +913,69 @@ function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
-              {[
-                { key: 'rentalType', label: 'Período', right: false },
-                { key: 'value', label: 'Receita', right: true },
-                { key: 'percent', label: '% do Total', right: true },
-              ].map((c) => (
-                <th
-                  key={c.key}
-                  onClick={() => setSort((p) => nextSort(p, c.key))}
-                  className={cn(
-                    'px-4 py-3 font-medium text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground transition-colors',
-                    c.right ? 'text-right' : 'text-left',
-                  )}
-                >
-                  <div className={cn('flex items-center gap-1', c.right && 'justify-end')}>
-                    {c.label}
-                    {sort?.key === c.key
-                      ? sort.dir === 'desc' ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />
-                      : <ChevronsUpDown className="size-3 opacity-30" />}
-                  </div>
-                </th>
+              <SortTh colKey="periodo" {...sp}>Período</SortTh>
+              {orderedCols.map((col) => (
+                <DragColTh
+                  key={col.key}
+                  colKey={col.key}
+                  label={col.label}
+                  right
+                  sort={sort}
+                  onSort={(k) => setSort((p) => nextSort(p, k))}
+                  dragCol={colDrag.dragCol}
+                  overCol={colDrag.overCol}
+                  onColDragStart={colDrag.onColDragStart}
+                  onColDragEnter={colDrag.onColDragEnter}
+                  onColDrop={colDrag.onColDrop}
+                />
               ))}
             </tr>
           </thead>
-          <tbody>
-            {sorted.map((r) => (
-              <tr key={r.rentalType} className="border-b hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3 font-medium whitespace-nowrap">{PERIOD_LABEL[r.rentalType] ?? r.rentalType}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(r.value)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{r.percent.toFixed(1)}%</td>
-              </tr>
-            ))}
-          </tbody>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
+            <SortableContext items={sorted.map((r) => r.rentalType)} strategy={verticalListSortingStrategy}>
+              <tbody>
+                {sorted.map((row) => (
+                  <SortableTR key={row.rentalType} id={row.rentalType} disabled={!!sort}>
+                    {(h) => (
+                      <>
+                        <td className="px-4 py-3 font-medium whitespace-nowrap">
+                          <div className="flex items-center gap-2 group">
+                            <div
+                              {...h}
+                              className={cn(
+                                'p-0.5 rounded shrink-0 transition-opacity',
+                                sort
+                                  ? 'hidden'
+                                  : 'opacity-0 group-hover:opacity-30 hover:!opacity-80 cursor-grab active:cursor-grabbing',
+                              )}
+                            >
+                              <GripVertical className="size-3.5 text-muted-foreground" />
+                            </div>
+                            {row.rentalType}
+                          </div>
+                        </td>
+                        {orderedCols.map((col) => (
+                          <td key={col.key} className="px-4 py-3 text-right tabular-nums">
+                            {col.key === 'value'   ? fmt.format(row.value)
+                            : col.key === 'percent' ? `${row.percent.toFixed(1)}%`
+                            : '–'}
+                          </td>
+                        ))}
+                      </>
+                    )}
+                  </SortableTR>
+                ))}
+              </tbody>
+            </SortableContext>
+          </DndContext>
           <tfoot>
             <tr className="bg-muted/40 border-t-2 border-border font-semibold">
               <td className="px-4 py-3">Total</td>
-              <td className="px-4 py-3 text-right tabular-nums">{fmt.format(totalValue)}</td>
-              <td className="px-4 py-3 text-right tabular-nums">100%</td>
+              {orderedCols.map((col) => (
+                <td key={col.key} className="px-4 py-3 text-right tabular-nums">
+                  {col.key === 'value' ? fmt.format(totalValue) : '100%'}
+                </td>
+              ))}
             </tr>
           </tfoot>
         </table>
@@ -836,21 +987,20 @@ function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
 // ─── Export principal ──────────────────────────────────────────────────────────
 
 interface DashboardChartsProps {
-  company: CompanyKPIResponse | null
+  company:     CompanyKPIResponse | null
   channelKPIs?: ChannelKPIRow[]
+  periodMix?:   BillingRentalTypeItem[]
 }
 
-export function DashboardCharts({ company, channelKPIs }: DashboardChartsProps) {
+export function DashboardCharts({ company, channelKPIs, periodMix }: DashboardChartsProps) {
   if (!company) return null
-
-  const billingRentalType = company.BillingRentalType ?? []
 
   return (
     <div className="flex flex-col gap-6">
       <SuiteCategoryTable company={company} />
 
-      {billingRentalType.length > 0 && (
-        <PeriodMixTable rows={billingRentalType} />
+      {periodMix && periodMix.length > 0 && (
+        <PeriodMixTable rows={periodMix} />
       )}
 
       {channelKPIs && channelKPIs.length > 0 && (

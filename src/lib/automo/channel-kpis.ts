@@ -1,5 +1,5 @@
-import { getAutomPool } from './client'
-import type { ChannelKPIRow } from '@/lib/kpis/types'
+import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
+import type { ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
 
 // ─── Labels legíveis por tipo de canal ────────────────────────────────────────
 
@@ -119,6 +119,118 @@ export async function queryChannelKPIs(
     })
   } catch (err) {
     console.error('[ChannelKPIs] Query falhou:', err instanceof Error ? err.message : err)
+    return []
+  }
+}
+
+// ─── Mix por período de locação ───────────────────────────────────────────────
+
+/**
+ * Classifica locações por período usando duração + hora de check-in.
+ * Períodos esperados por unidade:
+ *   Lush/Tout/Andar de Cima: 1h, 3h, 6h, 12h, Day Use, Pernoite, Diária
+ *   Altana:                   1h, 2h, 4h, 12h
+ *
+ * A distinção Day Use / Pernoite / 12h usa a hora do check-in:
+ *   - check-in 08h–17h + duração 8–14h → Day Use
+ *   - check-in 18h–05h + duração 8–14h → Pernoite
+ *   - duração < 8h                     → período em horas (1h, 2h, 3h, 4h, 6h)
+ *   - duração ≥ 20h                    → Diária
+ *   - resto (12h fora dos rangos)      → 12h
+ *
+ * Usa `datainicialdaocupacao` com corte operacional 06:00 (igual às demais queries).
+ */
+export async function queryPeriodMix(
+  unitSlug: string,
+  startDateDDMMYYYY: string,
+  endDateDDMMYYYY: string,
+  statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
+): Promise<BillingRentalTypeItem[]> {
+  const pool = getAutomPool(unitSlug)
+  if (!pool) return []
+
+  const catIds = UNIT_CATEGORY_IDS[unitSlug]
+  if (!catIds?.length) return []
+
+  const [d1, m1, y1] = startDateDDMMYYYY.split('/')
+  const [d2, m2, y2] = endDateDDMMYYYY.split('/')
+  const isoStart = `${y1}-${m1.padStart(2,'0')}-${d1.padStart(2,'0')} 06:00:00`
+  // Para o fim: se o end é "hoje", usar hoje 06:00 (período aberto); senão (end+1) 06:00
+  const endDate = new Date(`${y2}-${m2}-${d2}T06:00:00`)
+  const today6  = new Date(); today6.setHours(6,0,0,0)
+  const isoEnd  = endDate >= today6
+    ? `${y2}-${m2.padStart(2,'0')}-${d2.padStart(2,'0')} 06:00:00`
+    : (() => {
+        const next = new Date(endDate); next.setDate(next.getDate() + 1)
+        return `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')} 06:00:00`
+      })()
+
+  const idList = catIds.join(',')
+
+  const sql = `
+    WITH classificado AS (
+      SELECT
+        CASE
+          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 1.5
+            THEN '1 hora'
+          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 2.5
+            THEN '2 horas'
+          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 3.5
+            THEN '3 horas'
+          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 5.0
+            THEN '4 horas'
+          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 7.5
+            THEN '6 horas'
+          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 20
+            THEN 'Diária'
+          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 7.5
+               AND EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 20
+               AND EXTRACT(HOUR FROM la.datainicialdaocupacao) BETWEEN 8 AND 17
+            THEN 'Day Use'
+          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 7.5
+               AND EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 20
+               AND (EXTRACT(HOUR FROM la.datainicialdaocupacao) >= 18
+                    OR EXTRACT(HOUR FROM la.datainicialdaocupacao) < 8)
+            THEN 'Pernoite'
+          ELSE '12 horas'
+        END AS periodo,
+        la.valortotal::numeric AS receita
+      FROM locacaoapartamento la
+      INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+      INNER JOIN apartamento a        ON aps.id_apartamento = a.id
+      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      WHERE la.datainicialdaocupacao >= $1
+        AND la.datainicialdaocupacao <  $2
+        ${statusFilter}
+        AND ca.id IN (${idList})
+        AND la.datafinaldaocupacao IS NOT NULL
+    ),
+    totais AS (
+      SELECT COALESCE(SUM(receita), 0) AS total FROM classificado
+    )
+    SELECT
+      periodo,
+      ROUND(SUM(receita)::numeric, 2) AS value,
+      CASE WHEN (SELECT total FROM totais) > 0
+           THEN ROUND((SUM(receita) / (SELECT total FROM totais) * 100)::numeric, 1)
+           ELSE 0
+      END AS percent
+    FROM classificado
+    GROUP BY periodo
+    ORDER BY value DESC
+  `
+
+  try {
+    const { rows } = await pool.query<{ periodo: string; value: string; percent: string }>(
+      sql, [isoStart, isoEnd]
+    )
+    return rows.map((r) => ({
+      rentalType: r.periodo,
+      value:      Number(r.value)   || 0,
+      percent:    Number(r.percent) || 0,
+    }))
+  } catch (err) {
+    console.error('[PeriodMix] Query falhou:', err instanceof Error ? err.message : err)
     return []
   }
 }

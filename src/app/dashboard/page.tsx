@@ -11,8 +11,8 @@ import { WeatherWidget } from '@/components/dashboard/weather-widget'
 import { CompareButton } from '@/components/dashboard/compare-button'
 import { fetchWeatherData } from '@/lib/agente/weather'
 import { getWeatherInsight } from '@/lib/agente/weather-insight'
-import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
-import type { ChannelKPIRow } from '@/lib/kpis/types'
+import { queryChannelKPIs, queryPeriodMix } from '@/lib/automo/channel-kpis'
+import type { ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
 
 interface DashboardPageProps {
   searchParams: Promise<{
@@ -108,7 +108,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .eq('unit_id', activeUnit.id)
     .single()
 
-  const [company, weatherResult, channelKPIsResult] = await Promise.all([
+  const [company, weatherResult, channelKPIsResult, periodMixResult] = await Promise.all([
     fetchCompanyKPIsFromAutomo(
       activeUnit.slug,
       startDDMMYYYY,
@@ -123,6 +123,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     }),
     agentConfig?.city ? fetchWeatherData(agentConfig.city) : Promise.resolve({ status: 'unconfigured' as const }),
     queryChannelKPIs(activeUnit.slug, startDDMMYYYY, endDDMMYYYY).catch(() => [] as ChannelKPIRow[]),
+    queryPeriodMix(activeUnit.slug, startDDMMYYYY, endDDMMYYYY,
+      rentalStatus === 'TODAS' ? '' :
+      rentalStatus === 'ABERTA' ? 'AND la.fimocupacaotipo IS NULL' :
+      `AND la.fimocupacaotipo = '${rentalStatus}'`
+    ).catch(() => [] as BillingRentalTypeItem[]),
   ])
 
   // Insight IA clima × demanda — usa cache de 4h; regenera em background se vencido
@@ -163,7 +168,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <WeatherWidget result={weatherResult} insight={weatherInsight} />
       <DashboardKPICards company={company} />
-      <DashboardCharts company={company} channelKPIs={channelKPIsResult} />
+      <DashboardCharts company={company} channelKPIs={channelKPIsResult} periodMix={periodMixResult} />
       <Suspense fallback={null}>
         <OccupancyHeatmap
           unitSlug={activeUnit.slug}
