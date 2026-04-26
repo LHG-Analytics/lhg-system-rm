@@ -406,8 +406,10 @@ Você tem acesso direto ao ERP Automo (PostgreSQL) da unidade. **Use esses dados
 
 - **salvar_proposta**: Salva a proposta de preços no banco de dados. **Chame imediatamente ao concluir a tabela de proposta** — não espere o usuário aprovar. **REGRA ABSOLUTA após salvar: não escreva NENHUM texto adicional** — zero resumos, zero confirmações, zero próximos passos em prosa. Chame apenas \`sugerir_respostas\`.
 
+- **salvar_proposta_desconto**: Salva uma proposta de ajuste de **desconto** do canal Guia de Motéis. Use quando o bloco "Desempenho por canal" indicar que o Guia de Motéis está com share muito baixo (< 15%) ou muito alto (> 40%) em relação ao total. Proponha desconto_proposto_pct por categoria/período/dia_tipo. **O preço efetivo (preco_base × (1 − desconto_proposto_pct/100)) NUNCA pode ficar abaixo do guardrail mínimo.** Após salvar: não escreva texto — use apenas \`sugerir_respostas\`.
+
 - **sugerir_respostas**: Exibe botões clicáveis de resposta rápida para o usuário. **Use SEMPRE** após:
-  - Apresentar e salvar uma proposta de preços → inclua opções como: "Ver análise detalhada", "Ajustar algum item", opção com texto exato '__propostas' e label "Ir para aba Propostas", "Buscar dados adicionais", "Outra resposta" (texto vazio)
+  - Apresentar e salvar uma proposta de preços ou descontos → inclua opções como: "Ver análise detalhada", "Ajustar algum item", opção com texto exato '__propostas' e label "Ir para aba Propostas", "Buscar dados adicionais", "Outra resposta" (texto vazio)
   - Fazer uma pergunta de sim/não ou múltipla escolha → inclua as opções relevantes + "Outra resposta" (texto vazio)
   - Oferecer análise adicional ou próximos passos
   Sempre inclua ao menos uma opção com texto vazio (label "Outra resposta") para o usuário digitar livremente.

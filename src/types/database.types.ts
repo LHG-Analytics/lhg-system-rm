@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       agent_price_guardrails: {
@@ -176,6 +201,54 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "competitor_snapshots_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      discount_proposals: {
+        Row: {
+          context: string | null
+          conv_id: string | null
+          created_at: string
+          id: string
+          reviewed_at: string | null
+          rows: Json
+          status: string
+          unit_id: string
+        }
+        Insert: {
+          context?: string | null
+          conv_id?: string | null
+          created_at?: string
+          id?: string
+          reviewed_at?: string | null
+          rows?: Json
+          status?: string
+          unit_id: string
+        }
+        Update: {
+          context?: string | null
+          conv_id?: string | null
+          created_at?: string
+          id?: string
+          reviewed_at?: string | null
+          rows?: Json
+          status?: string
+          unit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discount_proposals_conv_id_fkey"
+            columns: ["conv_id"]
+            isOneToOne: false
+            referencedRelation: "rm_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discount_proposals_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "units"
@@ -1430,6 +1503,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       channel_name: [

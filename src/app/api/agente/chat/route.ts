@@ -412,6 +412,46 @@ export async function POST(req: NextRequest) {
       },
     }),
 
+    salvar_proposta_desconto: tool({
+      description:
+        'Salva uma proposta de ajuste de desconto do Guia de Motéis no banco de dados. ' +
+        'Use quando o usuário pedir análise de canais e o Guia de Motéis estiver com desempenho baixo ou alto — ' +
+        'proponha ajuste de desconto baseado no share de canal e nos dados de giro/ocupação. ' +
+        'O preço efetivo (preco_base × (1 − desconto_proposto_pct/100)) NUNCA pode ficar abaixo do guardrail mínimo. ' +
+        'Após salvar, use sugerir_respostas com opções de próximos passos — NÃO escreva texto adicional.',
+      inputSchema: z.object({
+        context: z.string().describe('Resumo em 2–3 frases da lógica da proposta de desconto'),
+        rows: z.array(z.object({
+          canal:                  z.literal('guia_moteis'),
+          categoria:              z.string(),
+          periodo:                z.string(),
+          dia_tipo:               z.enum(['semana', 'fds_feriado', 'todos']),
+          faixa_horaria:          z.string().optional(),
+          desconto_atual_pct:     z.number(),
+          desconto_proposto_pct:  z.number(),
+          variacao_pts:           z.number(),
+          preco_base:             z.number(),
+          preco_efetivo_atual:    z.number(),
+          preco_efetivo_proposto: z.number(),
+          justificativa:          z.string(),
+        })),
+      }),
+      execute: async ({ context, rows }) => {
+        const { data, error } = await supabase
+          .from('discount_proposals')
+          .insert({
+            unit_id: unit.id,
+            context,
+            rows: rows as unknown as Database['public']['Tables']['discount_proposals']['Insert']['rows'],
+            status: 'pending',
+          })
+          .select('id')
+          .single()
+        if (error) return { success: false, error: error.message }
+        return { success: true, proposalId: data.id }
+      },
+    }),
+
     sugerir_respostas: tool({
       description:
         'Exibe botões de resposta rápida clicáveis para o usuário no chat. ' +
