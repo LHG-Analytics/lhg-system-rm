@@ -10,16 +10,16 @@ import type {
 } from '@/lib/kpis/types'
 import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
 
-// ─── Date helpers ─────────────────────────────────────────────────────────────
+// ─── Date helpers (exportados para uso em channel-kpis.ts) ────────────────────
 
 /** DD/MM/YYYY → ISO string para uso em SQL (corte operacional 06:00, igual ao Analytics) */
-function ddmmyyyyToIso(ddmmyyyy: string): string {
+export function ddmmyyyyToIso(ddmmyyyy: string): string {
   const [d, m, y] = ddmmyyyy.split('/').map(Number)
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} 06:00:00`
 }
 
 /** Adiciona N dias a uma string ISO 'YYYY-MM-DD HH:MM:SS' preservando horário 06:00 */
-function addDays(iso: string, n: number): string {
+export function addDays(iso: string, n: number): string {
   const [y, mo, d] = iso.slice(0, 10).split('-').map(Number)
   const dt = new Date(y, mo - 1, d + n)
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 06:00:00`
@@ -56,7 +56,7 @@ function secondsToHMS(totalSec: number): string {
  * 'checkout'        → filtra por datafinaldaocupacao.
  * Retorna um par [coluna, fragmento] — a coluna é usada nos filtros de hora.
  */
-function buildDateRangeFilter(dateType: string): { col: string; fragment: string } {
+export function buildDateRangeFilter(dateType: string): { col: string; fragment: string } {
   if (dateType === 'checkout') {
     return {
       col:      'la.datafinaldaocupacao',
@@ -73,7 +73,7 @@ function buildDateRangeFilter(dateType: string): { col: string; fragment: string
  * Gera fragmento SQL para filtrar por fimocupacaotipo.
  * 'TODAS' → sem filtro; 'ABERTA' → IS NULL; outros → = 'VALOR'
  */
-function buildStatusFilter(status: string): string {
+export function buildStatusFilter(status: string): string {
   if (status === 'TODAS')  return ''
   if (status === 'ABERTA') return 'AND la.fimocupacaotipo IS NULL'
   return `AND la.fimocupacaotipo = '${status}'`
@@ -84,7 +84,7 @@ function buildStatusFilter(status: string): string {
  * startHour=0 + endHour=23 → sem filtro (todos os horários).
  * Suporta wrap-around: ex. startHour=22, endHour=6 → OR condition.
  */
-function buildTimeFilter(startHour: number, endHour: number, col = 'la.datainicialdaocupacao'): string {
+export function buildTimeFilter(startHour: number, endHour: number, col = 'la.datainicialdaocupacao'): string {
   // 06:00:00 → 05:59:59 = dia operacional completo = sem filtro adicional
   if (startHour === 6 && endHour === 5) return ''
   // 00:00:00 → 23:59:59 = sem filtro (legado)

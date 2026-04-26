@@ -123,11 +123,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     }),
     agentConfig?.city ? fetchWeatherData(agentConfig.city) : Promise.resolve({ status: 'unconfigured' as const }),
     queryChannelKPIs(activeUnit.slug, startDDMMYYYY, endDDMMYYYY).catch(() => [] as ChannelKPIRow[]),
-    queryPeriodMix(activeUnit.slug, startDDMMYYYY, endDDMMYYYY,
-      rentalStatus === 'TODAS' ? '' :
-      rentalStatus === 'ABERTA' ? 'AND la.fimocupacaotipo IS NULL' :
-      `AND la.fimocupacaotipo = '${rentalStatus}'`
-    ).catch(() => [] as BillingRentalTypeItem[]),
+    queryPeriodMix(activeUnit.slug, startDDMMYYYY, endDDMMYYYY, rentalStatus, startHour, endHour, dateType).catch(() => [] as BillingRentalTypeItem[]),
   ])
 
   // Insight IA clima × demanda — usa cache de 4h; regenera em background se vencido

@@ -1,4 +1,5 @@
 import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
+import { ddmmyyyyToIso, addDays, buildDateRangeFilter, buildStatusFilter, buildTimeFilter } from './company-kpis'
 import type { ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
 
 // ─── Labels legíveis por tipo de canal ────────────────────────────────────────
@@ -13,16 +14,14 @@ const CANAL_LABELS: Record<string, string> = {
   EXPEDIA:           'Expedia',
 }
 
-// ─── Helpers de formato de data ───────────────────────────────────────────────
+// ─── Helper de isoEnd BRT-aware (igual ao fetchCompanyKPIsFromAutomo) ─────────
 
-function toSqlStart(ddmmyyyy: string): string {
-  const [d, m, y] = ddmmyyyy.split('/')
-  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')} 00:00:00`
-}
-
-function toSqlEnd(ddmmyyyy: string): string {
-  const [d, m, y] = ddmmyyyy.split('/')
-  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')} 23:59:59`
+function buildIsoEnd(ddmmyyyy: string): string {
+  const nowBR     = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+  const todayBR   = `${String(nowBR.getDate()).padStart(2, '0')}/${String(nowBR.getMonth() + 1).padStart(2, '0')}/${nowBR.getFullYear()}`
+  return ddmmyyyy === todayBR
+    ? ddmmyyyyToIso(ddmmyyyy)
+    : addDays(ddmmyyyyToIso(ddmmyyyy), 1)
 }
 
 // ─── Query principal ──────────────────────────────────────────────────────────
@@ -77,7 +76,7 @@ export async function queryChannelKPIs(
       WHERE (r.cancelada IS NULL OR r.cancelada::date > (r.datainicio::date + 7))
         AND (r.valorcontratado IS NOT NULL OR la.valortotalpermanencia IS NOT NULL)
         AND r.id_tipoorigemreserva IN (1, 3, 4, 6, 7, 8)
-        AND r.dataatendimento BETWEEN $1 AND $2
+        AND r.dataatendimento >= $1 AND r.dataatendimento < $2
     ),
     totais AS (
       SELECT COALESCE(SUM(valor), 0) AS total_geral
@@ -101,7 +100,7 @@ export async function queryChannelKPIs(
       receita: string
       reservas: string
       total_geral: string
-    }>(sql, [toSqlStart(startDateDDMMYYYY), toSqlEnd(endDateDDMMYYYY)])
+    }>(sql, [ddmmyyyyToIso(startDateDDMMYYYY), buildIsoEnd(endDateDDMMYYYY)])
 
     const totalGeral = Number(rows[0]?.total_geral ?? 0)
 
@@ -137,14 +136,16 @@ export const UNIT_VALID_PERIODS: Record<string, string[]> = {
 
 /**
  * Classifica locações por período usando duração + hora de check-in.
- * Retorna apenas os períodos válidos para a unidade (UNIT_VALID_PERIODS).
- * Usa `datainicialdaocupacao` com corte operacional 06:00 (igual às demais queries).
+ * Respeita os mesmos filtros de data, status, hora e dateType que fetchCompanyKPIsFromAutomo.
  */
 export async function queryPeriodMix(
   unitSlug: string,
   startDateDDMMYYYY: string,
   endDateDDMMYYYY: string,
-  statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
+  rentalStatus = 'FINALIZADA',
+  startHour = 6,
+  endHour = 5,
+  dateType = 'checkin',
 ): Promise<BillingRentalTypeItem[]> {
   const pool = getAutomPool(unitSlug)
   if (!pool) return []
@@ -152,20 +153,12 @@ export async function queryPeriodMix(
   const catIds = UNIT_CATEGORY_IDS[unitSlug]
   if (!catIds?.length) return []
 
-  const [d1, m1, y1] = startDateDDMMYYYY.split('/')
-  const [d2, m2, y2] = endDateDDMMYYYY.split('/')
-  const isoStart = `${y1}-${m1.padStart(2,'0')}-${d1.padStart(2,'0')} 06:00:00`
-  // Para o fim: se o end é "hoje", usar hoje 06:00 (período aberto); senão (end+1) 06:00
-  const endDate = new Date(`${y2}-${m2}-${d2}T06:00:00`)
-  const today6  = new Date(); today6.setHours(6,0,0,0)
-  const isoEnd  = endDate >= today6
-    ? `${y2}-${m2.padStart(2,'0')}-${d2.padStart(2,'0')} 06:00:00`
-    : (() => {
-        const next = new Date(endDate); next.setDate(next.getDate() + 1)
-        return `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')} 06:00:00`
-      })()
-
-  const idList = catIds.join(',')
+  const isoStart     = ddmmyyyyToIso(startDateDDMMYYYY)
+  const isoEnd       = buildIsoEnd(endDateDDMMYYYY)
+  const statusFilter = buildStatusFilter(rentalStatus)
+  const { col }      = buildDateRangeFilter(dateType)
+  const timeFilter   = buildTimeFilter(startHour, endHour, col)
+  const idList       = catIds.join(',')
 
   const sql = `
     WITH base AS (
@@ -177,9 +170,10 @@ export async function queryPeriodMix(
       INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
       INNER JOIN apartamento a        ON aps.id_apartamento = a.id
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      WHERE la.datainicialdaocupacao >= $1
-        AND la.datainicialdaocupacao <  $2
+      WHERE ${col} >= $1
+        AND ${col} <  $2
         ${statusFilter}
+        ${timeFilter}
         AND ca.id IN (${idList})
         AND la.datafinaldaocupacao IS NOT NULL
     ),
