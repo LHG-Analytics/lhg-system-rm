@@ -168,39 +168,10 @@ export async function queryPeriodMix(
   const idList = catIds.join(',')
 
   const sql = `
-    WITH classificado AS (
+    WITH base AS (
       SELECT
-        CASE
-          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 1.5
-            THEN '1 hora'
-          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 2.5
-            THEN '2 horas'
-          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 3.5
-            THEN '3 horas'
-          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 5.0
-            THEN '4 horas'
-          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 7.5
-            THEN '6 horas'
-          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 20
-            THEN 'Diária'
-          -- Pernoite: check-in noturno (18h–07h), qualquer duração longa
-          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 7.5
-               AND EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 20
-               AND (EXTRACT(HOUR FROM la.datainicialdaocupacao) >= 18
-                    OR EXTRACT(HOUR FROM la.datainicialdaocupacao) < 8)
-            THEN 'Pernoite'
-          -- Day Use: check-in diurno (8h–17h) + duração curta (7.5–10h)
-          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 7.5
-               AND EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 10
-               AND EXTRACT(HOUR FROM la.datainicialdaocupacao) BETWEEN 8 AND 17
-            THEN 'Day Use'
-          -- 12 horas: check-in diurno (8h–17h) + duração longa (10–20h)
-          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 10
-               AND EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 20
-               AND EXTRACT(HOUR FROM la.datainicialdaocupacao) BETWEEN 8 AND 17
-            THEN '12 horas'
-          ELSE '12 horas'
-        END AS periodo,
+        EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 AS dur,
+        EXTRACT(HOUR FROM la.datainicialdaocupacao)                                       AS h_in,
         la.valortotal::numeric AS receita
       FROM locacaoapartamento la
       INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
@@ -211,6 +182,32 @@ export async function queryPeriodMix(
         ${statusFilter}
         AND ca.id IN (${idList})
         AND la.datafinaldaocupacao IS NOT NULL
+    ),
+    classificado AS (
+      SELECT
+        CASE
+          -- Pacotes por duração (qualquer horário)
+          WHEN dur < 1.5  THEN '1 hora'
+          WHEN dur < 2.5  THEN '2 horas'
+          WHEN dur < 3.5  THEN '3 horas'
+          WHEN dur < 5.0  THEN '4 horas'
+          -- Day Use: check-in slot 13h (12h–14h) + ~6h de duração
+          WHEN h_in BETWEEN 12 AND 14 AND dur >= 5.0 AND dur < 8.0
+            THEN 'Day Use'
+          -- 6 horas: ~6h em qualquer outro horário
+          WHEN dur < 8.0
+            THEN '6 horas'
+          -- 12 horas: ~12h de duração (qualquer horário)
+          WHEN dur < 14.0
+            THEN '12 horas'
+          -- Pernoite: check-in slot 20h (19h–21h) + ~16h de duração
+          WHEN h_in BETWEEN 19 AND 21 AND dur >= 14.0 AND dur < 20.0
+            THEN 'Pernoite'
+          -- Diária: check-in slot 15h (14h–16h) + longa duração, ou qualquer estadia muito longa
+          ELSE 'Diária'
+        END AS periodo,
+        receita
+      FROM base
     ),
     totais AS (
       SELECT COALESCE(SUM(receita), 0) AS total FROM classificado
