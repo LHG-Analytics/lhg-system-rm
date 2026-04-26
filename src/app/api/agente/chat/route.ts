@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
+import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { fetchWeatherContext } from '@/lib/agente/weather'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -129,7 +130,7 @@ export async function POST(req: NextRequest) {
 
   if (startDate && endDate) {
     // ── Modo legado: DD/MM/YYYY (cron/revisoes) ────────────────────────────────
-    const [companyResult, importsResult] = await Promise.allSettled([
+    const [companyResult, importsResult, channelResult] = await Promise.allSettled([
       fetchCompanyKPIsFromAutomo(unit.slug, startDate, endDate),
       admin
         .from('price_imports')
@@ -137,12 +138,14 @@ export async function POST(req: NextRequest) {
         .eq('unit_id', unit.id)
         .filter('import_type', 'eq', 'prices')
         .order('valid_from', { ascending: false }),
+      queryChannelKPIs(unit.slug, startDate, endDate),
     ])
     rawImports = importsResult.status === 'fulfilled' ? (importsResult.value.data ?? []) : []
     kpiPeriods = [{
       period: { startDate, endDate },
       company: companyResult.status === 'fulfilled' ? companyResult.value : null,
       bookings: null,
+      channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
     }]
   } else {
     // ── Modo automático: backend detecta tabelas e monta contexto ─────────────
@@ -173,13 +176,15 @@ export async function POST(req: NextRequest) {
     if (priceImps.length === 0) {
       // Sem tabela importada — usa trailing year
       const kpiParams = trailingYear()
-      const [companyResult] = await Promise.allSettled([
+      const [companyResult, channelResult] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, kpiParams.startDate, kpiParams.endDate),
+        queryChannelKPIs(unit.slug, kpiParams.startDate, kpiParams.endDate),
       ])
       kpiPeriods = [{
         period: kpiParams,
         company: companyResult.status === 'fulfilled' ? companyResult.value : null,
         bookings: null,
+        channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
       }]
     } else if (priceImps.length === 1) {
       // Uma tabela: desde valid_from até hoje
@@ -187,13 +192,15 @@ export async function POST(req: NextRequest) {
       rawImports = [imp]
       const apiFrom = isoToApi(imp.valid_from)
       const apiTo   = isoToApi(todayIso)
-      const [companyResult] = await Promise.allSettled([
+      const [companyResult, channelResult] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, apiFrom, apiTo),
+        queryChannelKPIs(unit.slug, apiFrom, apiTo),
       ])
       kpiPeriods = [{
         period: { startDate: apiFrom, endDate: apiTo },
         company: companyResult.status === 'fulfilled' ? companyResult.value : null,
         bookings: null,
+        channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
       }]
     } else {
       // Duas tabelas: importA = anterior, importB = atual (mais recente)
@@ -216,9 +223,10 @@ export async function POST(req: NextRequest) {
       const apiStartB = isoToApi(startB)
       const apiToB    = isoToApi(todayIso)
 
-      const [cA, cB] = await Promise.allSettled([
+      const [cA, cB, channelB] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, apiFromA, apiEndA),
         fetchCompanyKPIsFromAutomo(unit.slug, apiStartB, apiToB),
+        queryChannelKPIs(unit.slug, apiStartB, apiToB),
       ])
 
       rawImports = [importA, importB]
@@ -238,6 +246,7 @@ export async function POST(req: NextRequest) {
           period: { startDate: apiStartB, endDate: apiToB },
           company: cB.status === 'fulfilled' ? cB.value : null,
           bookings: null,
+          channelKPIs: channelB.status === 'fulfilled' ? channelB.value : undefined,
         },
       ]
 

@@ -216,6 +216,17 @@ export interface BookingsKPIResponse {
   BillingOfEcommerceByPeriod: ChartCategorySeries
 }
 
+// ─── Desempenho por canal de reserva ─────────────────────────────────────────
+
+export interface ChannelKPIRow {
+  canal:              string   // INTERNAL | GUIA_GO | GUIA_SCHEDULED | WEBSITE_IMMEDIATE | WEBSITE_SCHEDULED | BOOKING | EXPEDIA
+  label:              string   // nome legível
+  reservas:           number
+  receita:            number
+  ticket:             number
+  representatividade: number   // % sobre total de receita por canal
+}
+
 // ─── Combined dashboard payload ───────────────────────────────────────────────
 
 export interface UnitKPIData {

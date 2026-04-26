@@ -7,6 +7,7 @@ import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 import { toApiDate } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
+import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { buildKPIContext, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
 
@@ -285,7 +286,7 @@ export async function POST(req: NextRequest) {
       ? [fetchCompanyKPIsFromAutomo(unit.slug, prevPeriod.startDate, prevPeriod.endDate)]
       : []),
   ]
-  const [kpiResults, historyResult] = await Promise.all([
+  const [kpiResults, historyResult, channelResult] = await Promise.all([
     Promise.allSettled(kpiTasks),
     supabase
       .from('price_proposals')
@@ -294,9 +295,11 @@ export async function POST(req: NextRequest) {
       .eq('status', 'approved')
       .order('reviewed_at', { ascending: false })
       .limit(3),
+    queryChannelKPIs(unit.slug, activePeriod.startDate, activePeriod.endDate),
   ])
   const kpiActive   = kpiResults[0]?.status === 'fulfilled' ? kpiResults[0].value : null
   const kpiPrevious = kpiResults[1]?.status === 'fulfilled' ? kpiResults[1].value : null
+  const channelKPIs = Array.isArray(channelResult) ? channelResult : []
   const approvedHistory = (historyResult.data ?? []) as unknown as PriceProposal[]
 
   // ─── Montar contexto comparativo para o prompt ──────────────────────────
@@ -336,9 +339,10 @@ export async function POST(req: NextRequest) {
   const hasPrevious = kpiData.length > 1
   const memoryBlock = buildStrategicMemoryBlock(approvedHistory, kpiActive, kpiPrevious)
 
-  const kpiBlocks = kpiData.map((kpi) => {
+  const kpiBlocks = kpiData.map((kpi, i) => {
     const label = kpi.label ?? 'Período'
-    const ctx = buildKPIContext(unit.name, kpi.period, kpi.company, kpi.bookings)
+    // Injeta channelKPIs apenas no período mais recente (índice 0 = ativo)
+    const ctx = buildKPIContext(unit.name, kpi.period, kpi.company, kpi.bookings, i === 0 ? channelKPIs : undefined)
     return `### ${label}\n${ctx.replace(/^## Dados operacionais[^\n]*\n/, '')}`
   }).join('\n\n---\n\n')
 

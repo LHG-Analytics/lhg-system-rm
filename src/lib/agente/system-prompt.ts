@@ -3,6 +3,7 @@ import type {
   BookingsKPIResponse,
   DataTableGiroByWeek,
   DataTableRevparByWeek,
+  ChannelKPIRow,
 } from '@/lib/kpis/types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 
@@ -65,7 +66,8 @@ function buildKPIContext(
   unitName: string,
   period: { startDate: string; endDate: string },
   company: CompanyKPIResponse | null,
-  bookings: BookingsKPIResponse | null
+  bookings: BookingsKPIResponse | null,
+  channelKPIs?: ChannelKPIRow[],
 ): string {
   if (!company) return `Dados de KPI indisponíveis para ${unitName} no momento.`
 
@@ -134,6 +136,17 @@ ${suiteRows.map((s) =>
     .filter(Boolean)
     .join('\n\n')
 
+  // ── Desempenho por canal de reserva ────────────────────────────────────────
+  const fmtCur = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
+  const channelSection = channelKPIs?.length
+    ? `\n\n### Desempenho por canal de reserva
+| Canal | Reservas | Receita | Ticket Médio | % do Total |
+|-------|----------|---------|--------------|------------|
+${channelKPIs.map((c) =>
+  `| ${c.label} | ${fmt(c.reservas)} | ${fmtCur(c.receita)} | ${fmtCur(c.ticket)} | ${c.representatividade.toFixed(1)}% |`
+).join('\n')}`
+    : ''
+
   return `## Dados operacionais — ${unitName}
 Período: ${period.startDate} a ${period.endDate}
 
@@ -157,7 +170,7 @@ ${suiteSummary}
 ${billingMix}
 
 ### Reservas online (canais digitais)
-${bookingsSummary}
+${bookingsSummary}${channelSection}
 
 ### Análise semanal detalhada por categoria
 ${weeklySection || '  Dados não disponíveis'}`
@@ -184,6 +197,7 @@ export interface KPIPeriod {
   period: { startDate: string; endDate: string }
   company: CompanyKPIResponse | null
   bookings: BookingsKPIResponse | null
+  channelKPIs?: ChannelKPIRow[]
 }
 
 export interface VigenciaInfo {
@@ -265,12 +279,12 @@ export function buildSystemPrompt(
 
   let kpiContext: string
   if (periods.length === 1) {
-    kpiContext = buildKPIContext(unitName, periods[0].period, periods[0].company, periods[0].bookings)
+    kpiContext = buildKPIContext(unitName, periods[0].period, periods[0].company, periods[0].bookings, periods[0].channelKPIs)
   } else {
     // Modo comparativo: cada período tem seu bloco com label
     const blocks = periods.map((p, i) => {
       const label = p.label ?? `Período ${String.fromCharCode(65 + i)}`
-      const ctx = buildKPIContext(unitName, p.period, p.company, p.bookings)
+      const ctx = buildKPIContext(unitName, p.period, p.company, p.bookings, p.channelKPIs)
       // Substitui o "## Dados operacionais — {nome}" pelo label do período
       return ctx.replace(/^## Dados operacionais[^\n]*\n/, `### ${label}\n`)
     })
@@ -350,7 +364,7 @@ Este é o único nível de granularidade suportado pelo fluxo manual atual. Qual
 1. **Diagnóstico** — bullet points com pontos fortes e fracos nos KPIs. Sem parágrafos.
 2. **Padrão semanal** — dias de pico vs. dias fracos por categoria (tabela ou bullets curtos).
 3. **Oportunidades** — 2–3 bullets: qual ação e qual impacto estimado no RevPAR.
-4. **Impacto dos descontos** — ao analisar \`guia_moteis\`: calcule preço efetivo (base − desconto) e avalie margem real.
+4. **Canal e desconto** — analise o bloco "Desempenho por canal": identifique canais com baixa representatividade ou ticket inadequado. Para \`guia_moteis\`: calcule preço efetivo (base − desconto). Se GUIA_GO < 15% ou INTERNAL > 70%, avalie se ajuste de desconto pode diversificar receita. Proponha ajuste em texto com o percentual recomendado.
 5. **Proposta** — tabela markdown com as mudanças. Salve imediatamente com \`salvar_proposta\`. **Nenhum texto após o save — apenas \`sugerir_respostas\`.**
 
 ## Como usar as tabelas semanais
