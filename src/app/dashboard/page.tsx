@@ -11,6 +11,8 @@ import { WeatherWidget } from '@/components/dashboard/weather-widget'
 import { CompareButton } from '@/components/dashboard/compare-button'
 import { fetchWeatherData } from '@/lib/agente/weather'
 import { getWeatherInsight } from '@/lib/agente/weather-insight'
+import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
+import type { ChannelKPIRow } from '@/lib/kpis/types'
 
 interface DashboardPageProps {
   searchParams: Promise<{
@@ -106,7 +108,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .eq('unit_id', activeUnit.id)
     .single()
 
-  const [company, weatherResult] = await Promise.all([
+  const [company, weatherResult, channelKPIsResult] = await Promise.all([
     fetchCompanyKPIsFromAutomo(
       activeUnit.slug,
       startDDMMYYYY,
@@ -120,6 +122,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       return null
     }),
     agentConfig?.city ? fetchWeatherData(agentConfig.city) : Promise.resolve({ status: 'unconfigured' as const }),
+    queryChannelKPIs(activeUnit.slug, startDDMMYYYY, endDDMMYYYY).catch(() => [] as ChannelKPIRow[]),
   ])
 
   // Insight IA clima × demanda — usa cache de 4h; regenera em background se vencido
@@ -160,7 +163,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
       <WeatherWidget result={weatherResult} insight={weatherInsight} />
       <DashboardKPICards company={company} />
-      <DashboardCharts company={company} />
+      <DashboardCharts company={company} channelKPIs={channelKPIsResult} />
       <Suspense fallback={null}>
         <OccupancyHeatmap
           unitSlug={activeUnit.slug}

@@ -20,7 +20,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { cn } from '@/lib/utils'
-import type { CompanyKPIResponse, DataTableGiroByWeek, DataTableRevparByWeek, CompanyTotalResult } from '@/lib/kpis/types'
+import type { CompanyKPIResponse, DataTableGiroByWeek, DataTableRevparByWeek, CompanyTotalResult, ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
 
 const fmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -673,18 +673,189 @@ function RevparWeekTable({ title, data }: { title: string; data: DataTableRevpar
   )
 }
 
+// ─── Mix por Canal de Reserva ─────────────────────────────────────────────────
+
+const CANAL_ORDER = ['INTERNAL', 'GUIA_GO', 'GUIA_SCHEDULED', 'WEBSITE_IMMEDIATE', 'WEBSITE_SCHEDULED', 'BOOKING', 'EXPEDIA']
+
+function ChannelMixTable({ rows }: { rows: ChannelKPIRow[] }) {
+  const [sort, setSort] = useState<SortState>(null)
+
+  const sorted = [...rows].sort((a, b) => {
+    if (!sort) return CANAL_ORDER.indexOf(a.canal) - CANAL_ORDER.indexOf(b.canal)
+    const { key, dir } = sort
+    let va: number, vb: number
+    if (key === 'label')            { va = 0; vb = 0 }
+    else if (key === 'reservas')    { va = a.reservas; vb = b.reservas }
+    else if (key === 'receita')     { va = a.receita; vb = b.receita }
+    else if (key === 'ticket')      { va = a.ticket; vb = b.ticket }
+    else                            { va = a.representatividade; vb = b.representatividade }
+    if (key === 'label') return dir === 'asc' ? a.label.localeCompare(b.label) : b.label.localeCompare(a.label)
+    return dir === 'asc' ? va - vb : vb - va
+  })
+
+  const totalReceita = rows.reduce((s, r) => s + r.receita, 0)
+  const totalReservas = rows.reduce((s, r) => s + r.reservas, 0)
+  const totalTicket = totalReservas > 0 ? totalReceita / totalReservas : 0
+
+  const cols: { key: string; label: string }[] = [
+    { key: 'reservas', label: 'Reservas' },
+    { key: 'receita', label: 'Receita' },
+    { key: 'ticket', label: 'Ticket Médio' },
+    { key: 'representatividade', label: '% Receita' },
+  ]
+
+  return (
+    <div className="rounded-xl border bg-card text-card-foreground">
+      <div className="px-5 py-4 border-b">
+        <h2 className="text-sm font-semibold">Mix por Canal de Reserva</h2>
+      </div>
+      <div className="overflow-x-auto scrollbar-thin">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className="px-4 py-3 font-medium text-muted-foreground text-left whitespace-nowrap">Canal</th>
+              {cols.map((c) => (
+                <th
+                  key={c.key}
+                  onClick={() => setSort((p) => nextSort(p, c.key))}
+                  className="px-4 py-3 font-medium text-muted-foreground text-right whitespace-nowrap cursor-pointer select-none hover:text-foreground transition-colors"
+                >
+                  <div className="flex items-center justify-end gap-1">
+                    {c.label}
+                    {sort?.key === c.key
+                      ? sort.dir === 'desc' ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />
+                      : <ChevronsUpDown className="size-3 opacity-30" />}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r) => (
+              <tr key={r.canal} className="border-b hover:bg-muted/30 transition-colors">
+                <td className="px-4 py-3 font-medium whitespace-nowrap">{r.label}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{r.reservas.toLocaleString('pt-BR')}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(r.receita)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(r.ticket)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{r.representatividade.toFixed(1)}%</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-muted/40 border-t-2 border-border font-semibold">
+              <td className="px-4 py-3">Total</td>
+              <td className="px-4 py-3 text-right tabular-nums">{totalReservas.toLocaleString('pt-BR')}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{fmt.format(totalReceita)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{fmt.format(totalTicket)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">100%</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ─── Mix por Período (3h/6h/12h/Pernoite) ────────────────────────────────────
+
+const PERIOD_LABEL: Record<string, string> = {
+  '3H': '3 horas',
+  '6H': '6 horas',
+  '12H': '12 horas',
+  'PERNOITE': 'Pernoite',
+}
+
+function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
+  const [sort, setSort] = useState<SortState>(null)
+
+  const sorted = [...rows].sort((a, b) => {
+    if (!sort) return 0
+    const { key, dir } = sort
+    if (key === 'rentalType') return dir === 'asc' ? a.rentalType.localeCompare(b.rentalType) : b.rentalType.localeCompare(a.rentalType)
+    const va = key === 'value' ? a.value : a.percent
+    const vb = key === 'value' ? b.value : b.percent
+    return dir === 'asc' ? va - vb : vb - va
+  })
+
+  const totalValue = rows.reduce((s, r) => s + r.value, 0)
+
+  return (
+    <div className="rounded-xl border bg-card text-card-foreground">
+      <div className="px-5 py-4 border-b">
+        <h2 className="text-sm font-semibold">Mix por Período de Locação</h2>
+      </div>
+      <div className="overflow-x-auto scrollbar-thin">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              {[
+                { key: 'rentalType', label: 'Período', right: false },
+                { key: 'value', label: 'Receita', right: true },
+                { key: 'percent', label: '% do Total', right: true },
+              ].map((c) => (
+                <th
+                  key={c.key}
+                  onClick={() => setSort((p) => nextSort(p, c.key))}
+                  className={cn(
+                    'px-4 py-3 font-medium text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground transition-colors',
+                    c.right ? 'text-right' : 'text-left',
+                  )}
+                >
+                  <div className={cn('flex items-center gap-1', c.right && 'justify-end')}>
+                    {c.label}
+                    {sort?.key === c.key
+                      ? sort.dir === 'desc' ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />
+                      : <ChevronsUpDown className="size-3 opacity-30" />}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r) => (
+              <tr key={r.rentalType} className="border-b hover:bg-muted/30 transition-colors">
+                <td className="px-4 py-3 font-medium whitespace-nowrap">{PERIOD_LABEL[r.rentalType] ?? r.rentalType}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{fmt.format(r.value)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{r.percent.toFixed(1)}%</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-muted/40 border-t-2 border-border font-semibold">
+              <td className="px-4 py-3">Total</td>
+              <td className="px-4 py-3 text-right tabular-nums">{fmt.format(totalValue)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">100%</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ─── Export principal ──────────────────────────────────────────────────────────
 
 interface DashboardChartsProps {
   company: CompanyKPIResponse | null
+  channelKPIs?: ChannelKPIRow[]
 }
 
-export function DashboardCharts({ company }: DashboardChartsProps) {
+export function DashboardCharts({ company, channelKPIs }: DashboardChartsProps) {
   if (!company) return null
+
+  const billingRentalType = company.BillingRentalType ?? []
 
   return (
     <div className="flex flex-col gap-6">
       <SuiteCategoryTable company={company} />
+
+      {billingRentalType.length > 0 && (
+        <PeriodMixTable rows={billingRentalType} />
+      )}
+
+      {channelKPIs && channelKPIs.length > 0 && (
+        <ChannelMixTable rows={channelKPIs} />
+      )}
 
       <RevparWeekTable
         title="RevPAR por Dia da Semana"
