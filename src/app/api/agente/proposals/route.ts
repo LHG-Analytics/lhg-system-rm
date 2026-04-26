@@ -805,6 +805,9 @@ export async function DELETE(req: NextRequest) {
     return new Response('Sem acesso', { status: 403 })
   }
 
+  // Deleta agendas vinculadas à proposta antes de removê-la
+  await admin.from('scheduled_reviews').delete().eq('proposal_id', id)
+
   const { error } = await admin
     .from('price_proposals')
     .delete()
