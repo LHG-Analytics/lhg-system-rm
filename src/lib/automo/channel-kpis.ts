@@ -175,11 +175,11 @@ export async function queryPeriodMix(
         ${statusFilter}
         ${timeFilter}
         AND ca.id IN (${idList})
-        AND la.datafinaldaocupacao IS NOT NULL
     ),
     classificado AS (
       SELECT
         CASE
+          -- Sem checkout registrado: dur = NULL → cai no ELSE 'Diária'
           -- Pacotes por duração (qualquer horário)
           WHEN dur < 1.5  THEN '1 hora'
           WHEN dur < 2.5  THEN '2 horas'
