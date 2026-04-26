@@ -183,15 +183,22 @@ export async function queryPeriodMix(
             THEN '6 horas'
           WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 20
             THEN 'Diária'
-          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 7.5
-               AND EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 20
-               AND EXTRACT(HOUR FROM la.datainicialdaocupacao) BETWEEN 8 AND 17
-            THEN 'Day Use'
+          -- Pernoite: check-in noturno (18h–07h), qualquer duração longa
           WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 7.5
                AND EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 20
                AND (EXTRACT(HOUR FROM la.datainicialdaocupacao) >= 18
                     OR EXTRACT(HOUR FROM la.datainicialdaocupacao) < 8)
             THEN 'Pernoite'
+          -- Day Use: check-in diurno (8h–17h) + duração curta (7.5–10h)
+          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 7.5
+               AND EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 10
+               AND EXTRACT(HOUR FROM la.datainicialdaocupacao) BETWEEN 8 AND 17
+            THEN 'Day Use'
+          -- 12 horas: check-in diurno (8h–17h) + duração longa (10–20h)
+          WHEN EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 >= 10
+               AND EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 < 20
+               AND EXTRACT(HOUR FROM la.datainicialdaocupacao) BETWEEN 8 AND 17
+            THEN '12 horas'
           ELSE '12 horas'
         END AS periodo,
         la.valortotal::numeric AS receita
