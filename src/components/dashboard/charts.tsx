@@ -995,7 +995,32 @@ function PeriodMixTable({ rows }: { rows: BillingRentalTypeItem[] }) {
   )
 }
 
+// ─── Wrapper arrastável para tabelas ─────────────────────────────────────────
+
+function SortableTableWrapper({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn('relative group/table', isDragging && 'z-50 opacity-80 shadow-2xl')}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute left-0 top-0 bottom-0 w-5 flex items-center justify-center cursor-grab active:cursor-grabbing opacity-0 group-hover/table:opacity-40 hover:!opacity-80 transition-opacity z-10"
+        title="Arrastar tabela"
+      >
+        <GripVertical className="size-4 text-muted-foreground" />
+      </div>
+      {children}
+    </div>
+  )
+}
+
 // ─── Export principal ──────────────────────────────────────────────────────────
+
+const DEFAULT_TABLE_ORDER = ['suite-category', 'period-mix', 'channel-mix', 'revpar-week', 'giro-week']
 
 interface DashboardChartsProps {
   company:      CompanyKPIResponse | null
@@ -1004,29 +1029,64 @@ interface DashboardChartsProps {
 }
 
 export function DashboardCharts({ company, channelKPIs, periodMix }: DashboardChartsProps) {
+  const [tableOrder, setTableOrder] = useState<string[]>(DEFAULT_TABLE_ORDER)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('dashboard-tables-order')
+      if (saved) {
+        const parsed: string[] = JSON.parse(saved)
+        // Garante que novas tabelas adicionadas apareçam mesmo com ordem salva antiga
+        const merged = [
+          ...parsed.filter((id) => DEFAULT_TABLE_ORDER.includes(id)),
+          ...DEFAULT_TABLE_ORDER.filter((id) => !parsed.includes(id)),
+        ]
+        setTableOrder(merged)
+      }
+    } catch {}
+  }, [])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  function handleTableDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return
+    const next = arrayMove(tableOrder, tableOrder.indexOf(active.id as string), tableOrder.indexOf(over.id as string))
+    setTableOrder(next)
+    try { localStorage.setItem('dashboard-tables-order', JSON.stringify(next)) } catch {}
+  }
+
   if (!company) return null
 
+  const tableMap: Record<string, React.ReactNode> = {
+    'suite-category': <SuiteCategoryTable key="suite-category" company={company} />,
+    'period-mix':     periodMix && periodMix.length > 0
+                        ? <PeriodMixTable key="period-mix" rows={periodMix} />
+                        : null,
+    'channel-mix':    channelKPIs && channelKPIs.length > 0
+                        ? <ChannelMixTable key="channel-mix" rows={channelKPIs} />
+                        : null,
+    'revpar-week':    <RevparWeekTable key="revpar-week" title="RevPAR por Dia da Semana" data={company.DataTableRevparByWeek ?? []} />,
+    'giro-week':      <GiroWeekTable key="giro-week" title="Giro por Dia da Semana" data={company.DataTableGiroByWeek ?? []} />,
+  }
+
   return (
-    <div className="flex flex-col gap-6">
-      <SuiteCategoryTable company={company} />
-
-      {periodMix && periodMix.length > 0 && (
-        <PeriodMixTable rows={periodMix} />
-      )}
-
-      {channelKPIs && channelKPIs.length > 0 && (
-        <ChannelMixTable rows={channelKPIs} />
-      )}
-
-      <RevparWeekTable
-        title="RevPAR por Dia da Semana"
-        data={company.DataTableRevparByWeek ?? []}
-      />
-
-      <GiroWeekTable
-        title="Giro por Dia da Semana"
-        data={company.DataTableGiroByWeek ?? []}
-      />
-    </div>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleTableDragEnd}>
+      <SortableContext items={tableOrder} strategy={verticalListSortingStrategy}>
+        <div className="flex flex-col gap-6">
+          {tableOrder.map((id) => {
+            const content = tableMap[id]
+            if (!content) return null
+            return (
+              <SortableTableWrapper key={id} id={id}>
+                {content}
+              </SortableTableWrapper>
+            )
+          })}
+        </div>
+      </SortableContext>
+    </DndContext>
   )
 }
