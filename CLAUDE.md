@@ -623,6 +623,17 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Painéis usam `div` nativo com `overflow-y-auto` (não Radix ScrollArea) — evita clipping de conteúdo horizontal
   - Scrollbars estilizados via `.scrollbar-thin` e `.scrollbar-none` em `globals.css` (cross-browser, substitui classes Tailwind arbitrárias)
 
+- **LHG-130:** feat(agente): contexto de desempenho por canal no agente RM
+  - `src/lib/automo/channel-kpis.ts`: `queryChannelKPIs()` — classifica reservas da tabela `reserva` do Automo em INTERNAL / GUIA_GO / GUIA_SCHEDULED / WEBSITE_IMMEDIATE / WEBSITE_SCHEDULED / BOOKING / EXPEDIA
+  - `ChannelKPIRow` adicionado em `types.ts`: `canal`, `label`, `reservas`, `receita`, `ticket`, `representatividade`
+  - `buildKPIContext` recebe `channelKPIs?` (5º parâmetro) e renderiza tabela "Desempenho por canal de reserva"
+  - `KPIPeriod` inclui `channelKPIs?: ChannelKPIRow[]`; `buildSystemPrompt` passa automaticamente ao `buildKPIContext`
+  - `chat/route.ts`: todos os 4 modos (legado, trailing year, 1 tabela, 2 tabelas) buscam channel KPIs em paralelo sem latência extra
+  - `proposals/route.ts`: `queryChannelKPIs` adicionado ao `Promise.all` do POST; injetado apenas no período ativo
+  - Framework do agente — passo 4 atualizado: "Canal e desconto" — analisa representatividade de GUIA_GO/INTERNAL e sugere ajuste de desconto em texto quando justificado
+  - **Armadilha:** `reserva.dataatendimento` usa faixa 00:00–23:59 (diferente das queries de locação que usam 06:00 como corte operacional)
+  - **Armadilha:** channel KPIs não filtram por `catIds` (categoria de suíte) — são globais por unidade, pois a tabela `reserva` não tem essa granularidade
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
