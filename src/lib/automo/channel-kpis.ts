@@ -132,6 +132,36 @@ export const UNIT_VALID_PERIODS: Record<string, string[]> = {
   'andar-de-cima': ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
 }
 
+// Unidades com pacote mínimo de 3h (sem 1h/2h/4h)
+const LUSH_TYPE_UNITS = new Set(['lush-ipiranga', 'lush-lapa', 'tout', 'andar-de-cima'])
+
+/**
+ * Gera o CASE SQL de classificação de período conforme os pacotes reais da unidade.
+ * Evita que durações <3h sejam classificadas como '1 hora'/'2 horas' em unidades
+ * que não vendem esses pacotes, o que causaria descarte silencioso pelo filtro TS.
+ */
+function buildPeriodCaseSQL(unitSlug: string): string {
+  if (LUSH_TYPE_UNITS.has(unitSlug)) {
+    return `
+          CASE
+            WHEN dur < 5.0 THEN '3 horas'
+            WHEN h_in BETWEEN 12 AND 14 AND dur >= 5.0 AND dur < 8.0 THEN 'Day Use'
+            WHEN dur < 8.0 THEN '6 horas'
+            WHEN dur < 14.0 THEN '12 horas'
+            WHEN h_in BETWEEN 19 AND 21 AND dur >= 14.0 AND dur < 20.0 THEN 'Pernoite'
+            ELSE 'Diária'
+          END`
+  }
+  // Altana: pacotes 1h, 2h, 4h, 12h
+  return `
+          CASE
+            WHEN dur < 1.5  THEN '1 hora'
+            WHEN dur < 2.5  THEN '2 horas'
+            WHEN dur < 5.0  THEN '4 horas'
+            ELSE '12 horas'
+          END`
+}
+
 // ─── Mix por período de locação ───────────────────────────────────────────────
 
 /**
@@ -160,6 +190,8 @@ export async function queryPeriodMix(
   const timeFilter   = buildTimeFilter(startHour, endHour, col)
   const idList       = catIds.join(',')
 
+  const periodCase = buildPeriodCaseSQL(unitSlug)
+
   const sql = `
     WITH base AS (
       SELECT
@@ -178,28 +210,7 @@ export async function queryPeriodMix(
     ),
     classificado AS (
       SELECT
-        CASE
-          -- Sem checkout registrado: dur = NULL → cai no ELSE 'Diária'
-          -- Pacotes por duração (qualquer horário)
-          WHEN dur < 1.5  THEN '1 hora'
-          WHEN dur < 2.5  THEN '2 horas'
-          WHEN dur < 3.5  THEN '3 horas'
-          WHEN dur < 5.0  THEN '4 horas'
-          -- Day Use: check-in slot 13h (12h–14h) + ~6h de duração
-          WHEN h_in BETWEEN 12 AND 14 AND dur >= 5.0 AND dur < 8.0
-            THEN 'Day Use'
-          -- 6 horas: ~6h em qualquer outro horário
-          WHEN dur < 8.0
-            THEN '6 horas'
-          -- 12 horas: ~12h de duração (qualquer horário)
-          WHEN dur < 14.0
-            THEN '12 horas'
-          -- Pernoite: check-in slot 20h (19h–21h) + ~16h de duração
-          WHEN h_in BETWEEN 19 AND 21 AND dur >= 14.0 AND dur < 20.0
-            THEN 'Pernoite'
-          -- Diária: check-in slot 15h (14h–16h) + longa duração, ou qualquer estadia muito longa
-          ELSE 'Diária'
-        END AS periodo,
+        ${periodCase} AS periodo,
         receita
       FROM base
     ),
