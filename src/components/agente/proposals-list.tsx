@@ -394,57 +394,42 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            {canManage
-              ? 'O agente analisa KPIs da tabela atual e anterior para gerar propostas otimizadas.'
-              : 'Visualização de propostas — apenas admins podem gerar, aprovar ou rejeitar.'}
-          </p>
-          {canManage && (
-            <Button onClick={handleGenerate} disabled={generating} className="gap-2 shrink-0">
-              {generating
-                ? <><Loader2 className="size-4 animate-spin" />Analisando…</>
-                : <><Sparkles className="size-4" />Gerar Nova Proposta</>
-              }
-            </Button>
-          )}
+      {/* Header — mesmo padrão do DiscountProposalsList */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(['all', 'pending', 'approved', 'rejected'] as const).map((s) => {
+            const labels = { all: 'Todas', pending: 'Pendentes', approved: 'Aprovadas', rejected: 'Rejeitadas' }
+            const counts = {
+              all:      proposals.length,
+              pending:  proposals.filter((p) => p.status === 'pending').length,
+              approved: proposals.filter((p) => p.status === 'approved').length,
+              rejected: proposals.filter((p) => p.status === 'rejected').length,
+            }
+            const active = statusFilter === s
+            return (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={cn(
+                  'px-3 py-1.5 text-xs rounded-full border transition-colors',
+                  active
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-transparent text-muted-foreground border-border hover:bg-accent hover:text-foreground'
+                )}
+              >
+                {labels[s]} ({counts[s]})
+              </button>
+            )
+          })}
         </div>
 
-        {/* Filtro de status */}
-        {proposals.length > 0 && (
-          <div className="flex items-center gap-1.5">
-            {(['all', 'pending', 'approved', 'rejected'] as const).map((s) => {
-              const labels = { all: 'Todas', pending: 'Pendentes', approved: 'Aprovadas', rejected: 'Rejeitadas' }
-              const counts = {
-                all: proposals.length,
-                pending:  proposals.filter((p) => p.status === 'pending').length,
-                approved: proposals.filter((p) => p.status === 'approved').length,
-                rejected: proposals.filter((p) => p.status === 'rejected').length,
-              }
-              const active = statusFilter === s
-              return (
-                <button
-                  key={s}
-                  onClick={() => setStatusFilter(s)}
-                  className={cn(
-                    'px-2.5 py-1 rounded-md text-xs font-medium transition-colors border',
-                    active
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-transparent text-muted-foreground border-border hover:bg-accent hover:text-foreground'
-                  )}
-                >
-                  {labels[s]}
-                  {counts[s] > 0 && (
-                    <span className={cn('ml-1.5 tabular-nums', active ? 'opacity-80' : 'opacity-60')}>
-                      {counts[s]}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
+        {canManage && (
+          <Button onClick={handleGenerate} disabled={generating} className="gap-2 shrink-0">
+            {generating
+              ? <><Loader2 className="size-4 animate-spin" />Analisando…</>
+              : <><Sparkles className="size-4" />Gerar Nova Proposta</>
+            }
+          </Button>
         )}
       </div>
 
