@@ -51,6 +51,12 @@ function ptDayShort(dateStr: string): string {
   return `${days[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
+// Calcula a data de hoje no fuso BRT (client-side)
+function getTodayBRT(): string {
+  const brt = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+  return `${brt.getFullYear()}-${String(brt.getMonth() + 1).padStart(2, '0')}-${String(brt.getDate()).padStart(2, '0')}`
+}
+
 export function WeatherWidget({ result, insight }: WeatherWidgetProps) {
   const [collapsed, setCollapsed] = useState(false)
 
@@ -127,13 +133,13 @@ export function WeatherWidget({ result, insight }: WeatherWidgetProps) {
             {/* Previsão — cards preenchem todo o espaço disponível */}
             {forecast.length > 0 && (
               <div className="flex-1 flex gap-2 sm:border-l sm:pl-5">
-                {forecast.map((day, idx) => {
+                {forecast.map((day) => {
                   const weekend = isWeekend(day.date)
-                  const isToday = idx === 0
+                  const isToday = day.date === getTodayBRT()
                   return (
                     <div
                       key={day.date}
-                      className={`flex flex-col flex-1 items-center gap-1 rounded-lg px-2 py-2 text-center ${
+                      className={`flex flex-col flex-1 items-center gap-1 rounded-lg px-2 py-2.5 text-center ${
                         weekend
                           ? 'bg-amber-500/10 border border-amber-500/20'
                           : 'bg-muted/40'
@@ -142,9 +148,12 @@ export function WeatherWidget({ result, insight }: WeatherWidgetProps) {
                       <span className={`text-[11px] font-semibold leading-tight ${weekend ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
                         {isToday ? 'Hoje' : ptDayShort(day.date)}
                       </span>
-                      <span className="text-lg leading-none">{weatherIcon(day.icon, day.description)}</span>
-                      <span className="text-xs tabular-nums text-foreground/70">
+                      <span className="text-xl leading-none">{weatherIcon(day.icon, day.description)}</span>
+                      <span className="text-xs tabular-nums text-foreground/70 font-medium">
                         {day.min}–{day.max}°
+                      </span>
+                      <span className="text-[10px] text-muted-foreground leading-tight line-clamp-2 w-full">
+                        {day.description}
                       </span>
                       {weekend && (
                         <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-medium text-amber-600 dark:text-amber-400 uppercase">
