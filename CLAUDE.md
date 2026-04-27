@@ -727,6 +727,13 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `discount-proposals-list.tsx`: botão "Agendar revisão" com Popover (Calendar + Input time) em propostas aprovadas; header colapsado com "X alteradas / Y linhas"; linhas mantidas (`variacao_pts ≈ 0`) com `opacity-40`
   - `scheduled-reviews-list.tsx`: botão Trash2 para excluir revisões do histórico (done/failed), igual às pendentes
 
+- **LHG-146:** fix(agente): coluna Período nas propostas exibia dia_tipo + pedido de objetivo antes de analisar
+  - Root cause: formato da tabela de chat tinha apenas 6 colunas sem "Dia" → modelo encaixava `semana`/`fds_feriado` na coluna Período
+  - Fix: tabela obrigatória agora tem 7 colunas (Categoria | Período | Dia | ...) com exemplo e aviso explícito: "Período = 3h/6h/12h/Pernoite; Dia = Semana/FDS/Feriado — nunca trocar"
+  - Regra 4 atualizada com a distinção crítica entre as duas colunas
+  - Nova regra 13: para pedidos genéricos sem objetivo definido, usar `sugerir_respostas` com 6 opções (Aumentar RevPAR, volume, TRevPAR, reequilibrar FDS/semana, ocupação, outro) ANTES de iniciar o framework
+  - `sugerir_respostas` após proposta de preços inclui obrigatoriamente "Gerar proposta de descontos para o Guia"
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
