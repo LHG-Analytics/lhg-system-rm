@@ -1,10 +1,11 @@
 // Módulo de contexto climático — OpenWeatherMap
 
 export interface WeatherDay {
-  date: string   // YYYY-MM-DD
+  date: string        // YYYY-MM-DD
   min: number
   max: number
   description: string
+  icon?: string       // OWM icon code ex: "01d", "10d"
 }
 
 export interface WeatherCurrent {
@@ -13,6 +14,7 @@ export interface WeatherCurrent {
   humidity: number
   windSpeed: number
   description: string
+  icon?: string       // OWM icon code
 }
 
 export type WeatherResult =
@@ -40,30 +42,43 @@ export async function fetchWeatherData(city: string): Promise<WeatherResult> {
 
     const current = await currentRes.value.json() as OWMCurrentResponse
 
+    // Data de hoje no fuso BRT (America/Sao_Paulo)
+    const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+    const todayBRT = `${nowBRT.getFullYear()}-${String(nowBRT.getMonth() + 1).padStart(2, '0')}-${String(nowBRT.getDate()).padStart(2, '0')}`
+
     const forecast: WeatherDay[] = []
     if (forecastRes.status === 'fulfilled' && forecastRes.value.ok) {
       const forecastData = await forecastRes.value.json() as OWMForecastResponse
-      const byDay = new Map<string, { min: number; max: number; descs: string[] }>()
+      const byDay = new Map<string, { min: number; max: number; descs: string[]; icons: string[] }>()
       for (const item of forecastData.list) {
         const day = item.dt_txt.slice(0, 10)
+        const icon = item.weather[0]?.icon ?? ''
         const existing = byDay.get(day)
         if (existing) {
           existing.min = Math.min(existing.min, item.main.temp_min)
           existing.max = Math.max(existing.max, item.main.temp_max)
           existing.descs.push(item.weather[0]?.description ?? '')
+          if (icon.endsWith('d')) existing.icons.push(icon)
         } else {
-          byDay.set(day, { min: item.main.temp_min, max: item.main.temp_max, descs: [item.weather[0]?.description ?? ''] })
+          byDay.set(day, {
+            min: item.main.temp_min,
+            max: item.main.temp_max,
+            descs: [item.weather[0]?.description ?? ''],
+            icons: icon.endsWith('d') ? [icon] : [],
+          })
         }
       }
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
-      const cutoff = yesterday.toISOString().slice(0, 10)
       for (const [date, d] of byDay) {
-        if (date <= cutoff) continue
+        if (date < todayBRT) continue  // usa BRT — não pula o dia atual
         const modeDesc = d.descs.sort((a, b) =>
           d.descs.filter((v) => v === b).length - d.descs.filter((v) => v === a).length
         )[0] ?? ''
-        forecast.push({ date, min: Math.round(d.min), max: Math.round(d.max), description: capitalize(modeDesc) })
+        const modeIcon = d.icons.length
+          ? d.icons.sort((a, b) =>
+              d.icons.filter((v) => v === b).length - d.icons.filter((v) => v === a).length
+            )[0]
+          : undefined
+        forecast.push({ date, min: Math.round(d.min), max: Math.round(d.max), description: capitalize(modeDesc), icon: modeIcon })
         if (forecast.length >= 6) break
       }
     }
@@ -77,6 +92,7 @@ export async function fetchWeatherData(city: string): Promise<WeatherResult> {
         humidity: current.main.humidity,
         windSpeed: Math.round(current.wind.speed * 3.6),
         description: capitalize(current.weather[0]?.description ?? ''),
+        icon: current.weather[0]?.icon,
       },
       forecast,
     }
@@ -88,7 +104,7 @@ export async function fetchWeatherData(city: string): Promise<WeatherResult> {
 interface OWMCurrentResponse {
   name: string
   main: { temp: number; feels_like: number; humidity: number; temp_min: number; temp_max: number }
-  weather: Array<{ description: string }>
+  weather: Array<{ description: string; icon: string }>
   wind: { speed: number }
 }
 
@@ -96,7 +112,7 @@ interface OWMForecastResponse {
   list: Array<{
     dt: number
     main: { temp: number; temp_min: number; temp_max: number }
-    weather: Array<{ description: string }>
+    weather: Array<{ description: string; icon: string }>
     dt_txt: string
   }>
 }

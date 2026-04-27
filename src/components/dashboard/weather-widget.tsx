@@ -9,26 +9,34 @@ interface WeatherWidgetProps {
   insight?: string | null
 }
 
-const WEATHER_ICONS: Record<string, string> = {
-  'céu limpo':         '☀️',
-  'algumas nuvens':    '🌤️',
-  'nuvens dispersas':  '⛅',
-  'nublado':           '☁️',
-  'chuva leve':        '🌦️',
-  'chuva moderada':    '🌧️',
-  'chuva forte':       '🌧️',
-  'trovoada':          '⛈️',
-  'neve':              '❄️',
-  'névoa':             '🌫️',
-  'neblina':           '🌫️',
-  'garoa':             '🌦️',
+// Mapeamento pelos códigos oficiais OWM (primeiros 2 dígitos do icon code)
+// Muito mais confiável do que match de string em descrições PT
+const OWM_ICON_EMOJIS: Record<string, string> = {
+  '01': '☀️',   // céu limpo
+  '02': '🌤️',  // poucas nuvens
+  '03': '⛅',   // nuvens dispersas
+  '04': '☁️',   // nublado
+  '09': '🌧️',  // chuva (garoa/aguaceiro)
+  '10': '🌦️',  // chuva com sol
+  '11': '⛈️',  // trovoada
+  '13': '❄️',  // neve
+  '50': '🌫️',  // névoa/neblina
 }
 
-function weatherIcon(description: string): string {
-  const lower = description.toLowerCase()
-  for (const [key, icon] of Object.entries(WEATHER_ICONS)) {
-    if (lower.includes(key)) return icon
+function weatherIcon(icon?: string, description?: string): string {
+  if (icon) {
+    const code = icon.slice(0, 2)
+    return OWM_ICON_EMOJIS[code] ?? '🌡️'
   }
+  // fallback por descrição quando icon não está disponível
+  const lower = (description ?? '').toLowerCase()
+  if (lower.includes('chuva') || lower.includes('garoa')) return '🌧️'
+  if (lower.includes('trovoada')) return '⛈️'
+  if (lower.includes('neve')) return '❄️'
+  if (lower.includes('nublado')) return '☁️'
+  if (lower.includes('nuvem') || lower.includes('nuvens')) return '⛅'
+  if (lower.includes('limpo') || lower.includes('sol')) return '☀️'
+  if (lower.includes('névoa') || lower.includes('neblina')) return '🌫️'
   return '🌡️'
 }
 
@@ -75,7 +83,7 @@ export function WeatherWidget({ result, insight }: WeatherWidgetProps) {
           <h2 className="text-sm font-semibold">Clima — {city}</h2>
           {collapsed ? (
             <span className="text-xs text-muted-foreground">
-              {weatherIcon(current.description)} {current.temp}°C · {current.description}
+              {weatherIcon(current.icon, current.description)} {current.temp}°C · {current.description}
             </span>
           ) : (
             <span className="text-xs text-muted-foreground">impacto na demanda</span>
@@ -92,7 +100,7 @@ export function WeatherWidget({ result, insight }: WeatherWidgetProps) {
           <div className="px-5 py-4 flex flex-col sm:flex-row gap-5 items-stretch">
             {/* Condição atual */}
             <div className="flex items-center gap-3 shrink-0">
-              <span className="text-4xl leading-none">{weatherIcon(current.description)}</span>
+              <span className="text-4xl leading-none">{weatherIcon(current.icon, current.description)}</span>
               <div>
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-3xl font-bold tabular-nums">{current.temp}°</span>
@@ -134,7 +142,7 @@ export function WeatherWidget({ result, insight }: WeatherWidgetProps) {
                       <span className={`text-[11px] font-semibold leading-tight ${weekend ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
                         {isToday ? 'Hoje' : ptDayShort(day.date)}
                       </span>
-                      <span className="text-lg leading-none">{weatherIcon(day.description)}</span>
+                      <span className="text-lg leading-none">{weatherIcon(day.icon, day.description)}</span>
                       <span className="text-xs tabular-nums text-foreground/70">
                         {day.min}–{day.max}°
                       </span>
