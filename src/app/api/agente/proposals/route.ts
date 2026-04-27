@@ -381,7 +381,7 @@ export async function POST(req: NextRequest) {
   const [{ data: guardrailsData }, { data: agentConfigData }, { data: competitorSnapshotsData }] = await Promise.all([
     supabase
       .from('agent_price_guardrails')
-      .select('categoria, periodo, preco_minimo, preco_maximo')
+      .select('categoria, periodo, dia_tipo, preco_minimo, preco_maximo')
       .eq('unit_id', unit.id),
     supabase
       .from('rm_agent_config')
@@ -396,10 +396,11 @@ export async function POST(req: NextRequest) {
       .order('scraped_at', { ascending: false }),
   ])
 
-  // Mapa: "categoria|periodo" → { min, max }
+  // Mapa: "categoria|periodo|dia_tipo" → { min, max }
+  // Guardrails com dia_tipo='todos' atuam como fallback para semana e fds_feriado
   const guardrailMap = new Map<string, { min: number; max: number }>(
     (guardrailsData ?? []).map((g) => [
-      `${g.categoria}|${g.periodo}`,
+      `${g.categoria}|${g.periodo}|${g.dia_tipo ?? 'todos'}`,
       { min: g.preco_minimo, max: g.preco_maximo },
     ])
   )
@@ -475,15 +476,16 @@ ${(competitorSnapshotsData as unknown as Array<{ competitor_name: string; mapped
 > Compare categorias com comodidades equivalentes (ex: suíte com hidro vs. concorrente com hidro; piscina vs. piscina).`
     : ''
 
+  const DIA_GUARDRAIL_LABEL: Record<string, string> = { todos: 'Semana + FDS', semana: 'Semana', fds_feriado: 'FDS/Feriado' }
   const guardrailsBlock = guardrailsData?.length
     ? `## Guardrails de preço (limites obrigatórios — NÃO ULTRAPASSAR)
 
 Estes limites foram configurados pelo gestor. Nenhuma proposta pode ter preco_proposto fora deste intervalo.
 
-| Categoria | Período | Preço Mínimo | Preço Máximo |
-|-----------|---------|-------------|-------------|
+| Categoria | Período | Dia | Preço Mínimo | Preço Máximo |
+|-----------|---------|-----|-------------|-------------|
 ${guardrailsData.map((g) =>
-  `| ${g.categoria} | ${g.periodo} | R$ ${g.preco_minimo.toFixed(2)} | R$ ${g.preco_maximo.toFixed(2)} |`
+  `| ${g.categoria} | ${g.periodo} | ${DIA_GUARDRAIL_LABEL[(g as { dia_tipo?: string }).dia_tipo ?? 'todos'] ?? 'Todos'} | R$ ${g.preco_minimo.toFixed(2)} | R$ ${g.preco_maximo.toFixed(2)} |`
 ).join('\n')}
 
 IMPORTANTE: Se o preço ótimo calculado ultrapassar o máximo, use o máximo. Se estiver abaixo do mínimo, use o mínimo.`
@@ -588,7 +590,9 @@ A cobertura total já foi instruída acima — NUNCA omita uma combinação que 
   // ─── Clamp server-side pelos guardrails (safety net) ────────────────────
   if (guardrailMap.size > 0) {
     for (const row of parsed.rows) {
-      const g = guardrailMap.get(`${row.categoria}|${row.periodo}`)
+      // Tenta match exato (semana/fds_feriado), fallback para 'todos'
+      const g = guardrailMap.get(`${row.categoria}|${row.periodo}|${row.dia_tipo}`)
+        ?? guardrailMap.get(`${row.categoria}|${row.periodo}|todos`)
       if (!g) continue
       const clamped = Math.min(g.max, Math.max(g.min, row.preco_proposto))
       if (clamped !== row.preco_proposto) {

@@ -277,7 +277,7 @@ export async function POST(req: NextRequest) {
   // 6. Buscar cidade + suite_amenities + clima + snapshots de concorrentes em paralelo
   const snapshotCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const [agentConfigResult, competitorResult] = await Promise.allSettled([
-    admin.from('rm_agent_config').select('city, suite_amenities').eq('unit_id', unit.id).maybeSingle(),
+    admin.from('rm_agent_config').select('city, suite_amenities, focus_metric, pricing_strategy, max_variation_pct').eq('unit_id', unit.id).maybeSingle(),
     admin
       .from('competitor_snapshots')
       .select('competitor_name, mapped_prices, scraped_at, raw_text')
@@ -289,6 +289,17 @@ export async function POST(req: NextRequest) {
   const agentConfigData = agentConfigResult.status === 'fulfilled' ? agentConfigResult.value.data : null
   const city = agentConfigData?.city ?? 'Campinas,BR'
   const suiteAmenities = (agentConfigData?.suite_amenities ?? {}) as Record<string, string[]>
+  const focusMetric = agentConfigData?.focus_metric ?? 'balanceado'
+  const pricingStrategy = agentConfigData?.pricing_strategy ?? 'moderado'
+  const maxVariationPct = agentConfigData?.max_variation_pct ?? 30
+  const FOCUS_LABELS: Record<string, string> = {
+    revpar: 'RevPAR', ocupacao: 'Taxa de Ocupação', ticket: 'Ticket Médio',
+    trevpar: 'TRevPAR', giro: 'Giro', tmo: 'TMO', balanceado: 'Balanceado (sem foco definido)',
+  }
+  const agentConfigBlock = `## Configuração do agente RM (${unit.name})
+- **Estratégia de precificação:** ${pricingStrategy}
+- **Variação máxima permitida:** ±${maxVariationPct}%
+- **Foco principal:** ${FOCUS_LABELS[focusMetric] ?? focusMetric}`
   const weatherContext = await fetchWeatherContext(city).catch(() => null)
 
   // Monta bloco de concorrentes para o system prompt
@@ -328,8 +339,9 @@ export async function POST(req: NextRequest) {
         .join('\n')
     : ''
 
-  // 7. Montar system prompt com KPIs + tabelas + vigência + clima + concorrentes + comodidades
+  // 7. Montar system prompt com KPIs + tabelas + vigência + clima + concorrentes + comodidades + config
   const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext) +
+    `\n\n${agentConfigBlock}` +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
     (competitorBlock ? `\n\n${competitorBlock}` : '')
 

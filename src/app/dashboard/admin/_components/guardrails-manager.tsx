@@ -29,6 +29,7 @@ interface Guardrail {
   id: string
   categoria: string
   periodo: string
+  dia_tipo: string
   preco_minimo: number
   preco_maximo: number
 }
@@ -50,12 +51,25 @@ interface GuardrailsManagerProps {
 
 const PERIODOS_FALLBACK = ['3h', '6h', '12h', 'pernoite']
 
+const DIA_TIPO_OPTIONS = [
+  { value: 'todos',       label: 'Semana + FDS' },
+  { value: 'semana',      label: 'Semana' },
+  { value: 'fds_feriado', label: 'FDS / Feriado' },
+]
+
+const DIA_TIPO_LABEL: Record<string, string> = {
+  todos:       'Todos',
+  semana:      'Semana',
+  fds_feriado: 'FDS',
+}
+
 export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, initialGuardrails, units }: GuardrailsManagerProps) {
   const router = useRouter()
   const periodoOptions = periodos.length > 0 ? periodos : PERIODOS_FALLBACK
   const [guardrails, setGuardrails] = useState<Guardrail[]>(initialGuardrails)
   const [categoria, setCategoria] = useState('')
   const [periodo, setPeriodo] = useState(periodoOptions[0] ?? '3h')
+  const [diaType, setDiaType] = useState('todos')
   const [precoMin, setPrecoMin] = useState('')
   const [precoMax, setPrecoMax] = useState('')
   const [saving, setSaving] = useState(false)
@@ -75,12 +89,14 @@ export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, in
       const res = await fetch('/api/admin/guardrails', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unitSlug, categoria, periodo, preco_minimo: min, preco_maximo: max }),
+        body: JSON.stringify({ unitSlug, categoria, periodo, dia_tipo: diaType, preco_minimo: min, preco_maximo: max }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao salvar')
       setGuardrails((prev) => {
-        const idx = prev.findIndex((g) => g.categoria === categoria && g.periodo === periodo)
+        const idx = prev.findIndex(
+          (g) => g.categoria === categoria && g.periodo === periodo && g.dia_tipo === diaType
+        )
         return idx >= 0
           ? prev.map((g, i) => i === idx ? data : g)
           : [data, ...prev]
@@ -93,7 +109,7 @@ export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, in
     } finally {
       setSaving(false)
     }
-  }, [unitSlug, categoria, periodo, precoMin, precoMax])
+  }, [unitSlug, categoria, periodo, diaType, precoMin, precoMax])
 
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) return
@@ -150,8 +166,8 @@ export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, in
         )}
 
         <form onSubmit={handleAdd} className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="sm:col-span-2 flex flex-col gap-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-1 flex flex-col gap-1.5">
               <Label className="text-xs">Categoria</Label>
               {categorias.length > 0 ? (
                 <Select value={categoria} onValueChange={setCategoria} disabled={saving}>
@@ -166,7 +182,7 @@ export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, in
                 </Select>
               ) : (
                 <Input
-                  placeholder="Ex: Luxo, Standard… (importe uma tabela de preços para ver opções)"
+                  placeholder="Ex: Luxo, Standard…"
                   value={categoria}
                   onChange={(e) => setCategoria(e.target.value)}
                   required
@@ -184,6 +200,19 @@ export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, in
                 <SelectContent>
                   {periodoOptions.map((p) => (
                     <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs">Dia</Label>
+              <Select value={diaType} onValueChange={setDiaType} disabled={saving}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DIA_TIPO_OPTIONS.map((d) => (
+                    <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -249,6 +278,9 @@ export function GuardrailsManager({ unitSlug, unitName, categorias, periodos, in
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium">{g.categoria}</span>
                   <Badge variant="outline" className="text-[10px]">{g.periodo}</Badge>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {DIA_TIPO_LABEL[g.dia_tipo] ?? g.dia_tipo}
+                  </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Mín: <span className="font-medium text-foreground/80">R$ {g.preco_minimo.toFixed(2)}</span>

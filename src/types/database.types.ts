@@ -44,6 +44,7 @@ export type Database = {
           categoria: string
           created_at: string
           created_by: string | null
+          dia_tipo: string
           id: string
           periodo: string
           preco_maximo: number
@@ -55,6 +56,7 @@ export type Database = {
           categoria: string
           created_at?: string
           created_by?: string | null
+          dia_tipo?: string
           id?: string
           periodo: string
           preco_maximo: number
@@ -66,6 +68,7 @@ export type Database = {
           categoria?: string
           created_at?: string
           created_by?: string | null
+          dia_tipo?: string
           id?: string
           periodo?: string
           preco_maximo?: number

@@ -22,16 +22,17 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('agent_price_guardrails')
-    .select('*')
+    .select('id, categoria, periodo, dia_tipo, preco_minimo, preco_maximo')
     .eq('unit_id', unit.id)
     .order('categoria')
     .order('periodo')
+    .order('dia_tipo')
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json(data ?? [])
 }
 
-// ─── POST: cria ou atualiza guardrail (upsert por unit+categoria+periodo) ─────
+// ─── POST: cria ou atualiza guardrail (upsert por unit+categoria+periodo+dia_tipo) ─
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -52,14 +53,19 @@ export async function POST(req: NextRequest) {
     unitSlug: string
     categoria: string
     periodo: string
+    dia_tipo?: string
     preco_minimo: number
     preco_maximo: number
   }
 
   const { unitSlug, categoria, periodo, preco_minimo, preco_maximo } = body
+  const dia_tipo = body.dia_tipo ?? 'todos'
 
   if (!unitSlug || !categoria || !periodo) {
     return new Response('unitSlug, categoria e periodo são obrigatórios', { status: 400 })
+  }
+  if (!['semana', 'fds_feriado', 'todos'].includes(dia_tipo)) {
+    return new Response('dia_tipo inválido', { status: 400 })
   }
   if (typeof preco_minimo !== 'number' || typeof preco_maximo !== 'number') {
     return new Response('preco_minimo e preco_maximo devem ser números', { status: 400 })
@@ -87,8 +93,8 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabase
     .from('agent_price_guardrails')
     .upsert(
-      { unit_id: unit.id, categoria, periodo, preco_minimo, preco_maximo, created_by: user.id },
-      { onConflict: 'unit_id,categoria,periodo' }
+      { unit_id: unit.id, categoria, periodo, dia_tipo, preco_minimo, preco_maximo, created_by: user.id },
+      { onConflict: 'unit_id,categoria,periodo,dia_tipo' }
     )
     .select()
     .single()
