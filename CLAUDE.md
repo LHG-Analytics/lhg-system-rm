@@ -777,6 +777,17 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Fix `discount-proposals/route.ts`: `priceCtx` removido; regra crítica explícita: usar SEMPRE `dia_semana` com nome exato do dia (ex: "segunda", "domingo") — nunca `dia_tipo`
   - `discount-proposals-list.tsx`: coluna Dia exibe `dia_semana` com fallback para `dia_tipo` legado; nova coluna Faixa Horária
 
+- **LHG-152:** feat(agente+admin): ajuste dinâmico por giro/ocupação, contexto compartilhado, mix de períodos e calendário de eventualidades
+  - **Fix Mix por Período:** `buildPeriodCaseSQL` — novos thresholds: ≤3.25h → 3h; ≤6.25h → 6h; ≤13.5h → 12h; Day Use (h_in 12–14, dur ≤9h) verificado ANTES do threshold de 6h
+  - **Mix de canal e período no agente:** `queryPeriodMix` injetado em todos os 4 modos do chat; `buildKPIContext` renderiza tabela markdown com Locações, Receita, Ticket Médio e %
+  - **Ajuste dinâmico por giro/ocupação:** `PricingThresholds` em `rm_agent_config` (`giro_high`, `giro_low`, `ocupacao_high`, `ocupacao_low`, `adjustment_pct`); `buildPricingThresholdsBlock` gera regras de linguagem natural para o agente
+  - **Contexto estratégico compartilhado:** `shared_context TEXT` em `rm_agent_config`; injetado no system prompt de TODAS as conversas da unidade
+  - **Calendário de Eventualidades:** tabela `unit_events` (title, event_date, event_end_date, event_type: positivo/negativo/neutro, impact_description) com RLS (manager+ para criar/editar, admin+ para deletar)
+  - API `/api/admin/unit-events` (GET/POST/PATCH/DELETE); `EventsManager` component na aba "Eventos" de `/dashboard/admin`
+  - `database.types.ts`: `unit_events` adicionada; `shared_context` e `pricing_thresholds` adicionados a `rm_agent_config`
+  - Migrations: `20260427000002` (shared_context + pricing_thresholds) e `20260427000003` (unit_events com RLS + Realtime)
+  - **Armadilha:** Day Use deve ser classificado ANTES do `dur <= 6.25` no CASE SQL — SQL avalia condições em ordem
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
