@@ -715,9 +715,10 @@ function ChannelMixTable({ rows, dragHandle }: { rows: ChannelKPIRow[]; dragHand
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  const totalReceita  = rows.reduce((s, r) => s + r.receita,  0)
-  const totalReservas = rows.reduce((s, r) => s + r.reservas, 0)
-  const totalTicket   = totalReservas > 0 ? totalReceita / totalReservas : 0
+  const totalReceita        = rows.reduce((s, r) => s + r.receita,          0)
+  const totalReservas       = rows.reduce((s, r) => s + r.reservas,         0)
+  const totalTicket         = totalReservas > 0 ? totalReceita / totalReservas : 0
+  const totalRepresentativ  = rows.reduce((s, r) => s + r.representatividade, 0)
 
   function applyOrder(rs: ChannelKPIRow[]): ChannelKPIRow[] {
     const canonical = order.length ? order : CANAL_DEFAULT_ORDER
@@ -830,7 +831,7 @@ function ChannelMixTable({ rows, dragHandle }: { rows: ChannelKPIRow[]; dragHand
                   {col.key === 'reservas'           ? totalReservas.toLocaleString('pt-BR')
                   : col.key === 'receita'           ? fmt.format(totalReceita)
                   : col.key === 'ticket'            ? fmt.format(totalTicket)
-                  : col.key === 'representatividade' ? '100%'
+                  : col.key === 'representatividade' ? `${totalRepresentativ.toFixed(1)}%`
                   : '–'}
                 </td>
               ))}
