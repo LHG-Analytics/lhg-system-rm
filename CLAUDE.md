@@ -741,6 +741,19 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `system-prompt.ts`: 4 ocorrências de "3h/6h/12h/pernoite" substituídas por referências dinâmicas à tabela vigente
   - **Armadilha:** períodos válidos já eram dinâmicos no prompt de geração via `activeRows.map(r => r.periodo)` — o problema era a cobertura e os hardcodes no chat
 
+- **LHG-148:** fix(discount-proposals): estrutura por dia_semana+faixa_horaria + cobertura total
+  - Root cause: `discountMap` keya por `dia_tipo` mas tabela de descontos usa `dia_semana` (domingo/segunda...) + `faixa_horaria` → lookup nunca batia
+  - `DiscountProposalRow`: campo `dia_semana?: string` (domingo/segunda...) como campo principal; `dia_tipo?: string` mantido como legado
+  - `discountMap` agora keya por `categoria|periodo|dia_semana|faixa_horaria` — alinha com estrutura real da planilha
+  - `normPeriodo()`: normaliza "3h" → "3 HORAS" para cruzar com tabela de preços
+  - `getPrecoBase()`: lookup com fallback guia_moteis → balcao_site → todos
+  - `discountCtx`: mostra TODAS as linhas com dia_semana, faixa_horaria e preco_efetivo calculado
+  - COBERTURA TOTAL: proposta inclui todas as combinações categoria×periodo×dia_semana×faixa_horaria com justificativa
+  - `maxOutputTokens`: 4000 → 8000
+  - `discount-proposals-list.tsx`: coluna Dia exibe `dia_semana` com fallback para `dia_tipo` legado; nova coluna Faixa Horária
+  - **Armadilha:** tabela de descontos usa dias específicos (domingo/segunda/terça...) não dia_tipo (semana/fds_feriado) — nunca confundir os dois
+  - **Armadilha:** nomes de período no CSV de desconto usam abreviação ("3h") enquanto tabela de preços usa forma completa ("3 HORAS") — normPeriodo() é obrigatório no cruzamento
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
