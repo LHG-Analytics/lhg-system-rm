@@ -230,6 +230,11 @@ ${guardrailCtx}
 - Prefira ajustes graduais (±2 a ±5 pontos percentuais) — evite variações bruscas
 - Justifique cada linha com base nos dados de canal e demanda
 
+Valores válidos para periodo (copie EXATAMENTE da tabela acima, nunca abrevie):
+${[...new Set(priceRows.map((r) => r.periodo))].join(' | ')}
+
+Gere UMA linha por combinação categoria × periodo × dia_tipo. Nunca agrupe períodos diferentes.
+
 ## Formato obrigatório (JSON puro, sem markdown)
 {
   "context": "Resumo em 2-3 frases da lógica da proposta",
@@ -237,7 +242,7 @@ ${guardrailCtx}
     {
       "canal": "guia_moteis",
       "categoria": "Nome exato da categoria",
-      "periodo": "3h",
+      "periodo": "6 horas",
       "dia_tipo": "semana",
       "desconto_atual_pct": 20,
       "desconto_proposto_pct": 25,
