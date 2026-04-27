@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import lushLogoSrc from '../../public/lush-logo.png'
 import altanaLogoSrc from '../../public/altana-logo.webp'
 import andarLogoSrc from '../../public/andar-de-cima-logo.png'
@@ -13,6 +13,7 @@ import {
   Building2,
   ChevronsUpDown,
   Globe,
+  Loader2,
   Hotel,
   LayoutDashboard,
   LogOut,
@@ -125,6 +126,7 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
 
   const unitSlug = searchParams.get('unit')
   const activeUnit = units.find((u) => u.slug === unitSlug) ?? defaultUnit
+  const [isPending, startTransition] = useTransition()
 
   const showAdmin = userRole === 'super_admin' || userRole === 'admin'
 
@@ -135,7 +137,9 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
   }
 
   function handleUnitChange(unit: Unit) {
-    router.push(`${pathname}?unit=${unit.slug}`)
+    startTransition(() => {
+      router.push(`${pathname}?unit=${unit.slug}`)
+    })
   }
 
   function prefetchUnit(unit: Unit) {
@@ -170,7 +174,10 @@ export function AppSidebar({ units, activeUnit: defaultUnit, userEmail, userRole
                       {activeUnit.city ?? 'LHG Motéis'}
                     </span>
                   </div>
-                  <ChevronsUpDown className="ml-auto size-4" />
+                  {isPending
+                    ? <Loader2 className="ml-auto size-4 animate-spin" />
+                    : <ChevronsUpDown className="ml-auto size-4" />
+                  }
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent
