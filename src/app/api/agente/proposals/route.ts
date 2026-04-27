@@ -543,7 +543,7 @@ Critérios:
 ${hasPrevious ? '- Compare o desempenho do período atual com o anterior: se KPIs melhoraram após mudança de tabela, a direção estava certa; se pioraram, corrija\n' : ''}${memoryBlock ? '- Use a memória estratégica para calibrar a nova proposta: se as mudanças anteriores melhoraram os KPIs, intensifique a direção; se pioraram, recue ou teste outro caminho\n' : ''}- Variação máxima: ±${maxVar}% por item (configurado pelo gestor — não exceder)
 - Priorize itens com maior impacto no RevPAR (alto giro + RevPAR baixo = oportunidade de aumento)
 ${activeDiscounts.length > 0 ? '- Para guia_moteis: os preços propostos devem ser os valores BASE (o desconto é aplicado automaticamente)\n' : ''}
-COBERTURA OBRIGATÓRIA: para cada categoria onde você alterar QUALQUER período, você DEVE incluir uma linha para TODOS os períodos e dia_tipos dessa categoria presentes no mapa de preços — alterados ou mantidos. Para itens mantidos sem alteração: preco_proposto = preco_atual, variacao_pct = 0.0, justificativa deve explicar em 1 frase o motivo de manter (ex: "giro e ocupação estáveis, sem evidência de elasticidade neste período"). Omita apenas categorias que não aparecem em nenhum dado do período analisado.
+COBERTURA TOTAL OBRIGATÓRIA: a proposta DEVE incluir uma linha para CADA combinação categoria × periodo × dia_tipo presente no mapa de preços — sem exceção. Para CADA linha, mesmo que o preço não mude: preco_proposto = preco_atual, variacao_pct = 0.0, e a justificativa DEVE explicar em 1 frase POR QUE este item foi mantido (ex: "giro estável e sem pressão de concorrência neste período", "ocupação abaixo do benchmark mas redução de preço não é indicada com TMO alto"). NUNCA omita um período ou dia_tipo que existe no mapa de preços. Omita APENAS combinações que literalmente não existem no mapa acima.
 
 IMPORTANTE: Use os valores do "Mapa de preços atuais" acima como preco_atual. Não invente valores.
 
@@ -570,7 +570,7 @@ Omita itens sem dados suficientes. JSON minificado, sem indentação.`
     model: PRIMARY_MODEL,
     providerOptions: gatewayOptions,
     prompt,
-    maxOutputTokens: 6000,
+    maxOutputTokens: 10000,
     temperature: 0.2,
   })
 
