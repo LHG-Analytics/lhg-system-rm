@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { AppSidebar } from '@/components/app-sidebar'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NotificationsBell } from '@/components/notifications/notifications-bell'
@@ -14,6 +15,15 @@ import { Separator } from '@/components/ui/separator'
 import type { Database } from '@/types/database.types'
 
 type Unit = Database['public']['Tables']['units']['Row']
+
+// Usa admin client para buscar unidades — evita falha silenciosa de RLS
+// em contas recém-criadas onde current_user_unit_id() ainda não propagou
+function getAdminClient() {
+  return createAdminClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 export default async function DashboardLayout({
   children,
@@ -33,34 +43,29 @@ export default async function DashboardLayout({
 
   if (!profile) redirect('/login')
 
+  const admin = getAdminClient()
   let units: Unit[] = []
 
   if (profile.role === 'super_admin') {
-    const { data } = await supabase
+    const { data } = await admin
       .from('units')
       .select('*')
       .eq('is_active', true)
       .order('name')
     units = data ?? []
   } else if (profile.unit_id) {
-    const { data } = await supabase
+    const { data } = await admin
       .from('units')
       .select('*')
       .eq('id', profile.unit_id)
-      .single()
+      .eq('is_active', true)
+      .maybeSingle()
     if (data) units = [data]
   }
 
   const activeUnit = units[0]
   if (!activeUnit) {
-    // Usuário sem unidade atribuída — mostra erro amigável
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-muted-foreground text-sm">
-          Nenhuma unidade atribuída ao seu usuário. Contate o administrador.
-        </p>
-      </div>
-    )
+    return <NoUnitScreen email={user.email ?? ''} unitId={profile.unit_id} />
   }
 
   return (
@@ -89,5 +94,37 @@ export default async function DashboardLayout({
         </main>
       </SidebarInset>
     </SidebarProvider>
+  )
+}
+
+// ─── Tela de erro: usuário sem unidade configurada ────────────────────────────
+
+function NoUnitScreen({ email, unitId }: { email: string; unitId: string | null }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-4 max-w-sm text-center px-6">
+        <div className="flex size-12 items-center justify-center rounded-full bg-destructive/10">
+          <span className="text-2xl">⚠️</span>
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold">Acesso não configurado</h2>
+          <p className="text-sm text-muted-foreground">
+            Nenhuma unidade foi atribuída à conta <span className="font-medium text-foreground">{email}</span>.
+            {unitId && (
+              <span className="block mt-1 text-xs font-mono text-muted-foreground/60">unit_id: {unitId}</span>
+            )}
+          </p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Contate o administrador do sistema para que ele atribua uma unidade ao seu usuário.
+          </p>
+        </div>
+        <a
+          href="/api/auth/signout"
+          className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          Sair da conta
+        </a>
+      </div>
+    </div>
   )
 }

@@ -268,9 +268,16 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
 
   const handleInvite = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
-    setInviting(true)
     setError(null)
     setSuccess(null)
+
+    // Roles que não são super_admin precisam ter uma unidade atribuída
+    if (role !== 'super_admin' && (unitId === 'all' || !unitId)) {
+      setError('Selecione uma unidade para este usuário. Apenas Super Admins podem ter acesso a todas as unidades.')
+      return
+    }
+
+    setInviting(true)
     try {
       const res = await fetch('/api/admin/invite', {
         method: 'POST',
@@ -359,7 +366,16 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs">Perfil</Label>
-              <Select value={role} onValueChange={setRole} disabled={inviting}>
+              <Select
+                value={role}
+                onValueChange={(v) => {
+                  setRole(v)
+                  // Ao trocar de super_admin para outro role, o 'all' não é mais válido
+                  if (v !== 'super_admin' && unitId === 'all') setUnitId('all')
+                  // Ao voltar para super_admin, mantém a unidade selecionada
+                }}
+                disabled={inviting}
+              >
                 <SelectTrigger className="h-9 text-sm">
                   <SelectValue />
                 </SelectTrigger>
@@ -372,18 +388,26 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label className="text-xs">Unidade</Label>
+              <Label className="text-xs">
+                Unidade
+                {role !== 'super_admin' && <span className="text-destructive ml-0.5">*</span>}
+              </Label>
               <Select value={unitId} onValueChange={setUnitId} disabled={inviting}>
-                <SelectTrigger className="h-9 text-sm">
+                <SelectTrigger className={`h-9 text-sm ${role !== 'super_admin' && unitId === 'all' ? 'border-destructive/50' : ''}`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todas as unidades</SelectItem>
+                  {role === 'super_admin' && (
+                    <SelectItem value="all">Todas as unidades</SelectItem>
+                  )}
                   {units.map((u) => (
                     <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {role !== 'super_admin' && unitId === 'all' && (
+                <p className="text-[11px] text-destructive">Obrigatório para este perfil</p>
+              )}
             </div>
           </div>
 
