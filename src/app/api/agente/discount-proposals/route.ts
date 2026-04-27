@@ -251,16 +251,6 @@ ${discountRows.map((d) => {
 }).join('\n')}`
     : 'Sem tabela de descontos importada para esta unidade.'
 
-  // Tabela de preços do Guia (referência de preços base)
-  const priceCtx = priceRows.length
-    ? `### Tabela de preços base — Guia de Motéis
-| Categoria | Período | Dia | Preço base |
-|-----------|---------|-----|------------|
-${priceRows.map((r) =>
-  `| ${r.categoria} | ${r.periodo} | ${r.dia_tipo === 'semana' ? 'Semana' : 'FDS/Feriado'} | R$ ${r.preco.toFixed(2)} |`
-).join('\n')}`
-    : ''
-
   const guardrailCtx = guardrails?.length
     ? `### Guardrails (preço mínimo/máximo)\n| Categoria | Período | Mínimo | Máximo |\n|-----------|---------|--------|--------|\n${guardrails.map((g) => `| ${g.categoria} | ${g.periodo} | R$ ${g.preco_minimo?.toFixed(2) ?? '—'} | R$ ${g.preco_maximo?.toFixed(2) ?? '—'} |`).join('\n')}`
     : ''
@@ -279,8 +269,8 @@ ${channelCtx}
 
 ${discountCtx}
 
-${priceCtx ? `${priceCtx}\n` : ''}${guardrailCtx ? `${guardrailCtx}\n` : ''}
-## Mapa de descontos atuais (use como preco_base e desconto_atual_pct no JSON)
+${guardrailCtx ? `${guardrailCtx}\n` : ''}
+## Mapa de descontos atuais (referência para preco_base e desconto_atual_pct no JSON)
 ${discountRowsBlock}
 
 ---
@@ -291,14 +281,17 @@ ${discountRowsBlock}
 - O preço efetivo (base × (1 − desconto/100)) NUNCA pode ficar abaixo do guardrail mínimo
 - Prefira ajustes graduais (±2 a ±5 pontos percentuais) — evite variações bruscas
 
-COBERTURA TOTAL OBRIGATÓRIA: a proposta DEVE incluir UMA linha para CADA combinação categoria × periodo × dia_semana × faixa_horaria do mapa acima, sem exceção. Para linhas sem alteração: desconto_proposto_pct = desconto_atual_pct, variacao_pts = 0, justificativa obrigatória explicando por que foi mantido. NUNCA omita uma linha que existe no mapa.
+## Cobertura da proposta
+Inclua APENAS as linhas com alteração de desconto (variacao_pts ≠ 0). Para categorias/períodos sem mudança, NÃO liste linha por linha — mencione no campo \`context\` quais foram mantidos e o motivo.
 
-Valores válidos:
-- periodo (copie EXATAMENTE): ${validPeriodos}
-- dia_semana (copie EXATAMENTE): ${validDias}
+## Valores válidos para o JSON (copie EXATAMENTE)
+- **periodo**: ${validPeriodos}
+- **dia_semana**: ${validDias}
+
+⚠️ REGRA CRÍTICA SOBRE O CAMPO DIA: use SEMPRE o campo \`dia_semana\` com o nome exato do dia da semana conforme aparece na coluna "Dia" do mapa acima (ex: "segunda", "terca", "domingo"). NUNCA use o campo \`dia_tipo\` na saída (semana/fds_feriado são conceitos da tabela de preços, não da tabela de descontos).
 
 ## Formato obrigatório (JSON minificado, sem texto fora do JSON)
-{"context":"Resumo em 2-3 frases","rows":[{"canal":"guia_moteis","categoria":"LUSH POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","desconto_atual_pct":30,"desconto_proposto_pct":25,"variacao_pts":-5,"preco_base":150.00,"preco_efetivo_atual":105.00,"preco_efetivo_proposto":112.50,"justificativa":"motivo específico"}]}`
+{"context":"Resumo: quais categorias/dias foram alterados e por quê; quais foram mantidos","rows":[{"canal":"guia_moteis","categoria":"LUSH POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","desconto_atual_pct":30,"desconto_proposto_pct":25,"variacao_pts":-5,"preco_base":150.00,"preco_efetivo_atual":105.00,"preco_efetivo_proposto":112.50,"justificativa":"motivo específico"}]}`
 
   let parsed: { context: string; rows: DiscountProposalRow[] } | null = null
 

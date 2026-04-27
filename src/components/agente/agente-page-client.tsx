@@ -467,7 +467,8 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
               <TabsTrigger value="descontos-guia">Descontos Guia de Motéis</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="precificacao" className="mt-0">
+            {/* forceMount mantém os componentes montados — troca de sub-aba é instantânea */}
+            <TabsContent value="precificacao" className="mt-0 data-[state=inactive]:hidden" forceMount>
               <ProposalsList
                 unitSlug={activeUnit?.slug ?? ''}
                 unitId={unitId}
@@ -478,7 +479,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
               />
             </TabsContent>
 
-            <TabsContent value="descontos-guia" className="mt-0">
+            <TabsContent value="descontos-guia" className="mt-0 data-[state=inactive]:hidden" forceMount>
               <DiscountProposalsList
                 unitSlug={activeUnit?.slug ?? ''}
                 unitId={unitId}
