@@ -17,6 +17,14 @@ export interface CompetitorUrl {
   url?: string
 }
 
+export interface PricingThresholds {
+  giro_high?: number | null
+  giro_low?: number | null
+  ocupacao_high?: number | null
+  ocupacao_low?: number | null
+  adjustment_pct?: number | null
+}
+
 export interface AgentConfig {
   id: string
   unit_id: string
@@ -30,6 +38,10 @@ export interface AgentConfig {
   postal_code: string | null
   /** Comodidades por categoria: { "CLUB": ["Piscina", "Hidro", ...] } */
   suite_amenities: Record<string, string[]>
+  /** Contexto estratégico compartilhado entre todos os usuários da unidade — injetado em toda conversa */
+  shared_context: string | null
+  /** Regras de ajuste dinâmico por faixa de giro/ocupação */
+  pricing_thresholds: PricingThresholds | null
 }
 
 function getAdminClient() {
@@ -61,9 +73,11 @@ export async function GET(req: NextRequest) {
   const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
 
+  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds'
+
   const { data, error: err } = await admin
     .from('rm_agent_config')
-    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities')
+    .select(SELECT_FIELDS)
     .eq('unit_id', unit.id)
     .maybeSingle()
 
@@ -73,7 +87,7 @@ export async function GET(req: NextRequest) {
   if (!data) {
     const { data: created } = await admin.from('rm_agent_config').insert({
       unit_id: unit.id, pricing_strategy: 'moderado', max_variation_pct: 20, focus_metric: 'balanceado', is_active: true,
-    }).select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities').single()
+    }).select(SELECT_FIELDS).single()
     return Response.json(created as unknown as AgentConfig)
   }
 
@@ -96,23 +110,28 @@ export async function PATCH(req: NextRequest) {
     timezone?: string
     postal_code?: string | null
     suite_amenities?: Record<string, string[]>
+    shared_context?: string | null
+    pricing_thresholds?: PricingThresholds | null
   }
-  const { unit_id, competitor_urls, suite_amenities, ...rest } = body
+  const { unit_id, competitor_urls, suite_amenities, shared_context, pricing_thresholds, ...rest } = body
   if (!unit_id) return new Response('unit_id obrigatório', { status: 400 })
 
   type DbUpdate = import('@/types/database.types').Database['public']['Tables']['rm_agent_config']['Update']
   const fields: DbUpdate = {
     ...rest,
-    ...(competitor_urls !== undefined ? { competitor_urls: competitor_urls as unknown as DbUpdate['competitor_urls'] } : {}),
-    ...(suite_amenities !== undefined ? { suite_amenities: suite_amenities as unknown as DbUpdate['suite_amenities'] } : {}),
+    ...(competitor_urls    !== undefined ? { competitor_urls:    competitor_urls    as unknown as DbUpdate['competitor_urls']    } : {}),
+    ...(suite_amenities    !== undefined ? { suite_amenities:    suite_amenities    as unknown as DbUpdate['suite_amenities']    } : {}),
+    ...(shared_context     !== undefined ? { shared_context                                                                     } : {}),
+    ...(pricing_thresholds !== undefined ? { pricing_thresholds: pricing_thresholds as unknown as DbUpdate['pricing_thresholds'] } : {}),
   }
 
+  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds'
   const admin = getAdminClient()
   const { data, error: err } = await admin
     .from('rm_agent_config')
     .update(fields)
     .eq('unit_id', unit_id)
-    .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, suite_amenities')
+    .select(SELECT_FIELDS)
     .single()
 
   if (err) return Response.json({ error: err.message }, { status: 500 })

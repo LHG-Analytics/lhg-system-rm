@@ -6,8 +6,9 @@ import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 import type { AgentConfig } from '@/app/api/admin/agent-config/route'
 import { UsersManager } from './_components/users-manager'
 import { GuardrailsManager } from './_components/guardrails-manager'
+import { EventsManager } from './_components/events-manager'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Users, Shield } from 'lucide-react'
+import { Users, Shield, CalendarDays } from 'lucide-react'
 
 export const metadata = { title: 'Administração — LHG Revenue Manager' }
 
@@ -63,8 +64,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const activeUnit = unitsData.find((u) => u.slug === activeUnitSlug) ?? unitsData[0]
   const unitsForComponents = unitsData.map((u) => ({ id: u.id, name: u.name, slug: u.slug }))
 
-  // Busca guardrails + último price import + config do agente em paralelo
-  const [guardrailsResult, priceImportResult, agentConfigResult] = activeUnit
+  // Busca guardrails + último price import + config do agente + eventos em paralelo
+  const [guardrailsResult, priceImportResult, agentConfigResult, eventsResult] = activeUnit
     ? await Promise.all([
         supabase
           .from('agent_price_guardrails')
@@ -85,14 +86,22 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls')
           .eq('unit_id', activeUnit.id)
           .maybeSingle(),
+        (admin as any)
+          .from('unit_events')
+          .select('id, unit_id, title, event_date, event_end_date, event_type, impact_description, created_by, created_at, updated_at')
+          .eq('unit_id', activeUnit.id)
+          .order('event_date', { ascending: false })
+          .limit(100),
       ])
-    : [{ data: [] }, { data: null }, { data: null }]
+    : [{ data: [] }, { data: null }, { data: null }, { data: [] }]
 
   const guardrailsData = guardrailsResult.data ?? []
   const importRows = (priceImportResult.data?.parsed_data as unknown as ParsedPriceRow[]) ?? []
   const categorias = [...new Set(importRows.map((r) => r.categoria))].sort()
   const periodos   = [...new Set(importRows.map((r) => r.periodo))].sort()
   const agentConfig = (agentConfigResult.data ?? null) as AgentConfig | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const eventsData = (eventsResult as any).data ?? []
 
   const defaultTab = tab ?? 'usuarios'
 
@@ -112,6 +121,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <TabsTrigger value="guardrails" className="gap-1.5 text-xs">
             <Shield className="size-3.5" />
             Guardrails
+          </TabsTrigger>
+          <TabsTrigger value="eventos" className="gap-1.5 text-xs">
+            <CalendarDays className="size-3.5" />
+            Eventos
           </TabsTrigger>
         </TabsList>
 
@@ -139,6 +152,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 preco_minimo: g.preco_minimo,
                 preco_maximo: g.preco_maximo,
               }))}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="eventos" className="mt-6">
+          {activeUnit ? (
+            <EventsManager
+              unitSlug={activeUnit.slug}
+              unitName={activeUnit.name}
+              units={unitsForComponents}
+              initialEvents={eventsData}
             />
           ) : (
             <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>

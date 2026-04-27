@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
-import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
+import { queryChannelKPIs, queryPeriodMix } from '@/lib/automo/channel-kpis'
 import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { fetchWeatherContext } from '@/lib/agente/weather'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -19,6 +19,26 @@ function getAdminClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
+}
+
+interface PricingThresholds {
+  giro_high?: number | null
+  giro_low?: number | null
+  ocupacao_high?: number | null
+  ocupacao_low?: number | null
+  adjustment_pct?: number | null
+}
+
+function buildPricingThresholdsBlock(t: PricingThresholds | null): string {
+  if (!t) return ''
+  const pct = t.adjustment_pct ?? 10
+  const lines: string[] = []
+  if (t.giro_high != null) lines.push(`- Giro > ${t.giro_high} em qualquer categoria/período → demanda aquecida, priorize aumento de ~${pct}%`)
+  if (t.giro_low  != null) lines.push(`- Giro < ${t.giro_low} em qualquer categoria/período → demanda fraca, avalie redução de ~${pct}% para estimular volume`)
+  if (t.ocupacao_high != null) lines.push(`- Taxa de ocupação > ${t.ocupacao_high}% → demanda inelástica, aumente preço em ~${pct}%`)
+  if (t.ocupacao_low  != null) lines.push(`- Taxa de ocupação < ${t.ocupacao_low}% → demanda elástica, avalie redução de ~${pct}% ou pacote promocional`)
+  if (!lines.length) return ''
+  return `\n\n## Regras de ajuste dinâmico configuradas pelo gestor\nAplique estas regras ao diagnosticar e ao propor preços:\n${lines.join('\n')}`
 }
 
 // YYYY-MM-DD → DD/MM/YYYY (formato esperado pelo fetchCompanyKPIsFromAutomo)
@@ -130,7 +150,7 @@ export async function POST(req: NextRequest) {
 
   if (startDate && endDate) {
     // ── Modo legado: DD/MM/YYYY (cron/revisoes) ────────────────────────────────
-    const [companyResult, importsResult, channelResult] = await Promise.allSettled([
+    const [companyResult, importsResult, channelResult, periodMixResult] = await Promise.allSettled([
       fetchCompanyKPIsFromAutomo(unit.slug, startDate, endDate),
       admin
         .from('price_imports')
@@ -139,6 +159,7 @@ export async function POST(req: NextRequest) {
         .filter('import_type', 'eq', 'prices')
         .order('valid_from', { ascending: false }),
       queryChannelKPIs(unit.slug, startDate, endDate),
+      queryPeriodMix(unit.slug, startDate, endDate),
     ])
     rawImports = importsResult.status === 'fulfilled' ? (importsResult.value.data ?? []) : []
     kpiPeriods = [{
@@ -146,6 +167,7 @@ export async function POST(req: NextRequest) {
       company: companyResult.status === 'fulfilled' ? companyResult.value : null,
       bookings: null,
       channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
+      periodMix: periodMixResult.status === 'fulfilled' ? periodMixResult.value : undefined,
     }]
   } else {
     // ── Modo automático: backend detecta tabelas e monta contexto ─────────────
@@ -176,15 +198,17 @@ export async function POST(req: NextRequest) {
     if (priceImps.length === 0) {
       // Sem tabela importada — usa trailing year
       const kpiParams = trailingYear()
-      const [companyResult, channelResult] = await Promise.allSettled([
+      const [companyResult, channelResult, periodMixResult] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, kpiParams.startDate, kpiParams.endDate),
         queryChannelKPIs(unit.slug, kpiParams.startDate, kpiParams.endDate),
+        queryPeriodMix(unit.slug, kpiParams.startDate, kpiParams.endDate),
       ])
       kpiPeriods = [{
         period: kpiParams,
         company: companyResult.status === 'fulfilled' ? companyResult.value : null,
         bookings: null,
         channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
+        periodMix: periodMixResult.status === 'fulfilled' ? periodMixResult.value : undefined,
       }]
     } else if (priceImps.length === 1) {
       // Uma tabela: desde valid_from até hoje
@@ -192,15 +216,17 @@ export async function POST(req: NextRequest) {
       rawImports = [imp]
       const apiFrom = isoToApi(imp.valid_from)
       const apiTo   = isoToApi(todayIso)
-      const [companyResult, channelResult] = await Promise.allSettled([
+      const [companyResult, channelResult, periodMixResult] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, apiFrom, apiTo),
         queryChannelKPIs(unit.slug, apiFrom, apiTo),
+        queryPeriodMix(unit.slug, apiFrom, apiTo),
       ])
       kpiPeriods = [{
         period: { startDate: apiFrom, endDate: apiTo },
         company: companyResult.status === 'fulfilled' ? companyResult.value : null,
         bookings: null,
         channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
+        periodMix: periodMixResult.status === 'fulfilled' ? periodMixResult.value : undefined,
       }]
     } else {
       // Duas tabelas: importA = anterior, importB = atual (mais recente)
@@ -223,10 +249,12 @@ export async function POST(req: NextRequest) {
       const apiStartB = isoToApi(startB)
       const apiToB    = isoToApi(todayIso)
 
-      const [cA, cB, channelB] = await Promise.allSettled([
+      const [cA, cB, channelB, periodMixA, periodMixB] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, apiFromA, apiEndA),
         fetchCompanyKPIsFromAutomo(unit.slug, apiStartB, apiToB),
         queryChannelKPIs(unit.slug, apiStartB, apiToB),
+        queryPeriodMix(unit.slug, apiFromA, apiEndA),
+        queryPeriodMix(unit.slug, apiStartB, apiToB),
       ])
 
       rawImports = [importA, importB]
@@ -240,6 +268,7 @@ export async function POST(req: NextRequest) {
           period: { startDate: apiFromA, endDate: apiEndA },
           company: cA.status === 'fulfilled' ? cA.value : null,
           bookings: null,
+          periodMix: periodMixA.status === 'fulfilled' ? periodMixA.value : undefined,
         },
         {
           label: `Tabela atual — ${apiStartB} a ${apiToB} (${daysB} dias)`,
@@ -247,6 +276,7 @@ export async function POST(req: NextRequest) {
           company: cB.status === 'fulfilled' ? cB.value : null,
           bookings: null,
           channelKPIs: channelB.status === 'fulfilled' ? channelB.value : undefined,
+          periodMix: periodMixB.status === 'fulfilled' ? periodMixB.value : undefined,
         },
       ]
 
@@ -274,10 +304,14 @@ export async function POST(req: NextRequest) {
     valid_until: imp.valid_until,
   }))
 
-  // 6. Buscar cidade + suite_amenities + clima + snapshots de concorrentes em paralelo
+  // 6. Buscar config do agente + clima + concorrentes + eventos em paralelo
   const snapshotCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const [agentConfigResult, competitorResult] = await Promise.allSettled([
-    admin.from('rm_agent_config').select('city, suite_amenities, focus_metric, pricing_strategy, max_variation_pct').eq('unit_id', unit.id).maybeSingle(),
+  const [agentConfigResult, competitorResult, eventsResult] = await Promise.allSettled([
+    admin
+      .from('rm_agent_config')
+      .select('city, suite_amenities, focus_metric, pricing_strategy, max_variation_pct, shared_context, pricing_thresholds')
+      .eq('unit_id', unit.id)
+      .maybeSingle(),
     admin
       .from('competitor_snapshots')
       .select('competitor_name, mapped_prices, scraped_at, raw_text')
@@ -285,13 +319,23 @@ export async function POST(req: NextRequest) {
       .eq('status', 'done')
       .gte('scraped_at', snapshotCutoff)
       .order('scraped_at', { ascending: false }),
+    admin
+      .from('unit_events')
+      .select('title, event_date, event_end_date, event_type, impact_description')
+      .eq('unit_id', unit.id)
+      .order('event_date', { ascending: false })
+      .limit(30),
   ])
+
   const agentConfigData = agentConfigResult.status === 'fulfilled' ? agentConfigResult.value.data : null
   const city = agentConfigData?.city ?? 'Campinas,BR'
   const suiteAmenities = (agentConfigData?.suite_amenities ?? {}) as Record<string, string[]>
   const focusMetric = agentConfigData?.focus_metric ?? 'balanceado'
   const pricingStrategy = agentConfigData?.pricing_strategy ?? 'moderado'
   const maxVariationPct = agentConfigData?.max_variation_pct ?? 30
+  const sharedContext = (agentConfigData as { shared_context?: string | null } | null)?.shared_context ?? null
+  const pricingThresholds = (agentConfigData as { pricing_thresholds?: PricingThresholds | null } | null)?.pricing_thresholds ?? null
+
   const FOCUS_LABELS: Record<string, string> = {
     revpar: 'RevPAR', ocupacao: 'Taxa de Ocupação', ticket: 'Ticket Médio',
     trevpar: 'TRevPAR', giro: 'Giro', tmo: 'TMO', balanceado: 'Balanceado (sem foco definido)',
@@ -300,7 +344,32 @@ export async function POST(req: NextRequest) {
 - **Estratégia de precificação:** ${pricingStrategy}
 - **Variação máxima permitida:** ±${maxVariationPct}%
 - **Foco principal:** ${FOCUS_LABELS[focusMetric] ?? focusMetric}`
+
   const weatherContext = await fetchWeatherContext(city).catch(() => null)
+
+  // Bloco de regras de ajuste dinâmico por giro/ocupação
+  const pricingRulesBlock = buildPricingThresholdsBlock(pricingThresholds)
+
+  // Bloco de contexto estratégico compartilhado da unidade
+  const sharedContextBlock = sharedContext
+    ? `\n\n## Contexto estratégico da unidade (compartilhado)\n${sharedContext}`
+    : ''
+
+  // Calendário de eventualidades — todos os eventos da unidade
+  const unitEventRows = eventsResult.status === 'fulfilled' ? (eventsResult.value.data ?? []) : []
+  const eventsContext = unitEventRows.length
+    ? `## Calendário de Eventualidades — ${unit.name}\n` +
+      'Eventos registrados que podem ter afetado ou que afetarão o desempenho da unidade.\n' +
+      'Ao analisar um período que coincide com um desses eventos, mencione proativamente o contexto.\n\n' +
+      unitEventRows.map((e) => {
+        const icons: Record<string, string> = { positivo: '🟢', negativo: '🔴', neutro: '⚪' }
+        const icon = icons[e.event_type as string] ?? '⚪'
+        const dateStr = e.event_end_date && e.event_end_date !== e.event_date
+          ? `${e.event_date} → ${e.event_end_date}`
+          : String(e.event_date)
+        return `${icon} **${e.title}** (${dateStr})${e.impact_description ? `: ${e.impact_description}` : ''}`
+      }).join('\n')
+    : null
 
   // Monta bloco de concorrentes para o system prompt
   interface CMappedPrice { categoria_concorrente: string; periodo: string; preco: number; dia_tipo?: string }
@@ -339,9 +408,12 @@ export async function POST(req: NextRequest) {
         .join('\n')
     : ''
 
-  // 7. Montar system prompt com KPIs + tabelas + vigência + clima + concorrentes + comodidades + config
-  const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext) +
+  // 7. Montar system prompt completo
+  const systemPrompt =
+    buildSystemPrompt(unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext, eventsContext) +
     `\n\n${agentConfigBlock}` +
+    pricingRulesBlock +
+    sharedContextBlock +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
     (competitorBlock ? `\n\n${competitorBlock}` : '')
 

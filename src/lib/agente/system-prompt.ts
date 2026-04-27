@@ -4,6 +4,7 @@ import type {
   DataTableGiroByWeek,
   DataTableRevparByWeek,
   ChannelKPIRow,
+  BillingRentalTypeItem,
 } from '@/lib/kpis/types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 
@@ -68,6 +69,7 @@ function buildKPIContext(
   company: CompanyKPIResponse | null,
   bookings: BookingsKPIResponse | null,
   channelKPIs?: ChannelKPIRow[],
+  periodMix?: BillingRentalTypeItem[],
 ): string {
   if (!company) return `Dados de KPI indisponíveis para ${unitName} no momento.`
 
@@ -89,11 +91,18 @@ ${suiteRows.map((s) =>
 ).join('\n')}`
     : '  Dados não disponíveis'
 
-  // Mix por tipo de locação (3h, 6h, 12h, pernoite)
-  const billingMix = company.BillingRentalType?.length
-    ? company.BillingRentalType.map(
-        (b) => `  • ${b.rentalType}: ${fmt(b.value, 'currency')} (${b.percent.toFixed(1)}%)`
-      ).join('\n')
+  // Mix por tipo de locação — prefere periodMix (queryPeriodMix, mais preciso)
+  // com fallback para company.BillingRentalType (legacy)
+  const periodMixRows: BillingRentalTypeItem[] = periodMix?.length
+    ? periodMix
+    : (company.BillingRentalType ?? [])
+
+  const billingMix = periodMixRows.length
+    ? `| Período | Locações | Receita | Ticket Médio | % |
+|---------|----------|---------|--------------|---|
+${periodMixRows.map((p) =>
+  `| ${p.rentalType} | ${fmt(p.locacoes ?? 0)} | ${fmt(p.value, 'currency')} | ${fmt(p.ticket ?? 0, 'currency')} | ${p.percent.toFixed(1)}% |`
+).join('\n')}`
     : '  Dados não disponíveis'
 
   // BigNumbers — comparativo três colunas: período atual | mesmo período ano passado | previsão mês
@@ -198,6 +207,8 @@ export interface KPIPeriod {
   company: CompanyKPIResponse | null
   bookings: BookingsKPIResponse | null
   channelKPIs?: ChannelKPIRow[]
+  /** Mix de locações por período (3h, 6h, 12h…) — de queryPeriodMix, mais preciso que billingRentalType */
+  periodMix?: BillingRentalTypeItem[]
 }
 
 export interface VigenciaInfo {
@@ -279,12 +290,12 @@ export function buildSystemPrompt(
 
   let kpiContext: string
   if (periods.length === 1) {
-    kpiContext = buildKPIContext(unitName, periods[0].period, periods[0].company, periods[0].bookings, periods[0].channelKPIs)
+    kpiContext = buildKPIContext(unitName, periods[0].period, periods[0].company, periods[0].bookings, periods[0].channelKPIs, periods[0].periodMix)
   } else {
     // Modo comparativo: cada período tem seu bloco com label
     const blocks = periods.map((p, i) => {
       const label = p.label ?? `Período ${String.fromCharCode(65 + i)}`
-      const ctx = buildKPIContext(unitName, p.period, p.company, p.bookings, p.channelKPIs)
+      const ctx = buildKPIContext(unitName, p.period, p.company, p.bookings, p.channelKPIs, p.periodMix)
       // Substitui o "## Dados operacionais — {nome}" pelo label do período
       return ctx.replace(/^## Dados operacionais[^\n]*\n/, `### ${label}\n`)
     })

@@ -675,6 +675,8 @@ export type Database = {
           max_variation_pct: number
           postal_code: string | null
           pricing_strategy: string
+          pricing_thresholds: Json | null
+          shared_context: string | null
           suite_amenities: Json
           timezone: string
           unit_id: string
@@ -693,6 +695,8 @@ export type Database = {
           max_variation_pct?: number
           postal_code?: string | null
           pricing_strategy?: string
+          pricing_thresholds?: Json | null
+          shared_context?: string | null
           suite_amenities?: Json
           timezone?: string
           unit_id: string
@@ -711,6 +715,8 @@ export type Database = {
           max_variation_pct?: number
           postal_code?: string | null
           pricing_strategy?: string
+          pricing_thresholds?: Json | null
+          shared_context?: string | null
           suite_amenities?: Json
           timezone?: string
           unit_id?: string
@@ -1309,6 +1315,53 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "suite_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      unit_events: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          event_date: string
+          event_end_date: string | null
+          event_type: string
+          id: string
+          impact_description: string | null
+          title: string
+          unit_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          event_date: string
+          event_end_date?: string | null
+          event_type: string
+          id?: string
+          impact_description?: string | null
+          title: string
+          unit_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          event_date?: string
+          event_end_date?: string | null
+          event_type?: string
+          id?: string
+          impact_description?: string | null
+          title?: string
+          unit_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unit_events_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
             referencedColumns: ["id"]
           },
         ]

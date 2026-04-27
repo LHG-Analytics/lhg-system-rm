@@ -179,13 +179,16 @@ const LUSH_TYPE_UNITS = new Set(['lush-ipiranga', 'lush-lapa', 'tout', 'andar-de
  */
 function buildPeriodCaseSQL(unitSlug: string): string {
   if (LUSH_TYPE_UNITS.has(unitSlug)) {
+    // Thresholds com 15 min de tolerância: até 3h15 → 3h, até 6h15 → 6h, até 13h30 → 12h
+    // Day Use e Pernoite são determinados por hora de check-in (fixo por natureza do produto)
+    // Day Use: verificado ANTES de 6h para não engolir chegadas às 12-14h com 5-6h de duração
     return `
           CASE
-            WHEN dur < 5.0 THEN '3 horas'
-            WHEN h_in BETWEEN 12 AND 14 AND dur >= 5.0 AND dur < 8.0 THEN 'Day Use'
-            WHEN dur < 8.0 THEN '6 horas'
-            WHEN dur < 14.0 THEN '12 horas'
-            WHEN h_in BETWEEN 19 AND 21 AND dur >= 14.0 AND dur < 20.0 THEN 'Pernoite'
+            WHEN dur <= 3.25 THEN '3 horas'
+            WHEN h_in BETWEEN 12 AND 14 AND dur <= 9.0 THEN 'Day Use'
+            WHEN dur <= 6.25 THEN '6 horas'
+            WHEN dur <= 13.5 THEN '12 horas'
+            WHEN h_in BETWEEN 19 AND 21 AND dur < 20.0 THEN 'Pernoite'
             ELSE 'Diária'
           END`
   }

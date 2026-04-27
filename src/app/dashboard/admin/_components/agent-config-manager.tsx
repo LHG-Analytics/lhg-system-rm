@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import type { AgentConfig } from '@/app/api/admin/agent-config/route'
+import type { AgentConfig, PricingThresholds } from '@/app/api/admin/agent-config/route'
 
 interface AmenityCategory {
   name: string
@@ -103,6 +103,10 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
   const [savingAmenities, setSavingAmenities] = useState(false)
   const [savedAmenities, setSavedAmenities] = useState(false)
 
+  const [sharedContextText, setSharedContextText] = useState(initialConfig?.shared_context ?? '')
+  const [savingContext, setSavingContext] = useState(false)
+  const [savedContext, setSavedContext] = useState(false)
+
   // Auto-fetch config quando não recebida via props (ex: usado em Sheet no agente)
   useEffect(() => {
     if (config !== null) return
@@ -112,6 +116,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
         if (!data) return
         setConfig(data as AgentConfig)
         setAmenityCategories(configToCategories((data as AgentConfig).suite_amenities))
+        setSharedContextText((data as AgentConfig).shared_context ?? '')
       })
       .catch(() => {})
   }, [unitSlug]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -140,6 +145,27 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
 
   const selectedStrategy = STRATEGY_OPTIONS.find((s) => s.value === (config?.pricing_strategy ?? 'moderado'))
 
+  const handleSaveSharedContext = useCallback(async () => {
+    if (!config) return
+    setSavingContext(true)
+    try {
+      const res = await fetch('/api/admin/agent-config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit_id: config.unit_id, shared_context: sharedContextText || null }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Erro ao salvar')
+      setConfig(data as AgentConfig)
+      setSavedContext(true)
+      setTimeout(() => setSavedContext(false), 2500)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setSavingContext(false)
+    }
+  }, [config, sharedContextText])
+
   const handleSave = useCallback(async () => {
     if (!config) return
     setSaving(true); setError(null); setSaved(false)
@@ -153,6 +179,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
           max_variation_pct: config.max_variation_pct,
           focus_metric: config.focus_metric,
           city: config.city,
+          pricing_thresholds: config.pricing_thresholds ?? null,
         }),
       })
       const data = await res.json()
@@ -371,6 +398,131 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
                 </Button>
               </div>
             )}
+          </div>
+
+          {/* Regras de ajuste dinâmico por giro e ocupação */}
+          {(() => {
+            const thresh: PricingThresholds = config.pricing_thresholds ?? {}
+            const setThresh = (key: keyof PricingThresholds, raw: string) => {
+              const val = raw === '' ? null : Number(raw)
+              setConfig((prev) => prev
+                ? { ...prev, pricing_thresholds: { ...(prev.pricing_thresholds ?? {}), [key]: val } }
+                : prev)
+            }
+            return (
+              <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">
+                <div>
+                  <Label className="text-sm font-semibold">Regras de ajuste dinâmico</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    O agente aplica estas regras ao diagnosticar e propor preços. Deixe em branco para não usar.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs text-muted-foreground">Giro alto (aumentar ↑)</Label>
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        type="number" min={0} step={0.1}
+                        placeholder="ex: 3.5"
+                        value={thresh.giro_high ?? ''}
+                        onChange={(e) => setThresh('giro_high', e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">giro &gt; x</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs text-muted-foreground">Giro baixo (reduzir ↓)</Label>
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        type="number" min={0} step={0.1}
+                        placeholder="ex: 2.0"
+                        value={thresh.giro_low ?? ''}
+                        onChange={(e) => setThresh('giro_low', e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">giro &lt; x</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs text-muted-foreground">Ocupação alta (aumentar ↑)</Label>
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        type="number" min={0} max={100}
+                        placeholder="ex: 80"
+                        value={thresh.ocupacao_high ?? ''}
+                        onChange={(e) => setThresh('ocupacao_high', e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">% &gt; x</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs text-muted-foreground">Ocupação baixa (reduzir ↓)</Label>
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        type="number" min={0} max={100}
+                        placeholder="ex: 40"
+                        value={thresh.ocupacao_low ?? ''}
+                        onChange={(e) => setThresh('ocupacao_low', e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">% &lt; x</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-xs text-muted-foreground">Percentual de ajuste sugerido (%)</Label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range" min={5} max={30} step={5}
+                      value={thresh.adjustment_pct ?? 10}
+                      onChange={(e) => setThresh('adjustment_pct', e.target.value)}
+                      className="flex-1 accent-primary"
+                    />
+                    <span className="text-sm font-semibold tabular-nums w-10 text-right">
+                      {thresh.adjustment_pct ?? 10}%
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Quando um threshold for atingido, o agente sugere ±{thresh.adjustment_pct ?? 10}% de ajuste.
+                  </p>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Contexto estratégico compartilhado */}
+          <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">
+            <div>
+              <Label className="text-sm font-semibold">Contexto estratégico da unidade</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Injetado em <strong>todas</strong> as conversas do agente nessa unidade. Use para registrar
+                decisões históricas, benchmarks internos, particularidades da demanda e notas de posicionamento.
+              </p>
+            </div>
+            <textarea
+              value={sharedContextText}
+              onChange={(e) => setSharedContextText(e.target.value)}
+              rows={6}
+              placeholder={
+                'Ex: Em carnaval e réveillon, a demanda cresce ~60% — não reduzir preços nesses períodos.\n' +
+                'Nossa principal concorrência é o Drops Campinas. Referência de ticket: R$ 180–220 (3h).\n' +
+                'A unidade tem 24 suítes no total: 8 Standard, 10 Premium, 6 Club.'
+              }
+              className="w-full resize-none rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] text-muted-foreground">
+                {sharedContextText.length > 0
+                  ? `${sharedContextText.length} caracteres`
+                  : 'Sem contexto configurado'}
+              </p>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={handleSaveSharedContext} disabled={savingContext}>
+                {savingContext ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                {savedContext ? 'Salvo!' : 'Salvar contexto'}
+              </Button>
+            </div>
           </div>
 
           {/* Resumo + salvar */}
