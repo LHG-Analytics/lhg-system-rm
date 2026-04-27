@@ -547,10 +547,16 @@ ${activeDiscounts.length > 0 ? '- Para guia_moteis: os preços propostos devem s
 IMPORTANTE: Use os valores do "Mapa de preços atuais" acima como preco_atual. Não invente valores.
 
 Retorne SOMENTE este JSON minificado (sem nenhum texto antes ou depois):
-{"context":"análise em 2-3 frases","rows":[{"canal":"balcao_site","categoria":"nome","periodo":"3h","dia_tipo":"semana","preco_atual":0.00,"preco_proposto":0.00,"variacao_pct":0.0,"justificativa":"razão em 1 frase"}]}
+{"context":"análise em 2-3 frases","rows":[{"canal":"balcao_site","categoria":"LUSH POP","periodo":"6 horas","dia_tipo":"semana","preco_atual":385.00,"preco_proposto":370.00,"variacao_pct":-3.9,"justificativa":"razão em 1 frase"}]}
 
-Valores válidos: canal = balcao_site | site_programada | guia_moteis; dia_tipo = semana | fds_feriado | todos
-variacao_pct = ((preco_proposto - preco_atual) / preco_atual * 100) arredondado 1 decimal
+Valores válidos:
+- canal: balcao_site | site_programada | guia_moteis
+- periodo: DEVE ser EXATAMENTE um dos valores abaixo (copie literalmente do mapa de preços, nunca use "Todos" nem abreviações):
+  ${[...new Set(activeRows.map((r) => r.periodo))].join(' | ')}
+- dia_tipo: semana | fds_feriado | todos
+- variacao_pct = ((preco_proposto - preco_atual) / preco_atual * 100) arredondado 1 decimal
+
+CRÍTICO: Gere UMA linha por combinação canal × categoria × periodo × dia_tipo. Nunca agrupe períodos diferentes em uma única linha. Use os valores de preco_atual do mapa acima.
 Omita itens sem dados suficientes. JSON minificado, sem indentação.`
 
   // Suprimir warning de variável não usada (precoAtualMap disponível para validação futura)
