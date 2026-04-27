@@ -5,7 +5,7 @@ import { DefaultChatTransport, isToolUIPart, getToolName } from 'ai'
 import type { UIMessage } from 'ai'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, CheckCircle2, Clock } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, CheckCircle2, Clock, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -243,6 +243,46 @@ function AgenteChatInner({
     if (saved) onProposalSaved?.()
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ─── Option Cards ──────────────────────────────────────────────────────────
+  function OptionCards({ options, onSelect }: {
+    options: Array<{ label: string; texto: string; descricao?: string }>
+    onSelect: (label: string, texto: string) => void
+  }) {
+    const count = options.length
+    return (
+      <div className={cn(
+        'ml-10 grid gap-2',
+        count >= 4 ? 'grid-cols-2' : 'grid-cols-1 max-w-sm'
+      )}>
+        {options.map((opt, i) => {
+          const isEmpty = !opt.texto || opt.texto === ''
+          return (
+            <button
+              key={i}
+              onClick={() => onSelect(opt.label, opt.texto)}
+              className={cn(
+                'group flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left',
+                'transition-all duration-150 cursor-pointer select-none',
+                'hover:bg-accent hover:border-primary/30 hover:shadow-sm active:scale-[0.98]',
+                isEmpty
+                  ? 'border-dashed border-muted-foreground/30 text-muted-foreground bg-transparent'
+                  : 'border-border/60 bg-background'
+              )}
+            >
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <span className="text-sm font-medium leading-snug">{opt.label}</span>
+                {opt.descricao && (
+                  <span className="text-xs text-muted-foreground leading-snug">{opt.descricao}</span>
+                )}
+              </div>
+              <ChevronRight className="size-4 text-muted-foreground/40 group-hover:text-muted-foreground shrink-0 transition-colors" />
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -288,14 +328,14 @@ function AgenteChatInner({
   const isStreaming = status === 'streaming' || status === 'submitted'
 
   const lastAssistantMsg = [...messages].reverse().find((m) => m.role === 'assistant')
-  const quickReplies: Array<{ label: string; texto: string }> = (() => {
+  const quickReplies: Array<{ label: string; texto: string; descricao?: string }> = (() => {
     if (!lastAssistantMsg) return []
     const sugerirPart = lastAssistantMsg.parts
       .filter(isToolUIPart)
       .filter((p) => getToolName(p) === 'sugerir_respostas' && (p as { state: string }).state === 'output-available')
       .at(-1)
     if (!sugerirPart) return []
-    const out = (sugerirPart as { output: unknown }).output as { opcoes: Array<{ label: string; texto: string }> } | undefined
+    const out = (sugerirPart as { output: unknown }).output as { opcoes: Array<{ label: string; texto: string; descricao?: string }> } | undefined
     return out?.opcoes ?? []
   })()
 
@@ -476,6 +516,23 @@ function AgenteChatInner({
           )
         })}
 
+        {/* Option cards inline — aparece após a última resposta do agente */}
+        {!isStreaming && !awaitingOnly && quickReplies.length > 0 && (
+          <OptionCards
+            options={quickReplies}
+            onSelect={(label, texto) => {
+              if (texto === '__propostas') {
+                onNavigateToProposals?.()
+              } else if (texto) {
+                if (textareaRef.current) textareaRef.current.value = texto
+                submit()
+              } else {
+                textareaRef.current?.focus()
+              }
+            }}
+          />
+        )}
+
         {/* Indicador: aguardando resposta do servidor (conversa retomada) */}
         {awaitingOnly && <AwaitingBubble />}
 
@@ -497,41 +554,6 @@ function AgenteChatInner({
 
         <div ref={messagesEndRef} />
       </div>
-
-      {/* Quick replies */}
-      {!isStreaming && !awaitingOnly && quickReplies.length > 0 && (
-        <div className="px-3 pt-2.5 pb-2 flex flex-wrap gap-1.5 border-t bg-muted/20">
-          {quickReplies.map((opt, i) => {
-            const isEmpty = !opt.texto || opt.texto === ''
-            const isNav   = opt.texto === '__propostas'
-            return (
-              <button
-                key={i}
-                onClick={() => {
-                  if (isNav) {
-                    onNavigateToProposals?.()
-                  } else if (!isEmpty) {
-                    if (textareaRef.current) textareaRef.current.value = opt.texto
-                    submit()
-                  } else {
-                    textareaRef.current?.focus()
-                  }
-                }}
-                className={cn(
-                  'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium',
-                  'transition-all duration-150 cursor-pointer select-none',
-                  'hover:shadow-sm active:scale-[0.97]',
-                  isEmpty
-                    ? 'border-dashed border-muted-foreground/30 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground bg-transparent'
-                    : 'border-border/60 bg-background text-foreground/80 hover:bg-accent hover:text-foreground hover:border-border'
-                )}
-              >
-                {opt.label}
-              </button>
-            )
-          })}
-        </div>
-      )}
 
       {/* Input */}
       <div className="border-t p-3 flex gap-2 items-end">

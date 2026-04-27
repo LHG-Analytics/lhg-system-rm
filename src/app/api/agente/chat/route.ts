@@ -462,7 +462,8 @@ export async function POST(req: NextRequest) {
         'texto é a mensagem COMPLETA enviada ao clicar (pode ser longa). NUNCA coloque frases longas no label.',
       inputSchema: z.object({
         opcoes: z.array(z.object({
-          label: z.string().max(40).describe('Rótulo curto visível no botão — máx 30 chars, sem parênteses longos'),
+          label: z.string().max(40).describe('Rótulo curto visível no card — máx 30 chars'),
+          descricao: z.string().max(60).optional().describe('Frase de apoio exibida abaixo do label no card (máx 50 chars). Use para dar contexto em perguntas de objetivo/estratégia. Omita em opções simples como "Outra resposta".'),
           texto: z.string().describe('Mensagem completa enviada ao clicar. String vazia = usuário digita livremente.'),
         })).min(2).max(6),
       }),
