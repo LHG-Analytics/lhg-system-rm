@@ -43,6 +43,28 @@ export async function queryChannelKPIs(
   const pool = getAutomPool(unitSlug)
   if (!pool) return []
 
+  const catIds = UNIT_CATEGORY_IDS[unitSlug]
+  const idList = catIds?.length ? catIds.join(',') : null
+
+  // total_locacoes: base de representatividade = total de locações finalizadas
+  // (mesmo denominador que o Analytics usa) — filtrado por catIds da unidade
+  const totalLocacoesCTE = idList
+    ? `total_locacoes AS (
+        SELECT COALESCE(SUM(la2.valortotal), 0) AS total_geral
+        FROM locacaoapartamento la2
+        INNER JOIN apartamentostate aps2 ON la2.id_apartamentostate = aps2.id
+        INNER JOIN apartamento a2        ON aps2.id_apartamento = a2.id
+        INNER JOIN categoriaapartamento ca2 ON a2.id_categoriaapartamento = ca2.id
+        WHERE la2.datainicialdaocupacao >= $1
+          AND la2.datainicialdaocupacao <  $2
+          AND la2.fimocupacaotipo = 'FINALIZADA'
+          AND ca2.id IN (${idList})
+      )`
+    : `total_locacoes AS (
+        SELECT COALESCE(SUM(valor), 0) AS total_geral
+        FROM canal_classificado WHERE canal IS NOT NULL
+      )`
+
   const sql = `
     WITH canal_classificado AS (
       SELECT
@@ -65,29 +87,29 @@ export async function queryChannelKPIs(
           WHEN r.id_tipoorigemreserva = 4 THEN 'WEBSITE_IMMEDIATE'
           ELSE NULL
         END AS canal,
-        CASE
-          WHEN r.id_tipoorigemreserva = 3
-            AND COALESCE(r.reserva_programada_guia, false) = false
-          THEN COALESCE(r.valorcontratado, la.valortotalpermanencia) - COALESCE(r.desconto_reserva, 0)
-          ELSE COALESCE(r.valorcontratado, la.valortotalpermanencia)
-        END AS valor
+        -- valortotal inclui consumo e já tem desconto aplicado (igual ao Analytics)
+        -- fallback para valorcontratado quando o join não produz la (reservas sem locação)
+        COALESCE(
+          la.valortotal,
+          CASE
+            WHEN r.id_tipoorigemreserva = 3 AND COALESCE(r.reserva_programada_guia, false) = false
+            THEN r.valorcontratado - COALESCE(r.desconto_reserva, 0)
+            ELSE r.valorcontratado
+          END
+        )::numeric AS valor
       FROM reserva r
       LEFT JOIN locacaoapartamento la ON r.id_locacaoapartamento = la.id_apartamentostate
       WHERE (r.cancelada IS NULL OR r.cancelada::date > (r.datainicio::date + 7))
-        AND (r.valorcontratado IS NOT NULL OR la.valortotalpermanencia IS NOT NULL)
+        AND COALESCE(la.valortotal, r.valorcontratado) IS NOT NULL
         AND r.id_tipoorigemreserva IN (1, 3, 4, 6, 7, 8)
         AND r.dataatendimento >= $1 AND r.dataatendimento < $2
     ),
-    totais AS (
-      SELECT COALESCE(SUM(valor), 0) AS total_geral
-      FROM canal_classificado
-      WHERE canal IS NOT NULL
-    )
+    ${totalLocacoesCTE}
     SELECT
       canal,
-      ROUND(SUM(valor)::numeric, 2)    AS receita,
-      COUNT(DISTINCT id)               AS reservas,
-      (SELECT total_geral FROM totais) AS total_geral
+      ROUND(SUM(valor)::numeric, 2)               AS receita,
+      COUNT(DISTINCT id)                           AS reservas,
+      (SELECT total_geral FROM total_locacoes)     AS total_geral
     FROM canal_classificado
     WHERE canal IS NOT NULL
     GROUP BY canal
