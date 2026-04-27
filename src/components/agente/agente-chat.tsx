@@ -218,11 +218,14 @@ function AgenteChatInner({
     messages: initialMessages,
   })
 
-  // Salva mensagens sempre que o streaming termina
+  // Salva mensagens e reseta o lock de submit quando o streaming termina
   const prevStatusRef = useRef(status)
   useEffect(() => {
     if (prevStatusRef.current !== 'ready' && status === 'ready' && messages.length > 0 && convIdRef.current) {
       onMessagesUpdate?.(convIdRef.current, messages as UIMessage[])
+    }
+    if (status === 'ready' || status === 'error') {
+      isSubmittingRef.current = false
     }
     prevStatusRef.current = status
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -380,7 +383,7 @@ function AgenteChatInner({
 
     sendMessage({ text })
     if (textareaRef.current) textareaRef.current.value = ''
-    isSubmittingRef.current = false
+    // isSubmittingRef é resetado no useEffect quando status volta a 'ready'
   }
 
   // Conversa retomada aguardando resposta: input desabilitado até chegar
@@ -494,7 +497,14 @@ function AgenteChatInner({
                   })
                 }
                 {(() => {
-                  const text = msg.parts
+                  // Só texto antes do sugerir_respostas — evita duplicação pós-tool-result
+                  const firstSugerirIdx = msg.parts.findIndex(
+                    (p) => isToolUIPart(p) && getToolName(p) === 'sugerir_respostas'
+                  )
+                  const relevantParts = firstSugerirIdx >= 0
+                    ? msg.parts.slice(0, firstSugerirIdx)
+                    : msg.parts
+                  const text = relevantParts
                     .filter((p) => p.type === 'text')
                     .map((p) => (p as { type: 'text'; text: string }).text)
                     .join('')
@@ -516,8 +526,8 @@ function AgenteChatInner({
           )
         })}
 
-        {/* Option cards inline — aparece após a última resposta do agente */}
-        {!isStreaming && !awaitingOnly && quickReplies.length > 0 && (
+        {/* Option cards inline — aparece assim que sugerir_respostas retorna (sem aguardar fim do stream) */}
+        {!awaitingOnly && quickReplies.length > 0 && (
           <OptionCards
             options={quickReplies}
             onSelect={(label, texto) => {
