@@ -491,7 +491,12 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                         {formatDate(proposal.created_at)}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        · {proposal.rows.length} {proposal.rows.length === 1 ? 'linha' : 'linhas'}
+                        · {(() => {
+                          const altered = proposal.rows.filter((r) => Math.abs(r.variacao_pct) > 0.5).length
+                          return altered > 0
+                            ? `${altered} alterada${altered === 1 ? '' : 's'} / ${proposal.rows.length} linhas`
+                            : `${proposal.rows.length} ${proposal.rows.length === 1 ? 'linha' : 'linhas'}`
+                        })()}
                       </span>
                       <span className="font-mono text-[10px] text-muted-foreground/50 select-all" title={proposal.id}>
                         {proposal.id.slice(0, 8)}
@@ -649,7 +654,7 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                         </TableHeader>
                         <TableBody>
                           {(isEditing ? editing.rows : proposal.rows).map((row, i) => (
-                            <TableRow key={i}>
+                            <TableRow key={i} className={cn(Math.abs(row.variacao_pct) <= 0.5 && 'opacity-40')}>
                               <TableCell className="text-xs">{CANAL_LABELS[row.canal] ?? row.canal}</TableCell>
                               <TableCell className="text-xs font-medium">{row.categoria}</TableCell>
                               <TableCell className="text-xs">{row.periodo}</TableCell>

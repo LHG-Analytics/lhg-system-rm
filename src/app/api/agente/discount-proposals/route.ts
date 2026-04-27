@@ -338,12 +338,33 @@ export async function PATCH(req: NextRequest) {
     if (!['super_admin', 'admin'].includes(profile.role))
       return NextResponse.json({ error: 'Sem permissão para aprovar/rejeitar' }, { status: 403 })
 
+    const { data: proposal } = await admin
+      .from('discount_proposals')
+      .select('id, unit_id')
+      .eq('id', id)
+      .single()
+
     const { error } = await admin
       .from('discount_proposals')
       .update({ status, reviewed_at: new Date().toISOString() })
       .eq('id', id)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    if (status === 'approved' && proposal) {
+      const today = new Date().toISOString().slice(0, 10)
+      const reviewDate = new Date()
+      reviewDate.setDate(reviewDate.getDate() + 7)
+      reviewDate.setUTCHours(13, 0, 0, 0)
+      await admin.from('scheduled_reviews').insert({
+        unit_id:      proposal.unit_id,
+        created_by:   user.id,
+        scheduled_at: reviewDate.toISOString(),
+        note:         `Acompanhamento de descontos — verificar impacto da proposta de desconto aprovada em ${today} no volume e receita do canal Guia de Motéis.`,
+        status:       'pending',
+      })
+    }
+
     return NextResponse.json({ ok: true })
   }
 

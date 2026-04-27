@@ -366,18 +366,28 @@ export function ScheduledReviewsList({ unitSlug, unitId, onSelectConversation, o
                       )}
                     </div>
 
-                    {/* Ver conversa gerada */}
-                    {review.conv_id && onSelectConversation && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      {review.conv_id && onSelectConversation && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs gap-1.5"
+                          onClick={() => onSelectConversation(review.conv_id!)}
+                        >
+                          <CalendarCheck className="size-3.5" />
+                          Ver análise
+                        </Button>
+                      )}
                       <Button
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0 text-xs gap-1.5"
-                        onClick={() => onSelectConversation(review.conv_id!)}
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setConfirmDelete(review.id)}
+                        title="Excluir do histórico"
                       >
-                        <CalendarCheck className="size-3.5" />
-                        Ver análise
+                        <Trash2 className="size-3.5" />
                       </Button>
-                    )}
+                    </div>
                   </div>
                 )
               })}

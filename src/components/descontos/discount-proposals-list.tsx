@@ -15,8 +15,17 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
   Loader2, Sparkles, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, Clock, Trash2, TrendingUp, TrendingDown, Minus,
+  CalendarPlus, CalendarClock,
 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -57,6 +66,10 @@ function ProposalCard({
   const [rejecting, setRejecting] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [schedOpen, setSchedOpen] = useState(false)
+  const [schedDate, setSchedDate] = useState<Date | undefined>()
+  const [schedTime, setSchedTime] = useState('10:00')
+  const [schedWorking, setSchedWorking] = useState(false)
 
   const rows = (proposal.rows ?? []) as DiscountProposalRow[]
   const cfg  = STATUS_CONFIG[proposal.status]
@@ -64,6 +77,7 @@ function ProposalCard({
 
   const aumentos  = rows.filter((r) => r.variacao_pts > 0.1).length
   const reducoes  = rows.filter((r) => r.variacao_pts < -0.1).length
+  const alteradas = aumentos + reducoes
 
   async function handleApprove() {
     setApproving(true)
@@ -95,6 +109,25 @@ function ProposalCard({
     setDeleteOpen(false)
   }
 
+  async function handleSchedule() {
+    if (!schedDate) return
+    const [hh, mm] = schedTime.split(':').map(Number)
+    const dt = new Date(schedDate)
+    dt.setHours(hh, mm, 0, 0)
+    setSchedWorking(true)
+    await fetch('/api/agente/scheduled-reviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        unit_id:      proposal.unit_id,
+        scheduled_at: dt.toISOString(),
+        note:         `Acompanhamento de descontos — verificar impacto da proposta de desconto aprovada no volume e receita do canal Guia de Motéis.`,
+      }),
+    })
+    setSchedWorking(false)
+    setSchedOpen(false)
+  }
+
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
       {/* Header */}
@@ -117,7 +150,9 @@ function ProposalCard({
           </p>
           {!expanded && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              {rows.length} item{rows.length !== 1 ? 'ns' : ''} ·{' '}
+              {alteradas > 0
+                ? <>{alteradas} alterada{alteradas !== 1 ? 's' : ''} / {rows.length} linhas · </>
+                : <>{rows.length} {rows.length === 1 ? 'linha' : 'linhas'} · </>}
               {aumentos > 0 && <span className="text-amber-600">↑{aumentos} aumento{aumentos !== 1 ? 's' : ''}</span>}
               {aumentos > 0 && reducoes > 0 && ' · '}
               {reducoes > 0 && <span className="text-blue-600">↓{reducoes} redução{reducoes !== 1 ? 'ões' : ''}</span>}
@@ -139,6 +174,67 @@ function ProposalCard({
               </Button>
             </>
           )}
+
+          {/* Botão agendar revisão — proposta aprovada */}
+          {proposal.status === 'approved' && (
+            <Popover open={schedOpen} onOpenChange={(open) => {
+              if (open) {
+                const d = new Date()
+                d.setDate(d.getDate() + 7)
+                setSchedDate(d)
+                setSchedTime('10:00')
+              }
+              setSchedOpen(open)
+            }}>
+              <PopoverTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs h-7"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <CalendarPlus className="size-3.5" />
+                  Agendar revisão
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-3 flex flex-col gap-3" align="end" onClick={(e) => e.stopPropagation()}>
+                <p className="text-xs font-medium text-muted-foreground">Agendar revisão:</p>
+                <Calendar
+                  mode="single"
+                  selected={schedDate}
+                  onSelect={setSchedDate}
+                  disabled={(date) => date <= new Date()}
+                  locale={ptBR}
+                  className="p-0"
+                />
+                <div className="flex flex-col gap-1.5 border-t pt-3">
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Clock className="size-3" />
+                    Horário da revisão
+                  </Label>
+                  <Input
+                    type="time"
+                    value={schedTime}
+                    onChange={(e) => setSchedTime(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full gap-1.5"
+                  disabled={!schedDate || schedWorking}
+                  onClick={handleSchedule}
+                >
+                  {schedWorking
+                    ? <Loader2 className="size-3.5 animate-spin" />
+                    : <CalendarClock className="size-3.5" />
+                  }
+                  Confirmar agendamento
+                </Button>
+              </PopoverContent>
+            </Popover>
+          )}
+
           {canManage && (
             <Button size="icon" variant="ghost" className="size-7 text-muted-foreground hover:text-red-600"
               onClick={(e) => { e.stopPropagation(); setDeleteOpen(true) }}>
@@ -173,7 +269,7 @@ function ProposalCard({
               </thead>
               <tbody>
                 {rows.map((r, i) => (
-                  <tr key={i} className="border-b hover:bg-muted/20 transition-colors">
+                  <tr key={i} className={cn('border-b hover:bg-muted/20 transition-colors', Math.abs(r.variacao_pts) < 0.1 && 'opacity-40')}>
                     <td className="px-3 py-2 font-medium whitespace-nowrap">{r.categoria}</td>
                     <td className="px-3 py-2 whitespace-nowrap">{r.periodo}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs text-muted-foreground">
