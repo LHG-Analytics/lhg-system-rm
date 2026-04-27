@@ -754,6 +754,29 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - **Armadilha:** tabela de descontos usa dias específicos (domingo/segunda/terça...) não dia_tipo (semana/fds_feriado) — nunca confundir os dois
   - **Armadilha:** nomes de período no CSV de desconto usam abreviação ("3h") enquanto tabela de preços usa forma completa ("3 HORAS") — normPeriodo() é obrigatório no cruzamento
 
+- **LHG-149:** feat(guardrails+agente): dia_tipo nos guardrails + agente autônomo na vigência + OptionCards inline
+  - Migration `20260427000001_guardrails_add_dia_tipo.sql`: coluna `dia_tipo TEXT NOT NULL DEFAULT 'todos'` + novo UNIQUE `(unit_id, categoria, periodo, dia_tipo)` (antigo era sem dia_tipo)
+  - `database.types.ts`: `dia_tipo: string` em Row; `dia_tipo?: string` em Insert/Update de `agent_price_guardrails`
+  - `guardrails/route.ts`: GET/POST/DELETE incluem `dia_tipo`; upsert usa chave composta com dia_tipo
+  - `guardrails-manager.tsx`: select DIA_TIPO_OPTIONS (semana / fds_feriado / todos) por guardrail
+  - `proposals/route.ts`: clamp server-side aplica guardrail filtrando por `dia_tipo` (`todos` bate qualquer dia)
+  - Regra 13 do system prompt: se `focus_metric ≠ 'Balanceado'`, usa o foco configurado diretamente sem perguntar ao usuário
+  - `vigenciaBlock` reescrito: decide autonomamente (janela igual para assimétrico, vigência completa para simétrico); oferece alternativas pós-análise via `sugerir_respostas` — sem gate antes da análise
+  - `chat/route.ts`: `agentConfigBlock` construído a partir de `focus_metric`, `pricing_strategy`, `max_variation_pct` e appendado ao systemPrompt
+  - `agente-page-client.tsx`: OptionCards renderizadas inline como cards compactos com `descricao`
+
+- **LHG-150:** fix(agente): texto duplicado + OptionCards lentos + Enter criava 2 conversas
+  - Root cause 1 (texto duplicado): AI SDK multi-step — após tool `sugerir_respostas`, SDK acumula 2ª text-part com mesmo conteúdo; fix: `firstSugerirIdx` slice — exibe apenas parts antes do primeiro `sugerir_respostas`
+  - Root cause 2 (OptionCards lentos): condição `!isStreaming` impedia render durante streaming; removida — cards aparecem imediatamente ao chegar a tool call
+  - Root cause 3 (Enter duplo): `isSubmittingRef.current = false` era resetado antes do React re-renderizar com `isStreaming=true`; fix: reset movido para `useEffect` que observa `status === 'ready' | 'error'`
+
+- **LHG-151:** fix(propostas+descontos): sub-tabs instantâneas + dia_semana correto nas propostas de desconto
+  - Root cause sub-tabs lentas: Radix Tabs desmonta conteúdo inativo por padrão — `ProposalsList` e `DiscountProposalsList` re-fetchavam a cada troca de aba
+  - Fix: `forceMount` + `data-[state=inactive]:hidden` nas duas sub-tabs de propostas — componentes ficam montados; troca é puramente CSS
+  - Root cause dia_semana errado: `priceCtx` injetava terminologia "Semana"/"FDS/Feriado" (dia_tipo) no mesmo prompt que `discountCtx` usava "segunda"/"domingo" (dia_semana) → modelo usava vocabulário errado
+  - Fix `discount-proposals/route.ts`: `priceCtx` removido; regra crítica explícita: usar SEMPRE `dia_semana` com nome exato do dia (ex: "segunda", "domingo") — nunca `dia_tipo`
+  - `discount-proposals-list.tsx`: coluna Dia exibe `dia_semana` com fallback para `dia_tipo` legado; nova coluna Faixa Horária
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
