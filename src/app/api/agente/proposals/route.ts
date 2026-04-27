@@ -548,7 +548,7 @@ COBERTURA TOTAL OBRIGATÓRIA: a proposta DEVE incluir uma linha para CADA combin
 IMPORTANTE: Use os valores do "Mapa de preços atuais" acima como preco_atual. Não invente valores.
 
 Retorne SOMENTE este JSON minificado (sem nenhum texto antes ou depois):
-{"context":"análise em 2-3 frases","rows":[{"canal":"balcao_site","categoria":"LUSH POP","periodo":"6 horas","dia_tipo":"semana","preco_atual":385.00,"preco_proposto":370.00,"variacao_pct":-3.9,"justificativa":"razão em 1 frase"}]}
+{"context":"análise em 2-3 frases","rows":[{"canal":"balcao_site","categoria":"NOME DA CATEGORIA","periodo":"${activeRows[0]?.periodo ?? '3 horas'}","dia_tipo":"semana","preco_atual":100.00,"preco_proposto":95.00,"variacao_pct":-5.0,"justificativa":"razão em 1 frase"}]}
 
 Valores válidos:
 - canal: balcao_site | site_programada | guia_moteis
@@ -558,7 +558,7 @@ Valores válidos:
 - variacao_pct = ((preco_proposto - preco_atual) / preco_atual * 100) arredondado 1 decimal
 
 CRÍTICO: Gere UMA linha por combinação canal × categoria × periodo × dia_tipo. Nunca agrupe períodos diferentes em uma única linha. Use os valores de preco_atual do mapa acima.
-Omita itens sem dados suficientes. JSON minificado, sem indentação.`
+A cobertura total já foi instruída acima — NUNCA omita uma combinação que existe no mapa. JSON minificado, sem indentação.`
 
   // Suprimir warning de variável não usada (precoAtualMap disponível para validação futura)
   void precoAtualMap
