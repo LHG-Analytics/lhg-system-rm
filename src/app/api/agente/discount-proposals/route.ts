@@ -12,8 +12,11 @@ import { toApiDate } from '@/lib/kpis/period'
 export interface DiscountProposalRow {
   canal:                  string   // 'guia_moteis'
   categoria:              string
-  periodo:                string   // '3h' | '6h' | '12h' | 'pernoite'
-  dia_tipo:               string   // 'semana' | 'fds_feriado' | 'todos'
+  periodo:                string   // nome exato do período (conforme tabela importada)
+  /** Dia da semana específico (ex: "segunda", "domingo") — formato da tabela de descontos */
+  dia_semana?:            string
+  /** Fallback legado: "semana" | "fds_feriado" | "todos" */
+  dia_tipo?:              string
   faixa_horaria?:         string
   desconto_atual_pct:     number
   desconto_proposto_pct:  number
@@ -158,35 +161,69 @@ export async function POST(req: NextRequest) {
 
   const channelKPIs = await queryChannelKPIs(unit.slug, startDate, endDate).catch(() => [])
 
-  // Monta contexto de preços
+  // Monta contexto de preços (todos os canais — usados como referência de preço base)
   type ParsedRow = { canal: string; categoria: string; periodo: string; dia_tipo: string; preco: number }
-  const priceRows: ParsedRow[] = (activeImport?.parsed_data as unknown as ParsedRow[] ?? [])
-    .filter((r) => r.canal === 'guia_moteis')
+  const allPriceRows: ParsedRow[] = (activeImport?.parsed_data as unknown as ParsedRow[] ?? [])
+  const priceRows = allPriceRows.filter((r) => r.canal === 'guia_moteis')
 
-  type DiscountRow = { categoria: string; periodo: string; dia_tipo?: string; dia_semana?: string; faixa_horaria?: string; valor: number; tipo_desconto: string }
+  type DiscountRow = {
+    categoria: string; periodo: string
+    dia_tipo?: string; dia_semana?: string; faixa_horaria?: string
+    valor: number; tipo_desconto: string
+  }
   const discountRows: DiscountRow[] = [
     ...((activeImport?.discount_data as unknown as DiscountRow[]) ?? []),
     ...((activeDiscountImport?.discount_data as unknown as DiscountRow[]) ?? []),
   ]
 
-  // Constrói mapa base: categoria|periodo|dia_tipo → preco
-  const priceMap = new Map<string, number>()
-  for (const r of priceRows) {
-    priceMap.set(`${r.categoria}|${r.periodo}|${r.dia_tipo ?? 'todos'}`, r.preco)
+  // Normaliza nomes de período: "3h" → "3 HORAS" etc. para fazer lookup no mapa de preços
+  function normPeriodo(p: string): string {
+    const s = p.trim().toUpperCase()
+    if (s === '3H' || s === '3 H' ) return '3 HORAS'
+    if (s === '6H' || s === '6 H' ) return '6 HORAS'
+    if (s === '12H' || s === '12 H') return '12 HORAS'
+    return s
+  }
+  // Mapeia dia_semana (nome do dia) para dia_tipo (semana/fds_feriado)
+  function diaParaTipo(d?: string): 'semana' | 'fds_feriado' {
+    if (!d) return 'semana'
+    const s = d.toLowerCase().trim()
+    if (s === 'sexta' || s === 'sábado' || s === 'sabado' || s === 'domingo') return 'fds_feriado'
+    return 'semana'
   }
 
-  // Constrói mapa desconto atual: categoria|periodo|dia_tipo → desconto%
+  // Mapa de preço base: "canal|PERIODO_NORMALIZADO|dia_tipo" → preco
+  const priceMap = new Map<string, number>()
+  for (const r of allPriceRows) {
+    priceMap.set(`${r.canal}|${normPeriodo(r.periodo)}|${r.dia_tipo ?? 'todos'}`, r.preco)
+  }
+
+  // Lookup de preço base para uma linha de desconto: tenta balcao_site se guia_moteis não encontrar
+  function getPrecoBase(cat: string, periodo: string, diaSemana?: string): number {
+    const pNorm = normPeriodo(periodo)
+    const tipo  = diaParaTipo(diaSemana)
+    return (
+      priceMap.get(`guia_moteis|${pNorm}|${tipo}`) ??
+      priceMap.get(`balcao_site|${pNorm}|${tipo}`) ??
+      priceMap.get(`guia_moteis|${pNorm}|todos`) ??
+      priceMap.get(`balcao_site|${pNorm}|todos`) ??
+      0
+    )
+    void cat
+  }
+
+  // Mapa de desconto atual: "categoria|periodo|dia_semana|faixa" → valor%
   const discountMap = new Map<string, number>()
   for (const d of discountRows) {
     if (d.tipo_desconto === 'percentual') {
-      const key = `${d.categoria}|${d.periodo}|${d.dia_tipo ?? d.dia_semana ?? 'todos'}`
+      const key = `${d.categoria}|${d.periodo}|${d.dia_semana ?? d.dia_tipo ?? 'todos'}|${d.faixa_horaria ?? ''}`
       discountMap.set(key, d.valor)
     }
   }
 
-  const guiaCanal = channelKPIs.find((c) => c.canal === 'GUIA_GO' || c.canal === 'GUIA_SCHEDULED')
+  const guiaCanal     = channelKPIs.find((c) => c.canal === 'GUIA_GO' || c.canal === 'GUIA_SCHEDULED')
   const internalCanal = channelKPIs.find((c) => c.canal === 'INTERNAL')
-  const totalReceita = channelKPIs.reduce((s, c) => s + c.receita, 0)
+  const totalReceita  = channelKPIs.reduce((s, c) => s + c.receita, 0)
 
   const channelCtx = channelKPIs.length
     ? `### Desempenho por canal (últimos 30 dias)
@@ -199,63 +236,69 @@ Guia de Motéis (Go+Prog): ${guiaCanal ? `${guiaCanal.representatividade.toFixed
 Balcão/Interno: ${internalCanal ? `${internalCanal.representatividade.toFixed(1)}% do total` : 'sem dados'}`
     : ''
 
-  const priceCtx = priceRows.length
-    ? `### Tabela de preços base (canal Guia de Motéis)
-| Categoria | Período | Dia | Preço base | Desconto atual | Preço efetivo |
-|-----------|---------|-----|------------|----------------|---------------|
-${priceRows.map((r) => {
-  const key = `${r.categoria}|${r.periodo}|${r.dia_tipo ?? 'todos'}`
-  const desc = discountMap.get(key) ?? 0
-  const efetivo = r.preco * (1 - desc / 100)
-  return `| ${r.categoria} | ${r.periodo} | ${r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | R$ ${r.preco.toFixed(2)} | ${desc}% | R$ ${efetivo.toFixed(2)} |`
+  // Tabela de descontos atual — base para a proposta
+  const discountCtx = discountRows.length
+    ? `### Tabela de descontos atual (Guia de Motéis)
+| Categoria | Período | Dia | Horário | Desconto atual | Preço base | Preço efetivo |
+|-----------|---------|-----|---------|----------------|------------|---------------|
+${discountRows.map((d) => {
+  const pb   = getPrecoBase(d.categoria, d.periodo, d.dia_semana)
+  const desc = d.tipo_desconto === 'percentual' ? d.valor : 0
+  const ef   = pb > 0 ? pb * (1 - desc / 100) : 0
+  const dia  = d.dia_semana ?? d.dia_tipo ?? '—'
+  const hora = d.faixa_horaria ?? '—'
+  return `| ${d.categoria} | ${d.periodo} | ${dia} | ${hora} | ${desc}% | ${pb > 0 ? `R$ ${pb.toFixed(2)}` : '—'} | ${ef > 0 ? `R$ ${ef.toFixed(2)}` : '—'} |`
 }).join('\n')}`
-    : 'Sem tabela de preços para o canal Guia de Motéis.'
+    : 'Sem tabela de descontos importada para esta unidade.'
+
+  // Tabela de preços do Guia (referência de preços base)
+  const priceCtx = priceRows.length
+    ? `### Tabela de preços base — Guia de Motéis
+| Categoria | Período | Dia | Preço base |
+|-----------|---------|-----|------------|
+${priceRows.map((r) =>
+  `| ${r.categoria} | ${r.periodo} | ${r.dia_tipo === 'semana' ? 'Semana' : 'FDS/Feriado'} | R$ ${r.preco.toFixed(2)} |`
+).join('\n')}`
+    : ''
 
   const guardrailCtx = guardrails?.length
     ? `### Guardrails (preço mínimo/máximo)\n| Categoria | Período | Mínimo | Máximo |\n|-----------|---------|--------|--------|\n${guardrails.map((g) => `| ${g.categoria} | ${g.periodo} | R$ ${g.preco_minimo?.toFixed(2) ?? '—'} | R$ ${g.preco_maximo?.toFixed(2) ?? '—'} |`).join('\n')}`
     : ''
 
+  // Mapa de linhas de desconto para COBERTURA TOTAL
+  const discountRowsBlock = discountRows.map((d) =>
+    `${d.categoria}|${d.periodo}|${d.dia_semana ?? d.dia_tipo ?? 'todos'}|${d.faixa_horaria ?? ''} = ${d.valor}%`
+  ).join('\n')
+
+  const validPeriodos = [...new Set(discountRows.map((r) => r.periodo))].join(' | ')
+  const validDias     = [...new Set(discountRows.map((r) => r.dia_semana ?? r.dia_tipo ?? ''))].filter(Boolean).join(' | ')
+
   const prompt = `Você é um especialista em Revenue Management de motéis. Analise os dados abaixo e gere uma proposta de ajuste de **desconto** para o canal Guia de Motéis de ${unit.name}.
 
 ${channelCtx}
 
-${priceCtx}
+${discountCtx}
 
-${guardrailCtx}
+${priceCtx ? `${priceCtx}\n` : ''}${guardrailCtx ? `${guardrailCtx}\n` : ''}
+## Mapa de descontos atuais (use como preco_base e desconto_atual_pct no JSON)
+${discountRowsBlock}
+
+---
 
 ## Critérios de decisão
 - Se o Guia de Motéis representa < 15% da receita total → avaliar aumento de desconto para atrair mais volume
 - Se o Guia representa > 40% da receita → avaliar redução de desconto (canal já performando bem)
 - O preço efetivo (base × (1 − desconto/100)) NUNCA pode ficar abaixo do guardrail mínimo
 - Prefira ajustes graduais (±2 a ±5 pontos percentuais) — evite variações bruscas
-- Justifique cada linha com base nos dados de canal e demanda
 
-Valores válidos para periodo (copie EXATAMENTE da tabela acima, nunca abrevie):
-${[...new Set(priceRows.map((r) => r.periodo))].join(' | ')}
+COBERTURA TOTAL OBRIGATÓRIA: a proposta DEVE incluir UMA linha para CADA combinação categoria × periodo × dia_semana × faixa_horaria do mapa acima, sem exceção. Para linhas sem alteração: desconto_proposto_pct = desconto_atual_pct, variacao_pts = 0, justificativa obrigatória explicando por que foi mantido. NUNCA omita uma linha que existe no mapa.
 
-Gere UMA linha por combinação categoria × periodo × dia_tipo. Nunca agrupe períodos diferentes.
+Valores válidos:
+- periodo (copie EXATAMENTE): ${validPeriodos}
+- dia_semana (copie EXATAMENTE): ${validDias}
 
-## Formato obrigatório (JSON puro, sem markdown)
-{
-  "context": "Resumo em 2-3 frases da lógica da proposta",
-  "rows": [
-    {
-      "canal": "guia_moteis",
-      "categoria": "Nome exato da categoria",
-      "periodo": "6 horas",
-      "dia_tipo": "semana",
-      "desconto_atual_pct": 20,
-      "desconto_proposto_pct": 25,
-      "variacao_pts": 5,
-      "preco_base": 100.00,
-      "preco_efetivo_atual": 80.00,
-      "preco_efetivo_proposto": 75.00,
-      "justificativa": "Motivo específico baseado nos dados"
-    }
-  ]
-}
-
-Gere APENAS o JSON. Não inclua texto fora do JSON.`
+## Formato obrigatório (JSON minificado, sem texto fora do JSON)
+{"context":"Resumo em 2-3 frases","rows":[{"canal":"guia_moteis","categoria":"LUSH POP","periodo":"3h","dia_semana":"segunda","faixa_horaria":"00:00-23:59","desconto_atual_pct":30,"desconto_proposto_pct":25,"variacao_pts":-5,"preco_base":150.00,"preco_efetivo_atual":105.00,"preco_efetivo_proposto":112.50,"justificativa":"motivo específico"}]}`
 
   let parsed: { context: string; rows: DiscountProposalRow[] } | null = null
 
@@ -264,7 +307,7 @@ Gere APENAS o JSON. Não inclua texto fora do JSON.`
       model: ANALYSIS_MODEL,
       ...gatewayOptions,
       prompt,
-      maxOutputTokens: 4000,
+      maxOutputTokens: 8000,
     })
     parsed = extractJSON(text)
   } catch (err) {

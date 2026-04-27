@@ -259,6 +259,7 @@ function ProposalCard({
                   <th className="px-3 py-2 text-left font-medium">Categoria</th>
                   <th className="px-3 py-2 text-left font-medium">Período</th>
                   <th className="px-3 py-2 text-left font-medium">Dia</th>
+                  <th className="px-3 py-2 text-left font-medium">Faixa Horária</th>
                   <th className="px-3 py-2 text-right font-medium">Preço base</th>
                   <th className="px-3 py-2 text-right font-medium">Desconto atual</th>
                   <th className="px-3 py-2 text-right font-medium">Desconto proposto</th>
@@ -272,8 +273,11 @@ function ProposalCard({
                   <tr key={i} className={cn('border-b hover:bg-muted/20 transition-colors', Math.abs(r.variacao_pts) < 0.1 && 'opacity-40')}>
                     <td className="px-3 py-2 font-medium whitespace-nowrap">{r.categoria}</td>
                     <td className="px-3 py-2 whitespace-nowrap">{r.periodo}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-xs text-muted-foreground capitalize">
+                      {r.dia_semana ?? (r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos')}
+                    </td>
                     <td className="px-3 py-2 whitespace-nowrap text-xs text-muted-foreground">
-                      {r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'}
+                      {r.faixa_horaria ?? '—'}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmt.format(r.preco_base)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{r.desconto_atual_pct}%</td>
