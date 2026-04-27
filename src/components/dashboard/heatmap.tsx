@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -91,11 +91,19 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState<string | null>(null)
 
+  // Cache de respostas por combinação de parâmetros — evita refetch ao alternar métricas
+  const responseCache = useRef(new Map<string, HeatmapCell[]>())
+
   const fetchData = useCallback(async (
     m: HeatmapMetric,
     dt: HeatmapDateType,
     catId: string | null,
   ) => {
+    const cacheKey = `${m}-${dt}-${catId ?? ''}`
+    if (responseCache.current.has(cacheKey)) {
+      setRows(responseCache.current.get(cacheKey)!)
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -115,7 +123,9 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
         throw new Error(body.error ?? `Erro ${res.status}`)
       }
       const data = await res.json()
-      setRows(data.rows ?? [])
+      const fetchedRows: HeatmapCell[] = data.rows ?? []
+      responseCache.current.set(cacheKey, fetchedRows)
+      setRows(fetchedRows)
       if (data.categories?.length) setCategories(data.categories)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar heatmap')

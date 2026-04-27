@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo, useMemo } from 'react'
 import { ChevronUp, ChevronDown, ChevronsUpDown, GripVertical, GripHorizontal } from 'lucide-react'
 import {
   DndContext,
@@ -223,7 +223,7 @@ function renderSuiteTotalCell(total: CompanyTotalResult, rows: SuiteRow[], key: 
   }
 }
 
-function SuiteCategoryTable({ company, dragHandle }: { company: CompanyKPIResponse; dragHandle?: React.ReactNode }) {
+const SuiteCategoryTable = memo(function SuiteCategoryTable({ company, dragHandle }: { company: CompanyKPIResponse; dragHandle?: React.ReactNode }) {
   const rawRows: SuiteRow[] = (company.DataTableSuiteCategory ?? []).flatMap((item) =>
     Object.entries(item).map(([category, kpi]) => ({ category, ...kpi }))
   )
@@ -369,7 +369,7 @@ function SuiteCategoryTable({ company, dragHandle }: { company: CompanyKPIRespon
       </div>
     </div>
   )
-}
+})
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
@@ -384,7 +384,7 @@ const DAY_LABEL: Record<string, string> = {
 
 type GiroRow = { cat: string; days: DataTableGiroByWeek[string] }
 
-function GiroWeekTable({ title, data, dragHandle }: { title: string; data: DataTableGiroByWeek[]; dragHandle?: React.ReactNode }) {
+const GiroWeekTable = memo(function GiroWeekTable({ title, data, dragHandle }: { title: string; data: DataTableGiroByWeek[]; dragHandle?: React.ReactNode }) {
   const rawRows: GiroRow[] = (data ?? []).map((item) => {
     const [cat, days] = Object.entries(item)[0]
     return { cat, days }
@@ -526,13 +526,13 @@ function GiroWeekTable({ title, data, dragHandle }: { title: string; data: DataT
       </div>
     </div>
   )
-}
+})
 
 // ─── Tabela RevPAR por Dia da Semana ──────────────────────────────────────────
 
 type RevparRow = { cat: string; days: DataTableRevparByWeek[string] }
 
-function RevparWeekTable({ title, data, dragHandle }: { title: string; data: DataTableRevparByWeek[]; dragHandle?: React.ReactNode }) {
+const RevparWeekTable = memo(function RevparWeekTable({ title, data, dragHandle }: { title: string; data: DataTableRevparByWeek[]; dragHandle?: React.ReactNode }) {
   const rawRows: RevparRow[] = (data ?? []).map((item) => {
     const [cat, days] = Object.entries(item)[0]
     return { cat, days }
@@ -674,7 +674,7 @@ function RevparWeekTable({ title, data, dragHandle }: { title: string; data: Dat
       </div>
     </div>
   )
-}
+})
 
 // ─── Mix por Canal de Reserva ─────────────────────────────────────────────────
 
@@ -697,7 +697,7 @@ function renderChannelCell(r: ChannelKPIRow, key: string): React.ReactNode {
   }
 }
 
-function ChannelMixTable({ rows, dragHandle }: { rows: ChannelKPIRow[]; dragHandle?: React.ReactNode }) {
+const ChannelMixTable = memo(function ChannelMixTable({ rows, dragHandle }: { rows: ChannelKPIRow[]; dragHandle?: React.ReactNode }) {
   const [sort, setSort]   = useState<SortState>(null)
   const [order, setOrder] = useState<string[]>([])
 
@@ -841,7 +841,7 @@ function ChannelMixTable({ rows, dragHandle }: { rows: ChannelKPIRow[]; dragHand
       </div>
     </div>
   )
-}
+})
 
 // ─── Mix por Período (3h/6h/12h/Pernoite) ────────────────────────────────────
 
@@ -853,7 +853,7 @@ const PERIOD_COLS = [
   { key: 'percent',  label: '% do Total' },
 ]
 
-function PeriodMixTable({ rows, dragHandle }: { rows: BillingRentalTypeItem[]; dragHandle?: React.ReactNode }) {
+const PeriodMixTable = memo(function PeriodMixTable({ rows, dragHandle }: { rows: BillingRentalTypeItem[]; dragHandle?: React.ReactNode }) {
   const [sort, setSort]   = useState<SortState>(null)
   const [order, setOrder] = useState<string[]>([])
 
@@ -999,7 +999,7 @@ function PeriodMixTable({ rows, dragHandle }: { rows: BillingRentalTypeItem[]; d
       </div>
     </div>
   )
-}
+})
 
 // ─── Wrapper arrastável para tabelas ─────────────────────────────────────────
 

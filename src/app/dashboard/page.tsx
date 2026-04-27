@@ -1,7 +1,6 @@
 import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { resolvePreset, toLhgDate, fmtDisplay } from '@/lib/date-range'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
@@ -11,7 +10,7 @@ import { WeatherWidget } from '@/components/dashboard/weather-widget'
 import { CompareButton } from '@/components/dashboard/compare-button'
 import { fetchWeatherData } from '@/lib/agente/weather'
 import { getWeatherInsight } from '@/lib/agente/weather-insight'
-import { queryChannelKPIs, queryPeriodMix } from '@/lib/automo/channel-kpis'
+import { cachedCompanyKPIs, cachedChannelKPIs, cachedPeriodMix } from '@/lib/automo/cached-kpis'
 import type { ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
 
 interface DashboardPageProps {
@@ -109,7 +108,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .single()
 
   const [company, weatherResult, channelKPIsResult, periodMixResult] = await Promise.all([
-    fetchCompanyKPIsFromAutomo(
+    cachedCompanyKPIs(
       activeUnit.slug,
       startDDMMYYYY,
       endDDMMYYYY,
@@ -122,8 +121,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       return null
     }),
     agentConfig?.city ? fetchWeatherData(agentConfig.city) : Promise.resolve({ status: 'unconfigured' as const }),
-    queryChannelKPIs(activeUnit.slug, startDDMMYYYY, endDDMMYYYY).catch(() => [] as ChannelKPIRow[]),
-    queryPeriodMix(activeUnit.slug, startDDMMYYYY, endDDMMYYYY, rentalStatus, startHour, endHour, dateType).catch(() => [] as BillingRentalTypeItem[]),
+    cachedChannelKPIs(activeUnit.slug, startDDMMYYYY, endDDMMYYYY).catch(() => [] as ChannelKPIRow[]),
+    cachedPeriodMix(activeUnit.slug, startDDMMYYYY, endDDMMYYYY, rentalStatus, startHour, endHour, dateType).catch(() => [] as BillingRentalTypeItem[]),
   ])
 
   // Insight IA clima × demanda — usa cache de 4h; regenera em background se vencido
