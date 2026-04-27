@@ -734,6 +734,13 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Nova regra 13: para pedidos genéricos sem objetivo definido, usar `sugerir_respostas` com 6 opções (Aumentar RevPAR, volume, TRevPAR, reequilibrar FDS/semana, ocupação, outro) ANTES de iniciar o framework
   - `sugerir_respostas` após proposta de preços inclui obrigatoriamente "Gerar proposta de descontos para o Guia"
 
+- **LHG-147:** fix(proposals): períodos dinâmicos por unidade + cobertura total obrigatória
+  - Root cause: COBERTURA OBRIGATÓRIA só cobria categorias alteradas; períodos hardcoded "3h/6h/12h/pernoite" confundiam Altana (1h/2h/4h/12h) e Lush (3h/6h/12h/Day Use/Pernoite)
+  - `proposals/route.ts`: COBERTURA TOTAL — proposta deve incluir TODAS as combinações cat×periodo×dia_tipo do mapa de preços, com justificativa obrigatória para itens mantidos (nunca omitir)
+  - `maxOutputTokens` 6000 → 10000 para suportar propostas completas (~72 linhas no Lush)
+  - `system-prompt.ts`: 4 ocorrências de "3h/6h/12h/pernoite" substituídas por referências dinâmicas à tabela vigente
+  - **Armadilha:** períodos válidos já eram dinâmicos no prompt de geração via `activeRows.map(r => r.periodo)` — o problema era a cobertura e os hardcodes no chat
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
