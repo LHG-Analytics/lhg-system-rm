@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PriceImportQueue, ImportJobHistory } from '@/components/precos/price-import-queue'
 import { PriceList } from '@/components/precos/price-list'
-import { DiscountProposalsList } from '@/components/descontos/discount-proposals-list'
 
 interface DescontosPageProps {
   searchParams: Promise<{ unit?: string }>
@@ -21,8 +20,6 @@ export default async function DescontosPage({ searchParams }: DescontosPageProps
     .select('role')
     .eq('user_id', user.id)
     .single()
-
-  const canManage = profile?.role === 'super_admin' || profile?.role === 'admin'
 
   let activeUnit: { id: string; slug: string; name: string } | null = null
 
@@ -76,20 +73,11 @@ export default async function DescontosPage({ searchParams }: DescontosPageProps
       </div>
 
       {activeUnit ? (
-        <Tabs defaultValue="propostas">
+        <Tabs defaultValue="tabelas">
           <TabsList className="w-full justify-start">
-            <TabsTrigger value="propostas">Propostas de desconto</TabsTrigger>
             <TabsTrigger value="tabelas">Descontos importados</TabsTrigger>
             <TabsTrigger value="historico">Histórico de importação</TabsTrigger>
           </TabsList>
-
-          <TabsContent value="propostas" className="mt-4">
-            <DiscountProposalsList
-              unitSlug={activeUnit.slug}
-              unitId={activeUnit.id}
-              canManage={canManage}
-            />
-          </TabsContent>
 
           <TabsContent value="tabelas" className="mt-4 flex flex-col gap-4">
             <PriceImportQueue unitSlug={activeUnit.slug} unitName={activeUnit.name} importType="discounts" />

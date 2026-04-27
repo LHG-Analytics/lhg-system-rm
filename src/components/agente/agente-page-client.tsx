@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 import { AgenteChat } from '@/components/agente/agente-chat'
 import { ProposalsList } from '@/components/agente/proposals-list'
 import { ScheduledReviewsList } from '@/components/agente/scheduled-reviews-list'
+import { DiscountProposalsList } from '@/components/descontos/discount-proposals-list'
 import { AgentConfigManager } from '@/app/dashboard/admin/_components/agent-config-manager'
 import type { UIMessage } from 'ai'
 import type { ConversationSummary } from '@/components/agente/agente-chat'
@@ -460,14 +461,31 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
         </TabsContent>
 
         <TabsContent value="propostas" className="mt-0 overflow-y-auto p-4">
-          <ProposalsList
-            unitSlug={activeUnit?.slug ?? ''}
-            unitId={unitId}
-            initialProposals={initialProposals}
-            refreshKey={proposalsRefreshKey}
-            selectedProposalId={selectedProposalId}
-            canManage={canManageProposals}
-          />
+          <Tabs defaultValue="precificacao">
+            <TabsList className="mb-4">
+              <TabsTrigger value="precificacao">Precificação</TabsTrigger>
+              <TabsTrigger value="descontos-guia">Descontos Guia de Motéis</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="precificacao" className="mt-0">
+              <ProposalsList
+                unitSlug={activeUnit?.slug ?? ''}
+                unitId={unitId}
+                initialProposals={initialProposals}
+                refreshKey={proposalsRefreshKey}
+                selectedProposalId={selectedProposalId}
+                canManage={canManageProposals}
+              />
+            </TabsContent>
+
+            <TabsContent value="descontos-guia" className="mt-0">
+              <DiscountProposalsList
+                unitSlug={activeUnit?.slug ?? ''}
+                unitId={unitId}
+                canManage={canManageProposals}
+              />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         <TabsContent value="agendamentos" className="mt-0 overflow-y-auto p-4">
