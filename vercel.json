@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/revisoes",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/seed-holidays",
+      "schedule": "0 4 * * *"
     }
   ]
 }

@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   const [capacityResult, channelCostsResult] = await Promise.all([
     supabase
       .from('unit_capacity')
-      .select('id, categoria, n_suites, custo_variavel_locacao, notes')
+      .select('id, categoria, custo_variavel_locacao, notes')
       .eq('unit_id', unit.id)
       .order('categoria'),
     supabase
@@ -33,9 +33,14 @@ export async function GET(req: NextRequest) {
       .order('canal'),
   ])
 
+  // Disponibilidade vem do Automo (descontando bloqueios)
+  const { getSuiteAvailabilityByCategory } = await import('@/lib/automo/suite-availability')
+  const availability = await getSuiteAvailabilityByCategory(unitSlug).catch(() => [])
+
   return Response.json({
     capacity: capacityResult.data ?? [],
     channelCosts: channelCostsResult.data ?? [],
+    availability,
   })
 }
 
@@ -59,19 +64,15 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as {
     unitSlug: string
     categoria: string
-    n_suites: number
     custo_variavel_locacao?: number
     notes?: string
   }
 
-  const { unitSlug, categoria, n_suites } = body
+  const { unitSlug, categoria } = body
   const custo_variavel_locacao = body.custo_variavel_locacao ?? 0
 
   if (!unitSlug || !categoria) {
     return new Response('unitSlug e categoria são obrigatórios', { status: 400 })
-  }
-  if (typeof n_suites !== 'number' || n_suites <= 0) {
-    return new Response('n_suites deve ser número positivo', { status: 400 })
   }
   if (typeof custo_variavel_locacao !== 'number' || custo_variavel_locacao < 0) {
     return new Response('custo_variavel_locacao deve ser número não-negativo', { status: 400 })
@@ -96,7 +97,6 @@ export async function POST(req: NextRequest) {
       {
         unit_id: unit.id,
         categoria,
-        n_suites,
         custo_variavel_locacao,
         notes: body.notes ?? null,
         created_by: user.id,

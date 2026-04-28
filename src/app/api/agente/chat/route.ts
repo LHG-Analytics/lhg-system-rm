@@ -8,6 +8,7 @@ import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { queryChannelKPIs, queryPeriodMix } from '@/lib/automo/channel-kpis'
 import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
+import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { fetchWeatherContext } from '@/lib/agente/weather'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
@@ -407,7 +408,7 @@ export async function POST(req: NextRequest) {
       .limit(30),
     admin
       .from('unit_capacity')
-      .select('categoria, n_suites, custo_variavel_locacao, notes')
+      .select('categoria, custo_variavel_locacao, notes')
       .eq('unit_id', unit.id)
       .order('categoria'),
     admin
@@ -503,13 +504,14 @@ export async function POST(req: NextRequest) {
   // contextMode='personal' omite contexto coletivo da org (shared_context, eventos, regras de threshold)
   const goalsBlock = buildGoalsBlock(unitGoals, kpiPeriods)
 
-  // Bloco de estrutura da unidade (capacidade + comissões por canal)
+  // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
   const capacityRows = capacityResult.status === 'fulfilled' ? (capacityResult.value.data ?? []) : []
   const channelCostRows = channelCostsResult.status === 'fulfilled' ? (channelCostsResult.value.data ?? []) : []
+  const availabilityRows = await getSuiteAvailabilityByCategory(unit.slug).catch(() => [])
   const unitStructureBlock = buildUnitStructureBlock(
+    availabilityRows,
     capacityRows.map((r) => ({
       categoria: r.categoria,
-      n_suites: r.n_suites,
       custo_variavel_locacao: Number(r.custo_variavel_locacao),
       notes: r.notes,
     })),

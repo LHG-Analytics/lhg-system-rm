@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, Building2, Loader2, BedDouble, Percent } from 'lucide-react'
+import { Plus, Trash2, Building2, Loader2, BedDouble, Percent, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -27,7 +27,6 @@ import {
 interface CapacityRow {
   id: string
   categoria: string
-  n_suites: number
   custo_variavel_locacao: number
   notes: string | null
 }
@@ -38,6 +37,14 @@ interface ChannelCostRow {
   comissao_pct: number
   taxa_fixa: number
   notes: string | null
+}
+
+interface AvailabilityRow {
+  categoria: string
+  total: number
+  bloqueadas: number
+  disponiveis: number
+  motivos_bloqueio: string[]
 }
 
 interface Unit {
@@ -52,6 +59,7 @@ interface CapacityManagerProps {
   categorias: string[]
   initialCapacity: CapacityRow[]
   initialChannelCosts: ChannelCostRow[]
+  initialAvailability: AvailabilityRow[]
   units: Unit[]
 }
 
@@ -74,15 +82,16 @@ export function CapacityManager({
   categorias,
   initialCapacity,
   initialChannelCosts,
+  initialAvailability,
   units,
 }: CapacityManagerProps) {
   const router = useRouter()
   const [capacity, setCapacity] = useState<CapacityRow[]>(initialCapacity)
   const [channelCosts, setChannelCosts] = useState<ChannelCostRow[]>(initialChannelCosts)
+  const availability = initialAvailability
 
   // ── Form state: capacity ────────────────────────────────────────────────
   const [capCategoria, setCapCategoria] = useState('')
-  const [capNSuites, setCapNSuites] = useState('')
   const [capCusto, setCapCusto] = useState('')
   const [capNotes, setCapNotes] = useState('')
   const [savingCap, setSavingCap] = useState(false)
@@ -113,7 +122,6 @@ export function CapacityManager({
       const payload = {
         unitSlug,
         categoria: capCategoria.trim(),
-        n_suites: parseInt(capNSuites, 10),
         custo_variavel_locacao: parseFloat(capCusto || '0'),
         notes: capNotes.trim() || undefined,
       }
@@ -137,7 +145,6 @@ export function CapacityManager({
         return [...prev, saved].sort((a, b) => a.categoria.localeCompare(b.categoria))
       })
       setCapCategoria('')
-      setCapNSuites('')
       setCapCusto('')
       setCapNotes('')
     } catch (err) {
@@ -145,7 +152,7 @@ export function CapacityManager({
     } finally {
       setSavingCap(false)
     }
-  }, [unitSlug, capCategoria, capNSuites, capCusto, capNotes])
+  }, [unitSlug, capCategoria, capCusto, capNotes])
 
   const handleDeleteCapacity = useCallback(async (id: string) => {
     setDeleting(true)
@@ -217,7 +224,12 @@ export function CapacityManager({
     }
   }, [])
 
-  const totalSuites = capacity.reduce((acc, r) => acc + r.n_suites, 0)
+  const totalDisponiveis = availability.reduce((acc, r) => acc + r.disponiveis, 0)
+  const totalBloqueadas  = availability.reduce((acc, r) => acc + r.bloqueadas, 0)
+  const totalSuites      = totalDisponiveis + totalBloqueadas
+
+  // Mapa categoria → custo variável (manual)
+  const custoMap = new Map(capacity.map((c) => [c.categoria, c]))
 
   return (
     <div className="flex flex-col gap-8">
@@ -255,106 +267,132 @@ export function CapacityManager({
               Capacidade instalada — {unitName}
             </h3>
             <p className="text-xs text-muted-foreground mt-1">
-              N° de suítes e custo variável médio por locação (lavanderia, energia, A&B básico).
+              N° de suítes vem dinamicamente do Automo (descontando bloqueios ativos). Você só cadastra o custo variável.
             </p>
           </div>
           {totalSuites > 0 && (
-            <span className="text-xs text-muted-foreground">
-              Total: <strong className="text-foreground">{totalSuites} suítes</strong>
-            </span>
+            <div className="text-xs text-right">
+              <div><strong className="text-foreground">{totalDisponiveis}</strong> disponíveis</div>
+              {totalBloqueadas > 0 && (
+                <div className="text-amber-600 dark:text-amber-400 flex items-center gap-1 justify-end">
+                  <AlertTriangle className="size-3" /> {totalBloqueadas} bloqueada{totalBloqueadas > 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
-        <form onSubmit={handleAddCapacity} className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_2fr_auto] gap-2 items-end">
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs">Categoria</Label>
-            {categorias.length > 0 ? (
-              <Select value={capCategoria} onValueChange={setCapCategoria}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categorias.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                placeholder="Ex: Standard"
-                value={capCategoria}
-                onChange={(e) => setCapCategoria(e.target.value)}
-              />
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs">N° suítes</Label>
-            <Input
-              type="number"
-              min="1"
-              placeholder="8"
-              value={capNSuites}
-              onChange={(e) => setCapNSuites(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs">Custo var. (R$)</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="18.00"
-              value={capCusto}
-              onChange={(e) => setCapCusto(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs">Notas (opcional)</Label>
-            <Input
-              placeholder="Ex: 2 com hidro"
-              value={capNotes}
-              onChange={(e) => setCapNotes(e.target.value)}
-            />
-          </div>
-          <Button type="submit" disabled={savingCap || !capCategoria || !capNSuites} size="sm">
-            {savingCap ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-          </Button>
-        </form>
-
-        {capacity.length > 0 && (
+        {availability.length > 0 && (
           <div className="rounded-md border overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-xs">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium">Categoria</th>
-                  <th className="text-right px-3 py-2 font-medium">N° suítes</th>
-                  <th className="text-right px-3 py-2 font-medium">Custo var.</th>
-                  <th className="text-left px-3 py-2 font-medium">Notas</th>
-                  <th className="w-10"></th>
+                  <th className="text-right px-3 py-2 font-medium">Disponíveis</th>
+                  <th className="text-right px-3 py-2 font-medium">Bloqueadas</th>
+                  <th className="text-right px-3 py-2 font-medium">Custo var. (R$/loc)</th>
+                  <th className="text-left px-3 py-2 font-medium">Bloqueio / Notas</th>
                 </tr>
               </thead>
               <tbody>
-                {capacity.map((r) => (
-                  <tr key={r.id} className="border-t">
-                    <td className="px-3 py-2">{r.categoria}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.n_suites}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      R$ {r.custo_variavel_locacao.toFixed(2).replace('.', ',')}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">{r.notes ?? '—'}</td>
-                    <td className="px-2 py-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setConfirmDelete({ kind: 'capacity', id: r.id })}
-                      >
-                        <Trash2 className="size-3.5 text-destructive" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {availability.map((a) => {
+                  const c = custoMap.get(a.categoria)
+                  const motivo = a.motivos_bloqueio.length ? a.motivos_bloqueio.slice(0, 2).join('; ') : null
+                  return (
+                    <tr key={a.categoria} className="border-t">
+                      <td className="px-3 py-2 font-medium">{a.categoria}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        <strong>{a.disponiveis}</strong> <span className="text-muted-foreground text-xs">/ {a.total}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {a.bloqueadas > 0 ? (
+                          <span className="text-amber-600 dark:text-amber-400">{a.bloqueadas}</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {c ? `R$ ${c.custo_variavel_locacao.toFixed(2).replace('.', ',')}` : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">
+                        {motivo ?? c?.notes ?? '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {availability.length === 0 && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400 flex items-center gap-2">
+            <AlertTriangle className="size-3.5" />
+            Não foi possível buscar dados do Automo. Verifique a conexão.
+          </div>
+        )}
+
+        {/* Form de custo variável (n_suites vem do Automo, só cadastra custo + notes) */}
+        <div>
+          <p className="text-xs font-medium mb-2">Cadastrar custo variável por categoria</p>
+          <form onSubmit={handleAddCapacity} className="grid grid-cols-1 md:grid-cols-[2fr_1fr_2fr_auto] gap-2 items-end">
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">Categoria</Label>
+              <Select value={capCategoria} onValueChange={setCapCategoria}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(availability.length > 0 ? availability.map((a) => a.categoria) : categorias).map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">Custo var. (R$)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="18.00"
+                value={capCusto}
+                onChange={(e) => setCapCusto(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">Notas (opcional)</Label>
+              <Input
+                placeholder="Ex: lavanderia, energia, A&B"
+                value={capNotes}
+                onChange={(e) => setCapNotes(e.target.value)}
+              />
+            </div>
+            <Button type="submit" disabled={savingCap || !capCategoria || !capCusto} size="sm">
+              {savingCap ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            </Button>
+          </form>
+        </div>
+
+        {/* Lista de custos cadastrados (com botão remover) */}
+        {capacity.length > 0 && (
+          <div className="text-xs">
+            <p className="text-muted-foreground mb-1">Custos cadastrados ({capacity.length}):</p>
+            <div className="flex flex-wrap gap-1.5">
+              {capacity.map((c) => (
+                <span key={c.id} className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5">
+                  <strong>{c.categoria}</strong>
+                  <span className="text-muted-foreground">R$ {c.custo_variavel_locacao.toFixed(2)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete({ kind: 'capacity', id: c.id })}
+                    className="ml-0.5 hover:text-destructive"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
           </div>
         )}
       </section>

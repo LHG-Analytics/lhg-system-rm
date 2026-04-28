@@ -95,7 +95,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           .limit(100),
         admin
           .from('unit_capacity')
-          .select('id, categoria, n_suites, custo_variavel_locacao, notes')
+          .select('id, categoria, custo_variavel_locacao, notes')
           .eq('unit_id', activeUnit.id)
           .order('categoria'),
         admin
@@ -115,8 +115,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const eventsData = (eventsResult as any).data ?? []
   const capacityData = capacityResult.data ?? []
   const channelCostsData = channelCostsResult.data ?? []
-  // União: categorias do import + categorias já cadastradas em unit_capacity
-  const categorias = [...new Set([...categoriasFromImport, ...capacityData.map((c) => c.categoria)])].sort()
+
+  // Disponibilidade real de suítes vem do Automo (descontando bloqueios ativos)
+  const { getSuiteAvailabilityByCategory } = await import('@/lib/automo/suite-availability')
+  const availabilityData = activeUnit
+    ? await getSuiteAvailabilityByCategory(activeUnit.slug).catch(() => [])
+    : []
+
+  // União: categorias do import + cadastradas + reportadas pelo Automo
+  const categorias = [...new Set([
+    ...categoriasFromImport,
+    ...capacityData.map((c) => c.categoria),
+    ...availabilityData.map((a) => a.categoria),
+  ])].sort()
 
   const defaultTab = tab ?? 'usuarios'
 
@@ -200,7 +211,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               initialCapacity={capacityData.map((c) => ({
                 id: c.id,
                 categoria: c.categoria,
-                n_suites: c.n_suites,
                 custo_variavel_locacao: Number(c.custo_variavel_locacao),
                 notes: c.notes,
               }))}
@@ -211,6 +221,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 taxa_fixa: Number(c.taxa_fixa),
                 notes: c.notes,
               }))}
+              initialAvailability={availabilityData}
             />
           ) : (
             <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>

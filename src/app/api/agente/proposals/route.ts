@@ -11,6 +11,7 @@ import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { buildProposalBaseline, defaultBaselineWindow } from '@/lib/agente/proposal-baseline'
 import { buildKPIContext, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
+import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -436,7 +437,7 @@ export async function POST(req: NextRequest) {
       .order('scraped_at', { ascending: false }),
     supabase
       .from('unit_capacity')
-      .select('categoria, n_suites, custo_variavel_locacao, notes')
+      .select('categoria, custo_variavel_locacao, notes')
       .eq('unit_id', unit.id)
       .order('categoria'),
     supabase
@@ -446,11 +447,12 @@ export async function POST(req: NextRequest) {
       .order('canal'),
   ])
 
-  // Bloco de estrutura da unidade (capacidade + comissões por canal)
+  // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
+  const availabilityRows = await getSuiteAvailabilityByCategory(unit.slug).catch(() => [])
   const unitStructureBlock = buildUnitStructureBlock(
+    availabilityRows,
     (capacityData ?? []).map((r) => ({
       categoria: r.categoria,
-      n_suites: r.n_suites,
       custo_variavel_locacao: Number(r.custo_variavel_locacao),
       notes: r.notes,
     })),

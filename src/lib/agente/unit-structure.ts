@@ -1,7 +1,10 @@
+import type { SuiteAvailabilityRow } from '@/lib/automo/suite-availability'
+
 /**
  * Bloco de "Estrutura da unidade" injetado no system prompt do agente.
- * Inclui capacidade instalada por categoria (n_suítes + custo variável)
- * e comissões por canal de venda. Usado em chat e propostas.
+ * Mescla:
+ *   - Suítes disponíveis por categoria (Automo dinâmico, descontando bloqueios)
+ *   - Custo variável por categoria + comissões por canal (cadastro manual)
  *
  * Sem este bloco, o agente teria que perguntar ao usuário o total de suítes
  * a cada conversa, o que é absurdo num agente de Revenue Management.
@@ -9,7 +12,6 @@
 
 export interface UnitCapacityRow {
   categoria: string
-  n_suites: number
   custo_variavel_locacao: number
   notes?: string | null
 }
@@ -30,19 +32,41 @@ const CANAL_LABEL: Record<string, string> = {
 }
 
 export function buildUnitStructureBlock(
+  availability: SuiteAvailabilityRow[],
   capacity: UnitCapacityRow[],
   channelCosts: UnitChannelCostRow[],
 ): string {
-  if (!capacity.length && !channelCosts.length) return ''
+  if (!availability.length && !capacity.length && !channelCosts.length) return ''
 
-  const totalSuites = capacity.reduce((acc, r) => acc + r.n_suites, 0)
+  // Mapa categoria → custo variável (manual)
+  const custoMap = new Map<string, { custo: number; notes: string | null }>()
+  for (const c of capacity) {
+    custoMap.set(c.categoria, { custo: c.custo_variavel_locacao, notes: c.notes ?? null })
+  }
+
   const sections: string[] = []
 
-  if (capacity.length) {
-    const rows = capacity
-      .map((r) => `- ${r.categoria}: ${r.n_suites} suíte${r.n_suites !== 1 ? 's' : ''} (custo variável R$ ${r.custo_variavel_locacao.toFixed(2)}/locação${r.notes ? ` — ${r.notes}` : ''})`)
-      .join('\n')
-    sections.push(`**Capacidade instalada (total: ${totalSuites} suítes):**\n${rows}`)
+  if (availability.length) {
+    const totalDisponiveis = availability.reduce((acc, r) => acc + r.disponiveis, 0)
+    const totalBloqueadas  = availability.reduce((acc, r) => acc + r.bloqueadas, 0)
+
+    const rows = availability.map((r) => {
+      const custoInfo = custoMap.get(r.categoria)
+      const custoStr = custoInfo
+        ? ` · custo variável R$ ${custoInfo.custo.toFixed(2)}/locação`
+        : ''
+      const notesStr = custoInfo?.notes ? ` — ${custoInfo.notes}` : ''
+      const bloqueioInfo = r.bloqueadas > 0
+        ? ` _(${r.bloqueadas} bloqueada${r.bloqueadas > 1 ? 's' : ''}${r.motivos_bloqueio.length ? ': ' + r.motivos_bloqueio.slice(0, 2).join('; ') : ''})_`
+        : ''
+      return `- ${r.categoria}: **${r.disponiveis} disponíve${r.disponiveis !== 1 ? 'is' : 'l'}** de ${r.total} total${custoStr}${notesStr}${bloqueioInfo}`
+    }).join('\n')
+
+    const headline = totalBloqueadas > 0
+      ? `**Capacidade instalada (${totalDisponiveis} disponíveis · ${totalBloqueadas} bloqueada${totalBloqueadas > 1 ? 's' : ''} de ${totalDisponiveis + totalBloqueadas} total):**`
+      : `**Capacidade instalada (${totalDisponiveis} suítes disponíveis):**`
+
+    sections.push(`${headline}\n${rows}`)
   }
 
   if (channelCosts.length) {
@@ -59,5 +83,5 @@ export function buildUnitStructureBlock(
 
 ${sections.join('\n\n')}
 
-> Use estes dados para cálculos de margem e nunca pergunte ao usuário o total de suítes ou comissões — eles estão acima.`
+> Use estes dados para cálculos de margem e nunca pergunte ao usuário o total de suítes ou comissões — eles estão acima. Suítes bloqueadas (em obras, manutenção etc) NÃO contam como disponíveis para venda.`
 }

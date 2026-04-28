@@ -1316,7 +1316,6 @@ export type Database = {
           created_by: string | null
           custo_variavel_locacao: number
           id: string
-          n_suites: number
           notes: string | null
           unit_id: string
           updated_at: string
@@ -1327,7 +1326,6 @@ export type Database = {
           created_by?: string | null
           custo_variavel_locacao?: number
           id?: string
-          n_suites: number
           notes?: string | null
           unit_id: string
           updated_at?: string
@@ -1338,7 +1336,6 @@ export type Database = {
           created_by?: string | null
           custo_variavel_locacao?: number
           id?: string
-          n_suites?: number
           notes?: string | null
           unit_id?: string
           updated_at?: string
