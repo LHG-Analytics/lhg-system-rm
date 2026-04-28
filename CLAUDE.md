@@ -801,6 +801,15 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `ConversationSummary` inclui `context_mode?: ContextMode`
   - **Armadilha:** toggle só é visível antes do primeiro envio — após iniciar conversa o modo fica fixo
 
+- **LHG-154:** feat(agente+admin): metas de desempenho por unidade
+  - Migration: `unit_goals JSONB DEFAULT '{}'` em `rm_agent_config`
+  - `UnitGoals` interface: `revpar`, `trevpar`, `ocupacao`, `receita_mensal`, `giro`, `ticket`
+  - `GET/PATCH /api/admin/agent-config`: inclui `unit_goals` no SELECT e no body do PATCH
+  - UI: seção "Metas da Unidade" em `AgentConfigManager` — inputs numéricos com prefixo/sufixo por KPI; botão "Salvar metas" dedicado
+  - `chat/route.ts`: `buildGoalsBlock` compara meta × `TotalResult` do período mais recente (`totalRevpar`, `totalTrevpar`, `totalOccupancyRate`, `totalGiro`, `totalAllTicketAverage`) + `monthlyForecast.totalAllValueForecast` para receita_mensal; bloco "## Metas da Unidade" com tabela gap e instruções de prioridade
+  - `proposals/route.ts`: mesmo bloco de metas injetado no prompt de geração — agente instruído a priorizar KPIs com ⚠️ e calcular impacto de cada proposta no fechamento da meta
+  - **Armadilha:** `CompanyKPIResponse` não tem campos flat — usar `TotalResult.totalRevpar` (não `totalAllRevpar`)
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
