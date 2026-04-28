@@ -810,6 +810,19 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `proposals/route.ts`: mesmo bloco de metas injetado no prompt de geração — agente instruído a priorizar KPIs com ⚠️ e calcular impacto de cada proposta no fechamento da meta
   - **Armadilha:** `CompanyKPIResponse` não tem campos flat — usar `TotalResult.totalRevpar` (não `totalAllRevpar`)
 
+- **LHG-155:** fix(auth): qualquer role com unit_id=null acessa todas as unidades
+  - Root cause: `dashboard/layout.tsx` só buscava todas as unidades para `super_admin`; admin/manager/viewer sem unidade atribuída viam tela "Nenhuma unidade configurada"
+  - Fix: admin client no layout para todas as queries de unidade; `unit_id = null` = acesso global para qualquer role
+  - `NoUnitScreen` adicionado para casos onde nenhuma unidade ativa existe (mostra email + unit_id debug + botão "Sair da conta")
+  - `GET /api/auth/signout` criado para invalidar sessão via Supabase e redirecionar para `/login`
+  - `users-manager.tsx`: "Todas as unidades" disponível para qualquer role no formulário de convite e edição inline
+
+- **LHG-156:** fix(comparativo): Mix por Canal e Mix por Período ausentes no modo de comparação
+  - Root cause: `/api/dashboard/kpis` só chamava `fetchCompanyKPIsFromAutomo` — `queryChannelKPIs` e `queryPeriodMix` não eram invocados
+  - Fix: três queries em `Promise.all`; response inclui `channelKPIs` e `periodMix` além de `company`
+  - `ComparisonPanel`: armazena `channelKPIs` e `periodMix` do response e passa para `DashboardCharts`
+  - **Armadilha:** `queryPeriodMix` recebe parâmetros na ordem `(unitSlug, start, end, rentalStatus, startHour, endHour, dateType)` — difere da ordem de `fetchCompanyKPIsFromAutomo`
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
