@@ -8,6 +8,7 @@ import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 import { toApiDate } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
+import { buildProposalBaseline, defaultBaselineWindow } from '@/lib/agente/proposal-baseline'
 import { buildKPIContext, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
@@ -78,13 +79,45 @@ function buildStrategicMemoryBlock(
     return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
   }
 
-  // Resultado real: compara KPIs do período anterior (antes da tabela ativa)
-  // com o período atual (depois) — fecha explicitamente o loop de aprendizado
+  // Resultado real: prefere kpi_baseline da última proposta aprovada (janela igual)
+  // sobre o kpiBefore tradicional (janela enviesada). Marcamos visualmente qual
+  // método foi usado para o agente saber se a comparação é confiável.
   let impactBlock = ''
-  if (kpiAfter && kpiBefore) {
+  type BaselineLike = {
+    window_days?: number
+    kpis?: { total?: { revpar?: number; trevpar?: number; giro?: number; ocupacao?: number; ticket?: number } }
+  }
+  const lastApproved = relevant[0]
+  const lastBaseline = (lastApproved as { kpi_baseline?: BaselineLike } | undefined)?.kpi_baseline ?? null
+  const baselineTotal = lastBaseline?.kpis?.total
+
+  if (kpiAfter && baselineTotal) {
+    // Comparação justa: baseline congelado vs período pós-aprovação
+    const af = kpiAfter.TotalResult
+    const bf = {
+      revpar:   baselineTotal.revpar   ?? 0,
+      trevpar:  baselineTotal.trevpar  ?? 0,
+      giro:     baselineTotal.giro     ?? 0,
+      ocupacao: baselineTotal.ocupacao ?? 0,
+      ticket:   baselineTotal.ticket   ?? 0,
+    }
+    impactBlock = `### Resultado observado após última mudança de tabela _(janela igual de ${lastBaseline?.window_days ?? 28} dias — comparação confiável)_
+| KPI | Antes (baseline) | Depois | Δ |
+|-----|------------------|--------|---|
+| RevPAR | ${fmtBRL(bf.revpar)} | ${fmtBRL(af.totalRevpar)} | **${delta(af.totalRevpar, bf.revpar)}** |
+| TRevPAR | ${fmtBRL(bf.trevpar)} | ${fmtBRL(af.totalTrevpar)} | **${delta(af.totalTrevpar, bf.trevpar)}** |
+| Giro | ${bf.giro.toFixed(2)} | ${af.totalGiro.toFixed(2)} | **${delta(af.totalGiro, bf.giro)}** |
+| Ocupação | ${bf.ocupacao.toFixed(1)}% | ${af.totalOccupancyRate.toFixed(1)}% | **${delta(af.totalOccupancyRate, bf.ocupacao)}** |
+| Ticket Médio | ${fmtBRL(bf.ticket)} | ${fmtBRL(af.totalAllTicketAverage)} | **${delta(af.totalAllTicketAverage, bf.ticket)}** |
+
+> Comparação contra baseline congelado no momento da aprovação. Use para calibrar a nova proposta com confiança.
+
+`
+  } else if (kpiAfter && kpiBefore) {
+    // Fallback (proposta antiga sem baseline): comparação enviesada por janelas diferentes
     const af = kpiAfter.TotalResult
     const bf = kpiBefore.TotalResult
-    impactBlock = `### Resultado observado após última mudança de tabela
+    impactBlock = `### Resultado observado após última mudança de tabela _(janelas diferentes — interpretação cautelosa)_
 | KPI | Antes | Depois | Δ |
 |-----|-------|--------|---|
 | RevPAR | ${fmtBRL(bf.totalRevpar)} | ${fmtBRL(af.totalRevpar)} | **${delta(af.totalRevpar, bf.totalRevpar)}** |
@@ -93,7 +126,7 @@ function buildStrategicMemoryBlock(
 | Ocupação | ${bf.totalOccupancyRate.toFixed(1)}% | ${af.totalOccupancyRate.toFixed(1)}% | **${delta(af.totalOccupancyRate, bf.totalOccupancyRate)}** |
 | Ticket Médio | ${fmtBRL(bf.totalAllTicketAverage)} | ${fmtBRL(af.totalAllTicketAverage)} | **${delta(af.totalAllTicketAverage, bf.totalAllTicketAverage)}** |
 
-> Use este resultado para calibrar a nova proposta: se os KPIs melhoraram, intensifique a direção; se pioraram, recue ou corrija o caminho.
+> ⚠️ Comparação entre vigências de durações diferentes — pode ter viés de sazonalidade. Use com cautela.
 
 `
   }
@@ -760,12 +793,83 @@ export async function PATCH(req: NextRequest) {
 
   if (fetchErr || !proposal) return Response.json({ error: 'Proposta não encontrada' }, { status: 404 })
 
+  // ─── Capturar KPI baseline ANTES da mudança de tabela (status='approved') ──
+  // Janela de 28 dias terminando ontem. Usado pela revisão +7d/+14d/+28d
+  // para comparar antes/depois numa janela igual.
+  const approvedAt = new Date()
+  let kpiBaselineJSON: ReturnType<typeof buildProposalBaseline> | null = null
+
+  if (status === 'approved') {
+    try {
+      // Buscar slug da unidade
+      const adminPre = getAdminClient()
+      const [{ data: unitData }, { data: activeImportData }, { data: agentCfgData }] = await Promise.all([
+        adminPre.from('units').select('slug').eq('id', proposal.unit_id).single(),
+        adminPre
+          .from('price_imports')
+          .select('id')
+          .eq('unit_id', proposal.unit_id)
+          .is('valid_until', null)
+          .order('valid_from', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        adminPre
+          .from('rm_agent_config')
+          .select('events_cache')
+          .eq('unit_id', proposal.unit_id)
+          .maybeSingle(),
+      ])
+
+      if (unitData?.slug) {
+        const win = defaultBaselineWindow(approvedAt)
+        const baselineKpi = await fetchCompanyKPIsFromAutomo(
+          unitData.slug,
+          win.startDDMMYYYY,
+          win.endDDMMYYYY,
+          6, 5, 'FINALIZADA', 'checkin',
+        ).catch(() => null)
+
+        if (baselineKpi) {
+          // Eventos ativos na janela do baseline
+          const { data: activeEventsData } = await adminPre
+            .from('unit_events')
+            .select('title')
+            .eq('unit_id', proposal.unit_id)
+            .lte('event_date', win.endISO)
+            .or(`event_end_date.gte.${win.startISO},event_end_date.is.null,and(event_date.gte.${win.startISO},event_date.lte.${win.endISO})`)
+            .limit(20)
+
+          // Cache de clima (último valor disponível)
+          const eventsCache = (agentCfgData?.events_cache ?? null) as { weather?: { dominantCondition?: string; avgTemp?: number } } | null
+
+          kpiBaselineJSON = buildProposalBaseline(baselineKpi, {
+            windowDays: 28,
+            startDate: win.startISO,
+            endDate: win.endISO,
+            weatherCondition: eventsCache?.weather?.dominantCondition ?? null,
+            weatherAvgTemp: eventsCache?.weather?.avgTemp ?? null,
+            activeEvents: (activeEventsData ?? []).map((e) => e.title),
+            activeTableId: activeImportData?.id ?? null,
+          })
+        }
+      }
+    } catch (e) {
+      console.error('[proposals/approve] failed to build kpi_baseline:', e)
+      // Não bloqueia a aprovação — apenas perde-se a possibilidade de comparação justa nessa proposta
+    }
+  }
+
   const { data: updated, error } = await supabase
     .from('price_proposals')
     .update({
       status,
       reviewed_by: user.id,
-      reviewed_at: new Date().toISOString(),
+      reviewed_at: approvedAt.toISOString(),
+      ...(status === 'approved' ? {
+        approved_at: approvedAt.toISOString(),
+        effective_from: approvedAt.toISOString().slice(0, 10),
+        ...(kpiBaselineJSON ? { kpi_baseline: kpiBaselineJSON as unknown as Database['public']['Tables']['price_proposals']['Update']['kpi_baseline'] } : {}),
+      } : {}),
     })
     .eq('id', id)
     .select('*')

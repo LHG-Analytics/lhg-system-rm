@@ -487,10 +487,13 @@ export type Database = {
       }
       price_proposals: {
         Row: {
+          approved_at: string | null
           context: string | null
           created_at: string
           created_by: string
+          effective_from: string | null
           id: string
+          kpi_baseline: Json | null
           reviewed_at: string | null
           reviewed_by: string | null
           rows: Json
@@ -498,10 +501,13 @@ export type Database = {
           unit_id: string
         }
         Insert: {
+          approved_at?: string | null
           context?: string | null
           created_at?: string
           created_by: string
+          effective_from?: string | null
           id?: string
+          kpi_baseline?: Json | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           rows?: Json
@@ -509,10 +515,13 @@ export type Database = {
           unit_id: string
         }
         Update: {
+          approved_at?: string | null
           context?: string | null
           created_at?: string
           created_by?: string
+          effective_from?: string | null
           id?: string
+          kpi_baseline?: Json | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           rows?: Json
