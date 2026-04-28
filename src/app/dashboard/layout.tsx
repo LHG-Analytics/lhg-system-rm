@@ -46,7 +46,10 @@ export default async function DashboardLayout({
   const admin = getAdminClient()
   let units: Unit[] = []
 
-  if (profile.role === 'super_admin') {
+  // super_admin e admin sem unit_id atribuído veem todas as unidades
+  const isGlobalRole = profile.role === 'super_admin' || (profile.role === 'admin' && !profile.unit_id)
+
+  if (isGlobalRole) {
     const { data } = await admin
       .from('units')
       .select('*')

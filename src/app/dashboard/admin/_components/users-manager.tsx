@@ -271,9 +271,9 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
     setError(null)
     setSuccess(null)
 
-    // Roles que não são super_admin precisam ter uma unidade atribuída
-    if (role !== 'super_admin' && (unitId === 'all' || !unitId)) {
-      setError('Selecione uma unidade para este usuário. Apenas Super Admins podem ter acesso a todas as unidades.')
+    // manager e viewer precisam ter uma unidade atribuída (admin pode ter acesso global)
+    if (['manager', 'viewer'].includes(role) && (unitId === 'all' || !unitId)) {
+      setError('Selecione uma unidade para Gerente ou Visualizador. Apenas Admin e Super Admin podem ter acesso global.')
       return
     }
 
@@ -370,9 +370,8 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
                 value={role}
                 onValueChange={(v) => {
                   setRole(v)
-                  // Ao trocar de super_admin para outro role, o 'all' não é mais válido
-                  if (v !== 'super_admin' && unitId === 'all') setUnitId('all')
-                  // Ao voltar para super_admin, mantém a unidade selecionada
+                  // manager/viewer não podem ter 'all' — reseta para forçar seleção
+                  if (['manager', 'viewer'].includes(v) && unitId === 'all') setUnitId('all')
                 }}
                 disabled={inviting}
               >
@@ -390,14 +389,14 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs">
                 Unidade
-                {role !== 'super_admin' && <span className="text-destructive ml-0.5">*</span>}
+                {['manager', 'viewer'].includes(role) && <span className="text-destructive ml-0.5">*</span>}
               </Label>
               <Select value={unitId} onValueChange={setUnitId} disabled={inviting}>
-                <SelectTrigger className={`h-9 text-sm ${role !== 'super_admin' && unitId === 'all' ? 'border-destructive/50' : ''}`}>
+                <SelectTrigger className={`h-9 text-sm ${['manager', 'viewer'].includes(role) && unitId === 'all' ? 'border-destructive/50' : ''}`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {role === 'super_admin' && (
+                  {['super_admin', 'admin'].includes(role) && (
                     <SelectItem value="all">Todas as unidades</SelectItem>
                   )}
                   {units.map((u) => (
@@ -405,7 +404,7 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
                   ))}
                 </SelectContent>
               </Select>
-              {role !== 'super_admin' && unitId === 'all' && (
+              {['manager', 'viewer'].includes(role) && unitId === 'all' && (
                 <p className="text-[11px] text-destructive">Obrigatório para este perfil</p>
               )}
             </div>
