@@ -283,7 +283,8 @@ export function buildSystemPrompt(
   priceImports: PriceImportForPrompt[] = [],
   vigenciaInfo?: VigenciaInfo,
   weatherContext?: string | null,
-  eventsContext?: string | null
+  eventsContext?: string | null,
+  unitStructureBlock?: string | null,
 ): string {
   // ── Montar contexto de KPIs (1 ou N períodos) ─────────────────────────────
   const periods = Array.isArray(kpiData) ? kpiData : [kpiData]
@@ -324,6 +325,7 @@ Faça a análise diretamente com essa abordagem. Após apresentar os resultados,
 
   const weatherBlock = weatherContext ? `\n\n${weatherContext}` : ''
   const eventsBlock  = eventsContext  ? `\n\n${eventsContext}`  : ''
+  const structureBlock = unitStructureBlock ? `\n\n${unitStructureBlock}` : ''
 
   return `⚠️ INSTRUÇÕES CRÍTICAS DE COMPORTAMENTO (seguir sempre, sem exceção):
 - Responda EXCLUSIVAMENTE em português brasileiro. NUNCA escreva em inglês, nem parcialmente.
@@ -344,7 +346,7 @@ Analisar dados operacionais e propor estratégias de precificação que maximize
 4. **Propostas de preço sempre em tabela markdown** com colunas: Categoria | Período | Dia | Preço Atual | Preço Proposto | Variação % | Justificativa. **CRÍTICO:** "Período" = pacote de tempo (3h, 6h, 12h, Pernoite) — NUNCA coloque 'semana' ou 'fds_feriado' aqui. "Dia" = tipo de dia (Semana ou FDS/Feriado) — NUNCA coloque o nome de um período aqui.
 5. **Variação máxima por proposta: ±30%** — mudanças maiores exigem justificativa explícita e aprovação especial.
 6. **Responda em português brasileiro**, de forma direta e objetiva — sem enrolação.
-7. **Pergunte quando faltar informação — sem exceção** — se o usuário perguntar sobre dados que não estão no contexto (comodidades das nossas suítes, preços de concorrentes, cobertura de eventos, total de suítes por categoria), responda EXATAMENTE assim: "Não tenho essa informação no contexto atual. Para [dado específico], [ação sugerida — ex: rode a análise de concorrentes na página Concorrentes / informe o total de suítes / descreva as comodidades de cada categoria]." NUNCA fabrique um valor ou exemplo hipotético para "ilustrar".
+7. **Pergunte quando faltar informação — sem exceção** — se o usuário perguntar sobre dados que não estão no contexto (comodidades das nossas suítes, preços de concorrentes, cobertura de eventos), responda EXATAMENTE assim: "Não tenho essa informação no contexto atual. Para [dado específico], [ação sugerida — ex: rode a análise de concorrentes na página Concorrentes / descreva as comodidades de cada categoria]." NUNCA fabrique um valor ou exemplo hipotético para "ilustrar". **Total de suítes por categoria e comissões por canal estão sempre disponíveis no bloco "Estrutura da unidade"** — nunca pergunte essa informação.
 11. **Concorrentes: use APENAS o bloco "## Concorrentes" do contexto** — se esse bloco não existir ou não contiver dados do concorrente/categoria/período perguntado, informe que não há snapshot recente disponível e oriente o usuário a rodar a análise na página Concorrentes. NUNCA invente preços de concorrentes.
 12. **Comodidades das nossas suítes: não são conhecidas por padrão** — se o usuário perguntar sobre comodidades (hidro, piscina, etc.) das nossas categorias, pergunte quais comodidades cada categoria tem antes de fazer qualquer comparação com concorrentes.
 8. **Descontos do Guia de Motéis são inegociáveis na análise** — toda vez que discutir preços (análise ou proposta), mencione o impacto dos descontos vigentes. Os preços da tabela para \`guia_moteis\` são BASE — o Guia aplica o desconto automaticamente. Exemplo: preço base R$ 100 com 20% de desconto → cliente paga R$ 80. Se não houver tabela de descontos no contexto, mencione que não há dados e pergunte ao usuário se há política vigente.
@@ -455,7 +457,7 @@ Após a tabela, inclua:
 ${kpiContext}
 ${priceContext ? `\n${priceContext}` : ''}
 ${discountContext ? `\n${discountContext}` : ''}
-${vigenciaBlock}${weatherBlock}${eventsBlock}
+${vigenciaBlock}${structureBlock}${weatherBlock}${eventsBlock}
 
 ---
 Se o usuário pedir algo fora do escopo de Revenue Management, redirecione gentilmente para o foco em precificação e receita.`

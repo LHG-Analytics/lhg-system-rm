@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       agent_price_guardrails: {
@@ -1325,6 +1300,94 @@ export type Database = {
           },
         ]
       }
+      unit_capacity: {
+        Row: {
+          categoria: string
+          created_at: string
+          created_by: string | null
+          custo_variavel_locacao: number
+          id: string
+          n_suites: number
+          notes: string | null
+          unit_id: string
+          updated_at: string
+        }
+        Insert: {
+          categoria: string
+          created_at?: string
+          created_by?: string | null
+          custo_variavel_locacao?: number
+          id?: string
+          n_suites: number
+          notes?: string | null
+          unit_id: string
+          updated_at?: string
+        }
+        Update: {
+          categoria?: string
+          created_at?: string
+          created_by?: string | null
+          custo_variavel_locacao?: number
+          id?: string
+          n_suites?: number
+          notes?: string | null
+          unit_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unit_capacity_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      unit_channel_costs: {
+        Row: {
+          canal: string
+          comissao_pct: number
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          taxa_fixa: number
+          unit_id: string
+          updated_at: string
+        }
+        Insert: {
+          canal: string
+          comissao_pct?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          taxa_fixa?: number
+          unit_id: string
+          updated_at?: string
+        }
+        Update: {
+          canal?: string
+          comissao_pct?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          taxa_fixa?: number
+          unit_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unit_channel_costs_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       unit_events: {
         Row: {
           created_at: string
@@ -1343,7 +1406,7 @@ export type Database = {
           created_by?: string | null
           event_date: string
           event_end_date?: string | null
-          event_type: string
+          event_type?: string
           id?: string
           impact_description?: string | null
           title: string
@@ -1565,9 +1628,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       channel_name: [

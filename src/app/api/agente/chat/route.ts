@@ -7,6 +7,7 @@ import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { queryChannelKPIs, queryPeriodMix } from '@/lib/automo/channel-kpis'
 import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
+import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { fetchWeatherContext } from '@/lib/agente/weather'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
@@ -383,9 +384,9 @@ export async function POST(req: NextRequest) {
     valid_until: imp.valid_until,
   }))
 
-  // 6. Buscar config do agente + clima + concorrentes + eventos em paralelo
+  // 6. Buscar config do agente + clima + concorrentes + eventos + capacity em paralelo
   const snapshotCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const [agentConfigResult, competitorResult, eventsResult] = await Promise.allSettled([
+  const [agentConfigResult, competitorResult, eventsResult, capacityResult, channelCostsResult] = await Promise.allSettled([
     admin
       .from('rm_agent_config')
       .select('city, suite_amenities, focus_metric, pricing_strategy, max_variation_pct, shared_context, pricing_thresholds, unit_goals')
@@ -404,6 +405,16 @@ export async function POST(req: NextRequest) {
       .eq('unit_id', unit.id)
       .order('event_date', { ascending: false })
       .limit(30),
+    admin
+      .from('unit_capacity')
+      .select('categoria, n_suites, custo_variavel_locacao, notes')
+      .eq('unit_id', unit.id)
+      .order('categoria'),
+    admin
+      .from('unit_channel_costs')
+      .select('canal, comissao_pct, taxa_fixa')
+      .eq('unit_id', unit.id)
+      .order('canal'),
   ])
 
   const agentConfigData = agentConfigResult.status === 'fulfilled' ? agentConfigResult.value.data : null
@@ -491,10 +502,29 @@ export async function POST(req: NextRequest) {
   // 7. Montar system prompt completo
   // contextMode='personal' omite contexto coletivo da org (shared_context, eventos, regras de threshold)
   const goalsBlock = buildGoalsBlock(unitGoals, kpiPeriods)
+
+  // Bloco de estrutura da unidade (capacidade + comissões por canal)
+  const capacityRows = capacityResult.status === 'fulfilled' ? (capacityResult.value.data ?? []) : []
+  const channelCostRows = channelCostsResult.status === 'fulfilled' ? (channelCostsResult.value.data ?? []) : []
+  const unitStructureBlock = buildUnitStructureBlock(
+    capacityRows.map((r) => ({
+      categoria: r.categoria,
+      n_suites: r.n_suites,
+      custo_variavel_locacao: Number(r.custo_variavel_locacao),
+      notes: r.notes,
+    })),
+    channelCostRows.map((r) => ({
+      canal: r.canal,
+      comissao_pct: Number(r.comissao_pct),
+      taxa_fixa: Number(r.taxa_fixa),
+    })),
+  )
+
   const systemPrompt =
     buildSystemPrompt(
       unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext,
       contextMode === 'org' ? eventsContext : null,
+      unitStructureBlock || null,
     ) +
     `\n\n${agentConfigBlock}` +
     (contextMode === 'org' ? pricingRulesBlock : '') +

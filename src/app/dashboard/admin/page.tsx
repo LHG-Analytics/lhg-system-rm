@@ -7,8 +7,9 @@ import type { AgentConfig } from '@/app/api/admin/agent-config/route'
 import { UsersManager } from './_components/users-manager'
 import { GuardrailsManager } from './_components/guardrails-manager'
 import { EventsManager } from './_components/events-manager'
+import { CapacityManager } from './_components/capacity-manager'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Users, Shield, CalendarDays } from 'lucide-react'
+import { Users, Shield, CalendarDays, BedDouble } from 'lucide-react'
 
 export const metadata = { title: 'Administração — LHG Revenue Manager' }
 
@@ -64,8 +65,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const activeUnit = unitsData.find((u) => u.slug === activeUnitSlug) ?? unitsData[0]
   const unitsForComponents = unitsData.map((u) => ({ id: u.id, name: u.name, slug: u.slug }))
 
-  // Busca guardrails + último price import + config do agente + eventos em paralelo
-  const [guardrailsResult, priceImportResult, agentConfigResult, eventsResult] = activeUnit
+  // Busca guardrails + último price import + config + eventos + capacity em paralelo
+  const [guardrailsResult, priceImportResult, agentConfigResult, eventsResult, capacityResult, channelCostsResult] = activeUnit
     ? await Promise.all([
         supabase
           .from('agent_price_guardrails')
@@ -92,16 +93,30 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           .eq('unit_id', activeUnit.id)
           .order('event_date', { ascending: false })
           .limit(100),
+        admin
+          .from('unit_capacity')
+          .select('id, categoria, n_suites, custo_variavel_locacao, notes')
+          .eq('unit_id', activeUnit.id)
+          .order('categoria'),
+        admin
+          .from('unit_channel_costs')
+          .select('id, canal, comissao_pct, taxa_fixa, notes')
+          .eq('unit_id', activeUnit.id)
+          .order('canal'),
       ])
-    : [{ data: [] }, { data: null }, { data: null }, { data: [] }]
+    : [{ data: [] }, { data: null }, { data: null }, { data: [] }, { data: [] }, { data: [] }]
 
   const guardrailsData = guardrailsResult.data ?? []
   const importRows = (priceImportResult.data?.parsed_data as unknown as ParsedPriceRow[]) ?? []
-  const categorias = [...new Set(importRows.map((r) => r.categoria))].sort()
+  const categoriasFromImport = [...new Set(importRows.map((r) => r.categoria))].sort()
   const periodos   = [...new Set(importRows.map((r) => r.periodo))].sort()
   const agentConfig = (agentConfigResult.data ?? null) as AgentConfig | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const eventsData = (eventsResult as any).data ?? []
+  const capacityData = capacityResult.data ?? []
+  const channelCostsData = channelCostsResult.data ?? []
+  // União: categorias do import + categorias já cadastradas em unit_capacity
+  const categorias = [...new Set([...categoriasFromImport, ...capacityData.map((c) => c.categoria)])].sort()
 
   const defaultTab = tab ?? 'usuarios'
 
@@ -125,6 +140,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <TabsTrigger value="eventos" className="gap-1.5 text-xs">
             <CalendarDays className="size-3.5" />
             Eventos
+          </TabsTrigger>
+          <TabsTrigger value="capacidade" className="gap-1.5 text-xs">
+            <BedDouble className="size-3.5" />
+            Capacidade
           </TabsTrigger>
         </TabsList>
 
@@ -165,6 +184,33 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               unitName={activeUnit.name}
               units={unitsForComponents}
               initialEvents={eventsData}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="capacidade" className="mt-6">
+          {activeUnit ? (
+            <CapacityManager
+              unitSlug={activeUnit.slug}
+              unitName={activeUnit.name}
+              categorias={categorias}
+              units={unitsForComponents}
+              initialCapacity={capacityData.map((c) => ({
+                id: c.id,
+                categoria: c.categoria,
+                n_suites: c.n_suites,
+                custo_variavel_locacao: Number(c.custo_variavel_locacao),
+                notes: c.notes,
+              }))}
+              initialChannelCosts={channelCostsData.map((c) => ({
+                id: c.id,
+                canal: c.canal,
+                comissao_pct: Number(c.comissao_pct),
+                taxa_fixa: Number(c.taxa_fixa),
+                notes: c.notes,
+              }))}
             />
           ) : (
             <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>

@@ -9,6 +9,7 @@ import { toApiDate } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { buildKPIContext, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
+import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -378,7 +379,13 @@ export async function POST(req: NextRequest) {
   const SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 dias
   const snapshotCutoff = new Date(Date.now() - SNAPSHOT_MAX_AGE_MS).toISOString()
 
-  const [{ data: guardrailsData }, { data: agentConfigData }, { data: competitorSnapshotsData }] = await Promise.all([
+  const [
+    { data: guardrailsData },
+    { data: agentConfigData },
+    { data: competitorSnapshotsData },
+    { data: capacityData },
+    { data: channelCostsData },
+  ] = await Promise.all([
     supabase
       .from('agent_price_guardrails')
       .select('categoria, periodo, dia_tipo, preco_minimo, preco_maximo')
@@ -394,7 +401,32 @@ export async function POST(req: NextRequest) {
       .eq('unit_id', unit.id)
       .gte('scraped_at', snapshotCutoff)
       .order('scraped_at', { ascending: false }),
+    supabase
+      .from('unit_capacity')
+      .select('categoria, n_suites, custo_variavel_locacao, notes')
+      .eq('unit_id', unit.id)
+      .order('categoria'),
+    supabase
+      .from('unit_channel_costs')
+      .select('canal, comissao_pct, taxa_fixa')
+      .eq('unit_id', unit.id)
+      .order('canal'),
   ])
+
+  // Bloco de estrutura da unidade (capacidade + comissões por canal)
+  const unitStructureBlock = buildUnitStructureBlock(
+    (capacityData ?? []).map((r) => ({
+      categoria: r.categoria,
+      n_suites: r.n_suites,
+      custo_variavel_locacao: Number(r.custo_variavel_locacao),
+      notes: r.notes,
+    })),
+    (channelCostsData ?? []).map((r) => ({
+      canal: r.canal,
+      comissao_pct: Number(r.comissao_pct),
+      taxa_fixa: Number(r.taxa_fixa),
+    })),
+  )
 
   // Mapa: "categoria|periodo|dia_tipo" → { min, max }
   // Guardrails com dia_tipo='todos' atuam como fallback para semana e fds_feriado
@@ -572,7 +604,7 @@ ${activeDiscounts.map((d) => {
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${goalsBlock ? `\n${goalsBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}
+${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
