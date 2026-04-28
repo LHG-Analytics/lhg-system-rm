@@ -7,7 +7,7 @@ import { DashboardCharts } from '@/components/dashboard/charts'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
 import { ComparisonFilter, type ComparisonFilters } from '@/components/dashboard/comparison-filter'
 import { fmtDisplay } from '@/lib/date-range'
-import type { CompanyKPIResponse } from '@/lib/kpis/types'
+import type { CompanyKPIResponse, ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
 import type { HeatmapDateType } from '@/app/api/heatmap/route'
 import { cn } from '@/lib/utils'
 
@@ -24,7 +24,9 @@ interface Props {
 
 export function ComparisonPanel({ label, accent, unitSlug, initial }: Props) {
   const [filters, setFilters] = useState<ComparisonFilters>(initial)
-  const [company, setCompany] = useState<CompanyKPIResponse | null>(null)
+  const [company,     setCompany]     = useState<CompanyKPIResponse | null>(null)
+  const [channelKPIs, setChannelKPIs] = useState<ChannelKPIRow[]>([])
+  const [periodMix,   setPeriodMix]   = useState<BillingRentalTypeItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
 
@@ -49,6 +51,8 @@ export function ComparisonPanel({ label, accent, unitSlug, initial }: Props) {
       }
       const data = await res.json()
       setCompany(data.company ?? null)
+      setChannelKPIs(data.channelKPIs ?? [])
+      setPeriodMix(data.periodMix ?? [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar KPIs')
     } finally {
@@ -104,7 +108,7 @@ export function ComparisonPanel({ label, accent, unitSlug, initial }: Props) {
       {!loading && !error && (
         <div className="flex flex-col gap-6">
           <DashboardKPICards company={company} compact />
-          <DashboardCharts   company={company} />
+          <DashboardCharts   company={company} channelKPIs={channelKPIs} periodMix={periodMix} />
           <OccupancyHeatmap
             unitSlug={unitSlug}
             startDate={filters.startDate}
