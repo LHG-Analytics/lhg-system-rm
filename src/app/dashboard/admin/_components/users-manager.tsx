@@ -271,12 +271,6 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
     setError(null)
     setSuccess(null)
 
-    // manager e viewer precisam ter uma unidade atribuída (admin pode ter acesso global)
-    if (['manager', 'viewer'].includes(role) && (unitId === 'all' || !unitId)) {
-      setError('Selecione uma unidade para Gerente ou Visualizador. Apenas Admin e Super Admin podem ter acesso global.')
-      return
-    }
-
     setInviting(true)
     try {
       const res = await fetch('/api/admin/invite', {
@@ -368,11 +362,7 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
               <Label className="text-xs">Perfil</Label>
               <Select
                 value={role}
-                onValueChange={(v) => {
-                  setRole(v)
-                  // manager/viewer não podem ter 'all' — reseta para forçar seleção
-                  if (['manager', 'viewer'].includes(v) && unitId === 'all') setUnitId('all')
-                }}
+                onValueChange={setRole}
                 disabled={inviting}
               >
                 <SelectTrigger className="h-9 text-sm">
@@ -387,26 +377,18 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label className="text-xs">
-                Unidade
-                {['manager', 'viewer'].includes(role) && <span className="text-destructive ml-0.5">*</span>}
-              </Label>
+              <Label className="text-xs">Unidade</Label>
               <Select value={unitId} onValueChange={setUnitId} disabled={inviting}>
-                <SelectTrigger className={`h-9 text-sm ${['manager', 'viewer'].includes(role) && unitId === 'all' ? 'border-destructive/50' : ''}`}>
+                <SelectTrigger className="h-9 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {['super_admin', 'admin'].includes(role) && (
-                    <SelectItem value="all">Todas as unidades</SelectItem>
-                  )}
+                  <SelectItem value="all">Todas as unidades</SelectItem>
                   {units.map((u) => (
                     <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {['manager', 'viewer'].includes(role) && unitId === 'all' && (
-                <p className="text-[11px] text-destructive">Obrigatório para este perfil</p>
-              )}
             </div>
           </div>
 
