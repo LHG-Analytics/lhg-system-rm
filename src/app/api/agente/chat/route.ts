@@ -87,8 +87,11 @@ export async function POST(req: NextRequest) {
     // Legado: DD/MM/YYYY (cron/revisoes e outras rotas)
     startDate?: string
     endDate?: string
+    /** Modo de contexto: 'org' inclui contexto compartilhado, eventos e regras da unidade;
+     *  'personal' usa apenas KPIs e tabela de preços — sem memória coletiva */
+    contextMode?: 'org' | 'personal'
   }
-  const { messages, unitSlug, convId, startDate, endDate } = body
+  const { messages, unitSlug, convId, startDate, endDate, contextMode = 'org' } = body
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response('messages inválido', { status: 400 })
@@ -409,11 +412,15 @@ export async function POST(req: NextRequest) {
     : ''
 
   // 7. Montar system prompt completo
+  // contextMode='personal' omite contexto coletivo da org (shared_context, eventos, regras de threshold)
   const systemPrompt =
-    buildSystemPrompt(unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext, eventsContext) +
+    buildSystemPrompt(
+      unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext,
+      contextMode === 'org' ? eventsContext : null,
+    ) +
     `\n\n${agentConfigBlock}` +
-    pricingRulesBlock +
-    sharedContextBlock +
+    (contextMode === 'org' ? pricingRulesBlock : '') +
+    (contextMode === 'org' ? sharedContextBlock : '') +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
     (competitorBlock ? `\n\n${competitorBlock}` : '')
 

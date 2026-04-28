@@ -14,7 +14,7 @@ import { ScheduledReviewsList } from '@/components/agente/scheduled-reviews-list
 import { DiscountProposalsList } from '@/components/descontos/discount-proposals-list'
 import { AgentConfigManager } from '@/app/dashboard/admin/_components/agent-config-manager'
 import type { UIMessage } from 'ai'
-import type { ConversationSummary } from '@/components/agente/agente-chat'
+import type { ConversationSummary, ContextMode } from '@/components/agente/agente-chat'
 import type { PriceProposal } from '@/app/api/agente/proposals/route'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -60,6 +60,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
   const [proposalsRefreshKey, setProposalsRefreshKey] = useState(0)
   const [activeTab,        setActiveTab]        = useState('chat')
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null)
+  const [contextMode,      setContextMode]      = useState<ContextMode>('org')
 
   // Reseta o chat quando a unidade muda (troca via sidebar)
   const prevUnitIdRef = useRef<string>('')
@@ -100,7 +101,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
     const supabase = createClient()
     const { data } = await supabase
       .from('rm_conversations')
-      .select('id, title, updated_at, messages')
+      .select('id, title, updated_at, messages, context_mode')
       .eq('unit_id', unitId)
       .order('updated_at', { ascending: false })
       .limit(30)
@@ -109,6 +110,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
       title: c.title,
       updated_at: c.updated_at,
       messages: (c.messages as unknown as UIMessage[]) ?? [],
+      context_mode: (c.context_mode as ContextMode | undefined) ?? 'org',
     }))
     setConversations(loaded)
 
@@ -205,6 +207,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
   function handleSelectConversation(conv: ConversationSummary) {
     setSelectedConvId(conv.id)
     setSelectedMessages(conv.messages)
+    setContextMode(conv.context_mode ?? 'org')
     setChatKey((k) => k + 1)
     setActiveTab('chat')
   }
@@ -218,7 +221,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
       const supabase = createClient()
       supabase
         .from('rm_conversations')
-        .select('id, title, updated_at, messages')
+        .select('id, title, updated_at, messages, context_mode')
         .eq('id', convId)
         .single()
         .then(({ data }) => {
@@ -228,6 +231,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
               title: data.title,
               updated_at: data.updated_at,
               messages: (data.messages as unknown as UIMessage[]) ?? [],
+              context_mode: (data.context_mode as ContextMode | undefined) ?? 'org',
             }
             setConversations((prev) => [conv, ...prev.filter((c) => c.id !== convId)])
             handleSelectConversation(conv)
@@ -239,6 +243,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
   function handleNewConversation() {
     setSelectedConvId(null)
     setSelectedMessages([])
+    setContextMode('org')
     setChatKey((k) => k + 1)
   }
 
@@ -451,12 +456,14 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
             selectedConvId={selectedConvId}
             selectedMessages={selectedMessages}
             isAwaitingResponse={awaitingResponse}
+            contextMode={contextMode}
             displayName={displayName}
             timezone={timezone}
             onConversationCreated={handleConversationCreated}
             onMessagesUpdate={handleMessagesUpdate}
             onProposalSaved={handleProposalSaved}
             onNavigateToProposals={() => setActiveTab('propostas')}
+            onContextModeChange={setContextMode}
           />
         </TabsContent>
 

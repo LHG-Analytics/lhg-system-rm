@@ -5,7 +5,7 @@ import { DefaultChatTransport, isToolUIPart, getToolName } from 'ai'
 import type { UIMessage } from 'ai'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, CheckCircle2, Clock, ChevronRight } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, CheckCircle2, Clock, ChevronRight, Globe, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -15,11 +15,14 @@ import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export type ContextMode = 'org' | 'personal'
+
 export interface ConversationSummary {
   id: string
   title: string | null
   updated_at: string
   messages: UIMessage[]
+  context_mode?: ContextMode
 }
 
 // ─── Tool call chip (feedback visual durante execução de ferramentas) ────────
@@ -167,6 +170,51 @@ function ProposalGeneratingSteps() {
   )
 }
 
+// ─── Toggle de modo de contexto ───────────────────────────────────────────────
+
+function ContextModeToggle({ value, onChange }: { value: ContextMode; onChange: (m: ContextMode) => void }) {
+  const [current, setCurrent] = useState<ContextMode>(value)
+  function select(mode: ContextMode) {
+    setCurrent(mode)
+    onChange(mode)
+  }
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="flex rounded-lg border bg-muted/40 p-0.5 gap-0.5">
+        <button
+          onClick={() => select('org')}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+            current === 'org'
+              ? 'bg-background shadow-sm text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Globe className="size-3.5" />
+          Contexto da organização
+        </button>
+        <button
+          onClick={() => select('personal')}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+            current === 'personal'
+              ? 'bg-background shadow-sm text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Lock className="size-3.5" />
+          Contexto interno
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground max-w-xs">
+        {current === 'org'
+          ? 'Inclui decisões compartilhadas, eventos, regras e memória coletiva da unidade.'
+          : 'Apenas KPIs e tabela de preços — sem contexto de outras conversas ou decisões passadas.'}
+      </p>
+    </div>
+  )
+}
+
 // ─── Saudação personalizada ───────────────────────────────────────────────────
 
 function computeGreeting(displayName?: string | null, timezone?: string | null): string {
@@ -185,6 +233,7 @@ interface AgenteChatInnerProps {
   unitId: string
   initialMessages?: UIMessage[]
   conversationId?: string | null
+  contextMode?: ContextMode
   /** true quando a conversa foi retomada e ainda aguarda resposta do servidor */
   isAwaitingResponse?: boolean
   displayName?: string | null
@@ -193,21 +242,27 @@ interface AgenteChatInnerProps {
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
   onProposalSaved?: () => void
   onNavigateToProposals?: () => void
+  onContextModeChange?: (mode: ContextMode) => void
 }
 
 function AgenteChatInner({
   unitSlug, unitId,
   initialMessages, conversationId,
+  contextMode: initialContextMode,
   isAwaitingResponse,
   displayName, timezone,
   onConversationCreated, onMessagesUpdate, onProposalSaved, onNavigateToProposals,
+  onContextModeChange,
 }: AgenteChatInnerProps) {
   const convIdRef = useRef<string | null>(conversationId ?? null)
+  // Locked após primeiro envio — o mode é imutável por conversa
+  const contextModeRef = useRef<ContextMode>(initialContextMode ?? 'org')
 
   // body como função: DefaultChatTransport chama resolve(body) a cada request
   const getBody = useRef(() => ({
     unitSlug,
     convId: convIdRef.current ?? undefined,
+    contextMode: contextModeRef.current,
   }))
 
   const { messages, sendMessage, status, error } = useChat({
@@ -371,6 +426,7 @@ function AgenteChatInner({
             user_id: user.id,
             title,
             messages: JSON.parse(JSON.stringify([initialUserMsg])),
+            context_mode: contextModeRef.current,
           })
           .select('id')
           .single()
@@ -406,6 +462,16 @@ function AgenteChatInner({
                 Como posso ajudar com a gestão de receitas hoje?
               </p>
             </div>
+
+            {/* Toggle de contexto — só visível antes do primeiro envio */}
+            <ContextModeToggle
+              value={contextModeRef.current}
+              onChange={(mode) => {
+                contextModeRef.current = mode
+                onContextModeChange?.(mode)
+              }}
+            />
+
             <div className="flex flex-wrap gap-2 justify-center max-w-lg">
               {SUGESTOES.map((s) => (
                 <button
@@ -599,12 +665,14 @@ interface AgenteChatProps {
   selectedConvId?: string | null
   selectedMessages?: UIMessage[]
   isAwaitingResponse?: boolean
+  contextMode?: ContextMode
   displayName?: string | null
   timezone?: string | null
   onConversationCreated?: (id: string, title: string) => void
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
   onProposalSaved?: () => void
   onNavigateToProposals?: () => void
+  onContextModeChange?: (mode: ContextMode) => void
 }
 
 export function AgenteChat({
@@ -612,11 +680,13 @@ export function AgenteChat({
   selectedConvId: externalConvId,
   selectedMessages: externalMessages,
   isAwaitingResponse,
+  contextMode,
   displayName, timezone,
   onConversationCreated: externalOnCreated,
   onMessagesUpdate: externalOnUpdate,
   onProposalSaved,
   onNavigateToProposals,
+  onContextModeChange,
 }: AgenteChatProps) {
   const searchParams = useSearchParams()
   const activeSlug = searchParams.get('unit') ?? unitSlug
@@ -628,12 +698,14 @@ export function AgenteChat({
       initialMessages={externalMessages}
       conversationId={externalConvId}
       isAwaitingResponse={isAwaitingResponse}
+      contextMode={contextMode}
       displayName={displayName}
       timezone={timezone}
       onConversationCreated={externalOnCreated}
       onMessagesUpdate={externalOnUpdate}
       onProposalSaved={onProposalSaved}
       onNavigateToProposals={onNavigateToProposals}
+      onContextModeChange={onContextModeChange}
     />
   )
 }

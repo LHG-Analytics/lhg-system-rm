@@ -780,6 +780,7 @@ export type Database = {
       }
       rm_conversations: {
         Row: {
+          context_mode: string
           created_at: string
           id: string
           messages: Json
@@ -790,6 +791,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          context_mode?: string
           created_at?: string
           id?: string
           messages?: Json
@@ -800,6 +802,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          context_mode?: string
           created_at?: string
           id?: string
           messages?: Json
