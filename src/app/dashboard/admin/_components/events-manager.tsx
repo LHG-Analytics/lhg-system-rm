@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
-import { Building2, CalendarDays, Loader2, Plus, Trash2, Pencil, X, Check } from 'lucide-react'
+import { Building2, CalendarDays, Loader2, Plus, Trash2, Pencil, X, Check, Sparkles } from 'lucide-react'
 import type { UnitEvent, EventType } from '@/app/api/admin/unit-events/route'
 
 interface Unit { id: string; name: string; slug: string }
@@ -57,6 +57,10 @@ export function EventsManager({ unitSlug, unitName, units, initialEvents }: Prop
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<UnitEvent>>({})
 
+  // Seed feriados
+  const [seedingHolidays, setSeedingHolidays] = useState(false)
+  const [seedResult, setSeedResult] = useState<string | null>(null)
+
   const activeSlug = unitSlug
 
   async function loadEvents(slug: string) {
@@ -74,6 +78,31 @@ export function EventsManager({ unitSlug, unitName, units, initialEvents }: Prop
       router.push(`?unit=${slug}&tab=eventos`)
     })
     loadEvents(slug)
+  }
+
+  async function handleSeedHolidays() {
+    setSeedingHolidays(true)
+    setSeedResult(null)
+    try {
+      const currentYear = new Date().getFullYear()
+      const res = await fetch('/api/admin/unit-events/seed-holidays', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unitSlug: activeSlug, years: [currentYear, currentYear + 1] }),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || 'Erro ao popular feriados')
+      }
+      const data = await res.json()
+      setSeedResult(`✓ ${data.inserted} feriados inseridos${data.skipped > 0 ? ` (${data.skipped} já existiam)` : ''}`)
+      await loadEvents(activeSlug)
+      setTimeout(() => setSeedResult(null), 4000)
+    } catch (err) {
+      setSeedResult(err instanceof Error ? `Erro: ${err.message}` : 'Erro inesperado')
+    } finally {
+      setSeedingHolidays(false)
+    }
   }
 
   async function handleCreate() {
@@ -164,11 +193,30 @@ export function EventsManager({ unitSlug, unitName, units, initialEvents }: Prop
             Registre eventos que afetaram a demanda — o agente usa essas informações ao analisar períodos.
           </p>
         </div>
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8" onClick={() => setShowForm((v) => !v)}>
-          <Plus className="size-3.5" />
-          Novo evento
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="gap-1.5 text-xs h-8"
+            onClick={handleSeedHolidays}
+            disabled={seedingHolidays}
+            title="Popula feriados nacionais e datas comerciais para o ano corrente e próximo (idempotente)"
+          >
+            {seedingHolidays ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+            Popular feriados
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8" onClick={() => setShowForm((v) => !v)}>
+            <Plus className="size-3.5" />
+            Novo evento
+          </Button>
+        </div>
       </div>
+
+      {seedResult && (
+        <div className={`text-xs px-3 py-2 rounded-md ${seedResult.startsWith('✓') ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-destructive/10 text-destructive'}`}>
+          {seedResult}
+        </div>
+      )}
 
       {/* Formulário de criação */}
       {showForm && (
