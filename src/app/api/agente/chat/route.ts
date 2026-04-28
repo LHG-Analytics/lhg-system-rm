@@ -29,6 +29,82 @@ interface PricingThresholds {
   adjustment_pct?: number | null
 }
 
+interface UnitGoals {
+  revpar?: number | null
+  trevpar?: number | null
+  ocupacao?: number | null
+  receita_mensal?: number | null
+  giro?: number | null
+  ticket?: number | null
+}
+
+function buildGoalsBlock(goals: UnitGoals | null, kpiPeriods: { company: import('@/lib/kpis/types').CompanyKPIResponse | null }[]): string {
+  if (!goals) return ''
+  const entries = Object.entries(goals).filter(([, v]) => v != null && v > 0) as [string, number][]
+  if (!entries.length) return ''
+
+  const company = kpiPeriods[0]?.company
+  const fmtBRL = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(n)
+  const fmtNum = (n: number, dec = 2) => n.toFixed(dec)
+
+  const LABELS: Record<string, string> = {
+    revpar: 'RevPAR', trevpar: 'TRevPAR', ocupacao: 'Ocupação',
+    receita_mensal: 'Receita Mensal', giro: 'Giro', ticket: 'Ticket Médio',
+  }
+
+  function getCurrent(key: string): number | null {
+    if (!company) return null
+    const t = company.TotalResult
+    const bn = company.BigNumbers?.[0]
+    if (key === 'revpar')         return t?.totalRevpar ?? null
+    if (key === 'trevpar')        return t?.totalTrevpar ?? null
+    if (key === 'ocupacao')       return t?.totalOccupancyRate ?? null
+    if (key === 'receita_mensal') return bn?.monthlyForecast?.totalAllValueForecast ?? null
+    if (key === 'giro')           return t?.totalGiro ?? null
+    if (key === 'ticket')         return t?.totalAllTicketAverage ?? null
+    return null
+  }
+
+  function formatValue(key: string, value: number): string {
+    if (key === 'ocupacao') return `${fmtNum(value, 1)}%`
+    if (key === 'giro')     return fmtNum(value, 2)
+    return fmtBRL(value)
+  }
+
+  function gapLabel(key: string, meta: number, atual: number): string {
+    if (key === 'ocupacao') {
+      const diff = atual - meta
+      return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)} p.p.`
+    }
+    const pct = ((atual - meta) / meta) * 100
+    return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
+  }
+
+  const rows: string[] = []
+  for (const [key, meta] of entries) {
+    const atual = getCurrent(key)
+    const metaFmt = formatValue(key, meta)
+    if (atual == null) {
+      rows.push(`| ${LABELS[key] ?? key} | ${metaFmt} | — | — | ⬜ Sem dados |`)
+    } else {
+      const gap = gapLabel(key, meta, atual)
+      const ok = atual >= meta
+      const status = ok ? '✅ Atingida' : '⚠️ Abaixo'
+      rows.push(`| ${LABELS[key] ?? key} | ${metaFmt} | ${formatValue(key, atual)} | ${gap} | ${status} |`)
+    }
+  }
+
+  return `\n\n## Metas da Unidade
+| KPI | Meta | Atual (período) | Gap | Status |
+|-----|------|----------------|-----|--------|
+${rows.join('\n')}
+
+Ao diagnosticar e propor ajustes, **referencie explicitamente as metas acima**:
+- Calcule o impacto estimado de cada proposta nos KPIs abaixo da meta.
+- Identifique qual alavanca (preço, desconto, período) tem maior potencial de fechar o gap.
+- Se um KPI já atingiu a meta, mantenha conservadorismo para não sacrificar o que já funciona.`
+}
+
 function buildPricingThresholdsBlock(t: PricingThresholds | null): string {
   if (!t) return ''
   const pct = t.adjustment_pct ?? 10
@@ -312,7 +388,7 @@ export async function POST(req: NextRequest) {
   const [agentConfigResult, competitorResult, eventsResult] = await Promise.allSettled([
     admin
       .from('rm_agent_config')
-      .select('city, suite_amenities, focus_metric, pricing_strategy, max_variation_pct, shared_context, pricing_thresholds')
+      .select('city, suite_amenities, focus_metric, pricing_strategy, max_variation_pct, shared_context, pricing_thresholds, unit_goals')
       .eq('unit_id', unit.id)
       .maybeSingle(),
     admin
@@ -338,6 +414,7 @@ export async function POST(req: NextRequest) {
   const maxVariationPct = agentConfigData?.max_variation_pct ?? 30
   const sharedContext = (agentConfigData as { shared_context?: string | null } | null)?.shared_context ?? null
   const pricingThresholds = (agentConfigData as { pricing_thresholds?: PricingThresholds | null } | null)?.pricing_thresholds ?? null
+  const unitGoals = (agentConfigData as { unit_goals?: Record<string, number | null> | null } | null)?.unit_goals ?? null
 
   const FOCUS_LABELS: Record<string, string> = {
     revpar: 'RevPAR', ocupacao: 'Taxa de Ocupação', ticket: 'Ticket Médio',
@@ -413,6 +490,7 @@ export async function POST(req: NextRequest) {
 
   // 7. Montar system prompt completo
   // contextMode='personal' omite contexto coletivo da org (shared_context, eventos, regras de threshold)
+  const goalsBlock = buildGoalsBlock(unitGoals, kpiPeriods)
   const systemPrompt =
     buildSystemPrompt(
       unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext,
@@ -421,6 +499,7 @@ export async function POST(req: NextRequest) {
     `\n\n${agentConfigBlock}` +
     (contextMode === 'org' ? pricingRulesBlock : '') +
     (contextMode === 'org' ? sharedContextBlock : '') +
+    goalsBlock +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
     (competitorBlock ? `\n\n${competitorBlock}` : '')
 

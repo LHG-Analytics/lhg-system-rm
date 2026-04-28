@@ -679,6 +679,7 @@ export type Database = {
           shared_context: string | null
           suite_amenities: Json
           timezone: string
+          unit_goals: Json | null
           unit_id: string
           updated_at: string
           weather_insight_cache: Json | null
@@ -699,6 +700,7 @@ export type Database = {
           shared_context?: string | null
           suite_amenities?: Json
           timezone?: string
+          unit_goals?: Json | null
           unit_id: string
           updated_at?: string
           weather_insight_cache?: Json | null
@@ -719,6 +721,7 @@ export type Database = {
           shared_context?: string | null
           suite_amenities?: Json
           timezone?: string
+          unit_goals?: Json | null
           unit_id?: string
           updated_at?: string
           weather_insight_cache?: Json | null

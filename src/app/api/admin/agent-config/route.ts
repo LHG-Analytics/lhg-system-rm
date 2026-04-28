@@ -25,6 +25,15 @@ export interface PricingThresholds {
   adjustment_pct?: number | null
 }
 
+export interface UnitGoals {
+  revpar?: number | null
+  trevpar?: number | null
+  ocupacao?: number | null
+  receita_mensal?: number | null
+  giro?: number | null
+  ticket?: number | null
+}
+
 export interface AgentConfig {
   id: string
   unit_id: string
@@ -42,6 +51,8 @@ export interface AgentConfig {
   shared_context: string | null
   /** Regras de ajuste dinâmico por faixa de giro/ocupação */
   pricing_thresholds: PricingThresholds | null
+  /** Metas de desempenho da unidade — injetadas no contexto do agente */
+  unit_goals: UnitGoals | null
 }
 
 function getAdminClient() {
@@ -73,7 +84,7 @@ export async function GET(req: NextRequest) {
   const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
 
-  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds'
+  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals'
 
   const { data, error: err } = await admin
     .from('rm_agent_config')
@@ -112,8 +123,9 @@ export async function PATCH(req: NextRequest) {
     suite_amenities?: Record<string, string[]>
     shared_context?: string | null
     pricing_thresholds?: PricingThresholds | null
+    unit_goals?: UnitGoals | null
   }
-  const { unit_id, competitor_urls, suite_amenities, shared_context, pricing_thresholds, ...rest } = body
+  const { unit_id, competitor_urls, suite_amenities, shared_context, pricing_thresholds, unit_goals, ...rest } = body
   if (!unit_id) return new Response('unit_id obrigatório', { status: 400 })
 
   type DbUpdate = import('@/types/database.types').Database['public']['Tables']['rm_agent_config']['Update']
@@ -123,9 +135,10 @@ export async function PATCH(req: NextRequest) {
     ...(suite_amenities    !== undefined ? { suite_amenities:    suite_amenities    as unknown as DbUpdate['suite_amenities']    } : {}),
     ...(shared_context     !== undefined ? { shared_context                                                                     } : {}),
     ...(pricing_thresholds !== undefined ? { pricing_thresholds: pricing_thresholds as unknown as DbUpdate['pricing_thresholds'] } : {}),
+    ...(unit_goals         !== undefined ? { unit_goals:         unit_goals         as unknown as DbUpdate['unit_goals']         } : {}),
   }
 
-  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds'
+  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals'
   const admin = getAdminClient()
   const { data, error: err } = await admin
     .from('rm_agent_config')

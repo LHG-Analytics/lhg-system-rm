@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Settings2, Loader2, Building2, Save, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Settings2, Loader2, Building2, Save, Plus, Trash2, ChevronDown, ChevronUp, Target } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import type { AgentConfig, PricingThresholds } from '@/app/api/admin/agent-config/route'
+import type { AgentConfig, PricingThresholds, UnitGoals } from '@/app/api/admin/agent-config/route'
 
 interface AmenityCategory {
   name: string
@@ -107,6 +107,10 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
   const [savingContext, setSavingContext] = useState(false)
   const [savedContext, setSavedContext] = useState(false)
 
+  const [goals, setGoals] = useState<UnitGoals>(() => (initialConfig?.unit_goals as UnitGoals | null) ?? {})
+  const [savingGoals, setSavingGoals] = useState(false)
+  const [savedGoals, setSavedGoals] = useState(false)
+
   // Auto-fetch config quando não recebida via props (ex: usado em Sheet no agente)
   useEffect(() => {
     if (config !== null) return
@@ -117,6 +121,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
         setConfig(data as AgentConfig)
         setAmenityCategories(configToCategories((data as AgentConfig).suite_amenities))
         setSharedContextText((data as AgentConfig).shared_context ?? '')
+        setGoals(((data as AgentConfig).unit_goals as UnitGoals | null) ?? {})
       })
       .catch(() => {})
   }, [unitSlug]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -165,6 +170,27 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
       setSavingContext(false)
     }
   }, [config, sharedContextText])
+
+  const handleSaveGoals = useCallback(async () => {
+    if (!config) return
+    setSavingGoals(true)
+    try {
+      const res = await fetch('/api/admin/agent-config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit_id: config.unit_id, unit_goals: goals }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Erro ao salvar')
+      setConfig(data as AgentConfig)
+      setSavedGoals(true)
+      setTimeout(() => setSavedGoals(false), 2500)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setSavingGoals(false)
+    }
+  }, [config, goals])
 
   const handleSave = useCallback(async () => {
     if (!config) return
@@ -524,6 +550,67 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
               </Button>
             </div>
           </div>
+
+          {/* Metas da unidade */}
+          {(() => {
+            function goalInput(
+              label: string,
+              key: keyof UnitGoals,
+              placeholder: string,
+              prefix?: string,
+              suffix?: string,
+            ) {
+              return (
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-xs text-muted-foreground">{label}</Label>
+                  <div className="flex items-center gap-1.5">
+                    {prefix && <span className="text-xs text-muted-foreground shrink-0">{prefix}</span>}
+                    <Input
+                      type="number" min={0} step={key === 'ocupacao' ? 1 : 10}
+                      placeholder={placeholder}
+                      value={goals[key] ?? ''}
+                      onChange={(e) => setGoals((prev) => ({
+                        ...prev,
+                        [key]: e.target.value === '' ? null : Number(e.target.value),
+                      }))}
+                      className="h-8 text-xs"
+                    />
+                    {suffix && <span className="text-xs text-muted-foreground shrink-0">{suffix}</span>}
+                  </div>
+                </div>
+              )
+            }
+            return (
+              <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <Label className="text-sm font-semibold flex items-center gap-1.5">
+                      <Target className="size-3.5 text-primary" />
+                      Metas da unidade
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      O agente compara o desempenho atual com essas metas e aponta o gap e as alavancas disponíveis.
+                      Deixe em branco os KPIs que não deseja monitorar.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {goalInput('RevPAR mensal alvo', 'revpar', 'ex: 120', 'R$')}
+                  {goalInput('TRevPAR mensal alvo', 'trevpar', 'ex: 145', 'R$')}
+                  {goalInput('Receita mensal alvo', 'receita_mensal', 'ex: 250000', 'R$')}
+                  {goalInput('Ticket médio alvo', 'ticket', 'ex: 180', 'R$')}
+                  {goalInput('Giro alvo', 'giro', 'ex: 3.5', undefined, 'loc/suíte')}
+                  {goalInput('Ocupação alvo', 'ocupacao', 'ex: 75', undefined, '%')}
+                </div>
+                <div className="flex justify-end">
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={handleSaveGoals} disabled={savingGoals}>
+                    {savingGoals ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                    {savedGoals ? 'Salvo!' : 'Salvar metas'}
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Resumo + salvar */}
           {selectedStrategy && (

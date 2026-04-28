@@ -385,7 +385,7 @@ export async function POST(req: NextRequest) {
       .eq('unit_id', unit.id),
     supabase
       .from('rm_agent_config')
-      .select('pricing_strategy, max_variation_pct, focus_metric, suite_amenities')
+      .select('pricing_strategy, max_variation_pct, focus_metric, suite_amenities, unit_goals')
       .eq('unit_id', unit.id)
       .maybeSingle(),
     supabase
@@ -410,6 +410,7 @@ export async function POST(req: NextRequest) {
   const maxVar   = agentConfigData?.max_variation_pct ?? 20
   const focus    = agentConfigData?.focus_metric ?? 'balanceado'
   const suiteAmenities = (agentConfigData?.suite_amenities ?? {}) as Record<string, string[]>
+  const unitGoals = (agentConfigData?.unit_goals ?? {}) as Record<string, number | null>
 
   const STRATEGY_GUIDE: Record<string, string> = {
     conservador: 'Priorize estabilidade: proponha variações menores (≤10%), evite mudanças simultâneas em muitos itens e prefira ajustes incrementais.',
@@ -441,6 +442,50 @@ export async function POST(req: NextRequest) {
 - Estratégia: **${strategy}** — ${STRATEGY_GUIDE[strategy]}
 - Variação máxima permitida: **±${maxVar}%** por item (não exceder este limite em nenhuma linha)
 - Métrica de foco: **${focusLabel[focus] ?? focus}** — ${FOCUS_GUIDE[focus] ?? ''}`
+
+  // Bloco de metas — compara meta configurada com KPIs do período ativo
+  function buildProposalGoalsBlock(): string {
+    const goals = Object.entries(unitGoals).filter(([, v]) => v != null && v > 0) as [string, number][]
+    if (!goals.length) return ''
+    const t = kpiData[0]?.company?.TotalResult
+    const bn = kpiData[0]?.company?.BigNumbers?.[0]
+    const fmtBRL = (n: number) => `R$ ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(n)}`
+    const LABELS: Record<string, string> = {
+      revpar: 'RevPAR', trevpar: 'TRevPAR', ocupacao: 'Ocupação',
+      receita_mensal: 'Receita Mensal (proj.)', giro: 'Giro', ticket: 'Ticket Médio',
+    }
+    function getCurrent(key: string): number | null {
+      if (!t) return null
+      if (key === 'revpar')         return t.totalRevpar
+      if (key === 'trevpar')        return t.totalTrevpar
+      if (key === 'ocupacao')       return t.totalOccupancyRate
+      if (key === 'receita_mensal') return bn?.monthlyForecast?.totalAllValueForecast ?? null
+      if (key === 'giro')           return t.totalGiro
+      if (key === 'ticket')         return t.totalAllTicketAverage
+      return null
+    }
+    function fmtMeta(key: string, v: number) {
+      if (key === 'ocupacao') return `${v.toFixed(1)}%`
+      if (key === 'giro') return v.toFixed(2)
+      return fmtBRL(v)
+    }
+    const rows = goals.map(([key, meta]) => {
+      const atual = getCurrent(key)
+      if (atual == null) return `| ${LABELS[key] ?? key} | ${fmtMeta(key, meta)} | — | — | ⬜ |`
+      const gap = ((atual - meta) / meta * 100)
+      const gapStr = key === 'ocupacao'
+        ? `${(atual - meta) >= 0 ? '+' : ''}${(atual - meta).toFixed(1)} p.p.`
+        : `${gap >= 0 ? '+' : ''}${gap.toFixed(1)}%`
+      return `| ${LABELS[key] ?? key} | ${fmtMeta(key, meta)} | ${fmtMeta(key, atual)} | ${gapStr} | ${atual >= meta ? '✅' : '⚠️'} |`
+    })
+    return `\n## Metas da Unidade
+| KPI | Meta | Atual | Gap | Status |
+|-----|------|-------|-----|--------|
+${rows.join('\n')}
+
+Ao gerar a proposta, **priorize as métricas marcadas com ⚠️** e calcule o impacto estimado de cada ajuste de preço no fechamento da meta.`
+  }
+  const goalsBlock = buildProposalGoalsBlock()
 
   // Bloco de preços de concorrentes (snapshots dos últimos 7 dias)
   interface MappedPrice { categoria_concorrente: string; categoria_nossa: string | null; periodo: string; preco: number; dia_tipo?: string; notas?: string }
@@ -527,7 +572,7 @@ ${activeDiscounts.map((d) => {
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}
+${goalsBlock ? `\n${goalsBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
