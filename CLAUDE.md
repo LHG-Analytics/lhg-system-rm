@@ -788,6 +788,19 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - Migrations: `20260427000002` (shared_context + pricing_thresholds) e `20260427000003` (unit_events com RLS + Realtime)
   - **Armadilha:** Day Use deve ser classificado ANTES do `dur <= 6.25` no CASE SQL — SQL avalia condições em ordem
 
+- **LHG-153:** feat(agente): modo de contexto por conversa — org vs personal
+  - Toggle no ecrã inicial do chat (antes do primeiro envio) entre dois modos:
+    - **"Contexto da organização"** (default `org`): inclui `shared_context`, calendário de eventualidades e regras de threshold de giro/ocupação
+    - **"Contexto interno"** (`personal`): somente KPIs, tabela de preços, clima, concorrentes e comodidades — sem memória coletiva
+  - `ContextMode = 'org' | 'personal'` exportado de `agente-chat.tsx`
+  - `contextModeRef` em `AgenteChatInner` — bloqueado após primeiro envio (imutável por conversa)
+  - `context_mode TEXT NOT NULL DEFAULT 'org'` em `rm_conversations` (migration `20260428000001`)
+  - Body da requisição inclui `contextMode` via `getBody` ref function
+  - `chat/route.ts`: lê `contextMode` do body; `contextMode === 'personal'` omite `eventsContext`, `pricingRulesBlock` e `sharedContextBlock` do system prompt
+  - `agente-page-client.tsx`: estado `contextMode` sincroniza ao selecionar conversa existente (lê `context_mode` do banco); reset para `'org'` ao criar nova conversa
+  - `ConversationSummary` inclui `context_mode?: ContextMode`
+  - **Armadilha:** toggle só é visível antes do primeiro envio — após iniciar conversa o modo fica fixo
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
