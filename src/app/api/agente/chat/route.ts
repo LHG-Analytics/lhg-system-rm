@@ -10,6 +10,10 @@ import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
+import {
+  buildStrategicMemoryBlock,
+  buildGuardrailsBlock,
+} from '@/lib/agente/context-blocks'
 import { fetchWeatherContext } from '@/lib/agente/weather'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
@@ -386,9 +390,17 @@ export async function POST(req: NextRequest) {
     valid_until: imp.valid_until,
   }))
 
-  // 6. Buscar config do agente + clima + concorrentes + eventos + capacity em paralelo
+  // 6. Buscar config + clima + concorrentes + eventos + capacity + histórico + guardrails em paralelo
   const snapshotCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const [agentConfigResult, competitorResult, eventsResult, capacityResult, channelCostsResult] = await Promise.allSettled([
+  const [
+    agentConfigResult,
+    competitorResult,
+    eventsResult,
+    capacityResult,
+    approvedHistoryResult,
+    guardrailsResult,
+    channelCostsResult,
+  ] = await Promise.allSettled([
     admin
       .from('rm_agent_config')
       .select('city, suite_amenities, focus_metric, pricing_strategy, max_variation_pct, shared_context, pricing_thresholds, unit_goals')
@@ -412,6 +424,17 @@ export async function POST(req: NextRequest) {
       .select('categoria, custo_variavel_locacao, notes')
       .eq('unit_id', unit.id)
       .order('categoria'),
+    admin
+      .from('price_proposals')
+      .select('id, rows, context, reviewed_at, kpi_baseline')
+      .eq('unit_id', unit.id)
+      .eq('status', 'approved')
+      .order('reviewed_at', { ascending: false })
+      .limit(3),
+    admin
+      .from('agent_price_guardrails')
+      .select('categoria, periodo, dia_tipo, preco_minimo, preco_maximo')
+      .eq('unit_id', unit.id),
     admin
       .from('unit_channel_costs')
       .select('canal, comissao_pct, taxa_fixa')
@@ -512,6 +535,24 @@ export async function POST(req: NextRequest) {
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     buildRejectionLessonsBlock(unit.id).catch(() => ''),
   ])
+
+  // Memória estratégica + guardrails (texto) para o chat
+  const approvedHistoryRows = approvedHistoryResult.status === 'fulfilled'
+    ? (approvedHistoryResult.value.data ?? [])
+    : []
+  const guardrailRowsForBlock = guardrailsResult.status === 'fulfilled'
+    ? (guardrailsResult.value.data ?? [])
+    : []
+
+  // Para o chat, kpiAfter = primeiro período (ativo); kpiBefore opcional
+  const kpiAfterForMemory  = kpiPeriods[0]?.company ?? null
+  const kpiBeforeForMemory = kpiPeriods[1]?.company ?? null
+  const memoryBlock = buildStrategicMemoryBlock(
+    approvedHistoryRows,
+    kpiAfterForMemory,
+    kpiBeforeForMemory,
+  )
+  const guardrailsTextBlock = buildGuardrailsBlock(guardrailRowsForBlock)
   const unitStructureBlock = buildUnitStructureBlock(
     availabilityRows,
     capacityRows.map((r) => ({
@@ -538,6 +579,8 @@ export async function POST(req: NextRequest) {
     goalsBlock +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
     (competitorBlock ? `\n\n${competitorBlock}` : '') +
+    (memoryBlock ? `\n\n${memoryBlock}` : '') +
+    (guardrailsTextBlock ? `\n\n${guardrailsTextBlock}` : '') +
     (rejectionLessonsBlock ? `\n\n${rejectionLessonsBlock}` : '')
 
   const agentTools = {

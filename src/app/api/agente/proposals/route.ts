@@ -10,6 +10,11 @@ import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { buildProposalBaseline, defaultBaselineWindow } from '@/lib/agente/proposal-baseline'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
+import {
+  buildPricingThresholdsBlock,
+  buildSharedContextBlock,
+  type PricingThresholds,
+} from '@/lib/agente/context-blocks'
 import { buildKPIContext, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
@@ -427,7 +432,7 @@ export async function POST(req: NextRequest) {
       .eq('unit_id', unit.id),
     supabase
       .from('rm_agent_config')
-      .select('pricing_strategy, max_variation_pct, focus_metric, suite_amenities, unit_goals')
+      .select('pricing_strategy, max_variation_pct, focus_metric, suite_amenities, unit_goals, shared_context, pricing_thresholds')
       .eq('unit_id', unit.id)
       .maybeSingle(),
     supabase
@@ -482,6 +487,10 @@ export async function POST(req: NextRequest) {
   const focus    = agentConfigData?.focus_metric ?? 'balanceado'
   const suiteAmenities = (agentConfigData?.suite_amenities ?? {}) as Record<string, string[]>
   const unitGoals = (agentConfigData?.unit_goals ?? {}) as Record<string, number | null>
+  const sharedContext = (agentConfigData as { shared_context?: string | null } | null)?.shared_context ?? null
+  const pricingThresholdsCfg = (agentConfigData as { pricing_thresholds?: PricingThresholds | null } | null)?.pricing_thresholds ?? null
+  const pricingThresholdsBlock = buildPricingThresholdsBlock(pricingThresholdsCfg)
+  const sharedContextBlock    = buildSharedContextBlock(sharedContext)
 
   const STRATEGY_GUIDE: Record<string, string> = {
     conservador: 'Priorize estabilidade: proponha variações menores (≤10%), evite mudanças simultâneas em muitos itens e prefira ajustes incrementais.',
@@ -643,7 +652,7 @@ ${activeDiscounts.map((d) => {
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
+${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
