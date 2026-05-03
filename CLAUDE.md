@@ -879,11 +879,15 @@ Auditoria profunda do agente em 2026-04-28; Fase 1 (quick wins) entregue em 2026
   - UI `proposals-list.tsx`: ícone Shield âmbar antes do preço com Tooltip detalhado + pílula "N ajustada(s) por guardrail" no header colapsado + filtro pill "Com guardrail tocado (N)" no header
   - Sinal valioso: se 80% das propostas batem no max, limite está apertado demais; se nunca bate, está folgado
 
-- **LHG-161 / QW7:** Higiene técnica — drop de tabelas orphan
-  - Removidos: `rm_weather_demand_patterns`, `rm_price_decisions`, `rm_agent_overrides`, `kpi_snapshots` (todas com 0 rows confirmados antes do drop)
-  - Removida coluna `rm_agent_config.last_context_update` (sem leitor nem escritor)
-  - Mantido `lhg_analytics_tokens` (5 rows do sistema legado — avaliação futura)
-  - Mantido `weather_insight_cache` (em uso ativo: `weather-insight.ts` → `dashboard/page.tsx`)
+- **LHG-161 / QW7:** Higiene técnica — REVERTIDO parcialmente após review
+  - **Decisão original (drop):** removidas `rm_weather_demand_patterns`, `rm_price_decisions`, `rm_agent_overrides`, `kpi_snapshots` (todas com 0 rows) + coluna `rm_agent_config.last_context_update`
+  - **Revert (migration 20260503000003):** as 4 tabelas foram recriadas com schema idêntico ao initial_schema + COMMENT ON TABLE explicando o propósito futuro de cada uma
+    - `rm_price_decisions` + `rm_agent_overrides` → audit trail e reversões do **agente autônomo (pós-MVP)**
+    - `rm_weather_demand_patterns` → padrões agregados clima×demanda (LHG-165 / HV5 sazonalidade)
+    - `kpi_snapshots` → cache histórico granular (LHG-163 / HV3 anomaly detection com baseline 90d)
+  - Mantida a remoção de `last_context_update` (sem leitor nem escritor confirmado)
+  - **Lição:** "tabela vazia" não é critério suficiente para drop. Precisa mapear para roadmap futuro antes — ler comentários SQL/schema e cruzar com issues abertas. Schema "vazio mas planejado" é diferente de "morto".
+  - Mantidos do drop original: `lhg_analytics_tokens` (5 rows legado) e `weather_insight_cache` (em uso ativo)
 
 ### 🔲 Backlog
 
