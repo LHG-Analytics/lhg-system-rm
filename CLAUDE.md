@@ -823,6 +823,68 @@ Conexão direta ao banco do ERP Automo para dados de locações/reservas em temp
   - `ComparisonPanel`: armazena `channelKPIs` e `periodMix` do response e passa para `DashboardCharts`
   - **Armadilha:** `queryPeriodMix` recebe parâmetros na ordem `(unitSlug, start, end, rentalStatus, startHour, endHour, dateType)` — difere da ordem de `fetchCompanyKPIsFromAutomo`
 
+### Fase 1 — Auditoria do Agente RM (Linear LHG-155 a LHG-161 + LHG-172)
+Auditoria profunda do agente em 2026-04-28; Fase 1 (quick wins) entregue em 2026-05-03. Issue master: LHG-170. Fases 2 (HV1-HV5) e 3 (ST1-ST4) em backlog.
+
+- **LHG-155 / QW1:** Capacidade instalada por categoria
+  - Suítes vêm dinamicamente do Automo (`bloqueadoapartamento` → `apartamentostate` → `apartamento`, `datafim IS NULL` = bloqueio ativo) — sem coluna `n_suites` manual
+  - `unit_capacity` (id, unit_id, categoria, custo_variavel_locacao, notes) só persiste o que NÃO está no Automo
+  - `unit_channel_costs` (canal, comissao_pct, taxa_fixa) — comissões por canal para cálculo de margem líquida
+  - `src/lib/automo/suite-availability.ts`: `getSuiteAvailabilityByCategory(unitSlug)` retorna por categoria: total, bloqueadas, disponíveis, motivos do bloqueio
+  - `src/lib/agente/unit-structure.ts`: `buildUnitStructureBlock` injeta no system prompt com formato "Master: 6 disponíveis de 8 total (2 bloqueadas: pintura)"
+  - Aba "Capacidade" em `/dashboard/admin` com seletor de unidade + duas seções (capacity / channel costs)
+  - Regra 7 do prompt atualizada: total de suítes e comissões NÃO podem ser perguntados — agente lê do contexto
+  - **Armadilha:** chat e propostas DEVEM chamar `getSuiteAvailabilityByCategory` em paralelo com KPIs (não serial) para zero latência adicional
+
+- **LHG-156 / QW2:** KPI baseline congelado na aprovação de proposta
+  - `price_proposals.kpi_baseline JSONB` + `approved_at` + `effective_from` populados ao aprovar
+  - `src/lib/agente/proposal-baseline.ts`: `defaultBaselineWindow` retorna janela de 28 dias terminando ontem; `buildProposalBaseline` formata snapshot a partir de `CompanyKPIResponse`
+  - PATCH `/api/agente/proposals` (status='approved'): chama `fetchCompanyKPIsFromAutomo` com a janela do baseline + busca eventos ativos + clima do `events_cache`
+  - `buildStrategicMemoryBlock` agora prefere baseline congelado sobre comparação enviesada — exibe rótulo "janela igual de 28 dias — comparação confiável" vs "janelas diferentes — interpretação cautelosa"
+  - Falha graceful: se busca de baseline falhar, aprovação continua sem baseline (fallback para comportamento antigo)
+
+- **LHG-157 / QW3:** Calendário de feriados auto-populado
+  - `src/lib/calendar/holidays-br.ts`: 8 feriados nacionais fixos, 4 datas comerciais, Dia das Mães/Pais (`nthWeekdayOfMonth`), Carnaval/Páscoa/Sexta da Paixão/Corpus Christi (algoritmo de Gauss), feriados estaduais por cidade (SP/DF/Campinas)
+  - POST `/api/admin/unit-events/seed-holidays` idempotente (dedup por title+event_date)
+  - Cron `/api/cron/seed-holidays` diário 04:00 UTC (slot 2 do `vercel.json`); idempotente
+  - Botão "Popular feriados" no events-manager
+  - Cada feriado vem com `event_type` e `impact_description` específicos para motel (Carnaval/Namorados positivo, Natal neutro, etc.)
+
+- **LHG-172:** KPIs com denominador "suítes-dia disponíveis" (em vez de total fixo)
+  - `src/lib/automo/suite-days.ts`: 4 CTEs reutilizáveis (`cteBaseSuiteDays`, `cteSuiteDaysTotal`, `cteSuiteDaysByCategory`, `cteSuiteDaysByCategoryDow`, `cteSuiteDaysByDow`)
+  - `cteBaseSuiteDays(catIds, startExpr, endExpr)` aceita prepared statements (`$1`/`$2`) ou interpolação literal (heatmap)
+  - Aplicado em 8 queries: `queryBigNumbers`, `queryDataTableSuiteCategory`, `queryWeekTables`, `queryTotalRevOcc` em `company-kpis.ts` + 4 queries em `heatmap/route.ts`
+  - Antes: `denominador = COUNT(suites) × n_dias`; depois: `SUM(suite-dias disponíveis)` = COUNT * n_dias − dias bloqueados por suíte
+  - Em períodos sem bloqueios os números ficam idênticos; em períodos com obras/manutenção os KPIs sobem (correto)
+  - Mantido corte operacional 06:00 nas queries (`EXTRACT(HOUR FROM ...) < 6 → DOW do dia anterior`)
+  - **Armadilha:** o helper inclui `id_categoria` em `suite_dias` para permitir JOIN com `events.category_id` no heatmap
+
+- **LHG-158 / QW4:** Razão de rejeição estruturada
+  - `price_proposals` e `discount_proposals` ganham `rejection_reason_type` (CHECK enum), `rejection_reason_text`, `rejected_items JSONB`
+  - Enums diferentes: 8 motivos para preço (precos_muito_altos, estrategia_inadequada, item_especifico_errado, ...), 5 para desconto (desconto_alto_demais, condicao_inadequada, ...)
+  - PATCH endpoints validam `rejection_reason_type` (422 se ausente, 400 se inválido) ao rejeitar
+  - `src/components/agente/rejection-dialog.tsx`: AlertDialog reutilizável com Select de motivo + Textarea
+  - `src/lib/agente/rejection-lessons.ts`: `buildRejectionLessonsBlock(unitId)` busca últimas 5 rejeições de preço + 3 de desconto (últimos 90 dias) e injeta bloco "Lições de rejeições recentes" no system prompt do chat e propostas
+  - Loop fechado: gerente rejeita com motivo → agente aprende → próxima proposta evita o mesmo padrão
+
+- **LHG-159 / QW5:** Contextos consistentes entre chat e propostas
+  - `src/lib/agente/context-blocks.ts`: módulo compartilhado com builders puros — `buildPricingThresholdsBlock`, `buildSharedContextBlock`, `buildGuardrailsBlock` (texto), `buildStrategicMemoryBlock`
+  - Chat passou a ter: memória estratégica + guardrails (texto) — antes só propostas tinha
+  - Propostas passou a ter: pricing_thresholds + shared_context — antes só chat tinha
+  - **Armadilha:** ao adicionar entradas em `Promise.allSettled` em chat/route.ts, alinhar a ordem do destructuring com a ordem do array (regressão típica de TS)
+
+- **LHG-160 / QW6:** Marcação visual de clamp por guardrail
+  - `ProposedPriceRow.was_clamped: boolean` + `clamp_info: { original_price, clamp_type ('min'|'max'), guardrail_value }`
+  - `clampGuardrails` em proposals/route.ts: popula sinal estruturado em vez de poluir a string da justificativa
+  - UI `proposals-list.tsx`: ícone Shield âmbar antes do preço com Tooltip detalhado + pílula "N ajustada(s) por guardrail" no header colapsado + filtro pill "Com guardrail tocado (N)" no header
+  - Sinal valioso: se 80% das propostas batem no max, limite está apertado demais; se nunca bate, está folgado
+
+- **LHG-161 / QW7:** Higiene técnica — drop de tabelas orphan
+  - Removidos: `rm_weather_demand_patterns`, `rm_price_decisions`, `rm_agent_overrides`, `kpi_snapshots` (todas com 0 rows confirmados antes do drop)
+  - Removida coluna `rm_agent_config.last_context_update` (sem leitor nem escritor)
+  - Mantido `lhg_analytics_tokens` (5 rows do sistema legado — avaliação futura)
+  - Mantido `weather_insight_cache` (em uso ativo: `weather-insight.ts` → `dashboard/page.tsx`)
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
