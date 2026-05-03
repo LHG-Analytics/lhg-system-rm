@@ -27,6 +27,14 @@ export interface ProposedPriceRow extends ParsedPriceRow {
   preco_proposto: number
   variacao_pct: number
   justificativa: string
+  // Sinal estruturado quando o clamp por guardrail entrou em ação.
+  // Permite UI exibir badge específico em vez de parsear a string da justificativa.
+  was_clamped?: boolean
+  clamp_info?: {
+    original_price: number
+    clamp_type: 'min' | 'max'
+    guardrail_value: number
+  }
 }
 
 export interface ProposalResponse {
@@ -719,11 +727,19 @@ A cobertura total já foi instruída acima — NUNCA omita uma combinação que 
       const g = guardrailMap.get(`${row.categoria}|${row.periodo}|${row.dia_tipo}`)
         ?? guardrailMap.get(`${row.categoria}|${row.periodo}|todos`)
       if (!g) continue
-      const clamped = Math.min(g.max, Math.max(g.min, row.preco_proposto))
-      if (clamped !== row.preco_proposto) {
+      const original = row.preco_proposto
+      const clamped = Math.min(g.max, Math.max(g.min, original))
+      if (clamped !== original) {
+        const clampType: 'min' | 'max' = original < g.min ? 'min' : 'max'
         row.preco_proposto = +clamped.toFixed(2)
         row.variacao_pct   = +((clamped - row.preco_atual) / row.preco_atual * 100).toFixed(1)
-        row.justificativa  = `${row.justificativa} [ajustado ao limite configurado: R$ ${clamped.toFixed(2)}]`
+        row.was_clamped    = true
+        row.clamp_info     = {
+          original_price: +original.toFixed(2),
+          clamp_type:     clampType,
+          guardrail_value: clampType === 'min' ? g.min : g.max,
+        }
+        // Justificativa fica limpa — UI mostra badge estruturado pelo was_clamped
       }
     }
   }

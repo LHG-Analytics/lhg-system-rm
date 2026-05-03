@@ -33,8 +33,9 @@ import { Label } from '@/components/ui/label'
 import {
   Loader2, Sparkles, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, Clock, Pencil, Trash2, Save, X,
-  CalendarPlus, CalendarClock, TrendingUp, TrendingDown, Minus,
+  CalendarPlus, CalendarClock, TrendingUp, TrendingDown, Minus, Shield,
 } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
@@ -142,6 +143,7 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
 
   // Filtro de status
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
+  const [onlyClamped, setOnlyClamped] = useState(false)
 
   useEffect(() => {
     fetch(`/api/agente/proposals?unitSlug=${unitSlug}`)
@@ -198,9 +200,10 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
   // Proposta aprovada mais recente (é a que está vigente na tabela atual)
   const latestApprovedId = proposals.find((p) => p.status === 'approved')?.id ?? null
 
-  const filteredProposals = statusFilter === 'all'
+  const filteredProposals = (statusFilter === 'all'
     ? proposals
     : proposals.filter((p) => p.status === statusFilter)
+  ).filter((p) => !onlyClamped || p.rows.some((r) => r.was_clamped))
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -435,6 +438,25 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
               </button>
             )
           })}
+          {(() => {
+            const clampedCount = proposals.filter((p) => p.rows.some((r) => r.was_clamped)).length
+            if (clampedCount === 0) return null
+            return (
+              <button
+                onClick={() => setOnlyClamped((v) => !v)}
+                className={cn(
+                  'px-3 py-1.5 text-xs rounded-full border transition-colors flex items-center gap-1',
+                  onlyClamped
+                    ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40'
+                    : 'bg-transparent text-muted-foreground border-border hover:bg-accent hover:text-foreground'
+                )}
+                title="Filtrar apenas propostas com linhas ajustadas por guardrail"
+              >
+                <Shield className="size-3" />
+                Com guardrail tocado ({clampedCount})
+              </button>
+            )
+          })()}
         </div>
 
         {canManage && (
@@ -538,6 +560,16 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                             {impact.flat} sem alteração
                           </span>
                         )}
+                        {(() => {
+                          const clampedCount = proposal.rows.filter((r) => r.was_clamped).length
+                          if (clampedCount === 0) return null
+                          return (
+                            <span className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+                              <Shield className="size-3" />
+                              {clampedCount} ajustada{clampedCount === 1 ? '' : 's'} por guardrail
+                            </span>
+                          )
+                        })()}
                         <span className={cn(
                           'text-[11px] font-medium tabular-nums',
                           impact.deltaTicket > 0 ? 'text-green-600' : impact.deltaTicket < 0 ? 'text-red-500' : 'text-muted-foreground'
@@ -691,7 +723,27 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                                     onChange={(e) => updateEditRow(i, parseFloat(e.target.value) || 0)}
                                   />
                                 ) : (
-                                  `R$ ${row.preco_proposto.toFixed(2).replace('.', ',')}`
+                                  <span className="inline-flex items-center gap-1 justify-end">
+                                    {row.was_clamped && row.clamp_info && (
+                                      <TooltipProvider delayDuration={150}>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Shield className="size-3 text-amber-600 dark:text-amber-400 shrink-0" aria-label="Ajustado por guardrail" />
+                                          </TooltipTrigger>
+                                          <TooltipContent side="left" className="max-w-[260px] text-xs">
+                                            <div className="font-medium mb-0.5">Ajustado pelo guardrail</div>
+                                            <div className="text-muted-foreground">
+                                              Modelo propôs R$ {row.clamp_info.original_price.toFixed(2).replace('.', ',')}
+                                              {row.clamp_info.clamp_type === 'max'
+                                                ? ` (acima do limite máx. de R$ ${row.clamp_info.guardrail_value.toFixed(2).replace('.', ',')})`
+                                                : ` (abaixo do limite mín. de R$ ${row.clamp_info.guardrail_value.toFixed(2).replace('.', ',')})`}
+                                            </div>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    )}
+                                    R$ {row.preco_proposto.toFixed(2).replace('.', ',')}
+                                  </span>
                                 )}
                               </TableCell>
                               <TableCell className="text-right text-xs">
