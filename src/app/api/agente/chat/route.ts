@@ -9,6 +9,7 @@ import { queryChannelKPIs, queryPeriodMix } from '@/lib/automo/channel-kpis'
 import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
+import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { fetchWeatherContext } from '@/lib/agente/weather'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
@@ -507,7 +508,10 @@ export async function POST(req: NextRequest) {
   // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
   const capacityRows = capacityResult.status === 'fulfilled' ? (capacityResult.value.data ?? []) : []
   const channelCostRows = channelCostsResult.status === 'fulfilled' ? (channelCostsResult.value.data ?? []) : []
-  const availabilityRows = await getSuiteAvailabilityByCategory(unit.slug).catch(() => [])
+  const [availabilityRows, rejectionLessonsBlock] = await Promise.all([
+    getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
+    buildRejectionLessonsBlock(unit.id).catch(() => ''),
+  ])
   const unitStructureBlock = buildUnitStructureBlock(
     availabilityRows,
     capacityRows.map((r) => ({
@@ -533,7 +537,8 @@ export async function POST(req: NextRequest) {
     (contextMode === 'org' ? sharedContextBlock : '') +
     goalsBlock +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
-    (competitorBlock ? `\n\n${competitorBlock}` : '')
+    (competitorBlock ? `\n\n${competitorBlock}` : '') +
+    (rejectionLessonsBlock ? `\n\n${rejectionLessonsBlock}` : '')
 
   const agentTools = {
     buscar_kpis_periodo: tool({

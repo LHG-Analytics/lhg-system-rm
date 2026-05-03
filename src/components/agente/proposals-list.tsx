@@ -39,6 +39,7 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { PriceProposal, ProposedPriceRow } from '@/app/api/agente/proposals/route'
+import { RejectionDialog } from '@/components/agente/rejection-dialog'
 
 interface PendingReview {
   id: string
@@ -233,14 +234,25 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
     }
   }, [unitSlug])
 
-  const handleReview = useCallback(async (id: string, status: 'approved' | 'rejected') => {
+  const handleReview = useCallback(async (
+    id: string,
+    status: 'approved' | 'rejected',
+    rejectionData?: { reasonType: string; reasonText: string },
+  ) => {
     setReviewing(id)
     setError(null)
     try {
       const res = await fetch('/api/agente/proposals', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status }),
+        body: JSON.stringify({
+          id,
+          status,
+          ...(rejectionData ? {
+            rejection_reason_type: rejectionData.reasonType,
+            rejection_reason_text: rejectionData.reasonText,
+          } : {}),
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao revisar proposta')
@@ -260,6 +272,8 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
       setReviewing(null)
     }
   }, [loadPendingReviews])
+
+  const [rejectionTarget, setRejectionTarget] = useState<string | null>(null)
 
   const startEditing = useCallback((proposal: PriceProposal) => {
     setEditing({ id: proposal.id, rows: proposal.rows.map((r) => ({ ...r })) })
@@ -762,7 +776,7 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                           size="sm"
                           className="gap-1.5 text-red-600 hover:text-red-600 border-red-500/20 hover:bg-red-500/10"
                           disabled={isReviewing}
-                          onClick={() => handleReview(proposal.id, 'rejected')}
+                          onClick={() => setRejectionTarget(proposal.id)}
                         >
                           {isReviewing
                             ? <Loader2 className="size-3.5 animate-spin" />
@@ -824,6 +838,19 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <RejectionDialog
+        open={rejectionTarget !== null}
+        onOpenChange={(open) => !open && setRejectionTarget(null)}
+        kind="price"
+        loading={reviewing === rejectionTarget}
+        onConfirm={async (reasonType, reasonText) => {
+          if (!rejectionTarget) return
+          const id = rejectionTarget
+          setRejectionTarget(null)
+          await handleReview(id, 'rejected', { reasonType, reasonText })
+        }}
+      />
     </div>
   )
 }

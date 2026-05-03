@@ -31,6 +31,7 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { DiscountProposal, DiscountProposalRow } from '@/app/api/agente/discount-proposals/route'
+import { RejectionDialog } from '@/components/agente/rejection-dialog'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,7 @@ function ProposalCard({
   const [expanded, setExpanded] = useState(proposal.status === 'pending')
   const [approving, setApproving] = useState(false)
   const [rejecting, setRejecting] = useState(false)
+  const [rejectOpen, setRejectOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [schedOpen, setSchedOpen] = useState(false)
@@ -90,15 +92,21 @@ function ProposalCard({
     onRefresh()
   }
 
-  async function handleReject() {
+  async function handleReject(reasonType: string, reasonText: string) {
     setRejecting(true)
-    await fetch('/api/agente/discount-proposals', {
+    const res = await fetch('/api/agente/discount-proposals', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: proposal.id, status: 'rejected' }),
+      body: JSON.stringify({
+        id: proposal.id,
+        status: 'rejected',
+        rejection_reason_type: reasonType,
+        rejection_reason_text: reasonText,
+      }),
     })
     setRejecting(false)
-    onRefresh()
+    setRejectOpen(false)
+    if (res.ok) onRefresh()
   }
 
   async function handleDelete() {
@@ -168,7 +176,7 @@ function ProposalCard({
                 <span className="ml-1">Aprovar</span>
               </Button>
               <Button size="sm" variant="outline" className="text-red-600 border-red-500/30 hover:bg-red-500/10 h-7 px-2 text-xs"
-                onClick={(e) => { e.stopPropagation(); handleReject() }} disabled={approving || rejecting}>
+                onClick={(e) => { e.stopPropagation(); setRejectOpen(true) }} disabled={approving || rejecting}>
                 {rejecting ? <Loader2 className="size-3 animate-spin" /> : <XCircle className="size-3" />}
                 <span className="ml-1">Rejeitar</span>
               </Button>
@@ -314,6 +322,14 @@ function ProposalCard({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <RejectionDialog
+        open={rejectOpen}
+        onOpenChange={setRejectOpen}
+        kind="discount"
+        loading={rejecting}
+        onConfirm={handleReject}
+      />
     </div>
   )
 }

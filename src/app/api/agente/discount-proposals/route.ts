@@ -363,9 +363,17 @@ export async function PATCH(req: NextRequest) {
     id: string
     status?: 'approved' | 'rejected'
     rows?: DiscountProposalRow[]
+    rejection_reason_type?: string
+    rejection_reason_text?: string
+    rejected_items?: Array<{ categoria: string; periodo: string; dia_semana?: string; faixa_horaria?: string; motivo: string }>
   }
   const { id, status, rows } = body
   if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 })
+
+  const VALID_DISCOUNT_REJECTION_REASONS = [
+    'desconto_alto_demais', 'desconto_baixo_demais',
+    'condicao_inadequada', 'momento_inadequado', 'outro',
+  ]
 
   const admin = getAdminClient()
 
@@ -373,6 +381,15 @@ export async function PATCH(req: NextRequest) {
     // Aprovar / rejeitar — exige admin+
     if (!['super_admin', 'admin'].includes(profile.role))
       return NextResponse.json({ error: 'Sem permissão para aprovar/rejeitar' }, { status: 403 })
+
+    if (status === 'rejected') {
+      if (!body.rejection_reason_type) {
+        return NextResponse.json({ error: 'rejection_reason_type é obrigatório ao rejeitar' }, { status: 422 })
+      }
+      if (!VALID_DISCOUNT_REJECTION_REASONS.includes(body.rejection_reason_type)) {
+        return NextResponse.json({ error: 'rejection_reason_type inválido' }, { status: 400 })
+      }
+    }
 
     const { data: proposal } = await admin
       .from('discount_proposals')
@@ -382,7 +399,15 @@ export async function PATCH(req: NextRequest) {
 
     const { error } = await admin
       .from('discount_proposals')
-      .update({ status, reviewed_at: new Date().toISOString() })
+      .update({
+        status,
+        reviewed_at: new Date().toISOString(),
+        ...(status === 'rejected' ? {
+          rejection_reason_type: body.rejection_reason_type ?? null,
+          rejection_reason_text: body.rejection_reason_text ?? null,
+          rejected_items: (body.rejected_items ?? null) as unknown as Database['public']['Tables']['discount_proposals']['Update']['rejected_items'],
+        } : {}),
+      })
       .eq('id', id)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })

@@ -192,6 +192,9 @@ export type Database = {
           conv_id: string | null
           created_at: string
           id: string
+          rejected_items: Json | null
+          rejection_reason_text: string | null
+          rejection_reason_type: string | null
           reviewed_at: string | null
           rows: Json
           status: string
@@ -202,6 +205,9 @@ export type Database = {
           conv_id?: string | null
           created_at?: string
           id?: string
+          rejected_items?: Json | null
+          rejection_reason_text?: string | null
+          rejection_reason_type?: string | null
           reviewed_at?: string | null
           rows?: Json
           status?: string
@@ -212,6 +218,9 @@ export type Database = {
           conv_id?: string | null
           created_at?: string
           id?: string
+          rejected_items?: Json | null
+          rejection_reason_text?: string | null
+          rejection_reason_type?: string | null
           reviewed_at?: string | null
           rows?: Json
           status?: string
@@ -494,6 +503,9 @@ export type Database = {
           effective_from: string | null
           id: string
           kpi_baseline: Json | null
+          rejected_items: Json | null
+          rejection_reason_text: string | null
+          rejection_reason_type: string | null
           reviewed_at: string | null
           reviewed_by: string | null
           rows: Json
@@ -508,6 +520,9 @@ export type Database = {
           effective_from?: string | null
           id?: string
           kpi_baseline?: Json | null
+          rejected_items?: Json | null
+          rejection_reason_text?: string | null
+          rejection_reason_type?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           rows?: Json
@@ -522,6 +537,9 @@ export type Database = {
           effective_from?: string | null
           id?: string
           kpi_baseline?: Json | null
+          rejected_items?: Json | null
+          rejection_reason_text?: string | null
+          rejection_reason_type?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           rows?: Json

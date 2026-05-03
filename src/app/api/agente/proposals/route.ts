@@ -9,6 +9,7 @@ import { toApiDate } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { buildProposalBaseline, defaultBaselineWindow } from '@/lib/agente/proposal-baseline'
+import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildKPIContext, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
@@ -447,8 +448,11 @@ export async function POST(req: NextRequest) {
       .order('canal'),
   ])
 
-  // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
-  const availabilityRows = await getSuiteAvailabilityByCategory(unit.slug).catch(() => [])
+  // Bloco de estrutura da unidade + lições de rejeições recentes (paralelo)
+  const [availabilityRows, rejectionLessonsBlock] = await Promise.all([
+    getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
+    buildRejectionLessonsBlock(unit.id).catch(() => ''),
+  ])
   const unitStructureBlock = buildUnitStructureBlock(
     availabilityRows,
     (capacityData ?? []).map((r) => ({
@@ -639,7 +643,7 @@ ${activeDiscounts.map((d) => {
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}
+${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
@@ -757,10 +761,19 @@ export async function PATCH(req: NextRequest) {
     status?: 'approved' | 'rejected'
     rows?: ProposedPriceRow[]
     context?: string
+    rejection_reason_type?: string
+    rejection_reason_text?: string
+    rejected_items?: Array<{ categoria: string; periodo: string; dia_tipo: string; motivo: string }>
   }
   const { id } = body
 
   if (!id) return new Response('id obrigatório', { status: 400 })
+
+  const VALID_REJECTION_REASONS = [
+    'precos_muito_altos', 'precos_muito_baixos', 'estrategia_inadequada',
+    'item_especifico_errado', 'momento_inadequado', 'concorrencia_nao_considerada',
+    'margem_insuficiente', 'outro',
+  ]
 
   // ─── Edição manual de linhas ─────────────────────────────────────────────
   if (body.rows !== undefined) {
@@ -785,6 +798,15 @@ export async function PATCH(req: NextRequest) {
   const { status } = body
   if (!status || !['approved', 'rejected'].includes(status)) {
     return new Response('status obrigatório (approved/rejected)', { status: 400 })
+  }
+
+  if (status === 'rejected') {
+    if (!body.rejection_reason_type) {
+      return Response.json({ error: 'rejection_reason_type é obrigatório ao rejeitar' }, { status: 422 })
+    }
+    if (!VALID_REJECTION_REASONS.includes(body.rejection_reason_type)) {
+      return Response.json({ error: 'rejection_reason_type inválido' }, { status: 400 })
+    }
   }
 
   const { data: proposal, error: fetchErr } = await supabase
@@ -871,6 +893,11 @@ export async function PATCH(req: NextRequest) {
         approved_at: approvedAt.toISOString(),
         effective_from: approvedAt.toISOString().slice(0, 10),
         ...(kpiBaselineJSON ? { kpi_baseline: kpiBaselineJSON as unknown as Database['public']['Tables']['price_proposals']['Update']['kpi_baseline'] } : {}),
+      } : {}),
+      ...(status === 'rejected' ? {
+        rejection_reason_type: body.rejection_reason_type ?? null,
+        rejection_reason_text: body.rejection_reason_text ?? null,
+        rejected_items: (body.rejected_items ?? null) as unknown as Database['public']['Tables']['price_proposals']['Update']['rejected_items'],
       } : {}),
     })
     .eq('id', id)
