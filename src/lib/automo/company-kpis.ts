@@ -9,6 +9,13 @@ import type {
   DataTableRevparByWeek,
 } from '@/lib/kpis/types'
 import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
+import {
+  cteBaseSuiteDays,
+  cteSuiteDaysTotal,
+  cteSuiteDaysByCategory,
+  cteSuiteDaysByCategoryDow,
+  cteSuiteDaysByDow,
+} from './suite-days'
 
 // ─── Date helpers (exportados para uso em channel-kpis.ts) ────────────────────
 
@@ -119,7 +126,7 @@ interface BigNumbersRow {
   total_all_value: string
   total_occupied_time: string
   total_sale_direct: string
-  total_suites: string
+  total_suite_dias: string
 }
 
 async function queryBigNumbers(
@@ -135,7 +142,9 @@ async function queryBigNumbers(
   if (!pool) throw new Error('pool is null')
 
   const sql = `
-    WITH receita_consumo AS (
+    WITH ${cteBaseSuiteDays(catIds)},
+    ${cteSuiteDaysTotal()},
+    receita_consumo AS (
       SELECT
         la.id_apartamentostate AS id_locacao,
         COALESCE(SUM(
@@ -176,12 +185,6 @@ async function queryBigNumbers(
         AND sei.cancelado IS NULL
         AND sei.datasaidaitem >= $1
         AND sei.datasaidaitem <  $2
-    ),
-    suites AS (
-      SELECT COUNT(*) AS total_suites
-      FROM apartamento a
-      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      WHERE ca.id IN (${catIds}) AND a.dataexclusao IS NULL
     )
     SELECT
       COUNT(*)                    AS total_rentals,
@@ -195,7 +198,7 @@ async function queryBigNumbers(
         EXTRACT(EPOCH FROM la.datafinaldaocupacao - la.datainicialdaocupacao)
       ), 0)                       AS total_occupied_time,
       (SELECT total_sale_direct FROM sale_direct) AS total_sale_direct,
-      (SELECT total_suites      FROM suites)      AS total_suites
+      (SELECT suite_dias FROM suite_dias_total)   AS total_suite_dias
     FROM locacaoapartamento la
     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
     INNER JOIN apartamento a        ON aps.id_apartamento = a.id
@@ -211,7 +214,8 @@ async function queryBigNumbers(
   const { rows } = await pool.query<BigNumbersRow>(sql, [isoStart, isoEnd])
   const r = rows[0]
 
-  const totalSuites    = Number(r.total_suites)    || 1
+  // total_suite_dias já considera bloqueios e janela do período
+  const totalSuiteDias = Number(r.total_suite_dias) || 1
   const totalRentals   = Number(r.total_rentals)   || 0
   const locacaoValue   = Number(r.total_all_value)  || 0
   const saleDirect     = Number(r.total_sale_direct) || 0
@@ -219,9 +223,13 @@ async function queryBigNumbers(
   const occupiedTime   = Number(r.total_occupied_time) || 0
 
   const avgTicket = totalRentals > 0 ? +(totalAllValue / totalRentals).toFixed(2) : 0
-  const giro      = +(totalRentals / totalSuites / daysDiff).toFixed(2)
-  const trevpar   = +(totalAllValue / totalSuites / daysDiff).toFixed(2)
+  // Giro/TRevPAR: total_rentals (ou valor) / suite-dias disponíveis
+  const giro      = +(totalRentals / totalSuiteDias).toFixed(2)
+  const trevpar   = +(totalAllValue / totalSuiteDias).toFixed(2)
   const avgOccTime = totalRentals > 0 ? secondsToHMS(occupiedTime / totalRentals) : '00:00:00'
+
+  // Para retrocompatibilidade, expomos um "totalSuites equivalente" = suite_dias / dias
+  const totalSuites = Math.max(1, Math.round(totalSuiteDias / Math.max(1, daysDiff)))
 
   return { totalAllValue, totalRentals, avgTicket, giro, trevpar, avgOccTime, totalSuites }
 }
@@ -235,7 +243,7 @@ interface SuiteCatRow {
   rental_revenue: string
   trevpar_revenue: string
   total_occupied_time: string
-  total_suites: string
+  suite_dias_categoria: string
 }
 
 async function queryDataTableSuiteCategory(
@@ -249,13 +257,8 @@ async function queryDataTableSuiteCategory(
   dateCol = 'la.datainicialdaocupacao',
 ): Promise<DataTableSuiteCategory[]> {
   const sql = `
-    WITH suites_por_cat AS (
-      SELECT ca.descricao AS descricao, COUNT(*) AS total_suites
-      FROM apartamento a
-      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      WHERE ca.id IN (${catIds}) AND a.dataexclusao IS NULL
-      GROUP BY ca.descricao
-    )
+    WITH ${cteBaseSuiteDays(catIds)},
+    ${cteSuiteDaysByCategory()}
     SELECT
       ca.descricao                       AS category,
       COUNT(*)                           AS total_rentals,
@@ -272,36 +275,37 @@ async function queryDataTableSuiteCategory(
       COALESCE(SUM(
         EXTRACT(EPOCH FROM la.datafinaldaocupacao - la.datainicialdaocupacao)
       ), 0)                              AS total_occupied_time,
-      sc.total_suites
+      sc.suite_dias                      AS suite_dias_categoria
     FROM locacaoapartamento la
     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
     INNER JOIN apartamento a        ON aps.id_apartamento = a.id
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-    INNER JOIN suites_por_cat sc    ON ca.descricao = sc.descricao
+    INNER JOIN suite_dias_por_cat sc ON ca.descricao = sc.categoria
     WHERE ${dateCol} >= $1
       AND ${dateCol} <  $2
       ${statusFilter}
       AND ca.id IN (${catIds})
       ${timeFilter}
-    GROUP BY ca.descricao, sc.total_suites
+    GROUP BY ca.descricao, sc.suite_dias
     ORDER BY total_value DESC
   `
 
   const { rows } = await pool.query<SuiteCatRow>(sql, [isoStart, isoEnd])
 
   return rows.map((r) => {
-    const totalRentals    = Number(r.total_rentals)      || 0
-    const totalValue      = Number(r.total_value)         || 0  // valortotal = locação + consumo - desconto
-    const rentalRevenue   = Number(r.rental_revenue)     || 0  // valorliquidolocacao — base do RevPAR
-    const trevparRevenue  = Number(r.trevpar_revenue)    || 0
-    const occupiedTime    = Number(r.total_occupied_time) || 0
-    const suitesInCat     = Number(r.total_suites)        || 1
+    const totalRentals    = Number(r.total_rentals)         || 0
+    const totalValue      = Number(r.total_value)            || 0  // valortotal = locação + consumo - desconto
+    const rentalRevenue   = Number(r.rental_revenue)        || 0  // valorliquidolocacao — base do RevPAR
+    const trevparRevenue  = Number(r.trevpar_revenue)       || 0
+    const occupiedTime    = Number(r.total_occupied_time)    || 0
+    const suiteDiasCat    = Number(r.suite_dias_categoria)  || 1
 
     const ticketAverage   = totalRentals > 0 ? +(totalValue / totalRentals).toFixed(2) : 0
-    const giro            = +(totalRentals / suitesInCat / daysDiff).toFixed(2)
-    const revpar          = +(rentalRevenue / suitesInCat / daysDiff).toFixed(2)
-    const trevpar         = +(trevparRevenue / suitesInCat / daysDiff).toFixed(2)
-    const availableTime   = suitesInCat * daysDiff * 86_400
+    // Denominador agora é suítes-dia (já desconta bloqueios e considera janela)
+    const giro            = +(totalRentals / suiteDiasCat).toFixed(2)
+    const revpar          = +(rentalRevenue / suiteDiasCat).toFixed(2)
+    const trevpar         = +(trevparRevenue / suiteDiasCat).toFixed(2)
+    const availableTime   = suiteDiasCat * 86_400
     const occupancyRate   = availableTime > 0 ? +((occupiedTime / availableTime) * 100).toFixed(2) : 0
     const avgOccTime      = totalRentals > 0 ? secondsToHMS(occupiedTime / totalRentals) : '00:00:00'
 
@@ -327,11 +331,10 @@ interface WeekRow {
   dow:                string   // '0'..'6'
   total_rentals:      string
   rental_revenue:     string
-  total_suites:       string
-  dow_occurrences:    string
+  suite_dias_cat_dow: string
+  suite_dias_total_dow: string
   total_rentals_dow:  string
   total_revenue_dow:  string
-  all_suites:         string
 }
 
 async function queryWeekTables(
@@ -346,7 +349,10 @@ async function queryWeekTables(
   // CROSS JOIN entre categorias ativas × todos os DOW do período.
   // LEFT JOIN nos dados reais → dias sem locação aparecem com 0 (comportamento original).
   const sql = `
-    WITH categories_in_period AS (
+    WITH ${cteBaseSuiteDays(catIds)},
+    ${cteSuiteDaysByCategoryDow()},
+    ${cteSuiteDaysByDow()},
+    categories_in_period AS (
       -- Apenas categorias que tiveram ao menos 1 locação no período
       SELECT DISTINCT ca.descricao AS category
       FROM locacaoapartamento la
@@ -358,14 +364,6 @@ async function queryWeekTables(
         ${statusFilter}
         AND ca.id IN (${catIds})
         ${timeFilter}
-    ),
-    dow_occurrences AS (
-      -- Quantidade de ocorrências de cada dia da semana no período
-      SELECT
-        EXTRACT(DOW FROM gs::date) AS dow,
-        COUNT(*) AS n
-      FROM generate_series($1::date, $2::date - INTERVAL '1 day', '1 day'::interval) gs
-      GROUP BY EXTRACT(DOW FROM gs::date)
     ),
     rentals_cat_dow AS (
       SELECT
@@ -390,14 +388,6 @@ async function queryWeekTables(
         ${timeFilter}
       GROUP BY ca.descricao, dow
     ),
-    suites_por_cat AS (
-      SELECT ca.descricao AS descricao, COUNT(*) AS total_suites
-      FROM apartamento a
-      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      WHERE ca.id IN (${catIds}) AND a.dataexclusao IS NULL
-      GROUP BY ca.descricao
-    ),
-    all_suites AS (SELECT COALESCE(SUM(total_suites), 1) AS n FROM suites_por_cat),
     totals_by_dow AS (
       SELECT
         dow,
@@ -405,25 +395,28 @@ async function queryWeekTables(
         SUM(rental_revenue) AS rental_revenue
       FROM rentals_cat_dow
       GROUP BY dow
+    ),
+    dow_universe AS (
+      -- Universo de DOW que ocorreram no período (vem das suítes-dia)
+      SELECT DISTINCT dow FROM suite_dias_total_dow
     )
     -- CROSS JOIN: toda categoria × todo DOW do período, LEFT JOIN nos dados reais
     SELECT
       c.category,
-      occ.dow::int                          AS dow,
-      COALESCE(r.total_rentals,  0)         AS total_rentals,
-      COALESCE(r.rental_revenue, 0)         AS rental_revenue,
-      COALESCE(sc.total_suites,  1)         AS total_suites,
-      occ.n                                 AS dow_occurrences,
-      COALESCE(td.total_rentals,  0)        AS total_rentals_dow,
-      COALESCE(td.rental_revenue, 0)        AS total_revenue_dow,
-      al.n                                  AS all_suites
+      du.dow                                                  AS dow,
+      COALESCE(r.total_rentals,    0)                         AS total_rentals,
+      COALESCE(r.rental_revenue,   0)                         AS rental_revenue,
+      COALESCE(scd.suite_dias,     1)                         AS suite_dias_cat_dow,
+      COALESCE(sdtd.suite_dias,    1)                         AS suite_dias_total_dow,
+      COALESCE(td.total_rentals,   0)                         AS total_rentals_dow,
+      COALESCE(td.rental_revenue,  0)                         AS total_revenue_dow
     FROM categories_in_period c
-    CROSS JOIN dow_occurrences occ
-    LEFT JOIN suites_por_cat  sc ON c.category = sc.descricao
-    LEFT JOIN rentals_cat_dow  r ON c.category = r.category AND occ.dow = r.dow
-    LEFT JOIN totals_by_dow   td ON occ.dow = td.dow
-    CROSS JOIN all_suites al
-    ORDER BY c.category, occ.dow
+    CROSS JOIN dow_universe du
+    LEFT JOIN suite_dias_cat_dow scd  ON c.category = scd.categoria AND du.dow = scd.dow
+    LEFT JOIN suite_dias_total_dow sdtd ON du.dow = sdtd.dow
+    LEFT JOIN rentals_cat_dow      r  ON c.category = r.category AND du.dow = r.dow
+    LEFT JOIN totals_by_dow       td  ON du.dow = td.dow
+    ORDER BY c.category, du.dow
   `
 
   const { rows } = await pool.query<WeekRow>(sql, [isoStart, isoEnd])
@@ -436,18 +429,18 @@ async function queryWeekTables(
     const dayName    = DOW_TO_PT[dow]
     if (!dayName) continue
 
-    const catRentals  = Number(r.total_rentals)     || 0
-    const catRevenue  = Number(r.rental_revenue)    || 0
-    const suitesInCat = Number(r.total_suites)      || 1
-    const occurrences = Number(r.dow_occurrences)   || 1
-    const totRentals  = Number(r.total_rentals_dow) || 0
-    const totRevenue  = Number(r.total_revenue_dow) || 0
-    const allSuites   = Number(r.all_suites)        || 1
+    const catRentals       = Number(r.total_rentals)        || 0
+    const catRevenue       = Number(r.rental_revenue)       || 0
+    const suiteDiasCatDow  = Number(r.suite_dias_cat_dow)   || 1
+    const suiteDiasTotDow  = Number(r.suite_dias_total_dow) || 1
+    const totRentals       = Number(r.total_rentals_dow)    || 0
+    const totRevenue       = Number(r.total_revenue_dow)    || 0
 
-    const giro       = +(catRentals  / suitesInCat / occurrences).toFixed(2)
-    const totalGiro  = +(totRentals  / allSuites   / occurrences).toFixed(2)
-    const revpar     = +(catRevenue  / suitesInCat / occurrences).toFixed(2)
-    const totalRevpar = +(totRevenue / allSuites   / occurrences).toFixed(2)
+    // Denominador = suite-dias daquele DOW (já desconta bloqueios)
+    const giro        = +(catRentals  / suiteDiasCatDow).toFixed(2)
+    const totalGiro   = +(totRentals  / suiteDiasTotDow).toFixed(2)
+    const revpar      = +(catRevenue  / suiteDiasCatDow).toFixed(2)
+    const totalRevpar = +(totRevenue  / suiteDiasTotDow).toFixed(2)
 
     if (!giroMap.has(r.category))   giroMap.set(r.category, {})
     if (!revparMap.has(r.category)) revparMap.set(r.category, {})
@@ -467,7 +460,7 @@ async function queryWeekTables(
 interface TotalRevOccRow {
   rental_revenue:     string
   total_occupied_time: string
-  total_suites:       string
+  total_suite_dias:   string
 }
 
 async function queryTotalRevOcc(
@@ -475,18 +468,18 @@ async function queryTotalRevOcc(
   catIds: string,
   isoStart: string,
   isoEnd: string,
-  daysDiff: number,
+  _daysDiff: number,
   timeFilter = '',
   statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
   dateCol = 'la.datainicialdaocupacao',
 ): Promise<{ totalRevpar: number; totalOccupancyRate: number }> {
   const sql = `
+    WITH ${cteBaseSuiteDays(catIds)},
+    ${cteSuiteDaysTotal()}
     SELECT
       COALESCE(SUM(CAST(la.valorliquidolocacao AS DECIMAL(15,4))), 0) AS rental_revenue,
       COALESCE(SUM(EXTRACT(EPOCH FROM la.datafinaldaocupacao - la.datainicialdaocupacao)), 0) AS total_occupied_time,
-      (SELECT COUNT(*) FROM apartamento a2
-       INNER JOIN categoriaapartamento ca2 ON a2.id_categoriaapartamento = ca2.id
-       WHERE ca2.id IN (${catIds}) AND a2.dataexclusao IS NULL) AS total_suites
+      (SELECT suite_dias FROM suite_dias_total) AS total_suite_dias
     FROM locacaoapartamento la
     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
     INNER JOIN apartamento a        ON aps.id_apartamento = a.id
@@ -502,10 +495,10 @@ async function queryTotalRevOcc(
   const r = rows[0]
   const rentalRevenue  = Number(r.rental_revenue)      || 0
   const occupiedTime   = Number(r.total_occupied_time)  || 0
-  const totalSuites    = Number(r.total_suites)          || 1
+  const totalSuiteDias = Number(r.total_suite_dias)    || 1
 
-  const totalRevpar      = +(rentalRevenue / totalSuites / daysDiff).toFixed(2)
-  const availableTime    = totalSuites * daysDiff * 86_400
+  const totalRevpar      = +(rentalRevenue / totalSuiteDias).toFixed(2)
+  const availableTime    = totalSuiteDias * 86_400
   const totalOccupancyRate = availableTime > 0 ? +((occupiedTime / availableTime) * 100).toFixed(2) : 0
 
   return { totalRevpar, totalOccupancyRate }

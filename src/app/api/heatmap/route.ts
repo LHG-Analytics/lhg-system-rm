@@ -2,6 +2,12 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
+import {
+  cteBaseSuiteDays,
+  cteSuiteDaysTotal,
+  cteSuiteDaysByCategoryDow,
+  cteSuiteDaysByDow,
+} from '@/lib/automo/suite-days'
 import { isValidIsoDate, resolvePreset } from '@/lib/date-range'
 import type { Database } from '@/types/database.types'
 
@@ -67,21 +73,25 @@ function giroEventsSelect(
   return `
     SELECT
       ca.id  AS category_id,
-      cs.suites,
       ${dowCase(col)} AS day_name,
+      EXTRACT(DOW FROM
+        CASE WHEN EXTRACT(HOUR FROM ${col}) < 6
+          THEN ${col} - INTERVAL '1 day'
+          ELSE ${col}
+        END
+      )::int AS dow,
       EXTRACT(HOUR FROM ${col})::INT AS hour_of_day,
       COUNT(*) AS rentals
     FROM locacaoapartamento la
     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
     INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-    INNER JOIN category_suites cs ON ca.id = cs.id
     WHERE ${col} >= '${startDate}'::date
       AND ${col} <  ('${endDate}'::date + INTERVAL '1 day')
       ${statusFilter}
       ${extraWhere}
       AND ca.id IN (${idList})
-    GROUP BY ca.id, cs.suites, day_name, hour_of_day`
+    GROUP BY ca.id, day_name, dow, hour_of_day`
 }
 
 function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'"): string {
@@ -96,34 +106,19 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: st
     dateType === 'checkout' ? checkoutSel :
     `${checkinSel}\n        UNION ALL\n${checkoutSel}`
 
+  // Denominador: suite_dias_cat_dow (suítes-dia daquela categoria nesse DOW, descontando bloqueios)
   return `
-    WITH date_occurrences AS (
-      SELECT
-        CASE EXTRACT(DOW FROM d::date)
-          WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
-          WHEN 3 THEN 'Quarta'  WHEN 4 THEN 'Quinta'  WHEN 5 THEN 'Sexta'
-          WHEN 6 THEN 'Sabado'
-        END AS day_name,
-        COUNT(*) AS n_days
-      FROM generate_series('${startDate}'::date, '${endDate}'::date, '1 day'::interval) AS d
-      GROUP BY day_name
-    ),
-    category_suites AS (
-      SELECT ca.id, COUNT(a.id) AS suites
-      FROM apartamento a
-      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
-      GROUP BY ca.id
-    ),
+    WITH ${cteBaseSuiteDays(idList, `'${startDate}'::date`, `('${endDate}'::date + INTERVAL '1 day')`)},
+    ${cteSuiteDaysByCategoryDow()},
     events AS (${eventsCTE}
     )
     SELECT
       e.day_name,
       e.hour_of_day,
-      ROUND(SUM(e.rentals::DECIMAL / e.suites) / dc.n_days, 2)::float AS value
+      ROUND(SUM(e.rentals::DECIMAL / scd.suite_dias), 2)::float AS value
     FROM events e
-    JOIN date_occurrences dc ON dc.day_name = e.day_name
-    GROUP BY e.day_name, e.hour_of_day, dc.n_days
+    JOIN suite_dias_cat_dow scd ON scd.id_categoria = e.category_id AND scd.dow = e.dow
+    GROUP BY e.day_name, e.hour_of_day
     ORDER BY ${orderDay('e')}, e.hour_of_day`
 }
 
@@ -134,29 +129,19 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
       ? `la.datafinaldaocupacao >= '${startDate}'::date AND la.datafinaldaocupacao < ('${endDate}'::date + INTERVAL '1 day')`
       : `la.datainicialdaocupacao >= '${startDate}'::date AND la.datainicialdaocupacao < ('${endDate}'::date + INTERVAL '1 day')`
 
+  // Denominador: suite_dias_total_dow (suítes-dia totais do DOW, descontando bloqueios)
   return `
-    WITH date_occurrences AS (
-      SELECT
-        CASE EXTRACT(DOW FROM d::date)
-          WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
-          WHEN 3 THEN 'Quarta'  WHEN 4 THEN 'Quinta'  WHEN 5 THEN 'Sexta'
-          WHEN 6 THEN 'Sabado'
-        END AS day_name,
-        COUNT(*) AS n_days
-      FROM generate_series('${startDate}'::date, '${endDate}'::date, '1 day'::interval) AS d
-      GROUP BY day_name
-    ),
-    capacity AS (
-      SELECT COUNT(*) AS total_suites
-      FROM apartamento a
-      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
-    ),
+    WITH ${cteBaseSuiteDays(idList, `'${startDate}'::date`, `('${endDate}'::date + INTERVAL '1 day')`)},
+    ${cteSuiteDaysByDow()},
     occupied_hours AS (
-      -- Expande cada locação pelos slots de 1h que ela ocupa (checkin até checkout)
-      -- Fórmula: suite_hours / (total_suites × n_dias_da_semana) × 100
       SELECT
         ${dowCase('h_ts')} AS day_name,
+        EXTRACT(DOW FROM
+          CASE WHEN EXTRACT(HOUR FROM h_ts) < 6
+            THEN h_ts - INTERVAL '1 day'
+            ELSE h_ts
+          END
+        )::int AS dow,
         EXTRACT(HOUR FROM h_ts)::INT AS hour_of_day,
         COUNT(*) AS suite_hours
       FROM locacaoapartamento la
@@ -172,15 +157,14 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
         ${statusFilter}
         AND la.datafinaldaocupacao IS NOT NULL
         AND ca.id IN (${idList})
-      GROUP BY day_name, hour_of_day
+      GROUP BY day_name, dow, hour_of_day
     )
     SELECT
       oh.day_name,
       oh.hour_of_day,
-      ROUND((oh.suite_hours::DECIMAL / (c.total_suites * dc.n_days)) * 100, 2)::float AS value
+      ROUND((oh.suite_hours::DECIMAL / sdtd.suite_dias) * 100, 2)::float AS value
     FROM occupied_hours oh
-    JOIN date_occurrences dc ON dc.day_name = oh.day_name
-    CROSS JOIN capacity c
+    JOIN suite_dias_total_dow sdtd ON sdtd.dow = oh.dow
     ORDER BY ${orderDay('oh')}, oh.hour_of_day`
 }
 
@@ -189,26 +173,17 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
 
 function buildRevparQuery(idList: string, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'"): string {
   return `
-    WITH date_occurrences AS (
-      SELECT
-        CASE EXTRACT(DOW FROM d::date)
-          WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
-          WHEN 3 THEN 'Quarta'  WHEN 4 THEN 'Quinta'  WHEN 5 THEN 'Sexta'
-          WHEN 6 THEN 'Sabado'
-        END AS day_name,
-        COUNT(*) AS n_days
-      FROM generate_series('${startDate}'::date, '${endDate}'::date, '1 day'::interval) AS d
-      GROUP BY day_name
-    ),
-    category_suites AS (
-      SELECT COUNT(a.id) AS total_suites
-      FROM apartamento a
-      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
-    ),
+    WITH ${cteBaseSuiteDays(idList, `'${startDate}'::date`, `('${endDate}'::date + INTERVAL '1 day')`)},
+    ${cteSuiteDaysByDow()},
     revenue_hours AS (
       SELECT
         ${dowCase('la.datainicialdaocupacao')} AS day_name,
+        EXTRACT(DOW FROM
+          CASE WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 6
+            THEN la.datainicialdaocupacao - INTERVAL '1 day'
+            ELSE la.datainicialdaocupacao
+          END
+        )::int AS dow,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
         SUM(CAST(la.valorliquidolocacao AS DECIMAL(15,4))) AS receita
       FROM locacaoapartamento la
@@ -219,15 +194,14 @@ function buildRevparQuery(idList: string, startDate: string, endDate: string, st
         AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
         ${statusFilter}
         AND ca.id IN (${idList})
-      GROUP BY day_name, hour_of_day
+      GROUP BY day_name, dow, hour_of_day
     )
     SELECT
       rh.day_name,
       rh.hour_of_day,
-      ROUND((rh.receita / (cs.total_suites * dc.n_days)), 2)::float AS value
+      ROUND((rh.receita / sdtd.suite_dias), 2)::float AS value
     FROM revenue_hours rh
-    JOIN date_occurrences dc ON dc.day_name = rh.day_name
-    CROSS JOIN category_suites cs
+    JOIN suite_dias_total_dow sdtd ON sdtd.dow = rh.dow
     ORDER BY ${orderDay('rh')}, rh.hour_of_day`
 }
 
@@ -236,25 +210,9 @@ function buildRevparQuery(idList: string, startDate: string, endDate: string, st
 
 function buildTrevparQuery(idList: string, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'"): string {
   return `
-    WITH date_occurrences AS (
-      SELECT
-        CASE EXTRACT(DOW FROM d::date)
-          WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
-          WHEN 3 THEN 'Quarta'  WHEN 4 THEN 'Quinta'  WHEN 5 THEN 'Sexta'
-          WHEN 6 THEN 'Sabado'
-        END AS day_name,
-        COUNT(*) AS n_days
-      FROM generate_series('${startDate}'::date, '${endDate}'::date, '1 day'::interval) AS d
-      GROUP BY day_name
-    ),
-    category_suites AS (
-      SELECT COUNT(a.id) AS total_suites
-      FROM apartamento a
-      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      WHERE ca.id IN (${idList}) AND a.dataexclusao IS NULL
-    ),
+    WITH ${cteBaseSuiteDays(idList, `'${startDate}'::date`, `('${endDate}'::date + INTERVAL '1 day')`)},
+    ${cteSuiteDaysByDow()},
     ab_por_locacao AS (
-      -- Consumo A&B vinculado à locação via vendalocacao → saidaestoque → saidaestoqueitem
       SELECT
         vl.id_locacaoapartamento,
         COALESCE(SUM(
@@ -269,6 +227,12 @@ function buildTrevparQuery(idList: string, startDate: string, endDate: string, s
     revenue_hours AS (
       SELECT
         ${dowCase('la.datainicialdaocupacao')} AS day_name,
+        EXTRACT(DOW FROM
+          CASE WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 6
+            THEN la.datainicialdaocupacao - INTERVAL '1 day'
+            ELSE la.datainicialdaocupacao
+          END
+        )::int AS dow,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
         SUM(
           COALESCE(CAST(la.valortotalpermanencia   AS DECIMAL(15,4)), 0) +
@@ -285,15 +249,14 @@ function buildTrevparQuery(idList: string, startDate: string, endDate: string, s
         AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
         ${statusFilter}
         AND ca.id IN (${idList})
-      GROUP BY day_name, hour_of_day
+      GROUP BY day_name, dow, hour_of_day
     )
     SELECT
       rh.day_name,
       rh.hour_of_day,
-      ROUND((rh.receita_total / (cs.total_suites * dc.n_days)), 2)::float AS value
+      ROUND((rh.receita_total / sdtd.suite_dias), 2)::float AS value
     FROM revenue_hours rh
-    JOIN date_occurrences dc ON dc.day_name = rh.day_name
-    CROSS JOIN category_suites cs
+    JOIN suite_dias_total_dow sdtd ON sdtd.dow = rh.dow
     ORDER BY ${orderDay('rh')}, rh.hour_of_day`
 }
 
