@@ -243,78 +243,6 @@ export type Database = {
           },
         ]
       }
-      kpi_snapshots: {
-        Row: {
-          avg_ticket: number | null
-          category_id: string | null
-          date: string
-          day_of_week: number | null
-          giro: number | null
-          hour: number | null
-          id: string
-          occupancy_rate: number | null
-          period_label: string | null
-          reservations_count: number | null
-          revenue: number | null
-          revpar: number | null
-          synced_at: string
-          tmo: string | null
-          trevpar: number | null
-          unit_id: string
-        }
-        Insert: {
-          avg_ticket?: number | null
-          category_id?: string | null
-          date: string
-          day_of_week?: number | null
-          giro?: number | null
-          hour?: number | null
-          id?: string
-          occupancy_rate?: number | null
-          period_label?: string | null
-          reservations_count?: number | null
-          revenue?: number | null
-          revpar?: number | null
-          synced_at?: string
-          tmo?: string | null
-          trevpar?: number | null
-          unit_id: string
-        }
-        Update: {
-          avg_ticket?: number | null
-          category_id?: string | null
-          date?: string
-          day_of_week?: number | null
-          giro?: number | null
-          hour?: number | null
-          id?: string
-          occupancy_rate?: number | null
-          period_label?: string | null
-          reservations_count?: number | null
-          revenue?: number | null
-          revpar?: number | null
-          synced_at?: string
-          tmo?: string | null
-          trevpar?: number | null
-          unit_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "kpi_snapshots_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "suite_categories"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "kpi_snapshots_unit_id_fkey"
-            columns: ["unit_id"]
-            isOneToOne: false
-            referencedRelation: "units"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       lhg_analytics_tokens: {
         Row: {
           access_token: string
@@ -673,7 +601,6 @@ export type Database = {
           focus_metric: string
           id: string
           is_active: boolean
-          last_context_update: string | null
           max_variation_pct: number
           postal_code: string | null
           pricing_strategy: string
@@ -694,7 +621,6 @@ export type Database = {
           focus_metric?: string
           id?: string
           is_active?: boolean
-          last_context_update?: string | null
           max_variation_pct?: number
           postal_code?: string | null
           pricing_strategy?: string
@@ -715,7 +641,6 @@ export type Database = {
           focus_metric?: string
           id?: string
           is_active?: boolean
-          last_context_update?: string | null
           max_variation_pct?: number
           postal_code?: string | null
           pricing_strategy?: string
@@ -733,51 +658,6 @@ export type Database = {
             foreignKeyName: "rm_agent_config_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: true
-            referencedRelation: "units"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      rm_agent_overrides: {
-        Row: {
-          created_at: string
-          decision_id: string
-          id: string
-          overridden_by: string
-          override_type: Database["public"]["Enums"]["override_type"]
-          reason: string | null
-          unit_id: string
-        }
-        Insert: {
-          created_at?: string
-          decision_id: string
-          id?: string
-          overridden_by: string
-          override_type: Database["public"]["Enums"]["override_type"]
-          reason?: string | null
-          unit_id: string
-        }
-        Update: {
-          created_at?: string
-          decision_id?: string
-          id?: string
-          overridden_by?: string
-          override_type?: Database["public"]["Enums"]["override_type"]
-          reason?: string | null
-          unit_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "rm_agent_overrides_decision_id_fkey"
-            columns: ["decision_id"]
-            isOneToOne: false
-            referencedRelation: "rm_price_decisions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "rm_agent_overrides_unit_id_fkey"
-            columns: ["unit_id"]
-            isOneToOne: false
             referencedRelation: "units"
             referencedColumns: ["id"]
           },
@@ -895,89 +775,6 @@ export type Database = {
           },
         ]
       }
-      rm_price_decisions: {
-        Row: {
-          category_id: string
-          channel_id: string | null
-          competitor_prices: Json | null
-          decided_at: string
-          id: string
-          occupancy_at_decision: number | null
-          period_id: string
-          price_after: number
-          price_before: number
-          rationale: string | null
-          reverted_by: string | null
-          trigger: string | null
-          unit_id: string
-          was_reverted: boolean
-          weather_snapshot: Json | null
-        }
-        Insert: {
-          category_id: string
-          channel_id?: string | null
-          competitor_prices?: Json | null
-          decided_at?: string
-          id?: string
-          occupancy_at_decision?: number | null
-          period_id: string
-          price_after: number
-          price_before: number
-          rationale?: string | null
-          reverted_by?: string | null
-          trigger?: string | null
-          unit_id: string
-          was_reverted?: boolean
-          weather_snapshot?: Json | null
-        }
-        Update: {
-          category_id?: string
-          channel_id?: string | null
-          competitor_prices?: Json | null
-          decided_at?: string
-          id?: string
-          occupancy_at_decision?: number | null
-          period_id?: string
-          price_after?: number
-          price_before?: number
-          rationale?: string | null
-          reverted_by?: string | null
-          trigger?: string | null
-          unit_id?: string
-          was_reverted?: boolean
-          weather_snapshot?: Json | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "rm_price_decisions_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "suite_categories"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "rm_price_decisions_channel_id_fkey"
-            columns: ["channel_id"]
-            isOneToOne: false
-            referencedRelation: "sales_channels"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "rm_price_decisions_period_id_fkey"
-            columns: ["period_id"]
-            isOneToOne: false
-            referencedRelation: "suite_periods"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "rm_price_decisions_unit_id_fkey"
-            columns: ["unit_id"]
-            isOneToOne: false
-            referencedRelation: "units"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       rm_price_guardrails: {
         Row: {
           category_id: string
@@ -1041,54 +838,6 @@ export type Database = {
           },
           {
             foreignKeyName: "rm_price_guardrails_unit_id_fkey"
-            columns: ["unit_id"]
-            isOneToOne: false
-            referencedRelation: "units"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      rm_weather_demand_patterns: {
-        Row: {
-          avg_demand_delta_pct: number
-          category_id: string
-          day_of_week: number | null
-          id: string
-          last_updated: string
-          sample_count: number
-          unit_id: string
-          weather_condition: string
-        }
-        Insert: {
-          avg_demand_delta_pct?: number
-          category_id: string
-          day_of_week?: number | null
-          id?: string
-          last_updated?: string
-          sample_count?: number
-          unit_id: string
-          weather_condition: string
-        }
-        Update: {
-          avg_demand_delta_pct?: number
-          category_id?: string
-          day_of_week?: number | null
-          id?: string
-          last_updated?: string
-          sample_count?: number
-          unit_id?: string
-          weather_condition?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "rm_weather_demand_patterns_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "suite_categories"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "rm_weather_demand_patterns_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "units"
