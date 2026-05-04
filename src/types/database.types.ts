@@ -780,6 +780,69 @@ export type Database = {
           },
         ]
       }
+      rm_anomalies: {
+        Row: {
+          baseline_mean: number | null
+          baseline_stddev: number | null
+          conv_id: string | null
+          current_value: number | null
+          detected_at: string
+          direction: string
+          id: string
+          metric: string
+          notes: string | null
+          scope: Json
+          status: string
+          unit_id: string
+          z_score: number
+        }
+        Insert: {
+          baseline_mean?: number | null
+          baseline_stddev?: number | null
+          conv_id?: string | null
+          current_value?: number | null
+          detected_at?: string
+          direction: string
+          id?: string
+          metric: string
+          notes?: string | null
+          scope: Json
+          status?: string
+          unit_id: string
+          z_score: number
+        }
+        Update: {
+          baseline_mean?: number | null
+          baseline_stddev?: number | null
+          conv_id?: string | null
+          current_value?: number | null
+          detected_at?: string
+          direction?: string
+          id?: string
+          metric?: string
+          notes?: string | null
+          scope?: Json
+          status?: string
+          unit_id?: string
+          z_score?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rm_anomalies_conv_id_fkey"
+            columns: ["conv_id"]
+            isOneToOne: false
+            referencedRelation: "rm_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rm_anomalies_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rm_conversations: {
         Row: {
           context_mode: string

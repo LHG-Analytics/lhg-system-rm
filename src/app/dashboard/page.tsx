@@ -7,6 +7,7 @@ import { DashboardCharts } from '@/components/dashboard/charts'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
 import { DateRangePicker } from '@/components/dashboard/date-range-picker'
 import { WeatherWidget } from '@/components/dashboard/weather-widget'
+import { AnomaliesWidget } from '@/components/dashboard/anomalies-widget'
 import { CompareButton } from '@/components/dashboard/compare-button'
 import { fetchWeatherData } from '@/lib/agente/weather'
 import { getWeatherInsight } from '@/lib/agente/weather-insight'
@@ -162,6 +163,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       </div>
 
       <WeatherWidget result={weatherResult} insight={weatherInsight} />
+      <AnomaliesWidget unitSlug={activeUnit.slug} />
       <DashboardKPICards company={company} />
       <DashboardCharts company={company} channelKPIs={channelKPIsResult} periodMix={periodMixResult} />
       <Suspense fallback={null}>

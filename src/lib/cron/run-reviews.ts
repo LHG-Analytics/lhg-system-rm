@@ -5,6 +5,7 @@ import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
 import { refreshEventsForUnit } from '@/lib/agente/events'
 import { recordWeatherObservation } from '@/lib/agente/weather-insight'
 import { recomputeSeasonality } from '@/lib/seasonality/compute'
+import { runAnomalyDetection } from '@/lib/anomaly/detector'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt } from '@/lib/agente/system-prompt'
@@ -425,6 +426,21 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
         } catch {
           // Não bloqueia o cron
         }
+      }
+
+      // HV3: detecção de anomalias diária. Notifica primeiro super_admin
+      // ou admin da unidade. Throttle interno garante 1x/semana por scope.
+      try {
+        const { data: notifyTarget } = await admin
+          .from('profiles')
+          .select('user_id')
+          .or(`unit_id.eq.${cfg.unit_id},unit_id.is.null`)
+          .in('role', ['super_admin', 'admin'])
+          .limit(1)
+          .maybeSingle()
+        await runAnomalyDetection(cfg.unit_id, unitSlug, notifyTarget?.user_id ?? null)
+      } catch {
+        // Não bloqueia o cron
       }
     }
   }
