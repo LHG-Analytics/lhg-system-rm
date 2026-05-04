@@ -1273,6 +1273,7 @@ export type Database = {
       }
       scheduled_reviews: {
         Row: {
+          checkpoint_days: number
           conv_id: string | null
           created_at: string
           created_by: string
@@ -1285,6 +1286,7 @@ export type Database = {
           unit_id: string
         }
         Insert: {
+          checkpoint_days?: number
           conv_id?: string | null
           created_at?: string
           created_by: string
@@ -1297,6 +1299,7 @@ export type Database = {
           unit_id: string
         }
         Update: {
+          checkpoint_days?: number
           conv_id?: string | null
           created_at?: string
           created_by?: string

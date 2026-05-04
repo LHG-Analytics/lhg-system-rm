@@ -945,18 +945,25 @@ export async function PATCH(req: NextRequest) {
     const today = new Date().toISOString().slice(0, 10)
     const admin = getAdminClient()
 
-    // Auto-agendar revisão +7 dias após aprovação (às 13:00 UTC = 10:00 BRT)
-    const reviewDate = new Date()
-    reviewDate.setDate(reviewDate.getDate() + 7)
-    reviewDate.setUTCHours(13, 0, 0, 0)
-    await admin.from('scheduled_reviews').insert({
-      unit_id:      proposal.unit_id,
-      created_by:   user.id,
-      scheduled_at: reviewDate.toISOString(),
-      proposal_id:  proposal.id,
-      note:         `Acompanhamento de precificação — verificar impacto da proposta aprovada em ${today} nos KPIs de giro, RevPAR e ocupação.`,
-      status:       'pending',
-    }).select('id').single()
+    // HV1: auto-agendar 3 revisões em checkpoints +7d, +14d, +28d.
+    // Cada uma compara contra kpi_baseline com janela igual e popula
+    // rm_pricing_lessons com a decomposição de lift correspondente.
+    const checkpointDays = [7, 14, 28] as const
+    const reviewInserts = checkpointDays.map((days) => {
+      const reviewDate = new Date()
+      reviewDate.setDate(reviewDate.getDate() + days)
+      reviewDate.setUTCHours(13, 0, 0, 0) // 10:00 BRT
+      return {
+        unit_id:         proposal.unit_id,
+        created_by:      user.id,
+        scheduled_at:    reviewDate.toISOString(),
+        proposal_id:     proposal.id,
+        checkpoint_days: days,
+        note:            `Acompanhamento +${days}d — comparação contra baseline congelado (mesma janela de ${days} dias) com decomposição de lift e atribuição ao pricing.`,
+        status:          'pending',
+      }
+    })
+    await admin.from('scheduled_reviews').insert(reviewInserts)
 
     const rowKey = (r: ParsedPriceRow) => `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`
 
