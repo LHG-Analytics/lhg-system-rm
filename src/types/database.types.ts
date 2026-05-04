@@ -1045,6 +1045,90 @@ export type Database = {
           },
         ]
       }
+      rm_pricing_lessons: {
+        Row: {
+          attributed_pricing_pct: number | null
+          canal: string | null
+          categoria: string
+          checkpoint_days: number
+          conditions: Json | null
+          delta_giro_pct: number | null
+          delta_ocupacao_pp: number | null
+          delta_revpar_pct: number | null
+          delta_ticket_pct: number | null
+          dia_tipo: string
+          id: string
+          implied_elasticity: number | null
+          observed_at: string
+          periodo: string
+          preco_anterior: number
+          preco_novo: number
+          proposal_id: string | null
+          unit_id: string
+          variacao_pct: number
+          verdict: string
+        }
+        Insert: {
+          attributed_pricing_pct?: number | null
+          canal?: string | null
+          categoria: string
+          checkpoint_days: number
+          conditions?: Json | null
+          delta_giro_pct?: number | null
+          delta_ocupacao_pp?: number | null
+          delta_revpar_pct?: number | null
+          delta_ticket_pct?: number | null
+          dia_tipo: string
+          id?: string
+          implied_elasticity?: number | null
+          observed_at?: string
+          periodo: string
+          preco_anterior: number
+          preco_novo: number
+          proposal_id?: string | null
+          unit_id: string
+          variacao_pct: number
+          verdict: string
+        }
+        Update: {
+          attributed_pricing_pct?: number | null
+          canal?: string | null
+          categoria?: string
+          checkpoint_days?: number
+          conditions?: Json | null
+          delta_giro_pct?: number | null
+          delta_ocupacao_pp?: number | null
+          delta_revpar_pct?: number | null
+          delta_ticket_pct?: number | null
+          dia_tipo?: string
+          id?: string
+          implied_elasticity?: number | null
+          observed_at?: string
+          periodo?: string
+          preco_anterior?: number
+          preco_novo?: number
+          proposal_id?: string | null
+          unit_id?: string
+          variacao_pct?: number
+          verdict?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rm_pricing_lessons_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "price_proposals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rm_pricing_lessons_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rm_weather_demand_patterns: {
         Row: {
           avg_demand_delta_pct: number

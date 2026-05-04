@@ -10,6 +10,7 @@ import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { buildProposalBaseline, defaultBaselineWindow } from '@/lib/agente/proposal-baseline'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
+import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import {
   buildPricingThresholdsBlock,
   buildSharedContextBlock,
@@ -461,10 +462,18 @@ export async function POST(req: NextRequest) {
       .order('canal'),
   ])
 
-  // Bloco de estrutura da unidade + lições de rejeições recentes (paralelo)
-  const [availabilityRows, rejectionLessonsBlock] = await Promise.all([
+  // Bloco de estrutura + lições de rejeições + lições de pricing (paralelo)
+  // Scenario para filtro de relevância: extrai categorias/períodos/dias da tabela ativa
+  const lessonsScenario = {
+    categorias: [...new Set(activeRows.map((r) => r.categoria))],
+    periodos:   [...new Set(activeRows.map((r) => r.periodo))],
+    dias_tipo:  [...new Set(activeRows.map((r) => r.dia_tipo))],
+    canais:     [...new Set(activeRows.map((r) => r.canal))],
+  }
+  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     buildRejectionLessonsBlock(unit.id).catch(() => ''),
+    buildLessonsBlockForUnit(unit.id, lessonsScenario).catch(() => ''),
   ])
   const unitStructureBlock = buildUnitStructureBlock(
     availabilityRows,
@@ -660,7 +669,7 @@ ${activeDiscounts.map((d) => {
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
+${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}

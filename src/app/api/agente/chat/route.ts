@@ -10,6 +10,7 @@ import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
+import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import {
   buildStrategicMemoryBlock,
   buildGuardrailsBlock,
@@ -531,9 +532,18 @@ export async function POST(req: NextRequest) {
   // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
   const capacityRows = capacityResult.status === 'fulfilled' ? (capacityResult.value.data ?? []) : []
   const channelCostRows = channelCostsResult.status === 'fulfilled' ? (channelCostsResult.value.data ?? []) : []
-  const [availabilityRows, rejectionLessonsBlock] = await Promise.all([
+  // Para chat, scenario é amplo (toda a unidade) — sem rows específicos como em propostas
+  const chatLessonsScenario = priceImports[0]?.rows?.length
+    ? {
+        categorias: [...new Set(priceImports[0].rows.map((r) => r.categoria))],
+        periodos:   [...new Set(priceImports[0].rows.map((r) => r.periodo))],
+        dias_tipo:  [...new Set(priceImports[0].rows.map((r) => r.dia_tipo))],
+      }
+    : {}
+  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     buildRejectionLessonsBlock(unit.id).catch(() => ''),
+    buildLessonsBlockForUnit(unit.id, chatLessonsScenario).catch(() => ''),
   ])
 
   // Memória estratégica + guardrails (texto) para o chat
@@ -581,6 +591,7 @@ export async function POST(req: NextRequest) {
     (competitorBlock ? `\n\n${competitorBlock}` : '') +
     (memoryBlock ? `\n\n${memoryBlock}` : '') +
     (guardrailsTextBlock ? `\n\n${guardrailsTextBlock}` : '') +
+    (pricingLessonsBlock ? `\n\n${pricingLessonsBlock}` : '') +
     (rejectionLessonsBlock ? `\n\n${rejectionLessonsBlock}` : '')
 
   const agentTools = {
