@@ -889,6 +889,41 @@ Auditoria profunda do agente em 2026-04-28; Fase 1 (quick wins) entregue em 2026
   - **Lição:** "tabela vazia" não é critério suficiente para drop. Precisa mapear para roadmap futuro antes — ler comentários SQL/schema e cruzar com issues abertas. Schema "vazio mas planejado" é diferente de "morto".
   - Mantidos do drop original: `lhg_analytics_tokens` (5 rows legado) e `weather_insight_cache` (em uso ativo)
 
+### Fase 2 — Auditoria do Agente RM (Linear LHG-162 a LHG-165 + LHG-171)
+Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo aproveitando bases de QW2/QW4. Agente passa de "analista junior" a sistema com loop de aprendizado fechado.
+
+- **LHG-171 / HV2:** rm_pricing_lessons + filtro de relevância
+  - Tabela: id, unit_id, proposal_id, checkpoint_days (7|14|28), categoria/periodo/dia_tipo/canal, preco_anterior/novo, variacao_pct, deltas REV/giro/ocup/ticket, attributed_pricing_pct, implied_elasticity, conditions JSONB, verdict (success/neutral/failure)
+  - `src/lib/agente/pricing-lessons.ts`: scoreLesson (+3 cat+per+dia, +2 cat+per, +1 cat, +1 weather, +1 events, decay 30d), getRelevantLessons (180d, top 5, score≥1), buildLessonsBlock (tabela markdown)
+  - Substitui filtro "últimas 3 propostas" por relevância contextual; chat e propostas injetam em paralelo
+
+- **LHG-162 / HV1:** Revisão multi-checkpoint com decomposição de lift
+  - `scheduled_reviews.checkpoint_days INTEGER`; aprovação cria 3 reviews (+7d/+14d/+28d) com UNIQUE(proposal_id, checkpoint_days)
+  - `src/lib/agente/lift-decomposition.ts`: decomposeLift atribui RevPAR delta a pricing/weather/events/seasonality/unexplained; events = diff baseline×pós × 3% por evento novo (placeholder até classificação por type); pricing = residual; judgeVerdict (success/neutral/failure baseado em pricing vs direção da variação)
+  - run-reviews.ts reescrito: lê kpi_baseline (LHG-156), buildCheckpointWindow com min(window, checkpoint) days para janela igual, decomposeLift, insertLessons (1 row por linha alterada da proposta com Δ%≥1), prompt enriquecido com decompositionBlock
+  - Notificação de revisão mostra lift principal: "+5.2% pricing"
+
+- **LHG-165 / HV5:** Sazonalidade aprendida do histórico
+  - Tabela `unit_seasonality` (date_key MM-DD ou YYYY-MM-DD, factors revpar/giro/ocup/ticket, n_observations, stddev_revpar)
+  - `src/lib/seasonality/compute.ts`: factor_kpi(D) = kpi(D) / median(kpi de ±15 dias). recomputeSeasonality consome trailing year do Automo (com denominador suite-dias disponíveis — LHG-172). getUpcomingSeasonalFactors retorna próximos 30 dias. buildSeasonalityBlock filtra apenas dias quentes (>1.15) ou frios (<0.85)
+  - Hook semanal (UTCDay===0) em run-reviews.ts — Hobby tier 2 cron slots
+  - POST `/api/admin/recompute-seasonality` para bypass manual
+  - **Limitação:** 1 ano de dados → confidence='low'; refinará conforme acumular ciclos
+
+- **LHG-163 / HV3:** Anomaly detection diário (z-score)
+  - Tabela `rm_anomalies` (metric, scope JSONB, current/baseline_mean/stddev, z_score, direction positive/negative_outlier, status open/acknowledged/resolved)
+  - `src/lib/anomaly/detector.ts`: separa últimos 7d (current) vs 83d anteriores (baseline); z = (mean_recent - mean_baseline) / stddev_baseline; filtra |z|>2, n≥5, stddev>0
+  - Throttle: não duplica scope+metric com row aberto <7d; notifica in-app só anomalias negativas
+  - GET/PATCH `/api/admin/anomalies` (lista 14d / marca resolved/acknowledged)
+  - `AnomaliesWidget` no dashboard com botões "Investigar com agente" (cria conversa pré-formatada) e "Resolver"
+  - Hook diário em run-reviews.ts para todas as unidades
+
+- **LHG-164 / HV4:** Monitoramento de concorrentes — detecção + price gap
+  - `competitor_snapshots.price_changes JSONB`; nova tabela `rm_competitor_price_gaps` (categoria/periodo/dia_tipo, preco_nosso, mediana/min/max concorrentes, gap_pct, position underprice/aligned/overprice)
+  - `src/lib/competitors/detect-changes.ts`: detectPriceChanges compara com snapshot anterior do mesmo concorrente (notifica >=5%); computeAndPersistGaps cruza preços últimos 7d com tabela ativa (truncate+insert por unidade); buildCompetitorGapBlock top 15 |gap| desc
+  - Hook em competitor-analysis route após upsert do snapshot — falha silenciosa não bloqueia response
+  - **Decisão de escopo:** cron 2x/semana NÃO implementado (Apify limite + Hobby 2 slots ocupados). Modo "trigger ao salvar snapshot" — automação via cron fica para LHG-123 resolvido
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
