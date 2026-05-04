@@ -11,6 +11,7 @@ import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
+import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
 import {
   buildStrategicMemoryBlock,
   buildGuardrailsBlock,
@@ -540,11 +541,13 @@ export async function POST(req: NextRequest) {
         dias_tipo:  [...new Set(priceImports[0].rows.map((r) => r.dia_tipo))],
       }
     : {}
-  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock] = await Promise.all([
+  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     buildRejectionLessonsBlock(unit.id).catch(() => ''),
     buildLessonsBlockForUnit(unit.id, chatLessonsScenario).catch(() => ''),
+    getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
   ])
+  const seasonalityBlock = buildSeasonalityBlock(seasonalFactors)
 
   // Memória estratégica + guardrails (texto) para o chat
   const approvedHistoryRows = approvedHistoryResult.status === 'fulfilled'
@@ -591,6 +594,7 @@ export async function POST(req: NextRequest) {
     (competitorBlock ? `\n\n${competitorBlock}` : '') +
     (memoryBlock ? `\n\n${memoryBlock}` : '') +
     (guardrailsTextBlock ? `\n\n${guardrailsTextBlock}` : '') +
+    (seasonalityBlock ? `\n\n${seasonalityBlock}` : '') +
     (pricingLessonsBlock ? `\n\n${pricingLessonsBlock}` : '') +
     (rejectionLessonsBlock ? `\n\n${rejectionLessonsBlock}` : '')
 

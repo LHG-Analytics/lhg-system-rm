@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
 import { refreshEventsForUnit } from '@/lib/agente/events'
 import { recordWeatherObservation } from '@/lib/agente/weather-insight'
+import { recomputeSeasonality } from '@/lib/seasonality/compute'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt } from '@/lib/agente/system-prompt'
@@ -413,6 +414,17 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
         })
       } catch {
         // Não bloqueia o cron
+      }
+
+      // HV5: recompute de sazonalidade 1x por semana (domingo). Hobby tier
+      // só permite 2 cron slots — consolidamos no cron de revisões diário.
+      const isSunday = new Date().getUTCDay() === 0
+      if (isSunday) {
+        try {
+          await recomputeSeasonality(cfg.unit_id, unitSlug)
+        } catch {
+          // Não bloqueia o cron
+        }
       }
     }
   }

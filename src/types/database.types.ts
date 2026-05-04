@@ -1543,6 +1543,56 @@ export type Database = {
           },
         ]
       }
+      unit_seasonality: {
+        Row: {
+          computed_at: string
+          date_key: string
+          date_key_type: string
+          giro_factor: number | null
+          id: string
+          n_observations: number
+          ocupacao_factor: number | null
+          revpar_factor: number | null
+          stddev_revpar: number | null
+          ticket_factor: number | null
+          unit_id: string
+        }
+        Insert: {
+          computed_at?: string
+          date_key: string
+          date_key_type: string
+          giro_factor?: number | null
+          id?: string
+          n_observations?: number
+          ocupacao_factor?: number | null
+          revpar_factor?: number | null
+          stddev_revpar?: number | null
+          ticket_factor?: number | null
+          unit_id: string
+        }
+        Update: {
+          computed_at?: string
+          date_key?: string
+          date_key_type?: string
+          giro_factor?: number | null
+          id?: string
+          n_observations?: number
+          ocupacao_factor?: number | null
+          revpar_factor?: number | null
+          stddev_revpar?: number | null
+          ticket_factor?: number | null
+          unit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unit_seasonality_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       units: {
         Row: {
           address: string | null
