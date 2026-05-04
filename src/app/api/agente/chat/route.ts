@@ -12,6 +12,7 @@ import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
+import { getRecentGaps, buildCompetitorGapBlock } from '@/lib/competitors/detect-changes'
 import {
   buildStrategicMemoryBlock,
   buildGuardrailsBlock,
@@ -541,13 +542,15 @@ export async function POST(req: NextRequest) {
         dias_tipo:  [...new Set(priceImports[0].rows.map((r) => r.dia_tipo))],
       }
     : {}
-  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors] = await Promise.all([
+  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     buildRejectionLessonsBlock(unit.id).catch(() => ''),
     buildLessonsBlockForUnit(unit.id, chatLessonsScenario).catch(() => ''),
     getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
+    getRecentGaps(unit.id).catch(() => []),
   ])
   const seasonalityBlock = buildSeasonalityBlock(seasonalFactors)
+  const competitorGapBlock = buildCompetitorGapBlock(competitorGaps)
 
   // Memória estratégica + guardrails (texto) para o chat
   const approvedHistoryRows = approvedHistoryResult.status === 'fulfilled'
@@ -595,6 +598,7 @@ export async function POST(req: NextRequest) {
     (memoryBlock ? `\n\n${memoryBlock}` : '') +
     (guardrailsTextBlock ? `\n\n${guardrailsTextBlock}` : '') +
     (seasonalityBlock ? `\n\n${seasonalityBlock}` : '') +
+    (competitorGapBlock ? `\n\n${competitorGapBlock}` : '') +
     (pricingLessonsBlock ? `\n\n${pricingLessonsBlock}` : '') +
     (rejectionLessonsBlock ? `\n\n${rejectionLessonsBlock}` : '')
 

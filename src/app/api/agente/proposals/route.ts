@@ -12,6 +12,7 @@ import { buildProposalBaseline, defaultBaselineWindow } from '@/lib/agente/propo
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
+import { getRecentGaps, buildCompetitorGapBlock } from '@/lib/competitors/detect-changes'
 import {
   buildPricingThresholdsBlock,
   buildSharedContextBlock,
@@ -471,13 +472,15 @@ export async function POST(req: NextRequest) {
     dias_tipo:  [...new Set(activeRows.map((r) => r.dia_tipo))],
     canais:     [...new Set(activeRows.map((r) => r.canal))],
   }
-  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors] = await Promise.all([
+  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     buildRejectionLessonsBlock(unit.id).catch(() => ''),
     buildLessonsBlockForUnit(unit.id, lessonsScenario).catch(() => ''),
     getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
+    getRecentGaps(unit.id).catch(() => []),
   ])
   const seasonalityBlock = buildSeasonalityBlock(seasonalFactors)
+  const competitorGapBlock = buildCompetitorGapBlock(competitorGaps)
   const unitStructureBlock = buildUnitStructureBlock(
     availabilityRows,
     (capacityData ?? []).map((r) => ({
@@ -672,7 +675,7 @@ ${activeDiscounts.map((d) => {
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${seasonalityBlock ? `\n${seasonalityBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
+${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${seasonalityBlock ? `\n${seasonalityBlock}\n` : ''}${competitorGapBlock ? `\n${competitorGapBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}

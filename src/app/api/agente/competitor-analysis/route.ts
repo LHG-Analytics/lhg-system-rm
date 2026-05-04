@@ -228,6 +228,17 @@ Se não encontrar preços estruturados, retorne: {"prices":[],"nota":"motivo bre
     .single()
 
   if (saveError) throw new Error(saveError.message)
+
+  // HV4: detectar mudanças de preço vs snapshot anterior + recomputar gaps
+  // Não bloqueia o response — roda em background com after()
+  try {
+    const { detectPriceChanges, computeAndPersistGaps } = await import('@/lib/competitors/detect-changes')
+    await detectPriceChanges(saved.id, null) // notify=null por enquanto (notify em LHG-164)
+    await computeAndPersistGaps(unitId)
+  } catch (e) {
+    console.error('[competitor-analysis] HV4 detect/gap falhou (não bloqueia):', e)
+  }
+
   return saved as unknown as CompetitorSnapshot
 }
 

@@ -149,6 +149,7 @@ export type Database = {
           competitor_url: string
           id: string
           mapped_prices: Json
+          price_changes: Json | null
           raw_text: string | null
           scraped_at: string
           status: string
@@ -160,6 +161,7 @@ export type Database = {
           competitor_url: string
           id?: string
           mapped_prices?: Json
+          price_changes?: Json | null
           raw_text?: string | null
           scraped_at?: string
           status?: string
@@ -171,6 +173,7 @@ export type Database = {
           competitor_url?: string
           id?: string
           mapped_prices?: Json
+          price_changes?: Json | null
           raw_text?: string | null
           scraped_at?: string
           status?: string
@@ -836,6 +839,75 @@ export type Database = {
           },
           {
             foreignKeyName: "rm_anomalies_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rm_competitor_price_gaps: {
+        Row: {
+          categoria_competitor: string | null
+          categoria_nossa: string
+          competitor_name: string
+          computed_at: string
+          dia_tipo: string
+          gap_pct: number
+          id: string
+          periodo: string
+          position: string
+          preco_concorrente_max: number | null
+          preco_concorrente_mediana: number
+          preco_concorrente_min: number | null
+          preco_nosso: number
+          snapshot_id: string | null
+          unit_id: string
+        }
+        Insert: {
+          categoria_competitor?: string | null
+          categoria_nossa: string
+          competitor_name: string
+          computed_at?: string
+          dia_tipo: string
+          gap_pct: number
+          id?: string
+          periodo: string
+          position: string
+          preco_concorrente_max?: number | null
+          preco_concorrente_mediana: number
+          preco_concorrente_min?: number | null
+          preco_nosso: number
+          snapshot_id?: string | null
+          unit_id: string
+        }
+        Update: {
+          categoria_competitor?: string | null
+          categoria_nossa?: string
+          competitor_name?: string
+          computed_at?: string
+          dia_tipo?: string
+          gap_pct?: number
+          id?: string
+          periodo?: string
+          position?: string
+          preco_concorrente_max?: number | null
+          preco_concorrente_mediana?: number
+          preco_concorrente_min?: number | null
+          preco_nosso?: number
+          snapshot_id?: string | null
+          unit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rm_competitor_price_gaps_snapshot_id_fkey"
+            columns: ["snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "competitor_snapshots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rm_competitor_price_gaps_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "units"
