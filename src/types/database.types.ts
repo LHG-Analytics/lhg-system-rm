@@ -1110,6 +1110,65 @@ export type Database = {
           },
         ]
       }
+      rm_price_elasticity: {
+        Row: {
+          categoria: string
+          computed_at: string
+          confidence_interval_high: number | null
+          confidence_interval_low: number | null
+          data_window_end: string | null
+          data_window_start: string | null
+          dia_tipo: string
+          elasticity: number | null
+          id: string
+          intercept: number | null
+          n_observations: number
+          periodo: string
+          r_squared: number | null
+          unit_id: string
+        }
+        Insert: {
+          categoria: string
+          computed_at?: string
+          confidence_interval_high?: number | null
+          confidence_interval_low?: number | null
+          data_window_end?: string | null
+          data_window_start?: string | null
+          dia_tipo: string
+          elasticity?: number | null
+          id?: string
+          intercept?: number | null
+          n_observations?: number
+          periodo: string
+          r_squared?: number | null
+          unit_id: string
+        }
+        Update: {
+          categoria?: string
+          computed_at?: string
+          confidence_interval_high?: number | null
+          confidence_interval_low?: number | null
+          data_window_end?: string | null
+          data_window_start?: string | null
+          dia_tipo?: string
+          elasticity?: number | null
+          id?: string
+          intercept?: number | null
+          n_observations?: number
+          periodo?: string
+          r_squared?: number | null
+          unit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rm_price_elasticity_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rm_price_guardrails: {
         Row: {
           category_id: string

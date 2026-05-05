@@ -11,6 +11,7 @@ import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { buildProposalBaseline, defaultBaselineWindow } from '@/lib/agente/proposal-baseline'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
+import { getElasticityForUnit, buildElasticityBlock, expectedRevenueChangePct } from '@/lib/pricing/elasticity'
 import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
 import { getRecentGaps, buildCompetitorGapBlock } from '@/lib/competitors/detect-changes'
 import {
@@ -30,6 +31,9 @@ export interface ProposedPriceRow extends ParsedPriceRow {
   preco_proposto: number
   variacao_pct: number
   justificativa: string
+  // Impacto esperado na receita calculado via elasticidade-preço (ST1).
+  // Null quando não há elasticidade confiável para a combinação.
+  expected_revenue_change_pct?: number | null
   // Sinal estruturado quando o clamp por guardrail entrou em ação.
   // Permite UI exibir badge específico em vez de parsear a string da justificativa.
   was_clamped?: boolean
@@ -472,13 +476,21 @@ export async function POST(req: NextRequest) {
     dias_tipo:  [...new Set(activeRows.map((r) => r.dia_tipo))],
     canais:     [...new Set(activeRows.map((r) => r.canal))],
   }
-  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps] = await Promise.all([
+  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps, elasticityRows] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     buildRejectionLessonsBlock(unit.id).catch(() => ''),
     buildLessonsBlockForUnit(unit.id, lessonsScenario).catch(() => ''),
     getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
     getRecentGaps(unit.id).catch(() => []),
+    getElasticityForUnit(unit.id).catch(() => []),
   ])
+  const elasticityBlock = buildElasticityBlock(elasticityRows)
+  // Mapa de lookup: "categoria|periodo|dia_tipo" → elasticidade (apenas com confiança high/medium)
+  const elasticityMap = new Map(
+    elasticityRows
+      .filter((r) => r.elasticity != null && (r.confidence === 'high' || r.confidence === 'medium'))
+      .map((r) => [`${r.categoria}|${r.periodo}|${r.dia_tipo}`, r.elasticity!])
+  )
   const seasonalityBlock = buildSeasonalityBlock(seasonalFactors)
   const competitorGapBlock = buildCompetitorGapBlock(competitorGaps)
   const unitStructureBlock = buildUnitStructureBlock(
@@ -675,7 +687,7 @@ ${activeDiscounts.map((d) => {
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${seasonalityBlock ? `\n${seasonalityBlock}\n` : ''}${competitorGapBlock ? `\n${competitorGapBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
+${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${seasonalityBlock ? `\n${seasonalityBlock}\n` : ''}${competitorGapBlock ? `\n${competitorGapBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${elasticityBlock ? `\n${elasticityBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
@@ -757,6 +769,15 @@ A cobertura total já foi instruída acima — NUNCA omita uma combinação que 
         // Justificativa fica limpa — UI mostra badge estruturado pelo was_clamped
       }
     }
+  }
+
+  // ─── Enriquecer linhas com impacto esperado de receita via elasticidade ─────
+  for (const row of parsed.rows) {
+    const elast = elasticityMap.get(`${row.categoria}|${row.periodo}|${row.dia_tipo}`)
+      ?? elasticityMap.get(`${row.categoria}|${row.periodo}|todos`)
+    row.expected_revenue_change_pct = elast != null
+      ? expectedRevenueChangePct(elast, row.variacao_pct)
+      : null
   }
 
   const { data: saved, error } = await supabase

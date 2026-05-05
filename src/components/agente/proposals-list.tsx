@@ -761,6 +761,7 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                             <TableHead className="text-right">Atual</TableHead>
                             <TableHead className="text-right">Proposto</TableHead>
                             <TableHead className="text-right">Variação</TableHead>
+                            <TableHead className="text-right">Rev. Esperada</TableHead>
                             <TableHead>Justificativa</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -814,6 +815,29 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                               </TableCell>
                               <TableCell className="text-right text-xs">
                                 <VariacaoBadge pct={row.variacao_pct} />
+                              </TableCell>
+                              <TableCell className="text-right text-xs tabular-nums">
+                                {row.expected_revenue_change_pct != null ? (
+                                  <TooltipProvider delayDuration={150}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className={cn(
+                                          'font-medium',
+                                          row.expected_revenue_change_pct > 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                                          row.expected_revenue_change_pct < 0 ? 'text-red-600 dark:text-red-400' :
+                                          'text-muted-foreground'
+                                        )}>
+                                          {row.expected_revenue_change_pct > 0 ? '+' : ''}{row.expected_revenue_change_pct.toFixed(1)}%
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left" className="max-w-[220px] text-xs">
+                                        Impacto estimado na receita considerando a elasticidade-preço observada historicamente nesta combinação.
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                ) : (
+                                  <span className="text-muted-foreground/40">—</span>
+                                )}
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground max-w-[240px]">
                                 {isEditing ? (

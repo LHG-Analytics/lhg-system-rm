@@ -6,6 +6,7 @@ import { refreshEventsForUnit } from '@/lib/agente/events'
 import { recordWeatherObservation } from '@/lib/agente/weather-insight'
 import { recomputeSeasonality } from '@/lib/seasonality/compute'
 import { runAnomalyDetection } from '@/lib/anomaly/detector'
+import { computeAndPersistElasticity } from '@/lib/pricing/elasticity'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt } from '@/lib/agente/system-prompt'
@@ -419,10 +420,22 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
 
       // HV5: recompute de sazonalidade 1x por semana (domingo). Hobby tier
       // só permite 2 cron slots — consolidamos no cron de revisões diário.
-      const isSunday = new Date().getUTCDay() === 0
+      const now = new Date()
+      const isSunday = now.getUTCDay() === 0
       if (isSunday) {
         try {
           await recomputeSeasonality(cfg.unit_id, unitSlug)
+        } catch {
+          // Não bloqueia o cron
+        }
+      }
+
+      // ST1: recompute de elasticidade-preço 1x por mês (dia 1). Usa rm_pricing_lessons
+      // acumulados pelos checkpoints para calcular regressão log-log por categoria/período/dia.
+      const isFirstOfMonth = now.getUTCDate() === 1
+      if (isFirstOfMonth) {
+        try {
+          await computeAndPersistElasticity(cfg.unit_id)
         } catch {
           // Não bloqueia o cron
         }
