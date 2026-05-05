@@ -457,7 +457,9 @@ export async function POST(req: NextRequest) {
 
   const FOCUS_LABELS: Record<string, string> = {
     revpar: 'RevPAR', ocupacao: 'Taxa de Ocupação', ticket: 'Ticket Médio',
-    trevpar: 'TRevPAR', giro: 'Giro', tmo: 'TMO', balanceado: 'Balanceado (sem foco definido)',
+    trevpar: 'TRevPAR', giro: 'Giro', tmo: 'TMO',
+    balanceado: 'Balanceado (sem foco definido)',
+    agressivo: 'Maximizar RevPAR + TRevPAR',
   }
   const agentConfigBlock = `## Configuração do agente RM (${unit.name})
 - **Estratégia de precificação:** ${pricingStrategy}

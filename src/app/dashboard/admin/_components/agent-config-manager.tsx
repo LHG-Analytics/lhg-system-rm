@@ -63,7 +63,7 @@ const STRATEGY_OPTIONS = [
 
 const METRIC_OPTIONS = [
   { value: 'balanceado', label: 'Balanceado',   description: 'Otimiza todos os KPIs em conjunto: RevPAR, Giro, TRevPAR, Ocupação, Ticket e TMO (recomendado)' },
-  { value: 'agressivo',  label: 'Agressivo',    description: 'Maximiza RevPAR e TRevPAR com variações mais ousadas — aceita risco maior para ganho maior' },
+  { value: 'agressivo',  label: 'Maximizar RevPAR + TRevPAR', description: 'Foco em receita por apartamento e total. Use junto com estratégia "Agressivo" para variações ousadas.' },
   { value: 'revpar',     label: 'RevPAR',       description: 'Prioriza receita por apartamento disponível como critério principal' },
   { value: 'giro',       label: 'Giro',         description: 'Prioriza o número de locações por suíte — mais rotatividade, mais receita total' },
   { value: 'ocupacao',   label: 'Ocupação',     description: 'Maximiza taxa de ocupação, aceitando ticket menor se necessário' },
@@ -438,9 +438,9 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
             return (
               <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">
                 <div>
-                  <Label className="text-sm font-semibold">Regras de ajuste dinâmico</Label>
+                  <Label className="text-sm font-semibold">Regras de ajuste dinâmico <span className="text-[10px] text-muted-foreground font-normal">(fallback)</span></Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    O agente aplica estas regras ao diagnosticar e propor preços. Deixe em branco para não usar.
+                    Heurísticas usadas quando ainda não há lições aprendidas para o cenário. Conforme o agente acumula histórico de propostas aprovadas e suas revisões (+7d/+14d/+28d), as <strong>lições aprendidas têm precedência</strong> sobre estas regras. Deixe em branco para não usar.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

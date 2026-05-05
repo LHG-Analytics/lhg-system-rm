@@ -28,9 +28,10 @@ export function buildPricingThresholdsBlock(t: PricingThresholds | null | undefi
   if (t.ocupacao_high != null) lines.push(`- Taxa de ocupação > ${t.ocupacao_high}% → demanda inelástica, aumente preço em ~${pct}%`)
   if (t.ocupacao_low  != null) lines.push(`- Taxa de ocupação < ${t.ocupacao_low}% → demanda elástica, avalie redução de ~${pct}% ou pacote promocional`)
   if (!lines.length) return ''
-  return `## Regras de ajuste dinâmico configuradas pelo gestor
-Aplique estas regras ao diagnosticar e ao propor preços:
-${lines.join('\n')}`
+  return `## Regras de ajuste dinâmico configuradas pelo gestor (heurística de fallback)
+${lines.join('\n')}
+
+> ⚠️ **Precedência:** estas regras são heurísticas de fallback. Quando houver **lições aprendidas** (bloco "Lições aprendidas em propostas anteriores") relevantes ao cenário, **as lições têm precedência sobre estas regras** — elas refletem dados reais da unidade, não suposições. Use estas regras só para cenários sem histórico aprendido.`
 }
 
 // ─── Shared context (texto livre cadastrado pelo gestor) ─────────────────────

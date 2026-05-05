@@ -532,7 +532,7 @@ export async function POST(req: NextRequest) {
   }
   const focusLabel: Record<string, string> = {
     balanceado: 'Balanceado (todos os KPIs)',
-    agressivo:  'Agressivo (maximizar RevPAR + TRevPAR)',
+    agressivo:  'Maximizar RevPAR + TRevPAR',
     revpar:     'RevPAR',
     giro:       'Giro',
     ocupacao:   'Ocupação',
