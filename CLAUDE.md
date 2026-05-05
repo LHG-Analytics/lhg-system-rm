@@ -924,6 +924,17 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - Hook em competitor-analysis route após upsert do snapshot — falha silenciosa não bloqueia response
   - **Decisão de escopo:** cron 2x/semana NÃO implementado (Apify limite + Hobby 2 slots ocupados). Modo "trigger ao salvar snapshot" — automação via cron fica para LHG-123 resolvido
 
+### Fase 4 — Auditoria do Agente RM: Strategic (ST1–ST4)
+
+- **LHG-166 / ST1:** Elasticidade-preço calculada por categoria/período ✅ 2026-05-05
+  - Migration `rm_price_elasticity`: `elasticity`, `intercept`, `r_squared`, `n_observations`, IC 95%, `computed_at`, janela de dados; UNIQUE por `(unit_id, categoria, periodo, dia_tipo)`
+  - `src/lib/pricing/elasticity.ts`: OLS log-log `ln(1+Δg/100) = a + b·ln(1+Δp/100)`; funções `computeAndPersistElasticity`, `getElasticityForUnit`, `buildElasticityBlock`, `expectedRevenueChangePct`
+  - Cron diário: recomputa no 1º dia do mês via `run-reviews.ts` (sem slot extra — Hobby 2 slots ocupados)
+  - `proposals/route.ts`: elasticidade buscada em paralelo; bloco `## Elasticidades-preço observadas` injetado no prompt; `expected_revenue_change_pct` calculado server-side após clamp de guardrail
+  - `proposals-list.tsx`: coluna "Rev. Esperada" com cor verde/vermelho e tooltip; `—` quando sem elasticidade confiável
+  - Confiança: `high` (n≥10), `medium` (n 5–9), `low` (n 3–4); apenas high/medium usadas no `elasticityMap` do lookup
+  - **Armadilha:** `rm_pricing_lessons` acumula observações pelos checkpoints — no início (poucos checkpoints) todas as combinações terão `n_observations < 10`, portanto `expected_revenue_change_pct` retornará `null` até acumular dados suficientes
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
