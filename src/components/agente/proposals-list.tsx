@@ -45,6 +45,7 @@ import { RejectionDialog } from '@/components/agente/rejection-dialog'
 interface PendingReview {
   id: string
   scheduled_at: string
+  checkpoint_days: number  // 7 | 14 | 28
 }
 
 interface ProposalsListProps {
@@ -126,12 +127,15 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
   const [error, setError] = useState<string | null>(null)
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
-  // Reviews agendadas por proposal_id
-  const [pendingReviews, setPendingReviews] = useState<Map<string, PendingReview>>(new Map())
-  const [schedOpen, setSchedOpen] = useState<string | null>(null)   // proposal_id com picker aberto
+  // Reviews agendadas por proposal_id (até 3 — +7d, +14d, +28d)
+  const [pendingReviews, setPendingReviews] = useState<Map<string, PendingReview[]>>(new Map())
+  // schedOpen: id do scheduled_review com picker aberto (não proposal_id, pra permitir 3 pickers)
+  const [schedOpen, setSchedOpen] = useState<string | null>(null)
   const [schedDate, setSchedDate] = useState<Date | undefined>()
   const [schedTime, setSchedTime] = useState('10:00')
   const [schedWorking, setSchedWorking] = useState(false)
+  // Para "Agendar revisão" em propostas legadas (sem reviews): proposalId que está agendando do zero
+  const [schedNewProposalId, setSchedNewProposalId] = useState<string | null>(null)
 
   // Edição inline
   const [editing, setEditing] = useState<{ id: string; rows: ProposedPriceRow[] } | null>(null)
@@ -152,18 +156,28 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
       .catch(() => {})
   }, [refreshKey, unitSlug])
 
-  // Carrega revisões pendentes para cruzar com proposals
+  // Carrega revisões pendentes — múltiplas por proposta (1 por checkpoint_days: 7/14/28)
   const loadPendingReviews = useCallback(async () => {
     if (!unitSlug) return
     try {
       const res = await fetch(`/api/agente/scheduled-reviews?unitSlug=${unitSlug}`)
       const data = await res.json()
       if (!Array.isArray(data)) return
-      const map = new Map<string, PendingReview>()
+      const map = new Map<string, PendingReview[]>()
       for (const r of data) {
         if (r.proposal_id && r.status === 'pending') {
-          map.set(r.proposal_id, { id: r.id, scheduled_at: r.scheduled_at })
+          const list = map.get(r.proposal_id) ?? []
+          list.push({
+            id: r.id,
+            scheduled_at: r.scheduled_at,
+            checkpoint_days: r.checkpoint_days ?? 7,
+          })
+          map.set(r.proposal_id, list)
         }
+      }
+      // Ordena cada array por checkpoint_days asc (7, 14, 28)
+      for (const [k, v] of map) {
+        map.set(k, v.sort((a, b) => a.checkpoint_days - b.checkpoint_days))
       }
       setPendingReviews(map)
     } catch { /* silencioso */ }
@@ -261,14 +275,9 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
       if (!res.ok) throw new Error(data.error ?? 'Erro ao revisar proposta')
       setProposals((prev) => prev.map((p) => p.id === id ? data as PriceProposal : p))
       await loadPendingReviews()
-      if (status === 'approved') {
-        // Auto-abre o picker de data+hora para agendar o acompanhamento
-        const d = new Date()
-        d.setDate(d.getDate() + 7)
-        setSchedDate(d)
-        setSchedTime('10:00')
-        setSchedOpen(id)
-      }
+      // HV1: backend já cria 3 reviews (+7d/+14d/+28d) automaticamente ao aprovar.
+      // Picker não abre automaticamente — usuário pode reagendar individualmente
+      // cada checkpoint nos chips abaixo do header da proposta.
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
@@ -327,29 +336,30 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
     }
   }, [editing])
 
-  // Abre o picker para novo agendamento ou reagendamento
-  const openSchedPicker = useCallback((proposalId: string) => {
-    const existing = pendingReviews.get(proposalId)
-    if (existing) {
-      const d = parseISO(existing.scheduled_at)
-      setSchedDate(d)
-      const h = String(d.getHours()).padStart(2, '0')
-      const m = String(d.getMinutes()).padStart(2, '0')
-      setSchedTime(`${h}:${m}`)
-    } else {
-      const d = new Date()
-      d.setDate(d.getDate() + 7)
-      setSchedDate(d)
-      setSchedTime('10:00')
-    }
-    setSchedOpen(proposalId)
-  }, [pendingReviews])
+  // Abre picker para REAGENDAR uma review específica (já existe)
+  const openReschedulePicker = useCallback((review: PendingReview) => {
+    const d = parseISO(review.scheduled_at)
+    setSchedDate(d)
+    const h = String(d.getHours()).padStart(2, '0')
+    const m = String(d.getMinutes()).padStart(2, '0')
+    setSchedTime(`${h}:${m}`)
+    setSchedNewProposalId(null)
+    setSchedOpen(review.id)
+  }, [])
 
-  // Confirma agendamento (novo ou reagendamento)
-  const handleConfirmSchedule = useCallback(async (proposalId: string) => {
-    if (!schedDate) return
-    const proposal = proposals.find((p) => p.id === proposalId)
-    if (!proposal) return
+  // Abre picker para CRIAR uma review nova (proposta legada sem reviews)
+  const openNewSchedPicker = useCallback((proposalId: string) => {
+    const d = new Date()
+    d.setDate(d.getDate() + 7)
+    setSchedDate(d)
+    setSchedTime('10:00')
+    setSchedNewProposalId(proposalId)
+    setSchedOpen(`new:${proposalId}`)  // sentinel diferente do reviewId
+  }, [])
+
+  // Confirma agendamento (reagendar review existente OU criar review nova)
+  const handleConfirmSchedule = useCallback(async () => {
+    if (!schedDate || !schedOpen) return
 
     const [hh, mm] = schedTime.split(':').map(Number)
     const dt = new Date(schedDate)
@@ -358,36 +368,41 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
     setSchedWorking(true)
     setError(null)
     try {
-      const existing = pendingReviews.get(proposalId)
-      if (existing) {
-        const res = await fetch('/api/agente/scheduled-reviews', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: existing.id, scheduled_at: dt.toISOString() }),
-        })
-        if (!res.ok) throw new Error('Erro ao reagendar')
-      } else {
+      if (schedOpen.startsWith('new:') && schedNewProposalId) {
+        // Criar review nova para proposta legada
+        const proposal = proposals.find((p) => p.id === schedNewProposalId)
+        if (!proposal) throw new Error('Proposta não encontrada')
         const today = new Date().toISOString().slice(0, 10)
         const res = await fetch('/api/agente/scheduled-reviews', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             unit_id: proposal.unit_id,
-            proposal_id: proposalId,
+            proposal_id: schedNewProposalId,
             scheduled_at: dt.toISOString(),
-            note: `Acompanhamento de precificação — verificar impacto da proposta aprovada em ${today} nos KPIs de giro, RevPAR e ocupação.`,
+            checkpoint_days: 7,
+            note: `Acompanhamento +7d — verificar impacto da proposta aprovada em ${today} nos KPIs de giro, RevPAR e ocupação.`,
           }),
         })
         if (!res.ok) throw new Error((await res.json()).error ?? 'Erro ao agendar')
+      } else {
+        // Reagendar review existente (schedOpen é o id da review)
+        const res = await fetch('/api/agente/scheduled-reviews', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: schedOpen, scheduled_at: dt.toISOString() }),
+        })
+        if (!res.ok) throw new Error('Erro ao reagendar')
       }
       setSchedOpen(null)
+      setSchedNewProposalId(null)
       await loadPendingReviews()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
       setSchedWorking(false)
     }
-  }, [schedDate, schedTime, proposals, pendingReviews, loadPendingReviews])
+  }, [schedDate, schedTime, schedOpen, schedNewProposalId, proposals, loadPendingReviews])
 
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) return
@@ -503,7 +518,7 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
             const isReviewing = reviewing === proposal.id
             const isEditing = editing?.id === proposal.id
             const isHighlighted = selectedProposalId === proposal.id
-            const pendingReview = pendingReviews.get(proposal.id)
+            const proposalReviews = pendingReviews.get(proposal.id) ?? []
             const impact = calcImpact(proposal.rows)
 
             return (
@@ -584,43 +599,94 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                         <ExpandableText text={proposal.context} maxLength={160} />
                       </p>
                     )}
+
+                    {/* HV1: chips de revisão por checkpoint (+7d, +14d, +28d) */}
+                    {isApproved && isLatestApproved && proposalReviews.length > 0 && (
+                      <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                          Acompanhamento:
+                        </span>
+                        {proposalReviews.map((review) => (
+                          <Popover
+                            key={review.id}
+                            open={schedOpen === review.id}
+                            onOpenChange={(open) => { if (!open) setSchedOpen(null) }}
+                          >
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1 text-[11px] h-6 px-2 text-blue-600 border-blue-500/30 hover:bg-blue-500/10"
+                                onClick={() => openReschedulePicker(review)}
+                                title={`Revisão em ${review.checkpoint_days} dias após aprovação`}
+                              >
+                                <CalendarClock className="size-3" />
+                                +{review.checkpoint_days}d · {format(parseISO(review.scheduled_at), "dd/MM 'às' HH'h'mm", { locale: ptBR })}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-3 flex flex-col gap-3" align="start">
+                              <p className="text-xs font-medium text-muted-foreground">
+                                Reagendar revisão +{review.checkpoint_days}d:
+                              </p>
+                              <Calendar
+                                mode="single"
+                                selected={schedDate}
+                                onSelect={setSchedDate}
+                                disabled={(date) => date <= new Date()}
+                                locale={ptBR}
+                                className="p-0"
+                              />
+                              <div className="flex flex-col gap-1.5 border-t pt-3">
+                                <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                                  <Clock className="size-3" />
+                                  Horário da revisão
+                                </Label>
+                                <Input
+                                  type="time"
+                                  value={schedTime}
+                                  onChange={(e) => setSchedTime(e.target.value)}
+                                  className="h-8 text-sm appearance-none [&::-webkit-calendar-picker-indicator]:hidden"
+                                />
+                              </div>
+                              <Button
+                                size="sm"
+                                className="w-full gap-1.5"
+                                disabled={!schedDate || schedWorking}
+                                onClick={handleConfirmSchedule}
+                              >
+                                {schedWorking
+                                  ? <Loader2 className="size-3.5 animate-spin" />
+                                  : <CalendarPlus className="size-3.5" />
+                                }
+                                Confirmar reagendamento
+                              </Button>
+                            </PopoverContent>
+                          </Popover>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    {/* Botão de revisão — apenas na proposta aprovada mais recente */}
-                    {isApproved && isLatestApproved && (
+                    {/* Botão "Agendar revisão" — só pra propostas aprovadas legadas (sem reviews HV1) */}
+                    {isApproved && isLatestApproved && proposalReviews.length === 0 && (
                       <Popover
-                        open={schedOpen === proposal.id}
-                        onOpenChange={(open) => { if (!open) setSchedOpen(null) }}
+                        open={schedOpen === `new:${proposal.id}`}
+                        onOpenChange={(open) => { if (!open) { setSchedOpen(null); setSchedNewProposalId(null) } }}
                       >
                         <PopoverTrigger asChild>
-                          {pendingReview ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5 text-xs h-7 text-blue-600 border-blue-500/30 hover:bg-blue-500/10"
-                              onClick={() => openSchedPicker(proposal.id)}
-                            >
-                              <CalendarClock className="size-3.5" />
-                              {format(parseISO(pendingReview.scheduled_at), "dd/MM · HH'h'mm", { locale: ptBR })}
-                              · Reagendar
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5 text-xs h-7"
-                              onClick={() => openSchedPicker(proposal.id)}
-                            >
-                              <CalendarPlus className="size-3.5" />
-                              Agendar revisão
-                            </Button>
-                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5 text-xs h-7"
+                            onClick={() => openNewSchedPicker(proposal.id)}
+                          >
+                            <CalendarPlus className="size-3.5" />
+                            Agendar revisão
+                          </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-3 flex flex-col gap-3" align="end">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            {pendingReview ? 'Reagendar revisão:' : 'Agendar revisão:'}
-                          </p>
+                          <p className="text-xs font-medium text-muted-foreground">Agendar revisão:</p>
                           <Calendar
                             mode="single"
                             selected={schedDate}
@@ -645,13 +711,13 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                             size="sm"
                             className="w-full gap-1.5"
                             disabled={!schedDate || schedWorking}
-                            onClick={() => handleConfirmSchedule(proposal.id)}
+                            onClick={handleConfirmSchedule}
                           >
                             {schedWorking
                               ? <Loader2 className="size-3.5 animate-spin" />
                               : <CalendarPlus className="size-3.5" />
                             }
-                            {pendingReview ? 'Confirmar reagendamento' : 'Confirmar agendamento'}
+                            Confirmar agendamento
                           </Button>
                         </PopoverContent>
                       </Popover>

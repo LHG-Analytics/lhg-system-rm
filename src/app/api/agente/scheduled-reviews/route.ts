@@ -11,6 +11,7 @@ export interface ScheduledReview {
   note: string | null
   proposal_id: string | null
   proposal_created_at: string | null  // vindo do join
+  checkpoint_days: number  // 7 | 14 | 28 — HV1
   status: 'pending' | 'running' | 'done' | 'failed'
   conv_id: string | null
   created_at: string
@@ -63,15 +64,19 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return new Response('Não autorizado', { status: 401 })
 
-  const body = await req.json() as { unit_id: string; proposal_id: string; scheduled_at: string; note: string }
+  const body = await req.json() as { unit_id: string; proposal_id: string; scheduled_at: string; note: string; checkpoint_days?: number }
   const { unit_id, proposal_id, scheduled_at, note } = body
+  const checkpoint_days = body.checkpoint_days ?? 7
   if (!unit_id || !proposal_id || !scheduled_at) {
     return new Response('unit_id, proposal_id e scheduled_at são obrigatórios', { status: 400 })
+  }
+  if (![7, 14, 28].includes(checkpoint_days)) {
+    return new Response('checkpoint_days deve ser 7, 14 ou 28', { status: 400 })
   }
 
   const { data, error } = await supabase
     .from('scheduled_reviews')
-    .insert({ unit_id, proposal_id, scheduled_at, note, created_by: user.id, status: 'pending' })
+    .insert({ unit_id, proposal_id, scheduled_at, note, created_by: user.id, status: 'pending', checkpoint_days })
     .select('*')
     .single()
 
