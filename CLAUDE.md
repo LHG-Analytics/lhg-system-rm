@@ -986,6 +986,18 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - Compatibilidade retroativa: URLs antigas `?tab=guardrails/eventos/capacidade` mapeadas para sub-aba correspondente
   - Gear icon no header do agente mantido como acesso rápido via Sheet (sem alteração)
 
+- **LHG-180:** feat(onboarding): balão lateral, auto-checklist por estado do banco e remoção de step de anomalias ✅ 2026-05-06
+  - **Fix duplo X:** `DialogContent` do shadcn já renderiza seu próprio botão via Radix — botão customizado removido
+  - **Balão do agente à esquerda do dialog:** `position: absolute; right: 100%; top: 1.5rem` com `overflow: visible` no `DialogContent`; seta apontando para a direita via CSS triangles; `hidden lg:flex` (só em telas largas)
+  - **Auto-checklist via API:** `GET /api/onboarding/status?unitSlug=` verifica estado real do banco — `Promise.allSettled` de 8 queries (price_imports, budget_sheet_url, competitor_snapshots, profiles count, proposals, approved proposals, pricing_lessons, snapshots done); steps detectados ficam com ícone azul + badge "automático", sem toggle manual
+  - **Step substituído:** "Investigar anomalias" → "Aprovar a primeira proposta" (anomalias não têm botão próprio; proposta é ação concreta e verificável)
+  - Arquivos: `onboarding-guide.tsx`, `api/onboarding/status/route.ts` (novo), `dashboard/layout.tsx` (prop `unitSlug`)
+
+- **LHG-181:** fix(agente): agente autônomo no foco — remover gate de objetivo pré-análise (Regra 13) ✅ 2026-05-06
+  - **Problema:** Regra 13 perguntava "Qual é o seu objetivo?" antes de qualquer análise via `sugerir_respostas`; redundante com `focus_metric`/`pricing_strategy` configurados no admin; bloqueava investigações válidas ("Investigar anomalias")
+  - **Solução:** Regra 13 reescrita — agente lê `focus_metric` da config; se "Balanceado", deriva foco dos dados (KPI mais distante do potencial); declara raciocínio no passo 1 do framework; `sugerir_respostas` de objetivo fica como refinamento pós-análise, nunca gate pré-análise
+  - Arquivo: `src/lib/agente/system-prompt.ts`
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
