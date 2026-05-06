@@ -711,8 +711,8 @@ export function AgenteChat({
 }
 
 const SUGESTOES = [
-  'Analise o desempenho por dia da semana e categoria',
-  'Quais categorias têm maior RevPAR?',
-  'Sugira ajustes de preço para o fim de semana',
-  'Compare o desempenho com o período anterior',
+  'Fazer diagnóstico completo e gerar proposta de preços',
+  'Revisar precificação do fim de semana',
+  'Analisar concorrentes e sugerir ajustes de preço',
+  'Investigar anomalias e oportunidades de melhoria',
 ]
