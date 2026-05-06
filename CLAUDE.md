@@ -1012,17 +1012,22 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - Arquivo: `src/lib/agente/system-prompt.ts`
 
 - **LHG-182:** feat(budget): orçamento dinâmico — receita total (loc + P&S) e configuração de abas/linhas por unidade ✅ 2026-05-06
-  - **Iter 1 — receita total:** sync lia apenas Locações-Comp; `receita_total = receita_locações + receita_prod_serv`; `ticket = receita_total / giro` (não mais da planilha); RevPAR inalterado (locações / suítes / dias)
-  - **Iter 2 — aba P&S configurável:** nome da aba "Produtos e Serviços-Com" movido para `budget_config` (igual a Locações-Comp)
-  - **Iter 3 — linhas dinâmicas:** `BudgetConfig JSONB` substitui colunas individuais — 7 campos: `locacoes_tab`, `locacoes_receita_row` (18), `locacoes_giro_row` (60), `locacoes_revpar_row` (74), `prod_serv_tab`, `prod_serv_produtos_row` (18), `prod_serv_servicos_row` (26)
+  - **Iter 1 — receita total:** `receita_total = receita_locações + receita_prod_serv`; RevPAR inalterado
+  - **Iter 2 — aba P&S configurável:** nome da aba movido para `budget_config` JSONB
+  - **Iter 3 — linhas dinâmicas:** `BudgetConfig` com 8 campos: `locacoes_tab`, `locacoes_receita_row` (18), `locacoes_total_row` (37), `locacoes_giro_row` (60), `locacoes_revpar_row` (74), `prod_serv_tab`, `prod_serv_produtos_row` (18), `prod_serv_servicos_row` (26)
+  - **Ticket exato:** `ticket = receita_total / total_locacoes` — `locacoes_total_row` é o nº absoluto de locações no mês (não taxa diária). Linhas por unidade: Lush Ipiranga=46, Lush Lapa/Tout=37, Altana=55, Andar de Cima=40
   - `resolveBudgetConfig(raw)` mescla DB com `DEFAULT_BUDGET_CONFIG` — retrocompat com config ausente
-  - `fetchLocacoesRows`: batchGet de 3 linhas (receita/giro/revpar) com números de linha dinâmicos
-  - `fetchProdServRows`: batchGet de 2 linhas (produtos/serviços); retorna `null` silenciosamente se aba não existir
   - Migration `20260506000004`: `budget_config JSONB DEFAULT {...}` em `rm_agent_config`
-  - UI `unit-settings.tsx`: duas seções com grid de inputs — "Aba de Locações" (nome + 3 linhas) e "Aba de Produtos e Serviços" (nome + 2 linhas)
-  - `BudgetSyncResult` inclui `receita_locacoes`, `receita_prod_serv` e `receita_total` para auditoria
-  - **Armadilha:** RevPAR NÃO muda — continua vindo da linha configura em `locacoes_revpar_row` (RevPAR = receita de locações / suítes / dias, não total)
+  - UI `unit-settings.tsx`: "Aba de Locações" (nome + 4 linhas: Receita/Total Loc./Giro/RevPAR) + "Aba de P&S" (nome + 2 linhas)
+  - **Armadilha:** giro da planilha é taxa diária (locações/suíte/dia ≈ 1.28), NÃO total de locações — usar `locacoes_total_row` para ticket
   - **Armadilha:** `valueRenderOption=UNFORMATTED_VALUE` obrigatório — sem ele a API retorna strings formatadas que quebram `Number()`
+
+- **fix(rls): admin com unit_id=null tem acesso global** ✅ 2026-05-06
+  - Root cause: `unit_id = current_user_unit_id()` avalia UNKNOWN (não FALSE) quando função retorna NULL → admin global era silenciosamente bloqueado em 16 tabelas
+  - Crítico: tabela `units` bloqueava dashboard inteiro (sem unidade → "Nenhuma unidade disponível")
+  - Migration `20260506000005`: adiciona `OR current_user_unit_id() IS NULL` nas policies de admin em: `units`, `rm_agent_config`, `price_proposals`, `price_imports`, `scheduled_reviews`, `profiles`, `agent_price_guardrails`, `unit_events`, `suite_categories`, `rm_weather_observations`, `sales_channels`, `rm_generated_prices`, `rm_price_guardrails`, `channel_sync_log`
+  - manager/viewer com unit_id=null NÃO ganham acesso global — só admin
+  - **Armadilha:** NULL = NULL é UNKNOWN em SQL, não TRUE — sempre checar `IS NULL` separadamente em policies RLS
 
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
