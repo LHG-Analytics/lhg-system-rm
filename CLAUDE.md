@@ -1011,6 +1011,16 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Solução:** Regra 13 reescrita — agente lê `focus_metric` da config; se "Balanceado", deriva foco dos dados (KPI mais distante do potencial); declara raciocínio no passo 1 do framework; `sugerir_respostas` de objetivo fica como refinamento pós-análise, nunca gate pré-análise
   - Arquivo: `src/lib/agente/system-prompt.ts`
 
+- **LHG-182:** feat(budget): receita total = locações + produtos/serviços no sync do orçamento ✅ 2026-05-06
+  - Root cause: sync lia apenas Locações-Comp → receita subestimada; ticket médio só de locações (sem produtos, bebidas, serviços)
+  - Nova função `fetchProdServRow`: busca L34 (TOTAL) da aba "Produtos e Serviços-Com", colunas C–N, em paralelo com Locações-Comp
+  - `receita_total = receita_locações + receita_prod_serv` por mês; `ticket = receita_total / giro` (não mais da planilha)
+  - `budget_yearly` e `unit_goals` passam a usar receita e ticket totais
+  - Degradação silenciosa: se aba de produtos não existir, sync continua com locações apenas
+  - `BudgetSyncResult` inclui `receita_locacoes`, `receita_prod_serv` e `receita_total` para auditoria
+  - UI de configurações exibe "Total (Loc + P&S)" com breakdown após sync
+  - **Armadilha:** RevPAR NÃO muda — continua vindo da linha 74 de Locações-Comp (RevPAR = receita de locações / suítes / dias)
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
