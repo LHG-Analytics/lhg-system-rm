@@ -965,6 +965,12 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - Nova aba "Performance" (`BarChart2`) no Agente RM ao lado de "Agenda"
   - Estado vazio orientativo quando não há checkpoints (aparecem após 7/14/28 dias das aprovações)
 
+- **LHG-177:** feat(admin): consolidar configurações do agente RM em local único ✅ 2026-05-06
+  - Admin page reorganizada: 4 abas top-level → 2 abas (Usuários | Agente RM)
+  - "Agente RM" contém 4 sub-abas: Estratégia (AgentConfigManager completo), Guardrails, Capacidade, Eventos
+  - Compatibilidade retroativa: URLs antigas `?tab=guardrails/eventos/capacidade` mapeadas para sub-aba correspondente
+  - Gear icon no header do agente mantido como acesso rápido via Sheet (sem alteração)
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
