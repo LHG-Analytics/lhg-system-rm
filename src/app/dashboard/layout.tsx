@@ -86,7 +86,7 @@ export default async function DashboardLayout({
           <SidebarTrigger className="-ml-1 md:hidden" />
           <Separator orientation="vertical" className="mr-2 h-4 md:hidden" />
           <div className="flex-1" />
-          <OnboardingGuide userRole={profile.role ?? ''} />
+          <OnboardingGuide userRole={profile.role ?? ''} unitSlug={activeUnit.slug} />
           <NotificationsBell />
           <ThemeToggle />
         </header>

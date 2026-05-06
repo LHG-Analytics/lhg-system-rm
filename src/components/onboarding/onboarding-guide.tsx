@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   LayoutDashboard, FileSpreadsheet, Bot, Building2, Globe, Users,
-  TrendingUp, Lightbulb, BarChart2, CheckCircle2, Circle, HelpCircle, Sparkles,
+  TrendingUp, ThumbsUp, BarChart2, CheckCircle2, Circle, HelpCircle, Sparkles,
 } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -80,18 +80,18 @@ const USAGE_STEPS: Step[] = [
   {
     id: 'generate-proposal',
     title: 'Gerar proposta de preços',
-    description: 'Acesse o Agente RM, peça diagnóstico completo e aprove a proposta na aba Propostas. O agente explica cada ajuste.',
+    description: 'Acesse o Agente RM, peça diagnóstico completo e salve a proposta para revisão.',
     link: '/dashboard/agente',
     linkLabel: 'Abrir Agente RM',
     icon: <Bot className="size-4" />,
   },
   {
-    id: 'check-anomalies',
-    title: 'Investigar anomalias',
-    description: 'O sistema detecta automaticamente quedas de RevPAR, giro ou ocupação fora do padrão. Use "Investigar com agente" para análise rápida.',
-    link: '/dashboard',
-    linkLabel: 'Ver anomalias',
-    icon: <Lightbulb className="size-4" />,
+    id: 'approve-proposal',
+    title: 'Aprovar a primeira proposta',
+    description: 'Na aba Propostas do Agente RM, revise os ajustes sugeridos e aprove a proposta. O agente explica cada decisão.',
+    link: '/dashboard/agente',
+    linkLabel: 'Ver Propostas',
+    icon: <ThumbsUp className="size-4" />,
   },
   {
     id: 'agent-performance',
@@ -130,15 +130,26 @@ function saveState(state: { dismissed: boolean; done: string[] }) {
 
 interface Props {
   userRole: string
+  unitSlug: string
 }
 
-export function OnboardingGuide({ userRole }: Props) {
+export function OnboardingGuide({ userRole, unitSlug }: Props) {
   const router = useRouter()
   const isAdmin = userRole === 'super_admin' || userRole === 'admin'
 
-  const [open, setOpen]   = useState(false)
-  const [done, setDone]   = useState<string[]>([])
-  const [mounted, setMounted] = useState(false)
+  const [open, setOpen]           = useState(false)
+  const [done, setDone]           = useState<string[]>([])
+  const [autoCompleted, setAutoCompleted] = useState<string[]>([])
+  const [mounted, setMounted]     = useState(false)
+
+  const fetchAutoStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/onboarding/status?unitSlug=${unitSlug}`)
+      if (!res.ok) return
+      const data = await res.json()
+      setAutoCompleted(data.completedSteps ?? [])
+    } catch { /* noop */ }
+  }, [unitSlug])
 
   useEffect(() => {
     setMounted(true)
@@ -146,19 +157,27 @@ export function OnboardingGuide({ userRole }: Props) {
     const state = loadState()
     setDone(state.done)
     if (!state.dismissed) {
-      // Pequeno delay para não sobrepor animação de carregamento
       const t = setTimeout(() => setOpen(true), 800)
       return () => clearTimeout(t)
     }
   }, [isAdmin])
 
+  // Busca status automático toda vez que o diálogo abre
+  useEffect(() => {
+    if (open && isAdmin) fetchAutoStatus()
+  }, [open, isAdmin, fetchAutoStatus])
+
   if (!isAdmin || !mounted) return null
 
-  const totalSetup = SETUP_STEPS.length
-  const doneSetup  = SETUP_STEPS.filter((s) => done.includes(s.id)).length
+  const isDone = (id: string) => done.includes(id) || autoCompleted.includes(id)
+  const isAuto = (id: string) => autoCompleted.includes(id)
+
+  const totalSetup  = SETUP_STEPS.length
+  const doneSetup   = SETUP_STEPS.filter((s) => isDone(s.id)).length
   const allSetupDone = doneSetup === totalSetup
 
   function toggleStep(id: string) {
+    if (isAuto(id)) return // bloqueado: detectado automaticamente
     const next = done.includes(id) ? done.filter((d) => d !== id) : [...done, id]
     setDone(next)
     saveState({ ...loadState(), done: next })
@@ -187,7 +206,29 @@ export function OnboardingGuide({ userRole }: Props) {
 
       {/* ── Dialog ───────────────────────────────────────────────────── */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-xl max-h-[85vh] flex flex-col p-0 gap-0">
+        <DialogContent
+          className="max-w-xl max-h-[80vh] flex flex-col p-0 gap-0"
+          style={{ overflow: 'visible' }}
+        >
+          {/* ── Balão do agente — fora da caixa, acima do diálogo ───── */}
+          <div className="absolute bottom-full left-0 right-0 pb-3 px-1 pointer-events-none">
+            <div className="flex gap-3 items-end">
+              <div className="shrink-0 flex size-9 items-center justify-center rounded-full bg-primary/10 ring-2 ring-primary/20 mb-0.5">
+                <Sparkles className="size-4 text-primary" />
+              </div>
+              <div className="flex-1 relative bg-card border rounded-2xl rounded-bl-sm px-4 py-3 text-sm leading-relaxed shadow-md">
+                Olá! Este guia mostra os{' '}
+                <span className="font-medium">passos essenciais</span>{' '}
+                para configurar e usar o sistema — da importação de preços até a rotina
+                semanal de análise. Marque cada etapa conforme você avança. 🚀
+                {/* Seta apontando para o diálogo abaixo */}
+                <span className="absolute -bottom-[9px] left-7 block w-0 h-0 border-l-[9px] border-r-[9px] border-t-[9px] border-l-transparent border-r-transparent border-t-border" />
+                <span className="absolute -bottom-[8px] left-7 block w-0 h-0 border-l-[9px] border-r-[9px] border-t-[9px] border-l-transparent border-r-transparent border-t-card" />
+              </div>
+            </div>
+          </div>
+
+          {/* ── Header ──────────────────────────────────────────────── */}
           <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
             <DialogTitle className="text-base font-semibold">
               Guia de início rápido
@@ -208,15 +249,6 @@ export function OnboardingGuide({ userRole }: Props) {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-            {/* ── Balão de boas-vindas ──────────────────────────────────── */}
-            <div className="flex gap-3">
-              <div className="shrink-0 flex size-8 items-center justify-center rounded-full bg-primary/10 mt-0.5">
-                <Sparkles className="size-4 text-primary" />
-              </div>
-              <div className="rounded-2xl rounded-tl-sm bg-muted/60 px-4 py-3 text-sm leading-relaxed text-foreground">
-                Olá! Sou o Agente RM. Este guia mostra os <span className="font-medium">passos essenciais</span> para você tirar o máximo do sistema — da configuração inicial até a rotina semanal de análise e aprovação de propostas. Marque cada etapa conforme avança. 🚀
-              </div>
-            </div>
             {/* ── Configuração inicial ──────────────────────────────── */}
             <section>
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -228,7 +260,8 @@ export function OnboardingGuide({ userRole }: Props) {
                     key={step.id}
                     step={step}
                     index={i + 1}
-                    isDone={done.includes(step.id)}
+                    isDone={isDone(step.id)}
+                    isAuto={isAuto(step.id)}
                     onToggle={() => toggleStep(step.id)}
                     onNavigate={() => handleNavigate(step.link)}
                   />
@@ -247,7 +280,8 @@ export function OnboardingGuide({ userRole }: Props) {
                     key={step.id}
                     step={step}
                     index={i + 1}
-                    isDone={done.includes(step.id)}
+                    isDone={isDone(step.id)}
+                    isAuto={isAuto(step.id)}
                     onToggle={() => toggleStep(step.id)}
                     onNavigate={() => handleNavigate(step.link)}
                   />
@@ -275,10 +309,11 @@ export function OnboardingGuide({ userRole }: Props) {
 
 // ─── StepRow ─────────────────────────────────────────────────────────────────
 
-function StepRow({ step, index, isDone, onToggle, onNavigate }: {
+function StepRow({ step, index, isDone, isAuto, onToggle, onNavigate }: {
   step: Step
   index: number
   isDone: boolean
+  isAuto: boolean
   onToggle: () => void
   onNavigate: () => void
 }) {
@@ -290,17 +325,22 @@ function StepRow({ step, index, isDone, onToggle, onNavigate }: {
       {/* Checkbox */}
       <button
         onClick={onToggle}
-        className="shrink-0 mt-0.5"
-        title={isDone ? 'Marcar como pendente' : 'Marcar como concluído'}
+        disabled={isAuto}
+        className={cn('shrink-0 mt-0.5', isAuto ? 'cursor-default' : 'cursor-pointer')}
+        title={
+          isAuto
+            ? 'Concluído automaticamente pelo sistema'
+            : isDone ? 'Marcar como pendente' : 'Marcar como concluído'
+        }
       >
         {isDone
-          ? <CheckCircle2 className="size-4.5 text-emerald-500" />
+          ? <CheckCircle2 className={cn('size-4.5', isAuto ? 'text-primary' : 'text-emerald-500')} />
           : <Circle className="size-4.5 text-muted-foreground/40" />}
       </button>
 
       {/* Conteúdo */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 mb-0.5">
+        <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
           <span className="text-[10px] font-medium text-muted-foreground/60 tabular-nums">
             {String(index).padStart(2, '0')}
           </span>
@@ -310,6 +350,11 @@ function StepRow({ step, index, isDone, onToggle, onNavigate }: {
           )}>
             {step.title}
           </span>
+          {isAuto && (
+            <span className="text-[9px] font-medium text-primary/80 bg-primary/10 rounded px-1 py-px">
+              automático
+            </span>
+          )}
         </div>
         <p className="text-[11px] text-muted-foreground leading-snug">
           {step.description}
