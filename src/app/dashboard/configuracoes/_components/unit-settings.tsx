@@ -62,7 +62,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
       city:             existing?.city ?? 'Sao Paulo,BR',
       timezone:         existing?.timezone ?? 'America/Sao_Paulo',
       budget_sheet_url: existing?.budget_sheet_url ?? '',
-      budget_sheet_tab: existing?.budget_sheet_tab ?? 'DRE',
+      budget_sheet_tab: existing?.budget_sheet_tab ?? 'Locações-Comp',
       budget_last_sync: existing?.budget_last_sync ?? null,
     }
   }
@@ -232,7 +232,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs">Nome da aba</Label>
               <Input
-                placeholder="DRE"
+                placeholder="Locações-Comp"
                 value={current.budget_sheet_tab}
                 onChange={(e) => updateCurrent({ budget_sheet_tab: e.target.value })}
                 disabled={saving}
@@ -243,7 +243,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
             <p className="text-[11px] text-muted-foreground">
               Compartilhe a planilha com o e-mail da conta de serviço configurada em{' '}
               <span className="font-mono bg-muted px-1 rounded">GOOGLE_SERVICE_ACCOUNT_JSON</span>.
-              A meta de receita é lida da linha 11 (RECEITA BRUTA DE LOCAÇÕES) da coluna de Orçamento do mês atual.
+              A meta de receita é lida da linha 18 (Resultado Projetado) da aba <span className="font-mono bg-muted px-1 rounded">Locações-Comp</span>, coluna do mês atual.
             </p>
           </div>
 
@@ -264,7 +264,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
               {syncResult?.isFallback && (
                 <span className="text-amber-600 flex items-center gap-1">
                   <AlertCircle className="size-3" />
-                  Mai. sem orçamento — usando {MONTHS_PT[(syncResult.month - 1)]}.: {formatCurrency(syncResult.receita)}
+                  Mês atual vazio — usando {MONTHS_PT[(syncResult.month - 1)]}.: {formatCurrency(syncResult.receita)}
                 </span>
               )}
               {syncError && (

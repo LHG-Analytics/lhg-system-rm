@@ -23,13 +23,12 @@ export interface BudgetSyncResult {
   synced_at: string
 }
 
-// ─── Estrutura da DRE (planilha padronizada) ─────────────────────────────────
-// Col B  = labels
-// Para mês M (1=jan): coluna de Orçamento = índice 4 * M (D=4, H=8, L=12...)
-// Row 11 = RECEITA BRUTA DE LOCAÇÕES → unit_goals.receita_mensal
+// ─── Estrutura da aba Locações-Comp (planilha padronizada) ───────────────────
+// Linha 18 = "Resultado Projetado" — total RECEITA DE LOCAÇÕES orçada por mês
+// Colunas: C=jan(M=1), D=fev(M=2), E=mar(M=3)... → índice = 2 + M
+// Todos os 12 meses estão pré-preenchidos no orçamento anual
 
-const RECEITA_LOCACOES_ROW = 11   // RECEITA BRUTA DE LOCAÇÕES
-const RECEITA_OPERACIONAL_ROW = 9 // RECEITA OPERACIONAL BRUTA (fallback para validação)
+const RESULTADO_PROJETADO_ROW = 18  // Resultado Projetado (total receita locações)
 
 // ─── Auth: JWT RS256 para service account ─────────────────────────────────────
 
@@ -70,8 +69,8 @@ async function getAccessToken(creds: ServiceAccountCredentials): Promise<string>
   return data.access_token
 }
 
-// ─── Coluna de Orçamento para o mês M (1-indexed) ────────────────────────────
-// Layout: col D(4)=Jan Orç, col H(8)=Fev Orç, col L(12)=Mar Orç ...
+// ─── Coluna para o mês M (1-indexed) na aba Locações-Comp ────────────────────
+// Layout: C(3)=jan, D(4)=fev, E(5)=mar ... → índice = 2 + M
 
 function colLetter(n: number): string {
   let result = ''
@@ -84,7 +83,7 @@ function colLetter(n: number): string {
 }
 
 function orcamentoCol(month: number): string {
-  return colLetter(4 * month)
+  return colLetter(2 + month)
 }
 
 // ─── Extrai spreadsheet ID da URL ─────────────────────────────────────────────
@@ -142,31 +141,17 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
   const tab = config.budget_sheet_tab ?? 'DRE'
 
   const now = new Date()
-  const currentMonth = now.getMonth() + 1
-  const year         = now.getFullYear()
+  const month = now.getMonth() + 1
+  const year  = now.getFullYear()
+  const col   = orcamentoCol(month)
 
   const token = await getAccessToken(creds)
 
-  // Tenta o mês atual; se vazio, retroage até encontrar orçamento preenchido (mínimo: mês 1)
-  let receita: number | null = null
-  let usedMonth = currentMonth
+  // Lê linha 18 (Resultado Projetado) da coluna do mês atual
+  const receita = await fetchCell(token, spreadsheetId, tab, col, RESULTADO_PROJETADO_ROW)
 
-  for (let m = currentMonth; m >= 1; m--) {
-    const col = orcamentoCol(m)
-    const [locacoes, operacional] = await Promise.all([
-      fetchCell(token, spreadsheetId, tab, col, RECEITA_LOCACOES_ROW),
-      fetchCell(token, spreadsheetId, tab, col, RECEITA_OPERACIONAL_ROW),
-    ])
-    const valor = locacoes ?? operacional
-    if (valor != null && valor > 0) {
-      receita   = valor
-      usedMonth = m
-      break
-    }
-  }
-
-  if (receita == null) {
-    throw new Error(`Nenhum orçamento encontrado na aba "${tab}" até o mês ${currentMonth}. Verifique se a planilha está correta e compartilhada com o service account.`)
+  if (receita == null || receita === 0) {
+    throw new Error(`Orçamento não encontrado em ${tab}!${col}${RESULTADO_PROJETADO_ROW} (mês ${month}). Verifique se a aba está correta e o valor preenchido.`)
   }
 
   // Atualiza unit_goals.receita_mensal preservando os outros campos
@@ -182,5 +167,5 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
     })
     .eq('unit_id', unitId)
 
-  return { receita_locacoes: Math.round(receita), month: usedMonth, year, synced_at: syncedAt }
+  return { receita_locacoes: Math.round(receita), month, year, synced_at: syncedAt }
 }
