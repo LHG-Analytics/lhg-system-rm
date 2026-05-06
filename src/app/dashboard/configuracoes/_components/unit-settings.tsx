@@ -230,7 +230,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
             <div>
               <p className="text-xs font-semibold">Orçamento — Google Sheets</p>
               <p className="text-[11px] text-muted-foreground">
-                Receita total = locações + produtos + serviços. Ticket = receita total / giro.
+                Receita total = locações + produtos + serviços. Ticket = receita total / total de locações.
               </p>
             </div>
           </div>
@@ -251,8 +251,8 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
             {/* ── Locações ── */}
             <div className="rounded-lg border px-3 py-2.5 flex flex-col gap-2">
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Aba de Locações</p>
-              <div className="grid grid-cols-4 gap-2">
-                <div className="col-span-1 flex flex-col gap-1">
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
                   <Label className="text-[10px] text-muted-foreground">Nome da aba</Label>
                   <Input
                     placeholder={DEFAULT_BUDGET_CONFIG.locacoes_tab}
@@ -262,38 +262,51 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
                     className="h-8 text-xs"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
-                  <Label className="text-[10px] text-muted-foreground">Linha Receita</Label>
-                  <Input
-                    type="number" min={1}
-                    placeholder={String(DEFAULT_BUDGET_CONFIG.locacoes_receita_row)}
-                    value={cfg.locacoes_receita_row}
-                    onChange={(e) => updateBudgetConfig({ locacoes_receita_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.locacoes_receita_row })}
-                    disabled={saving}
-                    className="h-8 text-xs"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <Label className="text-[10px] text-muted-foreground">Linha Giro</Label>
-                  <Input
-                    type="number" min={1}
-                    placeholder={String(DEFAULT_BUDGET_CONFIG.locacoes_giro_row)}
-                    value={cfg.locacoes_giro_row}
-                    onChange={(e) => updateBudgetConfig({ locacoes_giro_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.locacoes_giro_row })}
-                    disabled={saving}
-                    className="h-8 text-xs"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <Label className="text-[10px] text-muted-foreground">Linha RevPAR</Label>
-                  <Input
-                    type="number" min={1}
-                    placeholder={String(DEFAULT_BUDGET_CONFIG.locacoes_revpar_row)}
-                    value={cfg.locacoes_revpar_row}
-                    onChange={(e) => updateBudgetConfig({ locacoes_revpar_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.locacoes_revpar_row })}
-                    disabled={saving}
-                    className="h-8 text-xs"
-                  />
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="flex flex-col gap-1">
+                    <Label className="text-[10px] text-muted-foreground">Linha Receita</Label>
+                    <Input
+                      type="number" min={1}
+                      placeholder={String(DEFAULT_BUDGET_CONFIG.locacoes_receita_row)}
+                      value={cfg.locacoes_receita_row}
+                      onChange={(e) => updateBudgetConfig({ locacoes_receita_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.locacoes_receita_row })}
+                      disabled={saving}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label className="text-[10px] text-muted-foreground">Linha Total Loc.</Label>
+                    <Input
+                      type="number" min={1}
+                      placeholder={String(DEFAULT_BUDGET_CONFIG.locacoes_total_row)}
+                      value={cfg.locacoes_total_row}
+                      onChange={(e) => updateBudgetConfig({ locacoes_total_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.locacoes_total_row })}
+                      disabled={saving}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label className="text-[10px] text-muted-foreground">Linha Giro</Label>
+                    <Input
+                      type="number" min={1}
+                      placeholder={String(DEFAULT_BUDGET_CONFIG.locacoes_giro_row)}
+                      value={cfg.locacoes_giro_row}
+                      onChange={(e) => updateBudgetConfig({ locacoes_giro_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.locacoes_giro_row })}
+                      disabled={saving}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label className="text-[10px] text-muted-foreground">Linha RevPAR</Label>
+                    <Input
+                      type="number" min={1}
+                      placeholder={String(DEFAULT_BUDGET_CONFIG.locacoes_revpar_row)}
+                      value={cfg.locacoes_revpar_row}
+                      onChange={(e) => updateBudgetConfig({ locacoes_revpar_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.locacoes_revpar_row })}
+                      disabled={saving}
+                      className="h-8 text-xs"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

@@ -29,10 +29,11 @@ export type BudgetYearly = Record<string, Record<string, BudgetMonthData>>
 // Configuração dinâmica das abas e linhas da planilha de orçamento
 export interface BudgetConfig {
   // Aba de locações
-  locacoes_tab:         string  // ex: 'Locações-Comp'
-  locacoes_receita_row: number  // linha do resultado projetado de locações
-  locacoes_giro_row:    number  // linha do giro (nº de locações)
-  locacoes_revpar_row:  number  // linha do RevPAR médio
+  locacoes_tab:          string  // ex: 'Locações-Comp'
+  locacoes_receita_row:  number  // linha do resultado projetado de locações
+  locacoes_total_row:    number  // linha do total de locações (nº absoluto de locações no mês)
+  locacoes_giro_row:     number  // linha do giro (taxa diária — locações/suíte/dia)
+  locacoes_revpar_row:   number  // linha do RevPAR médio
   // Aba de produtos e serviços
   prod_serv_tab:           string  // ex: 'Produtos e Serviços-Com'
   prod_serv_produtos_row:  number  // linha do resultado de produtos
@@ -42,6 +43,7 @@ export interface BudgetConfig {
 export const DEFAULT_BUDGET_CONFIG: BudgetConfig = {
   locacoes_tab:            'Locações-Comp',
   locacoes_receita_row:    18,
+  locacoes_total_row:      37,
   locacoes_giro_row:       60,
   locacoes_revpar_row:     74,
   prod_serv_tab:           'Produtos e Serviços-Com',
@@ -141,13 +143,14 @@ async function fetchLocacoesRows(
   token: string,
   spreadsheetId: string,
   cfg: BudgetConfig,
-): Promise<{ receita: (number | null)[]; giro: (number | null)[]; revpar: (number | null)[] }> {
+): Promise<{ receita: (number | null)[]; total: (number | null)[]; giro: (number | null)[]; revpar: (number | null)[] }> {
   const colStart = colLetter(COL_FIRST_MONTH)       // C
   const colEnd   = colLetter(COL_FIRST_MONTH + 11)  // N
   const tab      = cfg.locacoes_tab
 
   const ranges = [
     `${tab}!${colStart}${cfg.locacoes_receita_row}:${colEnd}${cfg.locacoes_receita_row}`,
+    `${tab}!${colStart}${cfg.locacoes_total_row}:${colEnd}${cfg.locacoes_total_row}`,
     `${tab}!${colStart}${cfg.locacoes_giro_row}:${colEnd}${cfg.locacoes_giro_row}`,
     `${tab}!${colStart}${cfg.locacoes_revpar_row}:${colEnd}${cfg.locacoes_revpar_row}`,
   ]
@@ -163,8 +166,9 @@ async function fetchLocacoesRows(
   const data = await res.json() as { valueRanges: { values?: (string | number)[][] }[] }
   return {
     receita: parseSheetRow(data.valueRanges[0]?.values?.[0] ?? []),
-    giro:    parseSheetRow(data.valueRanges[1]?.values?.[0] ?? []),
-    revpar:  parseSheetRow(data.valueRanges[2]?.values?.[0] ?? []),
+    total:   parseSheetRow(data.valueRanges[1]?.values?.[0] ?? []),
+    giro:    parseSheetRow(data.valueRanges[2]?.values?.[0] ?? []),
+    revpar:  parseSheetRow(data.valueRanges[3]?.values?.[0] ?? []),
   }
 }
 
@@ -203,13 +207,14 @@ export function resolveBudgetConfig(raw: unknown): BudgetConfig {
   const d = DEFAULT_BUDGET_CONFIG
   const c = (raw && typeof raw === 'object' ? raw : {}) as Partial<BudgetConfig>
   return {
-    locacoes_tab:            (c.locacoes_tab            as string)  || d.locacoes_tab,
-    locacoes_receita_row:    Number(c.locacoes_receita_row)    || d.locacoes_receita_row,
-    locacoes_giro_row:       Number(c.locacoes_giro_row)       || d.locacoes_giro_row,
-    locacoes_revpar_row:     Number(c.locacoes_revpar_row)     || d.locacoes_revpar_row,
-    prod_serv_tab:           (c.prod_serv_tab            as string)  || d.prod_serv_tab,
-    prod_serv_produtos_row:  Number(c.prod_serv_produtos_row)  || d.prod_serv_produtos_row,
-    prod_serv_servicos_row:  Number(c.prod_serv_servicos_row)  || d.prod_serv_servicos_row,
+    locacoes_tab:            (c.locacoes_tab           as string) || d.locacoes_tab,
+    locacoes_receita_row:    Number(c.locacoes_receita_row)   || d.locacoes_receita_row,
+    locacoes_total_row:      Number(c.locacoes_total_row)     || d.locacoes_total_row,
+    locacoes_giro_row:       Number(c.locacoes_giro_row)      || d.locacoes_giro_row,
+    locacoes_revpar_row:     Number(c.locacoes_revpar_row)    || d.locacoes_revpar_row,
+    prod_serv_tab:           (c.prod_serv_tab           as string) || d.prod_serv_tab,
+    prod_serv_produtos_row:  Number(c.prod_serv_produtos_row) || d.prod_serv_produtos_row,
+    prod_serv_servicos_row:  Number(c.prod_serv_servicos_row) || d.prod_serv_servicos_row,
   }
 }
 
@@ -273,13 +278,11 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
     const receitaServicos = prodServ?.servicos[m - 1] ?? 0
     const receitaProdServ = receitaProdutos + receitaServicos
     const receitaTotal    = receitaLoc + receitaProdServ
+    const totalLoc        = locRows.total[m - 1]
     const giro            = locRows.giro[m - 1]
     const revpar          = locRows.revpar[m - 1]
-    // giro na planilha é taxa diária (locações/suíte/dia), não total de locações.
-    // n_locações = receita_loc × giro / revpar  →  ticket = receita_total × revpar / (giro × receita_loc)
-    const ticket = (giro != null && giro > 0 && revpar != null && revpar > 0 && receitaLoc > 0)
-      ? (receitaTotal * revpar) / (giro * receitaLoc)
-      : null
+    // ticket = faturamento total (loc + P&S) / total de locações do mês
+    const ticket = (totalLoc != null && totalLoc > 0) ? receitaTotal / totalLoc : null
 
     yearData[String(m)] = {
       receita: Math.round(receitaTotal),
@@ -296,10 +299,12 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
   const receitaServicosAtual = prodServ?.servicos[month - 1] ?? 0
   const receitaProdServAtual = receitaProdutosAtual + receitaServicosAtual
   const receitaTotalAtual    = receitaLocacaoAtual + receitaProdServAtual
+  const totalLocAtual        = locRows.total[month - 1]
   const giroAtual            = locRows.giro[month - 1]
   const revparAtual          = locRows.revpar[month - 1]
-  const ticketAtual          = (giroAtual != null && giroAtual > 0 && revparAtual != null && revparAtual > 0 && receitaLocacaoAtual > 0)
-    ? (receitaTotalAtual * revparAtual) / (giroAtual * receitaLocacaoAtual)
+  // ticket = faturamento total (loc + P&S) / total de locações do mês
+  const ticketAtual          = (totalLocAtual != null && totalLocAtual > 0)
+    ? receitaTotalAtual / totalLocAtual
     : null
 
   // Atualiza unit_goals com o mês atual (mantém trevpar/ocupacao que não vêm da planilha)
