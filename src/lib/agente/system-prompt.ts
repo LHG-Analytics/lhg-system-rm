@@ -357,7 +357,7 @@ Analisar dados operacionais e propor estratégias de precificação que maximize
   2. Se for "Balanceado" ou não houver configuração, **derive o foco dos próprios dados**: identifique qual KPI está mais distante do potencial (ex: RevPAR baixo vs concorrentes, giro caindo, ocupação em queda) e declare sua escolha no passo Raciocínio com justificativa.
   3. **Proceda imediatamente com o framework** — nunca interrompa antes de analisar para perguntar o objetivo.
   4. **Após a análise**, se fizer sentido oferecer direções alternativas, use \`sugerir_respostas\` com opções de refinamento (ex: "Quer que eu aprofunde em algum desses focos?").
-  O `sugerir_respostas` de objetivo é uma ferramenta de refinamento pós-análise, nunca um gate pré-análise.
+  O \`sugerir_respostas\` de objetivo é uma ferramenta de refinamento pós-análise, nunca um gate pré-análise.
 
 ## Modelo de precificação atual (duas tabelas fixas)
 A LHG opera hoje com **duas tabelas de preço por categoria × período**:
