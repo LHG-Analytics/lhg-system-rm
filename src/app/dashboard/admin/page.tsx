@@ -3,13 +3,13 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
-import type { AgentConfig } from '@/app/api/admin/agent-config/route'
 import { UsersManager } from './_components/users-manager'
 import { GuardrailsManager } from './_components/guardrails-manager'
 import { EventsManager } from './_components/events-manager'
 import { CapacityManager } from './_components/capacity-manager'
+import { AgentConfigManager } from './_components/agent-config-manager'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Users, Shield, CalendarDays, BedDouble } from 'lucide-react'
+import { Users, Bot, Settings2, Shield, CalendarDays, BedDouble } from 'lucide-react'
 
 export const metadata = { title: 'Administração — LHG Revenue Manager' }
 
@@ -20,7 +20,7 @@ function getAdminClient() {
   )
 }
 
-export default async function AdminPage({ searchParams }: { searchParams: Promise<{ unit?: string; tab?: string }> }) {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ unit?: string; tab?: string; agente_tab?: string }> }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -34,7 +34,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   if (profile?.role !== 'super_admin') redirect('/dashboard')
 
   const admin = getAdminClient()
-  const { unit: unitSlug, tab } = await searchParams
+  const { unit: unitSlug, tab, agente_tab } = await searchParams
 
   const [profilesResult, authUsersResult, unitsResult] = await Promise.allSettled([
     admin.from('profiles').select('user_id, role, unit_id, created_at').order('created_at', { ascending: false }),
@@ -65,8 +65,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const activeUnit = unitsData.find((u) => u.slug === activeUnitSlug) ?? unitsData[0]
   const unitsForComponents = unitsData.map((u) => ({ id: u.id, name: u.name, slug: u.slug }))
 
-  // Busca guardrails + último price import + config + eventos + capacity em paralelo
-  const [guardrailsResult, priceImportResult, agentConfigResult, eventsResult, capacityResult, channelCostsResult] = activeUnit
+  // Busca guardrails + último price import + eventos + capacity em paralelo
+  const [guardrailsResult, priceImportResult, eventsResult, capacityResult, channelCostsResult] = activeUnit
     ? await Promise.all([
         supabase
           .from('agent_price_guardrails')
@@ -81,11 +81,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           .eq('unit_id', activeUnit.id)
           .order('valid_from', { ascending: false })
           .limit(1)
-          .maybeSingle(),
-        admin
-          .from('rm_agent_config')
-          .select('id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls')
-          .eq('unit_id', activeUnit.id)
           .maybeSingle(),
         (admin as any)
           .from('unit_events')
@@ -104,13 +99,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           .eq('unit_id', activeUnit.id)
           .order('canal'),
       ])
-    : [{ data: [] }, { data: null }, { data: null }, { data: [] }, { data: [] }, { data: [] }]
+    : [{ data: [] }, { data: null }, { data: [] }, { data: [] }, { data: [] }]
 
   const guardrailsData = guardrailsResult.data ?? []
   const importRows = (priceImportResult.data?.parsed_data as unknown as ParsedPriceRow[]) ?? []
   const categoriasFromImport = [...new Set(importRows.map((r) => r.categoria))].sort()
   const periodos   = [...new Set(importRows.map((r) => r.periodo))].sort()
-  const agentConfig = (agentConfigResult.data ?? null) as AgentConfig | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const eventsData = (eventsResult as any).data ?? []
   const capacityData = capacityResult.data ?? []
@@ -129,35 +123,33 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     ...availabilityData.map((a) => a.categoria),
   ])].sort()
 
-  const defaultTab = tab ?? 'usuarios'
+  // Aba ativa: se vier de link antigo (guardrails/eventos/capacidade), mapeia para 'agente'
+  const legacyAgenteTab: Record<string, string> = { guardrails: 'guardrails', eventos: 'eventos', capacidade: 'capacidade' }
+  const defaultTopTab = (tab === 'usuarios' || tab == null) ? 'usuarios' : 'agente'
+  const defaultAgenteTab = agente_tab ?? (tab && legacyAgenteTab[tab] ? legacyAgenteTab[tab] : 'config')
+
+  const noUnit = <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>
 
   return (
     <div className="flex flex-1 flex-col gap-6 max-w-2xl mx-auto w-full">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Administração</h1>
-        <p className="text-sm text-muted-foreground mt-1">Gerencie usuários e configurações do sistema.</p>
+        <p className="text-sm text-muted-foreground mt-1">Gerencie usuários e configurações do agente RM.</p>
       </div>
 
-      <Tabs defaultValue={defaultTab}>
+      <Tabs defaultValue={defaultTopTab}>
         <TabsList className="h-9">
           <TabsTrigger value="usuarios" className="gap-1.5 text-xs">
             <Users className="size-3.5" />
             Usuários
           </TabsTrigger>
-          <TabsTrigger value="guardrails" className="gap-1.5 text-xs">
-            <Shield className="size-3.5" />
-            Guardrails
-          </TabsTrigger>
-          <TabsTrigger value="eventos" className="gap-1.5 text-xs">
-            <CalendarDays className="size-3.5" />
-            Eventos
-          </TabsTrigger>
-          <TabsTrigger value="capacidade" className="gap-1.5 text-xs">
-            <BedDouble className="size-3.5" />
-            Capacidade
+          <TabsTrigger value="agente" className="gap-1.5 text-xs">
+            <Bot className="size-3.5" />
+            Agente RM
           </TabsTrigger>
         </TabsList>
 
+        {/* ── Usuários ──────────────────────────────────────────────────── */}
         <TabsContent value="usuarios" className="mt-6">
           <UsersManager
             initialUsers={users}
@@ -166,68 +158,96 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           />
         </TabsContent>
 
-        <TabsContent value="guardrails" className="mt-6">
-          {activeUnit ? (
-            <GuardrailsManager
-              unitSlug={activeUnit.slug}
-              unitName={activeUnit.name}
-              categorias={categorias}
-              periodos={periodos}
-              units={unitsForComponents}
-              initialGuardrails={guardrailsData.map((g) => ({
-                id: g.id,
-                categoria: g.categoria,
-                periodo: g.periodo,
-                dia_tipo: g.dia_tipo,
-                preco_minimo: g.preco_minimo,
-                preco_maximo: g.preco_maximo,
-              }))}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>
-          )}
-        </TabsContent>
+        {/* ── Agente RM: sub-abas ───────────────────────────────────────── */}
+        <TabsContent value="agente" className="mt-6">
+          <Tabs defaultValue={defaultAgenteTab}>
+            <TabsList className="h-8 mb-6">
+              <TabsTrigger value="config" className="gap-1.5 text-xs h-7">
+                <Settings2 className="size-3" />
+                Estratégia
+              </TabsTrigger>
+              <TabsTrigger value="guardrails" className="gap-1.5 text-xs h-7">
+                <Shield className="size-3" />
+                Guardrails
+              </TabsTrigger>
+              <TabsTrigger value="capacidade" className="gap-1.5 text-xs h-7">
+                <BedDouble className="size-3" />
+                Capacidade
+              </TabsTrigger>
+              <TabsTrigger value="eventos" className="gap-1.5 text-xs h-7">
+                <CalendarDays className="size-3" />
+                Eventos
+              </TabsTrigger>
+            </TabsList>
 
-        <TabsContent value="eventos" className="mt-6">
-          {activeUnit ? (
-            <EventsManager
-              unitSlug={activeUnit.slug}
-              unitName={activeUnit.name}
-              units={unitsForComponents}
-              initialEvents={eventsData}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>
-          )}
-        </TabsContent>
+            <TabsContent value="config" className="mt-0">
+              {activeUnit ? (
+                <AgentConfigManager
+                  unitSlug={activeUnit.slug}
+                  unitName={activeUnit.name}
+                  units={unitsForComponents}
+                  initialConfig={null}
+                />
+              ) : noUnit}
+            </TabsContent>
 
-        <TabsContent value="capacidade" className="mt-6">
-          {activeUnit ? (
-            <CapacityManager
-              unitSlug={activeUnit.slug}
-              unitName={activeUnit.name}
-              categorias={categorias}
-              units={unitsForComponents}
-              initialCapacity={capacityData.map((c) => ({
-                id: c.id,
-                categoria: c.categoria,
-                custo_variavel_locacao: Number(c.custo_variavel_locacao),
-                notes: c.notes,
-              }))}
-              initialChannelCosts={channelCostsData.map((c) => ({
-                id: c.id,
-                canal: c.canal,
-                comissao_pct: Number(c.comissao_pct),
-                taxa_fixa: Number(c.taxa_fixa),
-                notes: c.notes,
-              }))}
-              initialAvailability={availabilityData}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>
-          )}
-        </TabsContent>
+            <TabsContent value="guardrails" className="mt-0">
+              {activeUnit ? (
+                <GuardrailsManager
+                  unitSlug={activeUnit.slug}
+                  unitName={activeUnit.name}
+                  categorias={categorias}
+                  periodos={periodos}
+                  units={unitsForComponents}
+                  initialGuardrails={guardrailsData.map((g) => ({
+                    id: g.id,
+                    categoria: g.categoria,
+                    periodo: g.periodo,
+                    dia_tipo: g.dia_tipo,
+                    preco_minimo: g.preco_minimo,
+                    preco_maximo: g.preco_maximo,
+                  }))}
+                />
+              ) : noUnit}
+            </TabsContent>
 
+            <TabsContent value="capacidade" className="mt-0">
+              {activeUnit ? (
+                <CapacityManager
+                  unitSlug={activeUnit.slug}
+                  unitName={activeUnit.name}
+                  categorias={categorias}
+                  units={unitsForComponents}
+                  initialCapacity={capacityData.map((c) => ({
+                    id: c.id,
+                    categoria: c.categoria,
+                    custo_variavel_locacao: Number(c.custo_variavel_locacao),
+                    notes: c.notes,
+                  }))}
+                  initialChannelCosts={channelCostsData.map((c) => ({
+                    id: c.id,
+                    canal: c.canal,
+                    comissao_pct: Number(c.comissao_pct),
+                    taxa_fixa: Number(c.taxa_fixa),
+                    notes: c.notes,
+                  }))}
+                  initialAvailability={availabilityData}
+                />
+              ) : noUnit}
+            </TabsContent>
+
+            <TabsContent value="eventos" className="mt-0">
+              {activeUnit ? (
+                <EventsManager
+                  unitSlug={activeUnit.slug}
+                  unitName={activeUnit.name}
+                  units={unitsForComponents}
+                  initialEvents={eventsData}
+                />
+              ) : noUnit}
+            </TabsContent>
+          </Tabs>
+        </TabsContent>
       </Tabs>
     </div>
   )
