@@ -13,20 +13,20 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Loader2, Building2, CheckCircle2, RefreshCw, FileSpreadsheet, AlertCircle } from 'lucide-react'
+import { type BudgetConfig, DEFAULT_BUDGET_CONFIG, resolveBudgetConfig } from '@/lib/budget/google-sheets'
 
 interface UnitConfig {
   unit_id: string
   city: string
   timezone: string
   budget_sheet_url: string
-  budget_sheet_tab: string
-  budget_prod_serv_tab: string
+  budget_config: BudgetConfig
   budget_last_sync: string | null
 }
 
 interface UnitSettingsProps {
   units: { id: string; name: string; slug: string; city: string | null }[]
-  agentConfigs: { unit_id: string; city: string; timezone: string; budget_sheet_url: string | null; budget_sheet_tab: string | null; budget_prod_serv_tab: string | null; budget_last_sync: string | null }[]
+  agentConfigs: { unit_id: string; city: string; timezone: string; budget_sheet_url: string | null; budget_config: unknown; budget_last_sync: string | null }[]
   activeUnitSlug: string
 }
 
@@ -60,32 +60,40 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
     const existing = agentConfigs.find((c) => c.unit_id === unitId)
     return {
       unit_id:          unitId,
-      city:                 existing?.city ?? 'Sao Paulo,BR',
-      timezone:             existing?.timezone ?? 'America/Sao_Paulo',
-      budget_sheet_url:     existing?.budget_sheet_url ?? '',
-      budget_sheet_tab:     existing?.budget_sheet_tab ?? 'Locações-Comp',
-      budget_prod_serv_tab: existing?.budget_prod_serv_tab ?? 'Produtos e Serviços-Com',
-      budget_last_sync:     existing?.budget_last_sync ?? null,
+      city:             existing?.city ?? 'Sao Paulo,BR',
+      timezone:         existing?.timezone ?? 'America/Sao_Paulo',
+      budget_sheet_url: existing?.budget_sheet_url ?? '',
+      budget_config:    resolveBudgetConfig(existing?.budget_config),
+      budget_last_sync: existing?.budget_last_sync ?? null,
     }
   }
 
-  const [configs, setConfigs] = useState<Record<string, UnitConfig>>(() => {
+  const [configs, setConfigs]       = useState<Record<string, UnitConfig>>(() => {
     const map: Record<string, UnitConfig> = {}
     for (const u of units) map[u.id] = configForUnit(u.id)
     return map
   })
-  const [saving, setSaving]       = useState(false)
-  const [saved, setSaved]         = useState(false)
-  const [error, setError]         = useState<string | null>(null)
-  const [syncing, setSyncing]     = useState(false)
-  const [syncResult, setSyncResult] = useState<{ receita_total: number; receita_locacoes: number; receita_prod_serv: number | null; ticket: number | null; giro: number | null; revpar: number | null; month: number; year: number; months_synced: number; isFallback: boolean } | null>(null)
-  const [syncError, setSyncError] = useState<string | null>(null)
+  const [saving, setSaving]         = useState(false)
+  const [saved, setSaved]           = useState(false)
+  const [error, setError]           = useState<string | null>(null)
+  const [syncing, setSyncing]       = useState(false)
+  const [syncResult, setSyncResult] = useState<{
+    receita_total: number; receita_locacoes: number; receita_prod_serv: number | null
+    ticket: number | null; giro: number | null; revpar: number | null
+    month: number; year: number; months_synced: number; isFallback: boolean
+  } | null>(null)
+  const [syncError, setSyncError]   = useState<string | null>(null)
 
   const current = activeUnit ? configs[activeUnit.id] : null
 
   function updateCurrent(patch: Partial<UnitConfig>) {
     if (!activeUnit) return
     setConfigs((prev) => ({ ...prev, [activeUnit.id]: { ...prev[activeUnit.id], ...patch } }))
+  }
+
+  function updateBudgetConfig(patch: Partial<BudgetConfig>) {
+    if (!activeUnit || !current) return
+    updateCurrent({ budget_config: { ...current.budget_config, ...patch } })
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -99,12 +107,11 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          unit_id:              activeUnit.id,
-          city:                 current.city,
-          timezone:             current.timezone,
-          budget_sheet_url:     current.budget_sheet_url || null,
-          budget_sheet_tab:     current.budget_sheet_tab || 'Locações-Comp',
-          budget_prod_serv_tab: current.budget_prod_serv_tab || 'Produtos e Serviços-Com',
+          unit_id:          activeUnit.id,
+          city:             current.city,
+          timezone:         current.timezone,
+          budget_sheet_url: current.budget_sheet_url || null,
+          budget_config:    current.budget_config,
         }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
@@ -130,7 +137,6 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao sincronizar')
-      const syncedAt = new Date().toISOString()
       const now = new Date()
       setSyncResult({
         receita_total:     data.receita_total ?? data.receita_locacoes,
@@ -144,7 +150,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
         months_synced:     data.months_synced ?? 1,
         isFallback:        data.month !== (now.getMonth() + 1),
       })
-      updateCurrent({ budget_last_sync: syncedAt })
+      updateCurrent({ budget_last_sync: new Date().toISOString() })
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : 'Erro ao sincronizar')
     } finally {
@@ -154,6 +160,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
 
   if (!activeUnit || !current) return null
 
+  const cfg = current.budget_config
   const MONTHS_PT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
 
   return (
@@ -222,11 +229,14 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
             </div>
             <div>
               <p className="text-xs font-semibold">Orçamento — Google Sheets</p>
-              <p className="text-[11px] text-muted-foreground">Sincroniza Receita, Ticket Médio, Giro e RevPAR. Receita total = Locações-Comp (L18) + Produtos e Serviços-Com (L34). Ticket = receita total / giro.</p>
+              <p className="text-[11px] text-muted-foreground">
+                Receita total = locações + produtos + serviços. Ticket = receita total / giro.
+              </p>
             </div>
           </div>
 
           <div className="flex flex-col gap-3">
+            {/* URL */}
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs">URL da planilha</Label>
               <Input
@@ -238,33 +248,99 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-xs">Aba — Locações</Label>
-                <Input
-                  placeholder="Locações-Comp"
-                  value={current.budget_sheet_tab}
-                  onChange={(e) => updateCurrent({ budget_sheet_tab: e.target.value })}
-                  disabled={saving}
-                  className="h-9 text-sm"
-                />
+            {/* ── Locações ── */}
+            <div className="rounded-lg border px-3 py-2.5 flex flex-col gap-2">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Aba de Locações</p>
+              <div className="grid grid-cols-4 gap-2">
+                <div className="col-span-1 flex flex-col gap-1">
+                  <Label className="text-[10px] text-muted-foreground">Nome da aba</Label>
+                  <Input
+                    placeholder={DEFAULT_BUDGET_CONFIG.locacoes_tab}
+                    value={cfg.locacoes_tab}
+                    onChange={(e) => updateBudgetConfig({ locacoes_tab: e.target.value })}
+                    disabled={saving}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-[10px] text-muted-foreground">Linha Receita</Label>
+                  <Input
+                    type="number" min={1}
+                    placeholder={String(DEFAULT_BUDGET_CONFIG.locacoes_receita_row)}
+                    value={cfg.locacoes_receita_row}
+                    onChange={(e) => updateBudgetConfig({ locacoes_receita_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.locacoes_receita_row })}
+                    disabled={saving}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-[10px] text-muted-foreground">Linha Giro</Label>
+                  <Input
+                    type="number" min={1}
+                    placeholder={String(DEFAULT_BUDGET_CONFIG.locacoes_giro_row)}
+                    value={cfg.locacoes_giro_row}
+                    onChange={(e) => updateBudgetConfig({ locacoes_giro_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.locacoes_giro_row })}
+                    disabled={saving}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-[10px] text-muted-foreground">Linha RevPAR</Label>
+                  <Input
+                    type="number" min={1}
+                    placeholder={String(DEFAULT_BUDGET_CONFIG.locacoes_revpar_row)}
+                    value={cfg.locacoes_revpar_row}
+                    onChange={(e) => updateBudgetConfig({ locacoes_revpar_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.locacoes_revpar_row })}
+                    disabled={saving}
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-xs">Aba — Produtos e Serviços</Label>
-                <Input
-                  placeholder="Produtos e Serviços-Com"
-                  value={current.budget_prod_serv_tab}
-                  onChange={(e) => updateCurrent({ budget_prod_serv_tab: e.target.value })}
-                  disabled={saving}
-                  className="h-9 text-sm"
-                />
+            </div>
+
+            {/* ── Produtos e Serviços ── */}
+            <div className="rounded-lg border px-3 py-2.5 flex flex-col gap-2">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Aba de Produtos e Serviços</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="flex flex-col gap-1">
+                  <Label className="text-[10px] text-muted-foreground">Nome da aba</Label>
+                  <Input
+                    placeholder={DEFAULT_BUDGET_CONFIG.prod_serv_tab}
+                    value={cfg.prod_serv_tab}
+                    onChange={(e) => updateBudgetConfig({ prod_serv_tab: e.target.value })}
+                    disabled={saving}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-[10px] text-muted-foreground">Linha Produtos</Label>
+                  <Input
+                    type="number" min={1}
+                    placeholder={String(DEFAULT_BUDGET_CONFIG.prod_serv_produtos_row)}
+                    value={cfg.prod_serv_produtos_row}
+                    onChange={(e) => updateBudgetConfig({ prod_serv_produtos_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.prod_serv_produtos_row })}
+                    disabled={saving}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-[10px] text-muted-foreground">Linha Serviços</Label>
+                  <Input
+                    type="number" min={1}
+                    placeholder={String(DEFAULT_BUDGET_CONFIG.prod_serv_servicos_row)}
+                    value={cfg.prod_serv_servicos_row}
+                    onChange={(e) => updateBudgetConfig({ prod_serv_servicos_row: parseInt(e.target.value) || DEFAULT_BUDGET_CONFIG.prod_serv_servicos_row })}
+                    disabled={saving}
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
             </div>
 
             <p className="text-[11px] text-muted-foreground">
-              Compartilhe a planilha com o e-mail da conta de serviço configurada em{' '}
+              Compartilhe a planilha com o e-mail da conta de serviço em{' '}
               <span className="font-mono bg-muted px-1 rounded">GOOGLE_SERVICE_ACCOUNT_JSON</span>.
-              Locações: L18 Receita, L60 Giro, L74 RevPAR · Produtos e Serviços: L34 Total.
+              Colunas C–N = jan–dez em todas as abas.
             </p>
           </div>
 

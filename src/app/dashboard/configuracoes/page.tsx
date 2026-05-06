@@ -28,7 +28,7 @@ export default async function ConfiguracoesPage({
 
   const [{ data: units }, { data: agentConfigs }] = await Promise.all([
     admin.from('units').select('id, name, slug, city').order('name'),
-    admin.from('rm_agent_config').select('unit_id, city, timezone, budget_sheet_url, budget_sheet_tab, budget_prod_serv_tab, budget_last_sync'),
+    admin.from('rm_agent_config').select('unit_id, city, timezone, budget_sheet_url, budget_config, budget_last_sync'),
   ])
 
   const { unit } = await searchParams

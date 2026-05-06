@@ -669,6 +669,7 @@ export type Database = {
       }
       rm_agent_config: {
         Row: {
+          budget_config: Json
           budget_last_sync: string | null
           budget_prod_serv_tab: string
           budget_sheet_tab: string
@@ -694,6 +695,7 @@ export type Database = {
           weather_insight_cache: Json | null
         }
         Insert: {
+          budget_config?: Json
           budget_last_sync?: string | null
           budget_prod_serv_tab?: string
           budget_sheet_tab?: string
@@ -719,6 +721,7 @@ export type Database = {
           weather_insight_cache?: Json | null
         }
         Update: {
+          budget_config?: Json
           budget_last_sync?: string | null
           budget_prod_serv_tab?: string
           budget_sheet_tab?: string

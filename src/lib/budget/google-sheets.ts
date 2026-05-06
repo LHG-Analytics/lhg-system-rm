@@ -26,9 +26,32 @@ export interface BudgetMonthData {
 // budget_yearly salvo no banco: { "2026": { "1": {...}, ..., "12": {...} } }
 export type BudgetYearly = Record<string, Record<string, BudgetMonthData>>
 
+// Configuração dinâmica das abas e linhas da planilha de orçamento
+export interface BudgetConfig {
+  // Aba de locações
+  locacoes_tab:         string  // ex: 'Locações-Comp'
+  locacoes_receita_row: number  // linha do resultado projetado de locações
+  locacoes_giro_row:    number  // linha do giro (nº de locações)
+  locacoes_revpar_row:  number  // linha do RevPAR médio
+  // Aba de produtos e serviços
+  prod_serv_tab:           string  // ex: 'Produtos e Serviços-Com'
+  prod_serv_produtos_row:  number  // linha do resultado de produtos
+  prod_serv_servicos_row:  number  // linha do resultado de serviços
+}
+
+export const DEFAULT_BUDGET_CONFIG: BudgetConfig = {
+  locacoes_tab:            'Locações-Comp',
+  locacoes_receita_row:    18,
+  locacoes_giro_row:       60,
+  locacoes_revpar_row:     74,
+  prod_serv_tab:           'Produtos e Serviços-Com',
+  prod_serv_produtos_row:  18,
+  prod_serv_servicos_row:  26,
+}
+
 export interface BudgetSyncResult {
   receita_locacoes:  number | null  // receita só de locações (referência)
-  receita_prod_serv: number | null  // receita de produtos e serviços
+  receita_prod_serv: number | null  // receita de produtos e serviços (soma produtos + serviços)
   receita_total:     number | null  // total = locações + prod/serv
   ticket:            number | null  // ticket total = receita_total / giro
   giro:              number | null
@@ -39,24 +62,9 @@ export interface BudgetSyncResult {
   synced_at:         string
 }
 
-// ─── Estrutura das abas de orçamento ─────────────────────────────────────────
-// Colunas C–N = jan–dez (índice 3–14, ou seja índice = 2 + mês)
-//
-// Aba Locações-Comp:
-//   Linha 18 = "Resultado Projetado" → receita de locações
-//   Linha 32 = "Ticket Médio"        → ticket médio de locações (NÃO usado — calculado abaixo)
-//   Linha 60 = "Giro"                → giro (nº de locações)
-//   Linha 74 = "RevPar Médio"        → revpar
-//
-// Aba Produtos e Serviços-Com:
-//   Linha 34 = "TOTAL"              → receita de produtos + serviços
-//
-// Ticket médio final = (receita_locações + receita_prod_serv) / giro
+// ─── Colunas C–N = jan–dez ────────────────────────────────────────────────────
 
 const COL_FIRST_MONTH = 3   // C = janeiro
-const ROWS = { receita: 18, giro: 60, revpar: 74 } as const
-
-const PROD_SERV_ROW = 34
 
 // ─── Auth: JWT RS256 para service account ─────────────────────────────────────
 
@@ -109,11 +117,6 @@ function colLetter(n: number): string {
   return result
 }
 
-// Retorna letra da coluna do mês M (1-indexed): jan→C, fev→D, ... dez→N
-function monthCol(month: number): string {
-  return colLetter(COL_FIRST_MONTH - 1 + month)
-}
-
 // ─── Extrai spreadsheet ID da URL ─────────────────────────────────────────────
 
 export function extractSpreadsheetId(urlOrId: string): string {
@@ -121,72 +124,93 @@ export function extractSpreadsheetId(urlOrId: string): string {
   return match ? match[1] : urlOrId
 }
 
-// ─── batchGet: busca 3 linhas (receita, giro, revpar) de Locações-Comp ────────
+// ─── Helper: parseia uma linha de 12 células como array de número | null ──────
 
-async function fetchYearlyRows(
-  token: string,
-  spreadsheetId: string,
-  tab: string,
-): Promise<{ receita: (number | null)[]; giro: (number | null)[]; revpar: (number | null)[] }> {
-  const colStart = colLetter(COL_FIRST_MONTH)       // C
-  const colEnd   = colLetter(COL_FIRST_MONTH + 11)  // N
-
-  const ranges = Object.values(ROWS).map(
-    (row) => `${tab}!${colStart}${row}:${colEnd}${row}`
-  )
-  const qs = ranges.map((r) => `ranges=${encodeURIComponent(r)}`).join('&')
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE`
-
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Sheets API batchGet ${res.status}: ${text}`)
-  }
-
-  const data = await res.json() as {
-    valueRanges: { values?: (string | number)[][] }[]
-  }
-
-  function parseRow(idx: number): (number | null)[] {
-    const cells = data.valueRanges[idx]?.values?.[0] ?? []
-    return Array.from({ length: 12 }, (_, i) => {
-      const raw = cells[i]
-      if (raw == null || raw === '') return null
-      const n = Number(raw)
-      return isFinite(n) && n > 0 ? n : null
-    })
-  }
-
-  return {
-    receita: parseRow(0),
-    giro:    parseRow(1),
-    revpar:  parseRow(2),
-  }
-}
-
-// ─── GET linha TOTAL da aba Produtos e Serviços-Com ───────────────────────────
-
-async function fetchProdServRow(
-  token: string,
-  spreadsheetId: string,
-  prodServTab: string,
-): Promise<(number | null)[] | null> {
-  const colStart = colLetter(COL_FIRST_MONTH)
-  const colEnd   = colLetter(COL_FIRST_MONTH + 11)
-  const range    = `${prodServTab}!${colStart}${PROD_SERV_ROW}:${colEnd}${PROD_SERV_ROW}`
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE`
-
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-  if (!res.ok) return null  // aba inexistente ou sem acesso — não quebra o sync
-
-  const data = await res.json() as { values?: (string | number)[][] }
-  const cells = data.values?.[0] ?? []
+function parseSheetRow(cells: (string | number)[]): (number | null)[] {
   return Array.from({ length: 12 }, (_, i) => {
     const raw = cells[i]
     if (raw == null || raw === '') return null
     const n = Number(raw)
     return isFinite(n) && n > 0 ? n : null
   })
+}
+
+// ─── batchGet da aba de Locações — 3 linhas dinâmicas ─────────────────────────
+
+async function fetchLocacoesRows(
+  token: string,
+  spreadsheetId: string,
+  cfg: BudgetConfig,
+): Promise<{ receita: (number | null)[]; giro: (number | null)[]; revpar: (number | null)[] }> {
+  const colStart = colLetter(COL_FIRST_MONTH)       // C
+  const colEnd   = colLetter(COL_FIRST_MONTH + 11)  // N
+  const tab      = cfg.locacoes_tab
+
+  const ranges = [
+    `${tab}!${colStart}${cfg.locacoes_receita_row}:${colEnd}${cfg.locacoes_receita_row}`,
+    `${tab}!${colStart}${cfg.locacoes_giro_row}:${colEnd}${cfg.locacoes_giro_row}`,
+    `${tab}!${colStart}${cfg.locacoes_revpar_row}:${colEnd}${cfg.locacoes_revpar_row}`,
+  ]
+  const qs  = ranges.map((r) => `ranges=${encodeURIComponent(r)}`).join('&')
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE`
+
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Sheets API batchGet (locações) ${res.status}: ${text}`)
+  }
+
+  const data = await res.json() as { valueRanges: { values?: (string | number)[][] }[] }
+  return {
+    receita: parseSheetRow(data.valueRanges[0]?.values?.[0] ?? []),
+    giro:    parseSheetRow(data.valueRanges[1]?.values?.[0] ?? []),
+    revpar:  parseSheetRow(data.valueRanges[2]?.values?.[0] ?? []),
+  }
+}
+
+// ─── batchGet da aba de Produtos e Serviços — 2 linhas dinâmicas ──────────────
+// Retorna null silenciosamente se a aba não existir ou der erro.
+
+async function fetchProdServRows(
+  token: string,
+  spreadsheetId: string,
+  cfg: BudgetConfig,
+): Promise<{ produtos: (number | null)[]; servicos: (number | null)[] } | null> {
+  const colStart = colLetter(COL_FIRST_MONTH)
+  const colEnd   = colLetter(COL_FIRST_MONTH + 11)
+  const tab      = cfg.prod_serv_tab
+
+  const ranges = [
+    `${tab}!${colStart}${cfg.prod_serv_produtos_row}:${colEnd}${cfg.prod_serv_produtos_row}`,
+    `${tab}!${colStart}${cfg.prod_serv_servicos_row}:${colEnd}${cfg.prod_serv_servicos_row}`,
+  ]
+  const qs  = ranges.map((r) => `ranges=${encodeURIComponent(r)}`).join('&')
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE`
+
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) return null  // aba inexistente ou sem acesso — não quebra o sync
+
+  const data = await res.json() as { valueRanges: { values?: (string | number)[][] }[] }
+  return {
+    produtos: parseSheetRow(data.valueRanges[0]?.values?.[0] ?? []),
+    servicos: parseSheetRow(data.valueRanges[1]?.values?.[0] ?? []),
+  }
+}
+
+// ─── Mescla budget_config do banco com os defaults ────────────────────────────
+
+export function resolveBudgetConfig(raw: unknown): BudgetConfig {
+  const d = DEFAULT_BUDGET_CONFIG
+  const c = (raw && typeof raw === 'object' ? raw : {}) as Partial<BudgetConfig>
+  return {
+    locacoes_tab:            (c.locacoes_tab            as string)  || d.locacoes_tab,
+    locacoes_receita_row:    Number(c.locacoes_receita_row)    || d.locacoes_receita_row,
+    locacoes_giro_row:       Number(c.locacoes_giro_row)       || d.locacoes_giro_row,
+    locacoes_revpar_row:     Number(c.locacoes_revpar_row)     || d.locacoes_revpar_row,
+    prod_serv_tab:           (c.prod_serv_tab            as string)  || d.prod_serv_tab,
+    prod_serv_produtos_row:  Number(c.prod_serv_produtos_row)  || d.prod_serv_produtos_row,
+    prod_serv_servicos_row:  Number(c.prod_serv_servicos_row)  || d.prod_serv_servicos_row,
+  }
 }
 
 // ─── Sync principal ───────────────────────────────────────────────────────────
@@ -204,15 +228,14 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
 
   const { data: config } = await admin
     .from('rm_agent_config')
-    .select('unit_goals, budget_sheet_url, budget_sheet_tab, budget_prod_serv_tab, budget_yearly')
+    .select('unit_goals, budget_sheet_url, budget_config, budget_yearly')
     .eq('unit_id', unitId)
     .single()
 
   if (!config?.budget_sheet_url) throw new Error('URL da planilha não configurada para esta unidade')
 
-  const spreadsheetId  = extractSpreadsheetId(config.budget_sheet_url)
-  const tab            = config.budget_sheet_tab      ?? 'Locações-Comp'
-  const prodServTab    = config.budget_prod_serv_tab  ?? 'Produtos e Serviços-Com'
+  const spreadsheetId = extractSpreadsheetId(config.budget_sheet_url)
+  const cfg           = resolveBudgetConfig(config.budget_config)
 
   const now   = new Date()
   const month = now.getMonth() + 1  // 1-indexed
@@ -220,36 +243,39 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
 
   const token = await getAccessToken(creds)
 
-  // Busca aba de locações e aba de produtos em paralelo — falha de prod/serv não bloqueia
-  const [rows, prodServRow] = await Promise.all([
-    fetchYearlyRows(token, spreadsheetId, tab),
-    fetchProdServRow(token, spreadsheetId, prodServTab).catch(() => null),
+  // Busca as duas abas em paralelo — falha de prod/serv não bloqueia
+  const [locRows, prodServ] = await Promise.all([
+    fetchLocacoesRows(token, spreadsheetId, cfg),
+    fetchProdServRows(token, spreadsheetId, cfg).catch(() => null),
   ])
 
   // Valida mês atual obrigatório (locações)
-  const receitaLocacaoAtual = rows.receita[month - 1]
+  const receitaLocacaoAtual = locRows.receita[month - 1]
   if (receitaLocacaoAtual == null || receitaLocacaoAtual === 0) {
     throw new Error(
-      `Orçamento não encontrado em ${tab}!${monthCol(month)}${ROWS.receita} (mês ${month}). ` +
-      `Verifique se a aba está correta e o valor preenchido.`
+      `Orçamento de locações não encontrado em '${cfg.locacoes_tab}'!` +
+      `${colLetter(COL_FIRST_MONTH - 1 + month)}${cfg.locacoes_receita_row} (mês ${month}). ` +
+      `Verifique se a aba e a linha estão corretas.`
     )
   }
 
   // Monta budget_yearly com todos os meses que têm receita de locações
-  const yearStr = String(year)
+  const yearStr  = String(year)
   const existing = (config.budget_yearly ?? {}) as unknown as BudgetYearly
   const yearData: Record<string, BudgetMonthData> = {}
   let monthsSynced = 0
 
   for (let m = 1; m <= 12; m++) {
-    const receitaLoc = rows.receita[m - 1]
+    const receitaLoc = locRows.receita[m - 1]
     if (receitaLoc == null) continue
 
-    const prodServ     = prodServRow?.[m - 1] ?? 0
-    const receitaTotal = receitaLoc + prodServ
-    const giro         = rows.giro[m - 1]
-    const revpar       = rows.revpar[m - 1]
-    // ticket total = receita total (locações + produtos/serviços) / nº de locações
+    const receitaProdutos = prodServ?.produtos[m - 1] ?? 0
+    const receitaServicos = prodServ?.servicos[m - 1] ?? 0
+    const receitaProdServ = receitaProdutos + receitaServicos
+    const receitaTotal    = receitaLoc + receitaProdServ
+    const giro            = locRows.giro[m - 1]
+    const revpar          = locRows.revpar[m - 1]
+    // ticket total = receita total / nº de locações
     const ticket = giro != null && giro > 0 ? receitaTotal / giro : null
 
     yearData[String(m)] = {
@@ -262,12 +288,14 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
   }
   const updatedYearly: BudgetYearly = { ...existing, [yearStr]: yearData }
 
-  // Mês atual para unit_goals
-  const prodServAtual    = prodServRow?.[month - 1] ?? 0
-  const receitaTotalAtual = receitaLocacaoAtual + prodServAtual
-  const giroAtual        = rows.giro[month - 1]
-  const revparAtual      = rows.revpar[month - 1]
-  const ticketAtual      = giroAtual != null && giroAtual > 0
+  // Valores do mês atual para unit_goals
+  const receitaProdutosAtual = prodServ?.produtos[month - 1] ?? 0
+  const receitaServicosAtual = prodServ?.servicos[month - 1] ?? 0
+  const receitaProdServAtual = receitaProdutosAtual + receitaServicosAtual
+  const receitaTotalAtual    = receitaLocacaoAtual + receitaProdServAtual
+  const giroAtual            = locRows.giro[month - 1]
+  const revparAtual          = locRows.revpar[month - 1]
+  const ticketAtual          = giroAtual != null && giroAtual > 0
     ? receitaTotalAtual / giroAtual
     : null
 
@@ -285,15 +313,15 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
   await admin
     .from('rm_agent_config')
     .update({
-      unit_goals:       updatedGoals as unknown as Database['public']['Tables']['rm_agent_config']['Update']['unit_goals'],
-      budget_yearly:    updatedYearly as unknown as Database['public']['Tables']['rm_agent_config']['Update']['budget_yearly'],
+      unit_goals:       updatedGoals   as unknown as Database['public']['Tables']['rm_agent_config']['Update']['unit_goals'],
+      budget_yearly:    updatedYearly  as unknown as Database['public']['Tables']['rm_agent_config']['Update']['budget_yearly'],
       budget_last_sync: syncedAt,
     })
     .eq('unit_id', unitId)
 
   return {
     receita_locacoes:  Math.round(receitaLocacaoAtual),
-    receita_prod_serv: prodServAtual > 0 ? Math.round(prodServAtual) : null,
+    receita_prod_serv: receitaProdServAtual > 0 ? Math.round(receitaProdServAtual) : null,
     receita_total:     Math.round(receitaTotalAtual),
     ticket:            ticketAtual != null ? Math.round(ticketAtual * 100) / 100 : null,
     giro:              giroAtual   != null ? Math.round(giroAtual   * 100) / 100 : null,
