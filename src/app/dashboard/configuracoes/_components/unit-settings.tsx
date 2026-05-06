@@ -76,7 +76,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
   const [saved, setSaved]         = useState(false)
   const [error, setError]         = useState<string | null>(null)
   const [syncing, setSyncing]     = useState(false)
-  const [syncResult, setSyncResult] = useState<{ receita: number; month: number; year: number; isFallback: boolean } | null>(null)
+  const [syncResult, setSyncResult] = useState<{ receita: number; ticket: number | null; giro: number | null; revpar: number | null; month: number; year: number; isFallback: boolean } | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
 
   const current = activeUnit ? configs[activeUnit.id] : null
@@ -131,6 +131,9 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
       const now = new Date()
       setSyncResult({
         receita: data.receita_locacoes,
+        ticket:  data.ticket  ?? null,
+        giro:    data.giro    ?? null,
+        revpar:  data.revpar  ?? null,
         month: data.month,
         year: data.year,
         isFallback: data.month !== (now.getMonth() + 1),
@@ -213,7 +216,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
             </div>
             <div>
               <p className="text-xs font-semibold">Orçamento — Google Sheets</p>
-              <p className="text-[11px] text-muted-foreground">Sincroniza a meta de receita mensal automaticamente da sua DRE.</p>
+              <p className="text-[11px] text-muted-foreground">Sincroniza Receita, Ticket Médio, Giro e RevPAR orçados da aba Locações-Comp.</p>
             </div>
           </div>
 
@@ -243,7 +246,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
             <p className="text-[11px] text-muted-foreground">
               Compartilhe a planilha com o e-mail da conta de serviço configurada em{' '}
               <span className="font-mono bg-muted px-1 rounded">GOOGLE_SERVICE_ACCOUNT_JSON</span>.
-              A meta de receita é lida da linha 18 (Resultado Projetado) da aba <span className="font-mono bg-muted px-1 rounded">Locações-Comp</span>, coluna do mês atual.
+              Linhas lidas da aba <span className="font-mono bg-muted px-1 rounded">Locações-Comp</span>: 18 (Receita), 32 (Ticket Médio), 60 (Giro), 74 (RevPAR) — coluna do mês atual.
             </p>
           </div>
 
@@ -256,9 +259,17 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
                 <span>Último sync: {formatSyncDate(current.budget_last_sync)}</span>
               )}
               {syncResult && !syncResult.isFallback && (
-                <span className="text-emerald-600 flex items-center gap-1">
-                  <CheckCircle2 className="size-3" />
-                  Meta {MONTHS_PT[(syncResult.month - 1)]}. atualizada: {formatCurrency(syncResult.receita)}
+                <span className="text-emerald-600 flex flex-col gap-0.5">
+                  <span className="flex items-center gap-1">
+                    <CheckCircle2 className="size-3" />
+                    Metas {MONTHS_PT[(syncResult.month - 1)]}. atualizadas
+                  </span>
+                  <span className="pl-4 text-[10px] font-mono text-muted-foreground">
+                    Receita {formatCurrency(syncResult.receita)}
+                    {syncResult.ticket != null && ` · Ticket R$${syncResult.ticket.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                    {syncResult.giro   != null && ` · Giro ${syncResult.giro.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`}
+                    {syncResult.revpar != null && ` · RevPAR R$${syncResult.revpar.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                  </span>
                 </span>
               )}
               {syncResult?.isFallback && (

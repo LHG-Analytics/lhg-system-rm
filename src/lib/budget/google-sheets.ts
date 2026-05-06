@@ -18,17 +18,27 @@ interface ServiceAccountCredentials {
 
 export interface BudgetSyncResult {
   receita_locacoes: number | null
+  ticket: number | null
+  giro: number | null
+  revpar: number | null
   month: number
   year: number
   synced_at: string
 }
 
 // ─── Estrutura da aba Locações-Comp (planilha padronizada) ───────────────────
-// Linha 18 = "Resultado Projetado" — total RECEITA DE LOCAÇÕES orçada por mês
 // Colunas: C=jan(M=1), D=fev(M=2), E=mar(M=3)... → índice = 2 + M
 // Todos os 12 meses estão pré-preenchidos no orçamento anual
+//
+// Linha 18 = "Resultado Projetado" → receita_mensal
+// Linha 32 = "Ticket Médio"        → ticket
+// Linha 60 = "Giro"                → giro
+// Linha 74 = "RevPar Médio"        → revpar
 
-const RESULTADO_PROJETADO_ROW = 18  // Resultado Projetado (total receita locações)
+const ROW_RECEITA = 18
+const ROW_TICKET  = 32
+const ROW_GIRO    = 60
+const ROW_REVPAR  = 74
 
 // ─── Auth: JWT RS256 para service account ─────────────────────────────────────
 
@@ -147,16 +157,27 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
 
   const token = await getAccessToken(creds)
 
-  // Lê linha 18 (Resultado Projetado) da coluna do mês atual
-  const receita = await fetchCell(token, spreadsheetId, tab, col, RESULTADO_PROJETADO_ROW)
+  // Busca as 4 métricas da coluna do mês em paralelo
+  const [receita, ticket, giro, revpar] = await Promise.all([
+    fetchCell(token, spreadsheetId, tab, col, ROW_RECEITA),
+    fetchCell(token, spreadsheetId, tab, col, ROW_TICKET),
+    fetchCell(token, spreadsheetId, tab, col, ROW_GIRO),
+    fetchCell(token, spreadsheetId, tab, col, ROW_REVPAR),
+  ])
 
   if (receita == null || receita === 0) {
-    throw new Error(`Orçamento não encontrado em ${tab}!${col}${RESULTADO_PROJETADO_ROW} (mês ${month}). Verifique se a aba está correta e o valor preenchido.`)
+    throw new Error(`Orçamento não encontrado em ${tab}!${col}${ROW_RECEITA} (mês ${month}). Verifique se a aba está correta e o valor preenchido.`)
   }
 
-  // Atualiza unit_goals.receita_mensal preservando os outros campos
+  // Atualiza unit_goals preservando campos não cobertos pela planilha (ex: trevpar, ocupacao)
   const existingGoals = (config.unit_goals ?? {}) as UnitGoals
-  const updatedGoals: UnitGoals = { ...existingGoals, receita_mensal: Math.round(receita) }
+  const updatedGoals: UnitGoals = {
+    ...existingGoals,
+    receita_mensal: Math.round(receita),
+    ...(ticket != null ? { ticket: Math.round(ticket * 100) / 100 } : {}),
+    ...(giro   != null ? { giro:   Math.round(giro   * 100) / 100 } : {}),
+    ...(revpar != null ? { revpar: Math.round(revpar  * 100) / 100 } : {}),
+  }
 
   const syncedAt = new Date().toISOString()
   await admin
@@ -167,5 +188,5 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
     })
     .eq('unit_id', unitId)
 
-  return { receita_locacoes: Math.round(receita), month, year, synced_at: syncedAt }
+  return { receita_locacoes: Math.round(receita), ticket, giro, revpar, month, year, synced_at: syncedAt }
 }
