@@ -949,6 +949,15 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Metas manuais removidas** do `AgentConfigManager` — metas vêm exclusivamente da planilha
   - **Armadilha:** `valueRenderOption=UNFORMATTED_VALUE` obrigatório — sem ele a API retorna string `"R$ 1.234.567"` que quebra `Number()`
 
+- **LHG-170:** feat(dashboard+agente): previsão de receita 30/60/90 dias ✅ 2026-05-06
+  - `src/lib/forecast/revenue-forecast.ts`: motor puro (sem I/O); `computeRevenueForecast(company, budgetYearly)` usa `totalAllValueForecast` do Automo (projeção EOM do mês atual) e `pace_ratio` amortecido sobre `budget_yearly` para os próximos 2 meses
+  - Amortecimento: mês +1 = 50% do desvio do pace; mês +2 = 25% — evita extrapolar anomalias; clamp 0.75×–1.35× do orçado
+  - `buildForecastBlock`: bloco markdown com tabela ✅/🟡/⚠️, total 3 meses, nota de ritmo e instrução de calibração de agressividade
+  - `RevenueForecastWidget`: card colapsável no dashboard (entre clima e anomalias) com barras de progresso CSS, gap % colorido (emerald ≥−2% / amber ≥−8% / destructive <−8%) e estado em `localStorage`
+  - `dashboard/page.tsx`: `budget_yearly` adicionado ao SELECT do `agentConfig`; forecast computado server-side (zero I/O extra)
+  - Injetado em `chat/route.ts` e `proposals/route.ts` para agente calibrar agressividade das propostas pelo horizonte de 3 meses
+  - **Sem dados do Automo:** `projected = budget` (pace_ratio=null); widget ainda mostra orçamento como referência
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
@@ -956,7 +965,6 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
 - **LHG-169:** Relatório executivo semanal por e-mail (Resend) — resumo RevPAR/Giro/Ocupação vs meta, melhor/pior categoria, proposta de ação — valor visível para gestão sem abrir o app
 
 #### 🟠 P1 — Inteligência preditiva
-- **LHG-170:** Forecasting de receita 30/60/90 dias — combina `unit_seasonality` × `budget_yearly` × KPIs atuais; projeta fechamento e desvio vs orçamento; widget no dashboard
 - **LHG-171 (novo):** Dashboard de performance do agente RM — gráfico RevPAR com linha de meta, histórico de propostas aprovadas × impacto medido (Δ% RevPAR nos checkpoints), taxa de acerto geral
 - **LHG-172 (novo):** Modo autônomo com override — agente aplica ajustes dentro dos guardrails, cria notificação com janela de override de 1h antes de publicar; toggle admin
 
