@@ -993,6 +993,19 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Step substituído:** "Investigar anomalias" → "Aprovar a primeira proposta" (anomalias não têm botão próprio; proposta é ação concreta e verificável)
   - Arquivos: `onboarding-guide.tsx`, `api/onboarding/status/route.ts` (novo), `dashboard/layout.tsx` (prop `unitSlug`)
 
+- **LHG-28:** feat(dashboard+agente): ocupação em tempo real por categoria ✅ 2026-05-06
+  - `src/lib/automo/realtime-occupancy.ts`: query `fimocupacaotipo IS NULL + datainicialdaocupacao <= NOW()` — retorna por categoria: `total`, `bloqueadas`, `disponiveis`, `ocupadas`, `livres`, `pct_ocupacao`
+  - `buildUnitStructureBlock` recebe `realtimeOccupancy?` (4º param opcional) — injeta tabela markdown 🔴/🟡/🟢 no system prompt (chat + proposals, em paralelo, zero latência)
+  - `GET /api/dashboard/realtime-occupancy?unitSlug=` — rota autenticada, Cache-Control: no-store
+  - `RealtimeOccupancyWidget`: barras de progresso por categoria, auto-refresh 90s, colapsável (`localStorage['occupancy-collapsed']`), entre WeatherWidget e AnomaliesWidget
+
+- **LHG-60:** feat(agente): ritmo de check-ins (pace) injetado no contexto do agente ✅ 2026-05-06
+  - `src/lib/automo/reservation-pace.ts`: compara check-ins desde 06h BRT com média das últimas 4 semanas no mesmo dia da semana até a mesma hora
+  - Duas janelas: acumulado do dia + últimas 2h; sinal consolidado: `acima/normal/abaixo/muito_abaixo`
+  - `buildPaceBlock`: tabela markdown com pace ratio + aviso contextual (ex: "muito abaixo — avalie incentivo")
+  - Injetado em paralelo em `chat/route.ts` e `proposals/route.ts` — zero latência extra
+  - **Armadilha:** usa `locacaoapartamento.datainicialdaocupacao` (não `reserva.dataatendimento`) para consistência com demais queries da unidade
+
 - **LHG-181:** fix(agente): agente autônomo no foco — remover gate de objetivo pré-análise (Regra 13) ✅ 2026-05-06
   - **Problema:** Regra 13 perguntava "Qual é o seu objetivo?" antes de qualquer análise via `sugerir_respostas`; redundante com `focus_metric`/`pricing_strategy` configurados no admin; bloqueava investigações válidas ("Investigar anomalias")
   - **Solução:** Regra 13 reescrita — agente lê `focus_metric` da config; se "Balanceado", deriva foco dos dados (KPI mais distante do potencial); declara raciocínio no passo 1 do framework; `sugerir_respostas` de objetivo fica como refinamento pós-análise, nunca gate pré-análise
