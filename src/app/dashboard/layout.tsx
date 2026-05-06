@@ -6,6 +6,7 @@ import { AppSidebar } from '@/components/app-sidebar'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import { AgentStreamingProvider } from '@/components/agente/agent-streaming-provider'
+import { OnboardingGuide } from '@/components/onboarding/onboarding-guide'
 import {
   SidebarInset,
   SidebarProvider,
@@ -85,6 +86,7 @@ export default async function DashboardLayout({
           <SidebarTrigger className="-ml-1 md:hidden" />
           <Separator orientation="vertical" className="mr-2 h-4 md:hidden" />
           <div className="flex-1" />
+          <OnboardingGuide userRole={profile.role ?? ''} />
           <NotificationsBell />
           <ThemeToggle />
         </header>
