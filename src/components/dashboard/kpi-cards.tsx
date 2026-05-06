@@ -62,6 +62,8 @@ interface KPICardProps {
   previousValue?: string
   compareMode: CompareMode
   forecast?: string
+  budget?: string
+  budgetGapPct?: number | null
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>
 }
 
@@ -89,7 +91,7 @@ function DeltaBadge({ pct, mode }: { pct: number; mode: CompareMode }) {
   )
 }
 
-function KPICard({ label, value, deltaPct, previousValue, compareMode, forecast, dragHandleProps }: KPICardProps) {
+function KPICard({ label, value, deltaPct, previousValue, compareMode, forecast, budget, budgetGapPct, dragHandleProps }: KPICardProps) {
   return (
     <Card className="flex flex-col gap-0 py-0 overflow-hidden group">
       <CardHeader className="px-5 pt-4 pb-3 space-y-0">
@@ -125,13 +127,33 @@ function KPICard({ label, value, deltaPct, previousValue, compareMode, forecast,
           )}
         </div>
 
-        {forecast && (
+        {(forecast || budget) && (
           <>
             <Separator className="opacity-50" />
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] text-muted-foreground uppercase tracking-wide">Prev. mês</span>
-              <span className="text-sm font-semibold tabular-nums">{forecast}</span>
-            </div>
+            {forecast && (
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-muted-foreground uppercase tracking-wide">Prev. mês</span>
+                <span className="text-sm font-semibold tabular-nums">{forecast}</span>
+              </div>
+            )}
+            {budget && (
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-muted-foreground uppercase tracking-wide">Meta mês</span>
+                <div className="flex items-center gap-1.5">
+                  {budgetGapPct != null && (
+                    <span className={cn(
+                      'text-[10px] font-medium tabular-nums',
+                      budgetGapPct >= -2  ? 'text-emerald-500' :
+                      budgetGapPct >= -8  ? 'text-amber-500' :
+                                            'text-destructive',
+                    )}>
+                      {budgetGapPct >= 0 ? '+' : ''}{budgetGapPct.toFixed(1)}%
+                    </span>
+                  )}
+                  <span className="text-xs text-muted-foreground tabular-nums">{budget}</span>
+                </div>
+              </div>
+            )}
           </>
         )}
       </CardContent>
@@ -177,12 +199,20 @@ function loadOrder(): string[] {
   return DEFAULT_ORDER
 }
 
+interface BudgetCurrentMonth {
+  receita?: number | null
+  ticket?:  number | null
+  giro?:    number | null
+  revpar?:  number | null
+}
+
 interface DashboardKPICardsProps {
   company: CompanyKPIResponse | null
   compact?: boolean
+  budgetMonth?: BudgetCurrentMonth | null
 }
 
-export function DashboardKPICards({ company, compact }: DashboardKPICardsProps) {
+export function DashboardKPICards({ company, compact, budgetMonth }: DashboardKPICardsProps) {
   const [compareMode, setCompareMode] = useState<CompareMode>('aa')
   const [order, setOrder] = useState<string[]>(DEFAULT_ORDER)
 
@@ -248,6 +278,12 @@ export function DashboardKPICards({ company, compact }: DashboardKPICardsProps) 
   const cmpGiro    = compareMode === 'aa' ? prev?.totalAllGiroPreviousData               : prevM?.totalAllGiroPrevMonth
   const cmpOccTime = compareMode === 'aa' ? prev?.totalAverageOccupationTimePreviousData : prevM?.totalAverageOccupationTimePrevMonth
 
+  // Gap entre prev.mês e meta — usado nos cards de Faturamento, RevPAR, Giro e Ticket
+  function budgetGap(projected: number | undefined | null, meta: number | null | undefined): number | null {
+    if (projected == null || meta == null || meta === 0) return null
+    return ((projected - meta) / meta) * 100
+  }
+
   const cardsMap: Record<string, KPICardProps> = {
     'Taxa de Ocupação': {
       label: 'Taxa de Ocupação', compareMode,
@@ -262,6 +298,8 @@ export function DashboardKPICards({ company, compact }: DashboardKPICardsProps) 
       deltaPct:      cmpRevpar != null ? delta(r.totalRevpar, cmpRevpar) : null,
       previousValue: cmpRevpar != null ? formatCurrency(cmpRevpar) : undefined,
       forecast:      fc ? formatCurrency(fc.totalAllRevparForecast) : undefined,
+      budget:        budgetMonth?.revpar != null ? formatCurrency(budgetMonth.revpar) : undefined,
+      budgetGapPct:  budgetGap(fc?.totalAllRevparForecast, budgetMonth?.revpar),
     },
     'Ticket Médio': {
       label: 'Ticket Médio', compareMode,
@@ -269,6 +307,8 @@ export function DashboardKPICards({ company, compact }: DashboardKPICardsProps) 
       deltaPct:      cmpTicket != null ? delta(cur.totalAllTicketAverage, cmpTicket) : null,
       previousValue: cmpTicket != null ? formatCurrency(cmpTicket) : undefined,
       forecast:      fc ? formatCurrency(fc.totalAllTicketAverageForecast) : undefined,
+      budget:        budgetMonth?.ticket != null ? formatCurrency(budgetMonth.ticket) : undefined,
+      budgetGapPct:  budgetGap(fc?.totalAllTicketAverageForecast, budgetMonth?.ticket),
     },
     'TRevPAR': {
       label: 'TRevPAR', compareMode,
@@ -290,6 +330,8 @@ export function DashboardKPICards({ company, compact }: DashboardKPICardsProps) 
       deltaPct:      cmpValue != null ? delta(cur.totalAllValue, cmpValue) : null,
       previousValue: cmpValue != null ? formatCurrency(cmpValue) : undefined,
       forecast:      fc ? formatCurrency(fc.totalAllValueForecast) : undefined,
+      budget:        budgetMonth?.receita != null ? formatCurrency(budgetMonth.receita) : undefined,
+      budgetGapPct:  budgetGap(fc?.totalAllValueForecast, budgetMonth?.receita),
     },
     'Giro': {
       label: 'Giro', compareMode,
@@ -297,6 +339,8 @@ export function DashboardKPICards({ company, compact }: DashboardKPICardsProps) 
       deltaPct:      cmpGiro != null ? delta(cur.totalAllGiro, cmpGiro) : null,
       previousValue: cmpGiro != null ? cmpGiro.toFixed(2) : undefined,
       forecast:      fc ? fc.totalAllGiroForecast.toFixed(2) : undefined,
+      budget:        budgetMonth?.giro != null ? budgetMonth.giro.toFixed(2) : undefined,
+      budgetGapPct:  budgetGap(fc?.totalAllGiroForecast, budgetMonth?.giro),
     },
     'Tempo Médio': {
       label: 'Tempo Médio', compareMode,
