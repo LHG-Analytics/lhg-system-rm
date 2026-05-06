@@ -76,7 +76,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
   const [saved, setSaved]         = useState(false)
   const [error, setError]         = useState<string | null>(null)
   const [syncing, setSyncing]     = useState(false)
-  const [syncResult, setSyncResult] = useState<{ receita: number; ticket: number | null; giro: number | null; revpar: number | null; month: number; year: number; months_synced: number; isFallback: boolean } | null>(null)
+  const [syncResult, setSyncResult] = useState<{ receita_total: number; receita_locacoes: number; receita_prod_serv: number | null; ticket: number | null; giro: number | null; revpar: number | null; month: number; year: number; months_synced: number; isFallback: boolean } | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
 
   const current = activeUnit ? configs[activeUnit.id] : null
@@ -130,14 +130,16 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
       const syncedAt = new Date().toISOString()
       const now = new Date()
       setSyncResult({
-        receita:       data.receita_locacoes,
-        ticket:        data.ticket  ?? null,
-        giro:          data.giro    ?? null,
-        revpar:        data.revpar  ?? null,
-        month:         data.month,
-        year:          data.year,
-        months_synced: data.months_synced ?? 1,
-        isFallback:    data.month !== (now.getMonth() + 1),
+        receita_total:     data.receita_total ?? data.receita_locacoes,
+        receita_locacoes:  data.receita_locacoes,
+        receita_prod_serv: data.receita_prod_serv ?? null,
+        ticket:            data.ticket  ?? null,
+        giro:              data.giro    ?? null,
+        revpar:            data.revpar  ?? null,
+        month:             data.month,
+        year:              data.year,
+        months_synced:     data.months_synced ?? 1,
+        isFallback:        data.month !== (now.getMonth() + 1),
       })
       updateCurrent({ budget_last_sync: syncedAt })
     } catch (err) {
@@ -217,7 +219,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
             </div>
             <div>
               <p className="text-xs font-semibold">Orçamento — Google Sheets</p>
-              <p className="text-[11px] text-muted-foreground">Sincroniza Receita, Ticket Médio, Giro e RevPAR orçados da aba Locações-Comp.</p>
+              <p className="text-[11px] text-muted-foreground">Sincroniza Receita, Ticket Médio, Giro e RevPAR. Receita total = Locações-Comp (L18) + Produtos e Serviços-Com (L34). Ticket = receita total / giro.</p>
             </div>
           </div>
 
@@ -247,7 +249,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
             <p className="text-[11px] text-muted-foreground">
               Compartilhe a planilha com o e-mail da conta de serviço configurada em{' '}
               <span className="font-mono bg-muted px-1 rounded">GOOGLE_SERVICE_ACCOUNT_JSON</span>.
-              Linhas lidas da aba <span className="font-mono bg-muted px-1 rounded">Locações-Comp</span>: 18 (Receita), 32 (Ticket Médio), 60 (Giro), 74 (RevPAR) — coluna do mês atual.
+              Abas lidas: <span className="font-mono bg-muted px-1 rounded">Locações-Comp</span> (L18 Receita, L60 Giro, L74 RevPAR) e <span className="font-mono bg-muted px-1 rounded">Produtos e Serviços-Com</span> (L34 Total).
             </p>
           </div>
 
@@ -266,7 +268,10 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
                     {syncResult.months_synced} {syncResult.months_synced === 1 ? 'mês sincronizado' : 'meses sincronizados'} ({syncResult.year})
                   </span>
                   <span className="pl-4 text-[10px] font-mono text-muted-foreground">
-                    Receita {formatCurrency(syncResult.receita)}
+                    Total {formatCurrency(syncResult.receita_total)}
+                    {syncResult.receita_prod_serv != null && (
+                      <> (Loc {formatCurrency(syncResult.receita_locacoes)} + P&S {formatCurrency(syncResult.receita_prod_serv)})</>
+                    )}
                     {syncResult.ticket != null && ` · Ticket R$${syncResult.ticket.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
                     {syncResult.giro   != null && ` · Giro ${syncResult.giro.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`}
                     {syncResult.revpar != null && ` · RevPAR R$${syncResult.revpar.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
@@ -276,7 +281,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
               {syncResult?.isFallback && (
                 <span className="text-amber-600 flex items-center gap-1">
                   <AlertCircle className="size-3" />
-                  Mês atual vazio — usando {MONTHS_PT[(syncResult.month - 1)]}.: {formatCurrency(syncResult.receita)}
+                  Mês atual vazio — usando {MONTHS_PT[(syncResult.month - 1)]}.: {formatCurrency(syncResult.receita_total)}
                 </span>
               )}
               {syncError && (
