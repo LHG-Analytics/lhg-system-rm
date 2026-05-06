@@ -24,6 +24,7 @@ import { buildKPIContext, type PriceImportForPrompt, type KPIPeriod } from '@/li
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { getRealtimeOccupancyByCategory } from '@/lib/automo/realtime-occupancy'
+import { getReservationPace, buildPaceBlock } from '@/lib/automo/reservation-pace'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -478,9 +479,10 @@ export async function POST(req: NextRequest) {
     dias_tipo:  [...new Set(activeRows.map((r) => r.dia_tipo))],
     canais:     [...new Set(activeRows.map((r) => r.canal))],
   }
-  const [availabilityRows, realtimeOccupancy, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps, elasticityRows] = await Promise.all([
+  const [availabilityRows, realtimeOccupancy, reservationPace, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps, elasticityRows] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
+    getReservationPace(unit.slug).catch(() => null),
     buildRejectionLessonsBlock(unit.id).catch(() => ''),
     buildLessonsBlockForUnit(unit.id, lessonsScenario).catch(() => ''),
     getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
@@ -725,7 +727,7 @@ ${activeDiscounts.map((d) => {
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${forecastBlock ? `\n${forecastBlock}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${seasonalityBlock ? `\n${seasonalityBlock}\n` : ''}${competitorGapBlock ? `\n${competitorGapBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${elasticityBlock ? `\n${elasticityBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
+${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${forecastBlock ? `\n${forecastBlock}\n` : ''}${buildPaceBlock(reservationPace) ? `\n${buildPaceBlock(reservationPace)}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${seasonalityBlock ? `\n${seasonalityBlock}\n` : ''}${competitorGapBlock ? `\n${competitorGapBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${elasticityBlock ? `\n${elasticityBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}

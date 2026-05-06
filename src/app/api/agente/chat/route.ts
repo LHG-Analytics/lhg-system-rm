@@ -10,6 +10,7 @@ import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { getRealtimeOccupancyByCategory } from '@/lib/automo/realtime-occupancy'
+import { getReservationPace, buildPaceBlock } from '@/lib/automo/reservation-pace'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
@@ -599,9 +600,10 @@ export async function POST(req: NextRequest) {
         dias_tipo:  [...new Set(priceImports[0].rows.map((r) => r.dia_tipo))],
       }
     : {}
-  const [availabilityRows, realtimeOccupancy, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps] = await Promise.all([
+  const [availabilityRows, realtimeOccupancy, reservationPace, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
+    getReservationPace(unit.slug).catch(() => null),
     buildRejectionLessonsBlock(unit.id).catch(() => ''),
     buildLessonsBlockForUnit(unit.id, chatLessonsScenario).catch(() => ''),
     getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
@@ -646,6 +648,8 @@ export async function POST(req: NextRequest) {
     computeRevenueForecast(kpiPeriods[0]?.company ?? null, budgetYearly)
   )
 
+  const paceBlock = buildPaceBlock(reservationPace)
+
   const systemPrompt =
     buildSystemPrompt(
       unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext,
@@ -657,6 +661,7 @@ export async function POST(req: NextRequest) {
     (contextMode === 'org' ? sharedContextBlock : '') +
     goalsBlock +
     (forecastBlock ? `\n\n${forecastBlock}` : '') +
+    (paceBlock ? `\n\n${paceBlock}` : '') +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
     (competitorBlock ? `\n\n${competitorBlock}` : '') +
     (memoryBlock ? `\n\n${memoryBlock}` : '') +
