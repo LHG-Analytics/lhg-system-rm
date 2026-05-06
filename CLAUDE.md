@@ -965,6 +965,15 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - Nova aba "Performance" (`BarChart2`) no Agente RM ao lado de "Agenda"
   - Estado vazio orientativo quando não há checkpoints (aparecem após 7/14/28 dias das aprovações)
 
+- **LHG-179:** feat(onboarding): guia de início rápido passo a passo para admin+ ✅ 2026-05-06
+  - `OnboardingGuide` client component: Dialog com 10 passos em 2 grupos — "Configuração inicial" (importar preços, configurar agente, vincular orçamento, concorrentes, equipe) e "Rotina de uso" (dashboard, proposta, anomalias, performance, concorrentes)
+  - Auto-abre 800ms após primeira visita de admin/super_admin (se não houver dismiss)
+  - Checkbox por passo com progresso + barra de progresso visual na configuração inicial
+  - Estado persistido em `localStorage['lhg-onboarding-v1']`
+  - Botão `HelpCircle` (?) no header do layout para reabrir a qualquer momento
+  - "Não mostrar novamente" define `dismissed: true` e oculta auto-open permanentemente
+  - Instalado `dialog.tsx` do shadcn/ui
+
 - **LHG-178:** feat(agente): revisar prompts iniciais e framework do system prompt ✅ 2026-05-06
   - SUGESTOES substituídos por prompts action-oriented: "Fazer diagnóstico completo e gerar proposta", "Revisar precificação do fim de semana", "Analisar concorrentes e sugerir ajustes", "Investigar anomalias e oportunidades"
   - Regras renumeradas sequencialmente no system prompt (era 1,2,3,4,5,6,7,11,12,8,9,10,13 → 1-13)
