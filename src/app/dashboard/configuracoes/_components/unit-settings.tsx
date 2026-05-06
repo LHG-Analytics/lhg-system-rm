@@ -76,7 +76,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
   const [saved, setSaved]         = useState(false)
   const [error, setError]         = useState<string | null>(null)
   const [syncing, setSyncing]     = useState(false)
-  const [syncResult, setSyncResult] = useState<{ receita: number; month: number; year: number } | null>(null)
+  const [syncResult, setSyncResult] = useState<{ receita: number; month: number; year: number; isFallback: boolean } | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
 
   const current = activeUnit ? configs[activeUnit.id] : null
@@ -128,7 +128,13 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao sincronizar')
       const syncedAt = new Date().toISOString()
-      setSyncResult({ receita: data.receita_locacoes, month: data.month, year: data.year })
+      const now = new Date()
+      setSyncResult({
+        receita: data.receita_locacoes,
+        month: data.month,
+        year: data.year,
+        isFallback: data.month !== (now.getMonth() + 1),
+      })
       updateCurrent({ budget_last_sync: syncedAt })
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : 'Erro ao sincronizar')
@@ -249,10 +255,16 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
               {current.budget_last_sync && !syncResult && (
                 <span>Último sync: {formatSyncDate(current.budget_last_sync)}</span>
               )}
-              {syncResult && (
+              {syncResult && !syncResult.isFallback && (
                 <span className="text-emerald-600 flex items-center gap-1">
                   <CheckCircle2 className="size-3" />
                   Meta {MONTHS_PT[(syncResult.month - 1)]}. atualizada: {formatCurrency(syncResult.receita)}
+                </span>
+              )}
+              {syncResult?.isFallback && (
+                <span className="text-amber-600 flex items-center gap-1">
+                  <AlertCircle className="size-3" />
+                  Mai. sem orçamento — usando {MONTHS_PT[(syncResult.month - 1)]}.: {formatCurrency(syncResult.receita)}
                 </span>
               )}
               {syncError && (

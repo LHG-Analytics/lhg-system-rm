@@ -142,24 +142,32 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
   const tab = config.budget_sheet_tab ?? 'DRE'
 
   const now = new Date()
-  const month = now.getMonth() + 1
-  const year  = now.getFullYear()
-  const col   = orcamentoCol(month)
+  const currentMonth = now.getMonth() + 1
+  const year         = now.getFullYear()
 
   const token = await getAccessToken(creds)
 
-  // Busca RECEITA BRUTA DE LOCAÇÕES (row 11) + RECEITA OPERACIONAL BRUTA (row 9) para validação
-  const [receitaLocacoes, receitaOperacional] = await Promise.all([
-    fetchCell(token, spreadsheetId, tab, col, RECEITA_LOCACOES_ROW),
-    fetchCell(token, spreadsheetId, tab, col, RECEITA_OPERACIONAL_ROW),
-  ])
+  // Tenta o mês atual; se vazio, retroage até encontrar orçamento preenchido (mínimo: mês 1)
+  let receita: number | null = null
+  let usedMonth = currentMonth
 
-  if (receitaLocacoes == null && receitaOperacional == null) {
-    throw new Error(`Nenhum valor encontrado na coluna ${col} da aba "${tab}" (linhas ${RECEITA_LOCACOES_ROW} e ${RECEITA_OPERACIONAL_ROW}). Verifique se a estrutura da planilha está correta.`)
+  for (let m = currentMonth; m >= 1; m--) {
+    const col = orcamentoCol(m)
+    const [locacoes, operacional] = await Promise.all([
+      fetchCell(token, spreadsheetId, tab, col, RECEITA_LOCACOES_ROW),
+      fetchCell(token, spreadsheetId, tab, col, RECEITA_OPERACIONAL_ROW),
+    ])
+    const valor = locacoes ?? operacional
+    if (valor != null && valor > 0) {
+      receita   = valor
+      usedMonth = m
+      break
+    }
   }
 
-  // Usa receita de locações; fallback para operacional se a linha de locações estiver vazia
-  const receita = receitaLocacoes ?? receitaOperacional!
+  if (receita == null) {
+    throw new Error(`Nenhum orçamento encontrado na aba "${tab}" até o mês ${currentMonth}. Verifique se a planilha está correta e compartilhada com o service account.`)
+  }
 
   // Atualiza unit_goals.receita_mensal preservando os outros campos
   const existingGoals = (config.unit_goals ?? {}) as UnitGoals
@@ -174,5 +182,5 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
     })
     .eq('unit_id', unitId)
 
-  return { receita_locacoes: Math.round(receita), month, year, synced_at: syncedAt }
+  return { receita_locacoes: Math.round(receita), month: usedMonth, year, synced_at: syncedAt }
 }
