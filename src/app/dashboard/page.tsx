@@ -12,7 +12,10 @@ import { CompareButton } from '@/components/dashboard/compare-button'
 import { fetchWeatherData } from '@/lib/agente/weather'
 import { getWeatherInsight } from '@/lib/agente/weather-insight'
 import { cachedCompanyKPIs, cachedChannelKPIs, cachedPeriodMix } from '@/lib/automo/cached-kpis'
+import { computeRevenueForecast } from '@/lib/forecast/revenue-forecast'
+import { RevenueForecastWidget } from '@/components/dashboard/revenue-forecast-widget'
 import type { ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
+import type { BudgetYearly } from '@/lib/budget/google-sheets'
 
 interface DashboardPageProps {
   searchParams: Promise<{
@@ -104,7 +107,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const { data: agentConfig } = await supabase
     .from('rm_agent_config')
-    .select('city')
+    .select('city, budget_yearly')
     .eq('unit_id', activeUnit.id)
     .single()
 
@@ -128,6 +131,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   // Insight IA clima × demanda — usa cache de 4h; regenera em background se vencido
   const weatherInsight = await getWeatherInsight(activeUnit.id, weatherResult, company)
+
+  const budgetYearly = (agentConfig?.budget_yearly ?? null) as BudgetYearly | null
+  const revenueForecast = computeRevenueForecast(company, budgetYearly)
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -163,6 +169,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       </div>
 
       <WeatherWidget result={weatherResult} insight={weatherInsight} />
+      <RevenueForecastWidget forecast={revenueForecast} />
       <AnomaliesWidget unitSlug={activeUnit.slug} />
       <DashboardKPICards company={company} />
       <DashboardCharts company={company} channelKPIs={channelKPIsResult} periodMix={periodMixResult} />

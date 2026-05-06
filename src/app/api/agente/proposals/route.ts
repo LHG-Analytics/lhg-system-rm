@@ -14,6 +14,7 @@ import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { getElasticityForUnit, buildElasticityBlock, expectedRevenueChangePct } from '@/lib/pricing/elasticity'
 import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
 import { getRecentGaps, buildCompetitorGapBlock } from '@/lib/competitors/detect-changes'
+import { computeRevenueForecast, buildForecastBlock } from '@/lib/forecast/revenue-forecast'
 import {
   buildPricingThresholdsBlock,
   buildSharedContextBlock,
@@ -634,6 +635,7 @@ Calibre a proposta considerando a sazonalidade projetada: se o orçamento futuro
     return block
   }
   const goalsBlock = buildProposalGoalsBlock()
+  const forecastBlock = buildForecastBlock(computeRevenueForecast(kpiActive, budgetYearly))
 
   // Bloco de preços de concorrentes (snapshots dos últimos 7 dias)
   interface MappedPrice { categoria_concorrente: string; categoria_nossa: string | null; periodo: string; preco: number; dia_tipo?: string; notas?: string }
@@ -720,7 +722,7 @@ ${activeDiscounts.map((d) => {
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${seasonalityBlock ? `\n${seasonalityBlock}\n` : ''}${competitorGapBlock ? `\n${competitorGapBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${elasticityBlock ? `\n${elasticityBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
+${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${forecastBlock ? `\n${forecastBlock}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${seasonalityBlock ? `\n${seasonalityBlock}\n` : ''}${competitorGapBlock ? `\n${competitorGapBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${elasticityBlock ? `\n${elasticityBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}

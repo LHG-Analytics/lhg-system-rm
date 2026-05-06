@@ -13,6 +13,7 @@ import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
 import { getRecentGaps, buildCompetitorGapBlock } from '@/lib/competitors/detect-changes'
+import { computeRevenueForecast, buildForecastBlock } from '@/lib/forecast/revenue-forecast'
 import {
   buildStrategicMemoryBlock,
   buildGuardrailsBlock,
@@ -638,6 +639,10 @@ export async function POST(req: NextRequest) {
     })),
   )
 
+  const forecastBlock = buildForecastBlock(
+    computeRevenueForecast(kpiPeriods[0]?.company ?? null, budgetYearly)
+  )
+
   const systemPrompt =
     buildSystemPrompt(
       unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext,
@@ -648,6 +653,7 @@ export async function POST(req: NextRequest) {
     (contextMode === 'org' ? pricingRulesBlock : '') +
     (contextMode === 'org' ? sharedContextBlock : '') +
     goalsBlock +
+    (forecastBlock ? `\n\n${forecastBlock}` : '') +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
     (competitorBlock ? `\n\n${competitorBlock}` : '') +
     (memoryBlock ? `\n\n${memoryBlock}` : '') +
