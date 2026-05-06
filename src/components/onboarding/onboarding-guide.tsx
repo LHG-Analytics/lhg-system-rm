@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   LayoutDashboard, FileSpreadsheet, Bot, Building2, Globe, Users,
-  TrendingUp, Lightbulb, BarChart2, CheckCircle2, Circle, HelpCircle, X,
+  TrendingUp, Lightbulb, BarChart2, CheckCircle2, Circle, HelpCircle, Sparkles,
 } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -189,24 +189,14 @@ export function OnboardingGuide({ userRole }: Props) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl max-h-[85vh] flex flex-col p-0 gap-0">
           <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <DialogTitle className="text-base font-semibold">
-                  Guia de início rápido
-                </DialogTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {allSetupDone
-                    ? '✅ Configuração inicial completa! Siga a rotina de uso.'
-                    : `Configuração inicial: ${doneSetup}/${totalSetup} etapas concluídas`}
-                </p>
-              </div>
-              <button
-                onClick={() => setOpen(false)}
-                className="shrink-0 rounded-sm p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
+            <DialogTitle className="text-base font-semibold">
+              Guia de início rápido
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {allSetupDone
+                ? '✅ Configuração inicial completa! Siga a rotina de uso.'
+                : `Configuração inicial: ${doneSetup}/${totalSetup} etapas concluídas`}
+            </p>
 
             {/* Barra de progresso da configuração inicial */}
             <div className="mt-3 h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -218,6 +208,15 @@ export function OnboardingGuide({ userRole }: Props) {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+            {/* ── Balão de boas-vindas ──────────────────────────────────── */}
+            <div className="flex gap-3">
+              <div className="shrink-0 flex size-8 items-center justify-center rounded-full bg-primary/10 mt-0.5">
+                <Sparkles className="size-4 text-primary" />
+              </div>
+              <div className="rounded-2xl rounded-tl-sm bg-muted/60 px-4 py-3 text-sm leading-relaxed text-foreground">
+                Olá! Sou o Agente RM. Este guia mostra os <span className="font-medium">passos essenciais</span> para você tirar o máximo do sistema — da configuração inicial até a rotina semanal de análise e aprovação de propostas. Marque cada etapa conforme avança. 🚀
+              </div>
+            </div>
             {/* ── Configuração inicial ──────────────────────────────── */}
             <section>
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
