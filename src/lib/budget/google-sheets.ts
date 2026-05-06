@@ -275,8 +275,11 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
     const receitaTotal    = receitaLoc + receitaProdServ
     const giro            = locRows.giro[m - 1]
     const revpar          = locRows.revpar[m - 1]
-    // ticket total = receita total / nº de locações
-    const ticket = giro != null && giro > 0 ? receitaTotal / giro : null
+    // giro na planilha é taxa diária (locações/suíte/dia), não total de locações.
+    // n_locações = receita_loc × giro / revpar  →  ticket = receita_total × revpar / (giro × receita_loc)
+    const ticket = (giro != null && giro > 0 && revpar != null && revpar > 0 && receitaLoc > 0)
+      ? (receitaTotal * revpar) / (giro * receitaLoc)
+      : null
 
     yearData[String(m)] = {
       receita: Math.round(receitaTotal),
@@ -295,8 +298,8 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
   const receitaTotalAtual    = receitaLocacaoAtual + receitaProdServAtual
   const giroAtual            = locRows.giro[month - 1]
   const revparAtual          = locRows.revpar[month - 1]
-  const ticketAtual          = giroAtual != null && giroAtual > 0
-    ? receitaTotalAtual / giroAtual
+  const ticketAtual          = (giroAtual != null && giroAtual > 0 && revparAtual != null && revparAtual > 0 && receitaLocacaoAtual > 0)
+    ? (receitaTotalAtual * revparAtual) / (giroAtual * receitaLocacaoAtual)
     : null
 
   // Atualiza unit_goals com o mês atual (mantém trevpar/ocupacao que não vêm da planilha)
