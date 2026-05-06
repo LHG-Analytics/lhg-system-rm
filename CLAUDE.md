@@ -957,6 +957,13 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `dashboard/page.tsx`: `budget_yearly` adicionado ao SELECT do `agentConfig`; forecast computado server-side (zero I/O extra)
   - Injetado em `chat/route.ts` e `proposals/route.ts` para agente calibrar agressividade das propostas pelo horizonte de 3 meses
   - **Sem dados do Automo:** `projected = budget` (pace_ratio=null); widget ainda mostra orçamento como referência
+  - **Revisão:** `RevenueForecastWidget` standalone removido do dashboard (redundante com KPI cards); "Meta mês" integrado diretamente nos BigNumber cards para Faturamento, RevPAR, Ticket Médio e Giro com gap % colorido (emerald/amber/destructive)
+
+- **LHG-171:** feat(agente): dashboard de performance do agente RM ✅ 2026-05-06
+  - `GET /api/agente/performance?unitSlug=`: busca últimas 90 dias de propostas + `rm_pricing_lessons`; agrupa por `proposal_id`, seleciona melhor checkpoint (28d>14d>7d); calcula success_rate, avg_delta_revpar, avg_delta_giro; top/worst 5 categorias por Δ RevPAR
+  - `PerformanceDashboard`: 4 cards resumo (aprovadas, taxa de acerto, Δ RevPAR médio, Δ Giro médio); tabela de propostas com badges de checkpoint coloridos por verdict; tabelas top/worst categorias com ratio S/F
+  - Nova aba "Performance" (`BarChart2`) no Agente RM ao lado de "Agenda"
+  - Estado vazio orientativo quando não há checkpoints (aparecem após 7/14/28 dias das aprovações)
 
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
@@ -965,7 +972,7 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
 - **LHG-169:** Relatório executivo semanal por e-mail (Resend) — resumo RevPAR/Giro/Ocupação vs meta, melhor/pior categoria, proposta de ação — valor visível para gestão sem abrir o app
 
 #### 🟠 P1 — Inteligência preditiva
-- **LHG-171 (novo):** Dashboard de performance do agente RM — gráfico RevPAR com linha de meta, histórico de propostas aprovadas × impacto medido (Δ% RevPAR nos checkpoints), taxa de acerto geral
+- ~~**LHG-171:** Dashboard de performance do agente RM~~ ✅ concluído em 2026-05-06
 - **LHG-172 (novo):** Modo autônomo com override — agente aplica ajustes dentro dos guardrails, cria notificação com janela de override de 1h antes de publicar; toggle admin
 
 #### 🟡 P2 — Qualidade operacional
