@@ -447,7 +447,7 @@ export async function POST(req: NextRequest) {
       .eq('unit_id', unit.id),
     supabase
       .from('rm_agent_config')
-      .select('pricing_strategy, max_variation_pct, focus_metric, suite_amenities, unit_goals, shared_context, pricing_thresholds')
+      .select('pricing_strategy, max_variation_pct, focus_metric, suite_amenities, unit_goals, budget_yearly, shared_context, pricing_thresholds')
       .eq('unit_id', unit.id)
       .maybeSingle(),
     supabase
@@ -521,7 +521,8 @@ export async function POST(req: NextRequest) {
   const maxVar   = agentConfigData?.max_variation_pct ?? 20
   const focus    = agentConfigData?.focus_metric ?? 'balanceado'
   const suiteAmenities = (agentConfigData?.suite_amenities ?? {}) as Record<string, string[]>
-  const unitGoals = (agentConfigData?.unit_goals ?? {}) as Record<string, number | null>
+  const unitGoals    = (agentConfigData?.unit_goals    ?? {}) as Record<string, number | null>
+  const budgetYearly = (agentConfigData as { budget_yearly?: Record<string, Record<string, { receita: number | null; ticket: number | null; giro: number | null; revpar: number | null }>> | null } | null)?.budget_yearly ?? null
   const sharedContext = (agentConfigData as { shared_context?: string | null } | null)?.shared_context ?? null
   const pricingThresholdsCfg = (agentConfigData as { pricing_thresholds?: PricingThresholds | null } | null)?.pricing_thresholds ?? null
   const pricingThresholdsBlock = buildPricingThresholdsBlock(pricingThresholdsCfg)
@@ -593,12 +594,44 @@ export async function POST(req: NextRequest) {
         : `${gap >= 0 ? '+' : ''}${gap.toFixed(1)}%`
       return `| ${LABELS[key] ?? key} | ${fmtMeta(key, meta)} | ${fmtMeta(key, atual)} | ${gapStr} | ${atual >= meta ? '✅' : '⚠️'} |`
     })
-    return `\n## Metas da Unidade
+    let block = `\n## Metas da Unidade — Mês atual
 | KPI | Meta | Atual | Gap | Status |
 |-----|------|-------|-----|--------|
 ${rows.join('\n')}
 
 Ao gerar a proposta, **priorize as métricas marcadas com ⚠️** e calcule o impacto estimado de cada ajuste de preço no fechamento da meta.`
+
+    // Próximos meses do orçamento anual
+    if (budgetYearly) {
+      const now = new Date()
+      const curMonth = now.getMonth() + 1
+      const curYear  = now.getFullYear()
+      const MONTHS_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+      const yearData = budgetYearly[String(curYear)]
+      if (yearData) {
+        const upRows: string[] = []
+        for (let offset = 1; offset <= 3; offset++) {
+          const m = curMonth + offset
+          if (m > 12) break
+          const d = yearData[String(m)]
+          if (!d || d.receita == null) continue
+          const label = `${MONTHS_PT[m - 1]}/${String(curYear).slice(2)}`
+          const ticket = d.ticket != null ? fmtBRL(d.ticket) : '—'
+          const giro   = d.giro   != null ? d.giro.toFixed(2) : '—'
+          const revpar = d.revpar != null ? fmtBRL(d.revpar)  : '—'
+          upRows.push(`| ${label} | ${fmtBRL(d.receita)} | ${ticket} | ${giro} | ${revpar} |`)
+        }
+        if (upRows.length) {
+          block += `\n\n## Orçamento — Próximos meses (referência de sazonalidade)
+| Mês | Receita Meta | Ticket Meta | Giro Meta | RevPAR Meta |
+|-----|-------------|-------------|-----------|-------------|
+${upRows.join('\n')}
+
+Calibre a proposta considerando a sazonalidade projetada: se o orçamento futuro subir, pode ser mais ousado agora; se cair, conserve margem.`
+        }
+      }
+    }
+    return block
   }
   const goalsBlock = buildProposalGoalsBlock()
 

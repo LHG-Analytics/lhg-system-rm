@@ -48,12 +48,21 @@ interface UnitGoals {
   ticket?: number | null
 }
 
-function buildGoalsBlock(goals: UnitGoals | null, kpiPeriods: { company: import('@/lib/kpis/types').CompanyKPIResponse | null }[]): string {
-  if (!goals) return ''
-  const entries = Object.entries(goals).filter(([, v]) => v != null && v > 0) as [string, number][]
-  if (!entries.length) return ''
+interface BudgetMonthData {
+  receita: number | null
+  ticket:  number | null
+  giro:    number | null
+  revpar:  number | null
+}
+type BudgetYearly = Record<string, Record<string, BudgetMonthData>>
 
-  const company = kpiPeriods[0]?.company
+const MONTHS_PT_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+
+function buildGoalsBlock(
+  goals: UnitGoals | null,
+  kpiPeriods: { company: import('@/lib/kpis/types').CompanyKPIResponse | null }[],
+  budgetYearly?: BudgetYearly | null,
+): string {
   const fmtBRL = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(n)
   const fmtNum = (n: number, dec = 2) => n.toFixed(dec)
 
@@ -62,49 +71,56 @@ function buildGoalsBlock(goals: UnitGoals | null, kpiPeriods: { company: import(
     receita_mensal: 'Receita Mensal', giro: 'Giro', ticket: 'Ticket Médio',
   }
 
-  function getCurrent(key: string): number | null {
-    if (!company) return null
-    const t = company.TotalResult
-    const bn = company.BigNumbers?.[0]
-    if (key === 'revpar')         return t?.totalRevpar ?? null
-    if (key === 'trevpar')        return t?.totalTrevpar ?? null
-    if (key === 'ocupacao')       return t?.totalOccupancyRate ?? null
-    if (key === 'receita_mensal') return bn?.monthlyForecast?.totalAllValueForecast ?? null
-    if (key === 'giro')           return t?.totalGiro ?? null
-    if (key === 'ticket')         return t?.totalAllTicketAverage ?? null
-    return null
-  }
+  // ── Seção 1: gap mês atual ────────────────────────────────────────────────
+  let currentMonthSection = ''
+  if (goals) {
+    const entries = Object.entries(goals).filter(([, v]) => v != null && v > 0) as [string, number][]
+    if (entries.length) {
+      const company = kpiPeriods[0]?.company
 
-  function formatValue(key: string, value: number): string {
-    if (key === 'ocupacao') return `${fmtNum(value, 1)}%`
-    if (key === 'giro')     return fmtNum(value, 2)
-    return fmtBRL(value)
-  }
+      function getCurrent(key: string): number | null {
+        if (!company) return null
+        const t = company.TotalResult
+        const bn = company.BigNumbers?.[0]
+        if (key === 'revpar')         return t?.totalRevpar ?? null
+        if (key === 'trevpar')        return t?.totalTrevpar ?? null
+        if (key === 'ocupacao')       return t?.totalOccupancyRate ?? null
+        if (key === 'receita_mensal') return bn?.monthlyForecast?.totalAllValueForecast ?? null
+        if (key === 'giro')           return t?.totalGiro ?? null
+        if (key === 'ticket')         return t?.totalAllTicketAverage ?? null
+        return null
+      }
 
-  function gapLabel(key: string, meta: number, atual: number): string {
-    if (key === 'ocupacao') {
-      const diff = atual - meta
-      return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)} p.p.`
-    }
-    const pct = ((atual - meta) / meta) * 100
-    return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
-  }
+      function formatValue(key: string, value: number): string {
+        if (key === 'ocupacao') return `${fmtNum(value, 1)}%`
+        if (key === 'giro')     return fmtNum(value, 2)
+        return fmtBRL(value)
+      }
 
-  const rows: string[] = []
-  for (const [key, meta] of entries) {
-    const atual = getCurrent(key)
-    const metaFmt = formatValue(key, meta)
-    if (atual == null) {
-      rows.push(`| ${LABELS[key] ?? key} | ${metaFmt} | — | — | ⬜ Sem dados |`)
-    } else {
-      const gap = gapLabel(key, meta, atual)
-      const ok = atual >= meta
-      const status = ok ? '✅ Atingida' : '⚠️ Abaixo'
-      rows.push(`| ${LABELS[key] ?? key} | ${metaFmt} | ${formatValue(key, atual)} | ${gap} | ${status} |`)
-    }
-  }
+      function gapLabel(key: string, meta: number, atual: number): string {
+        if (key === 'ocupacao') {
+          const diff = atual - meta
+          return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)} p.p.`
+        }
+        const pct = ((atual - meta) / meta) * 100
+        return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
+      }
 
-  return `\n\n## Metas da Unidade
+      const rows: string[] = []
+      for (const [key, meta] of entries) {
+        const atual = getCurrent(key)
+        const metaFmt = formatValue(key, meta)
+        if (atual == null) {
+          rows.push(`| ${LABELS[key] ?? key} | ${metaFmt} | — | — | ⬜ Sem dados |`)
+        } else {
+          const gap = gapLabel(key, meta, atual)
+          const ok = atual >= meta
+          const status = ok ? '✅ Atingida' : '⚠️ Abaixo'
+          rows.push(`| ${LABELS[key] ?? key} | ${metaFmt} | ${formatValue(key, atual)} | ${gap} | ${status} |`)
+        }
+      }
+
+      currentMonthSection = `\n\n## Metas da Unidade — Mês atual
 | KPI | Meta | Atual (período) | Gap | Status |
 |-----|------|----------------|-----|--------|
 ${rows.join('\n')}
@@ -113,6 +129,42 @@ Ao diagnosticar e propor ajustes, **referencie explicitamente as metas acima**:
 - Calcule o impacto estimado de cada proposta nos KPIs abaixo da meta.
 - Identifique qual alavanca (preço, desconto, período) tem maior potencial de fechar o gap.
 - Se um KPI já atingiu a meta, mantenha conservadorismo para não sacrificar o que já funciona.`
+    }
+  }
+
+  // ── Seção 2: próximos meses do orçamento anual ────────────────────────────
+  let upcomingSection = ''
+  if (budgetYearly) {
+    const now = new Date()
+    const curMonth = now.getMonth() + 1
+    const curYear  = now.getFullYear()
+    const yearData = budgetYearly[String(curYear)]
+    if (yearData) {
+      const upcomingRows: string[] = []
+      for (let offset = 1; offset <= 3; offset++) {
+        const m = curMonth + offset
+        if (m > 12) break
+        const d = yearData[String(m)]
+        if (!d || d.receita == null) continue
+        const label = `${MONTHS_PT_SHORT[m - 1]}/${String(curYear).slice(2)}`
+        const ticket = d.ticket != null ? fmtBRL(d.ticket) : '—'
+        const giro   = d.giro   != null ? fmtNum(d.giro, 2) : '—'
+        const revpar = d.revpar != null ? fmtBRL(d.revpar)  : '—'
+        upcomingRows.push(`| ${label} | ${fmtBRL(d.receita)} | ${ticket} | ${giro} | ${revpar} |`)
+      }
+      if (upcomingRows.length) {
+        upcomingSection = `\n\n## Orçamento — Próximos meses (referência de planejamento)
+| Mês | Receita Meta | Ticket Meta | Giro Meta | RevPAR Meta |
+|-----|-------------|-------------|-----------|-------------|
+${upcomingRows.join('\n')}
+
+Use esses valores para calibrar propostas com sazonalidade futura em mente.`
+      }
+    }
+  }
+
+  if (!currentMonthSection && !upcomingSection) return ''
+  return currentMonthSection + upcomingSection
 }
 
 function buildPricingThresholdsBlock(t: PricingThresholds | null): string {
@@ -406,7 +458,7 @@ export async function POST(req: NextRequest) {
   ] = await Promise.allSettled([
     admin
       .from('rm_agent_config')
-      .select('city, suite_amenities, focus_metric, pricing_strategy, max_variation_pct, shared_context, pricing_thresholds, unit_goals')
+      .select('city, suite_amenities, focus_metric, pricing_strategy, max_variation_pct, shared_context, pricing_thresholds, unit_goals, budget_yearly')
       .eq('unit_id', unit.id)
       .maybeSingle(),
     admin
@@ -453,7 +505,8 @@ export async function POST(req: NextRequest) {
   const maxVariationPct = agentConfigData?.max_variation_pct ?? 30
   const sharedContext = (agentConfigData as { shared_context?: string | null } | null)?.shared_context ?? null
   const pricingThresholds = (agentConfigData as { pricing_thresholds?: PricingThresholds | null } | null)?.pricing_thresholds ?? null
-  const unitGoals = (agentConfigData as { unit_goals?: Record<string, number | null> | null } | null)?.unit_goals ?? null
+  const unitGoals      = (agentConfigData as { unit_goals?: Record<string, number | null> | null } | null)?.unit_goals ?? null
+  const budgetYearly   = (agentConfigData as { budget_yearly?: BudgetYearly | null } | null)?.budget_yearly ?? null
 
   const FOCUS_LABELS: Record<string, string> = {
     revpar: 'RevPAR', ocupacao: 'Taxa de Ocupação', ticket: 'Ticket Médio',
@@ -531,7 +584,7 @@ export async function POST(req: NextRequest) {
 
   // 7. Montar system prompt completo
   // contextMode='personal' omite contexto coletivo da org (shared_context, eventos, regras de threshold)
-  const goalsBlock = buildGoalsBlock(unitGoals, kpiPeriods)
+  const goalsBlock = buildGoalsBlock(unitGoals, kpiPeriods, budgetYearly)
 
   // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
   const capacityRows = capacityResult.status === 'fulfilled' ? (capacityResult.value.data ?? []) : []

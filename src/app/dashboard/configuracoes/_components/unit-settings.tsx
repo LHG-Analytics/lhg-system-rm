@@ -76,7 +76,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
   const [saved, setSaved]         = useState(false)
   const [error, setError]         = useState<string | null>(null)
   const [syncing, setSyncing]     = useState(false)
-  const [syncResult, setSyncResult] = useState<{ receita: number; ticket: number | null; giro: number | null; revpar: number | null; month: number; year: number; isFallback: boolean } | null>(null)
+  const [syncResult, setSyncResult] = useState<{ receita: number; ticket: number | null; giro: number | null; revpar: number | null; month: number; year: number; months_synced: number; isFallback: boolean } | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
 
   const current = activeUnit ? configs[activeUnit.id] : null
@@ -130,13 +130,14 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
       const syncedAt = new Date().toISOString()
       const now = new Date()
       setSyncResult({
-        receita: data.receita_locacoes,
-        ticket:  data.ticket  ?? null,
-        giro:    data.giro    ?? null,
-        revpar:  data.revpar  ?? null,
-        month: data.month,
-        year: data.year,
-        isFallback: data.month !== (now.getMonth() + 1),
+        receita:       data.receita_locacoes,
+        ticket:        data.ticket  ?? null,
+        giro:          data.giro    ?? null,
+        revpar:        data.revpar  ?? null,
+        month:         data.month,
+        year:          data.year,
+        months_synced: data.months_synced ?? 1,
+        isFallback:    data.month !== (now.getMonth() + 1),
       })
       updateCurrent({ budget_last_sync: syncedAt })
     } catch (err) {
@@ -262,7 +263,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
                 <span className="text-emerald-600 flex flex-col gap-0.5">
                   <span className="flex items-center gap-1">
                     <CheckCircle2 className="size-3" />
-                    Metas {MONTHS_PT[(syncResult.month - 1)]}. atualizadas
+                    {syncResult.months_synced} {syncResult.months_synced === 1 ? 'mês sincronizado' : 'meses sincronizados'} ({syncResult.year})
                   </span>
                   <span className="pl-4 text-[10px] font-mono text-muted-foreground">
                     Receita {formatCurrency(syncResult.receita)}

@@ -672,6 +672,7 @@ export type Database = {
           budget_last_sync: string | null
           budget_sheet_tab: string
           budget_sheet_url: string | null
+          budget_yearly: Json
           city: string
           competitor_urls: Json
           created_at: string
@@ -695,6 +696,7 @@ export type Database = {
           budget_last_sync?: string | null
           budget_sheet_tab?: string
           budget_sheet_url?: string | null
+          budget_yearly?: Json
           city?: string
           competitor_urls?: Json
           created_at?: string
@@ -718,6 +720,7 @@ export type Database = {
           budget_last_sync?: string | null
           budget_sheet_tab?: string
           budget_sheet_url?: string | null
+          budget_yearly?: Json
           city?: string
           competitor_urls?: Json
           created_at?: string
