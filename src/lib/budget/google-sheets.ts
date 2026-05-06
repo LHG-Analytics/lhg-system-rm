@@ -56,7 +56,6 @@ export interface BudgetSyncResult {
 const COL_FIRST_MONTH = 3   // C = janeiro
 const ROWS = { receita: 18, giro: 60, revpar: 74 } as const
 
-const PROD_SERV_TAB = 'Produtos e Serviços-Com'
 const PROD_SERV_ROW = 34
 
 // ─── Auth: JWT RS256 para service account ─────────────────────────────────────
@@ -170,10 +169,11 @@ async function fetchYearlyRows(
 async function fetchProdServRow(
   token: string,
   spreadsheetId: string,
+  prodServTab: string,
 ): Promise<(number | null)[] | null> {
   const colStart = colLetter(COL_FIRST_MONTH)
   const colEnd   = colLetter(COL_FIRST_MONTH + 11)
-  const range    = `${PROD_SERV_TAB}!${colStart}${PROD_SERV_ROW}:${colEnd}${PROD_SERV_ROW}`
+  const range    = `${prodServTab}!${colStart}${PROD_SERV_ROW}:${colEnd}${PROD_SERV_ROW}`
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE`
 
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
@@ -204,14 +204,15 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
 
   const { data: config } = await admin
     .from('rm_agent_config')
-    .select('unit_goals, budget_sheet_url, budget_sheet_tab, budget_yearly')
+    .select('unit_goals, budget_sheet_url, budget_sheet_tab, budget_prod_serv_tab, budget_yearly')
     .eq('unit_id', unitId)
     .single()
 
   if (!config?.budget_sheet_url) throw new Error('URL da planilha não configurada para esta unidade')
 
-  const spreadsheetId = extractSpreadsheetId(config.budget_sheet_url)
-  const tab = config.budget_sheet_tab ?? 'Locações-Comp'
+  const spreadsheetId  = extractSpreadsheetId(config.budget_sheet_url)
+  const tab            = config.budget_sheet_tab      ?? 'Locações-Comp'
+  const prodServTab    = config.budget_prod_serv_tab  ?? 'Produtos e Serviços-Com'
 
   const now   = new Date()
   const month = now.getMonth() + 1  // 1-indexed
@@ -222,7 +223,7 @@ export async function syncBudgetForUnit(unitId: string): Promise<BudgetSyncResul
   // Busca aba de locações e aba de produtos em paralelo — falha de prod/serv não bloqueia
   const [rows, prodServRow] = await Promise.all([
     fetchYearlyRows(token, spreadsheetId, tab),
-    fetchProdServRow(token, spreadsheetId).catch(() => null),
+    fetchProdServRow(token, spreadsheetId, prodServTab).catch(() => null),
   ])
 
   // Valida mês atual obrigatório (locações)

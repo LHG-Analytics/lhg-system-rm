@@ -670,6 +670,7 @@ export type Database = {
       rm_agent_config: {
         Row: {
           budget_last_sync: string | null
+          budget_prod_serv_tab: string
           budget_sheet_tab: string
           budget_sheet_url: string | null
           budget_yearly: Json
@@ -694,6 +695,7 @@ export type Database = {
         }
         Insert: {
           budget_last_sync?: string | null
+          budget_prod_serv_tab?: string
           budget_sheet_tab?: string
           budget_sheet_url?: string | null
           budget_yearly?: Json
@@ -718,6 +720,7 @@ export type Database = {
         }
         Update: {
           budget_last_sync?: string | null
+          budget_prod_serv_tab?: string
           budget_sheet_tab?: string
           budget_sheet_url?: string | null
           budget_yearly?: Json

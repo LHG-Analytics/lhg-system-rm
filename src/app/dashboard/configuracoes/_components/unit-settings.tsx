@@ -20,12 +20,13 @@ interface UnitConfig {
   timezone: string
   budget_sheet_url: string
   budget_sheet_tab: string
+  budget_prod_serv_tab: string
   budget_last_sync: string | null
 }
 
 interface UnitSettingsProps {
   units: { id: string; name: string; slug: string; city: string | null }[]
-  agentConfigs: { unit_id: string; city: string; timezone: string; budget_sheet_url: string | null; budget_sheet_tab: string | null; budget_last_sync: string | null }[]
+  agentConfigs: { unit_id: string; city: string; timezone: string; budget_sheet_url: string | null; budget_sheet_tab: string | null; budget_prod_serv_tab: string | null; budget_last_sync: string | null }[]
   activeUnitSlug: string
 }
 
@@ -59,11 +60,12 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
     const existing = agentConfigs.find((c) => c.unit_id === unitId)
     return {
       unit_id:          unitId,
-      city:             existing?.city ?? 'Sao Paulo,BR',
-      timezone:         existing?.timezone ?? 'America/Sao_Paulo',
-      budget_sheet_url: existing?.budget_sheet_url ?? '',
-      budget_sheet_tab: existing?.budget_sheet_tab ?? 'Locações-Comp',
-      budget_last_sync: existing?.budget_last_sync ?? null,
+      city:                 existing?.city ?? 'Sao Paulo,BR',
+      timezone:             existing?.timezone ?? 'America/Sao_Paulo',
+      budget_sheet_url:     existing?.budget_sheet_url ?? '',
+      budget_sheet_tab:     existing?.budget_sheet_tab ?? 'Locações-Comp',
+      budget_prod_serv_tab: existing?.budget_prod_serv_tab ?? 'Produtos e Serviços-Com',
+      budget_last_sync:     existing?.budget_last_sync ?? null,
     }
   }
 
@@ -97,11 +99,12 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          unit_id:          activeUnit.id,
-          city:             current.city,
-          timezone:         current.timezone,
-          budget_sheet_url: current.budget_sheet_url || null,
-          budget_sheet_tab: current.budget_sheet_tab || 'DRE',
+          unit_id:              activeUnit.id,
+          city:                 current.city,
+          timezone:             current.timezone,
+          budget_sheet_url:     current.budget_sheet_url || null,
+          budget_sheet_tab:     current.budget_sheet_tab || 'Locações-Comp',
+          budget_prod_serv_tab: current.budget_prod_serv_tab || 'Produtos e Serviços-Com',
         }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
@@ -235,21 +238,33 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-xs">Nome da aba</Label>
-              <Input
-                placeholder="Locações-Comp"
-                value={current.budget_sheet_tab}
-                onChange={(e) => updateCurrent({ budget_sheet_tab: e.target.value })}
-                disabled={saving}
-                className="h-9 text-sm"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs">Aba — Locações</Label>
+                <Input
+                  placeholder="Locações-Comp"
+                  value={current.budget_sheet_tab}
+                  onChange={(e) => updateCurrent({ budget_sheet_tab: e.target.value })}
+                  disabled={saving}
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs">Aba — Produtos e Serviços</Label>
+                <Input
+                  placeholder="Produtos e Serviços-Com"
+                  value={current.budget_prod_serv_tab}
+                  onChange={(e) => updateCurrent({ budget_prod_serv_tab: e.target.value })}
+                  disabled={saving}
+                  className="h-9 text-sm"
+                />
+              </div>
             </div>
 
             <p className="text-[11px] text-muted-foreground">
               Compartilhe a planilha com o e-mail da conta de serviço configurada em{' '}
               <span className="font-mono bg-muted px-1 rounded">GOOGLE_SERVICE_ACCOUNT_JSON</span>.
-              Abas lidas: <span className="font-mono bg-muted px-1 rounded">Locações-Comp</span> (L18 Receita, L60 Giro, L74 RevPAR) e <span className="font-mono bg-muted px-1 rounded">Produtos e Serviços-Com</span> (L34 Total).
+              Locações: L18 Receita, L60 Giro, L74 RevPAR · Produtos e Serviços: L34 Total.
             </p>
           </div>
 

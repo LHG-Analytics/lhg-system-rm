@@ -13,7 +13,7 @@ interface ConfiguracoesPageClientProps {
   displayName: string | null
   notificationPreferences: Record<string, boolean>
   units: { id: string; name: string; slug: string; city: string | null }[]
-  agentConfigs: { unit_id: string; city: string; timezone: string; budget_sheet_url: string | null; budget_sheet_tab: string | null; budget_last_sync: string | null }[]
+  agentConfigs: { unit_id: string; city: string; timezone: string; budget_sheet_url: string | null; budget_sheet_tab: string | null; budget_prod_serv_tab: string | null; budget_last_sync: string | null }[]
   activeUnitSlug: string
 }
 
