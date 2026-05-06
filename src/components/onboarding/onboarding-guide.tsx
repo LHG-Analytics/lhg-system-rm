@@ -210,21 +210,19 @@ export function OnboardingGuide({ userRole, unitSlug }: Props) {
           className="max-w-xl max-h-[80vh] flex flex-col p-0 gap-0"
           style={{ overflow: 'visible' }}
         >
-          {/* ── Balão do agente — fora da caixa, acima do diálogo ───── */}
-          <div className="absolute bottom-full left-0 right-0 pb-3 px-1 pointer-events-none">
-            <div className="flex gap-3 items-end">
-              <div className="shrink-0 flex size-9 items-center justify-center rounded-full bg-primary/10 ring-2 ring-primary/20 mb-0.5">
-                <Sparkles className="size-4 text-primary" />
-              </div>
-              <div className="flex-1 relative bg-card border rounded-2xl rounded-bl-sm px-4 py-3 text-sm leading-relaxed shadow-md">
-                Olá! Este guia mostra os{' '}
-                <span className="font-medium">passos essenciais</span>{' '}
-                para configurar e usar o sistema — da importação de preços até a rotina
-                semanal de análise. Marque cada etapa conforme você avança. 🚀
-                {/* Seta apontando para o diálogo abaixo */}
-                <span className="absolute -bottom-[9px] left-7 block w-0 h-0 border-l-[9px] border-r-[9px] border-t-[9px] border-l-transparent border-r-transparent border-t-border" />
-                <span className="absolute -bottom-[8px] left-7 block w-0 h-0 border-l-[9px] border-r-[9px] border-t-[9px] border-l-transparent border-r-transparent border-t-card" />
-              </div>
+          {/* ── Balão do agente — à esquerda do diálogo (só em telas largas) ── */}
+          <div
+            className="absolute right-full top-6 pr-3 pointer-events-none hidden lg:flex gap-2.5 items-start"
+            style={{ width: '230px' }}
+          >
+            <div className="shrink-0 flex size-8 items-center justify-center rounded-full bg-primary/10 ring-2 ring-primary/20 mt-1">
+              <Sparkles className="size-3.5 text-primary" />
+            </div>
+            <div className="flex-1 relative bg-card border rounded-2xl rounded-tr-sm px-3 py-2.5 text-[12.5px] leading-relaxed shadow-md">
+              Veja os <span className="font-medium">passos essenciais</span> para configurar e usar o sistema. Marque conforme você avança. 🚀
+              {/* Seta apontando para a direita (→ diálogo) */}
+              <span className="absolute top-[10px] -right-[9px] block w-0 h-0 border-t-[8px] border-b-[8px] border-l-[9px] border-t-transparent border-b-transparent border-l-border" />
+              <span className="absolute top-[10px] -right-[8px] block w-0 h-0 border-t-[8px] border-b-[8px] border-l-[9px] border-t-transparent border-b-transparent border-l-card" />
             </div>
           </div>
 
