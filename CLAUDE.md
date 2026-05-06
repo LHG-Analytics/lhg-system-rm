@@ -1011,15 +1011,18 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Solução:** Regra 13 reescrita — agente lê `focus_metric` da config; se "Balanceado", deriva foco dos dados (KPI mais distante do potencial); declara raciocínio no passo 1 do framework; `sugerir_respostas` de objetivo fica como refinamento pós-análise, nunca gate pré-análise
   - Arquivo: `src/lib/agente/system-prompt.ts`
 
-- **LHG-182:** feat(budget): receita total = locações + produtos/serviços no sync do orçamento ✅ 2026-05-06
-  - Root cause: sync lia apenas Locações-Comp → receita subestimada; ticket médio só de locações (sem produtos, bebidas, serviços)
-  - Nova função `fetchProdServRow`: busca L34 (TOTAL) da aba "Produtos e Serviços-Com", colunas C–N, em paralelo com Locações-Comp
-  - `receita_total = receita_locações + receita_prod_serv` por mês; `ticket = receita_total / giro` (não mais da planilha)
-  - `budget_yearly` e `unit_goals` passam a usar receita e ticket totais
-  - Degradação silenciosa: se aba de produtos não existir, sync continua com locações apenas
+- **LHG-182:** feat(budget): orçamento dinâmico — receita total (loc + P&S) e configuração de abas/linhas por unidade ✅ 2026-05-06
+  - **Iter 1 — receita total:** sync lia apenas Locações-Comp; `receita_total = receita_locações + receita_prod_serv`; `ticket = receita_total / giro` (não mais da planilha); RevPAR inalterado (locações / suítes / dias)
+  - **Iter 2 — aba P&S configurável:** nome da aba "Produtos e Serviços-Com" movido para `budget_config` (igual a Locações-Comp)
+  - **Iter 3 — linhas dinâmicas:** `BudgetConfig JSONB` substitui colunas individuais — 7 campos: `locacoes_tab`, `locacoes_receita_row` (18), `locacoes_giro_row` (60), `locacoes_revpar_row` (74), `prod_serv_tab`, `prod_serv_produtos_row` (18), `prod_serv_servicos_row` (26)
+  - `resolveBudgetConfig(raw)` mescla DB com `DEFAULT_BUDGET_CONFIG` — retrocompat com config ausente
+  - `fetchLocacoesRows`: batchGet de 3 linhas (receita/giro/revpar) com números de linha dinâmicos
+  - `fetchProdServRows`: batchGet de 2 linhas (produtos/serviços); retorna `null` silenciosamente se aba não existir
+  - Migration `20260506000004`: `budget_config JSONB DEFAULT {...}` em `rm_agent_config`
+  - UI `unit-settings.tsx`: duas seções com grid de inputs — "Aba de Locações" (nome + 3 linhas) e "Aba de Produtos e Serviços" (nome + 2 linhas)
   - `BudgetSyncResult` inclui `receita_locacoes`, `receita_prod_serv` e `receita_total` para auditoria
-  - UI de configurações exibe "Total (Loc + P&S)" com breakdown após sync
-  - **Armadilha:** RevPAR NÃO muda — continua vindo da linha 74 de Locações-Comp (RevPAR = receita de locações / suítes / dias)
+  - **Armadilha:** RevPAR NÃO muda — continua vindo da linha configura em `locacoes_revpar_row` (RevPAR = receita de locações / suítes / dias, não total)
+  - **Armadilha:** `valueRenderOption=UNFORMATTED_VALUE` obrigatório — sem ele a API retorna strings formatadas que quebram `Number()`
 
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
