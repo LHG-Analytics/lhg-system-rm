@@ -965,6 +965,12 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - Nova aba "Performance" (`BarChart2`) no Agente RM ao lado de "Agenda"
   - Estado vazio orientativo quando não há checkpoints (aparecem após 7/14/28 dias das aprovações)
 
+- **LHG-178:** feat(agente): revisar prompts iniciais e framework do system prompt ✅ 2026-05-06
+  - SUGESTOES substituídos por prompts action-oriented: "Fazer diagnóstico completo e gerar proposta", "Revisar precificação do fim de semana", "Analisar concorrentes e sugerir ajustes", "Investigar anomalias e oportunidades"
+  - Regras renumeradas sequencialmente no system prompt (era 1,2,3,4,5,6,7,11,12,8,9,10,13 → 1-13)
+  - Passo "Raciocínio" adicionado como etapa 1 do framework: 2–4 frases sobre quais dados usa + hipótese central (LHG-119 que estava faltando)
+  - Framework agora tem 6 etapas: Raciocínio → Diagnóstico → Padrão semanal → Oportunidades → Canal e desconto → Proposta
+
 - **LHG-177:** feat(admin): consolidar configurações do agente RM em local único ✅ 2026-05-06
   - Admin page reorganizada: 4 abas top-level → 2 abas (Usuários | Agente RM)
   - "Agente RM" contém 4 sub-abas: Estratégia (AgentConfigManager completo), Guardrails, Capacidade, Eventos
