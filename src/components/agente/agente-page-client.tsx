@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Plus, MessageSquare, Trash2, BotMessageSquare, ClipboardCheck, CalendarClock, Settings2 } from 'lucide-react'
+import { Plus, MessageSquare, Trash2, BotMessageSquare, ClipboardCheck, CalendarClock, Settings2, BarChart2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -13,6 +13,7 @@ import { ProposalsList } from '@/components/agente/proposals-list'
 import { ScheduledReviewsList } from '@/components/agente/scheduled-reviews-list'
 import { DiscountProposalsList } from '@/components/descontos/discount-proposals-list'
 import { AgentConfigManager } from '@/app/dashboard/admin/_components/agent-config-manager'
+import { PerformanceDashboard } from '@/components/agente/performance-dashboard'
 import type { UIMessage } from 'ai'
 import type { ConversationSummary, ContextMode } from '@/components/agente/agente-chat'
 import type { PriceProposal } from '@/app/api/agente/proposals/route'
@@ -410,6 +411,10 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
                 <CalendarClock className="size-3.5" />
                 Agenda
               </TabsTrigger>
+              <TabsTrigger value="performance" className="gap-1.5 text-xs h-7 px-3">
+                <BarChart2 className="size-3.5" />
+                Performance
+              </TabsTrigger>
             </TabsList>
             {canConfig && (
               <Button
@@ -503,6 +508,10 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
             onSelectConversation={handleSelectConversationById}
             onSelectProposal={handleSelectProposal}
           />
+        </TabsContent>
+
+        <TabsContent value="performance" className="mt-0 overflow-y-auto p-4">
+          <PerformanceDashboard unitSlug={unitSlug} />
         </TabsContent>
       </Tabs>
     </div>
