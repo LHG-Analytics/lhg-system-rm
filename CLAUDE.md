@@ -937,20 +937,33 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
 
 - **LHG-167:** feat(orçamento): sync automático de metas via Google Sheets (service account) ✅ 2026-05-06
   - Autenticação JWT RS256 com `crypto` nativo do Node (sem googleapis) — service account JSON em `GOOGLE_SERVICE_ACCOUNT_JSON`
-  - `src/lib/budget/google-sheets.ts`: `getAccessToken` (JWT→token OAuth2), `fetchCell` (Sheets API v4 `UNFORMATTED_VALUE`), `syncBudgetForUnit` (lê linha 11 RECEITA BRUTA DE LOCAÇÕES, col de Orçamento do mês atual, upserta `unit_goals.receita_mensal`)
-  - Cálculo da coluna de Orçamento: mês M → índice `4 * M` (D=Jan, H=Fev, L=Mar…); `colLetter(n)` converte índice em letra (A-Z, AA-AZ…)
-  - Migration `20260506000001`: `budget_sheet_url`, `budget_sheet_tab TEXT DEFAULT 'DRE'`, `budget_last_sync TIMESTAMPTZ` em `rm_agent_config`
-  - API `POST /api/admin/budget-sync`: sync manual por unidade (admin+); retorna `{receita_locacoes, month, year, synced_at}`
-  - Cron `run-reviews.ts`: sync diário automático por unidade quando `budget_sheet_url` configurado (falha silenciosa)
-  - UI `unit-settings.tsx`: nova seção "Orçamento — Google Sheets" com campos URL/aba, botão "Sincronizar agora" com feedback de última sync e meta importada
-  - **Setup necessário:** compartilhar a planilha com o e-mail do service account (`client_email` no JSON); adicionar `GOOGLE_SERVICE_ACCOUNT_JSON` na Vercel
-  - **Armadilha:** `valueRenderOption=UNFORMATTED_VALUE` é obrigatório — sem ele a Sheets API retorna string com formato de moeda BR (`"R$ 1.234.567"`) que quebra o `Number()`
+  - `src/lib/budget/google-sheets.ts`: JWT→token OAuth2, `batchGet` busca 4 ranges em 1 requisição HTTP (`C:N` das linhas 18/32/60/74 da aba `Locações-Comp`), `syncBudgetForUnit` atualiza `unit_goals` (mês atual) e `budget_yearly` (todos os 12 meses)
+  - **Aba usada:** `Locações-Comp` — colunas C–N = jan–dez; linha 18=receita, 32=ticket, 60=giro, 74=revpar
+  - Migration `20260506000001`: `budget_sheet_url`, `budget_sheet_tab TEXT DEFAULT 'Locações-Comp'`, `budget_last_sync TIMESTAMPTZ`
+  - Migration `20260506000002`: `budget_yearly JSONB NOT NULL DEFAULT '{}'` — estrutura `{ "2026": { "1": { receita, ticket, giro, revpar }, ..., "12": {...} } }`
+  - `unit_goals` sincroniza mês atual para `buildGoalsBlock` (gap meta × atual); `budget_yearly` alimenta seção "Próximos 3 meses" no chat e propostas
+  - `buildGoalsBlock` (chat) e `buildProposalGoalsBlock` (propostas) incluem tabela de próximos 3 meses para calibrar sazonalidade futura
+  - API `POST /api/admin/budget-sync`: sync manual; retorna `{ receita_locacoes, ticket, giro, revpar, month, year, months_synced, synced_at }`
+  - Cron `run-reviews.ts`: sync diário automático quando `budget_sheet_url` configurado (falha silenciosa)
+  - UI `unit-settings.tsx`: feedback "N meses sincronizados (ano)" com valores Receita/Ticket/Giro/RevPAR do mês atual
+  - **Metas manuais removidas** do `AgentConfigManager` — metas vêm exclusivamente da planilha
+  - **Armadilha:** `valueRenderOption=UNFORMATTED_VALUE` obrigatório — sem ele a API retorna string `"R$ 1.234.567"` que quebra `Number()`
 
-### 🔲 Backlog
+### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
-#### 📊 Dashboard — enriquecimento
-1. **LHG-31:** Dashboard: Visão de canais (parcialmente feito via LHG-131)
+#### 🔴 P0 — Fecha o loop de valor (agente → canal)
+- **LHG-168:** Publicação automática de preços aprovados no site próprio via API Automo — hoje aprovação existe só no banco; sem push ao canal, o agente é puramente advisory
+- **LHG-169:** Relatório executivo semanal por e-mail (Resend) — resumo RevPAR/Giro/Ocupação vs meta, melhor/pior categoria, proposta de ação — valor visível para gestão sem abrir o app
 
+#### 🟠 P1 — Inteligência preditiva
+- **LHG-170:** Forecasting de receita 30/60/90 dias — combina `unit_seasonality` × `budget_yearly` × KPIs atuais; projeta fechamento e desvio vs orçamento; widget no dashboard
+- **LHG-171 (novo):** Dashboard de performance do agente RM — gráfico RevPAR com linha de meta, histórico de propostas aprovadas × impacto medido (Δ% RevPAR nos checkpoints), taxa de acerto geral
+- **LHG-172 (novo):** Modo autônomo com override — agente aplica ajustes dentro dos guardrails, cria notificação com janela de override de 1h antes de publicar; toggle admin
 
-### 📅 Pós-MVP (Backlog)
-LHG-51 a LHG-63: clima (✅ feito), eventos (✅ feito), trânsito (cancelado), aprendizado autônomo, dynamic pricing loop, integração com canais (Guia, Site Próprio).
+#### 🟡 P2 — Qualidade operacional
+- **LHG-173 (novo):** Alertas proativos — notificação quando RevPAR cai >X% vs baseline ou concorrente muda preço ≥10%
+- **LHG-174 (novo):** Export PDF da análise do agente — botão na conversa, gera relatório para compartilhar com gestão
+- **LHG-175 (novo):** Análise de impacto de eventos — cruzar `unit_events` × histórico para prever pico/queda de demanda em feriados futuros; injeta previsão no contexto
+
+### 📅 Pós-MVP (Backlog original)
+LHG-51 a LHG-63: clima (✅), eventos (✅ parcial/desabilitado), trânsito (cancelado), aprendizado autônomo (✅ via lessons+elasticidade), dynamic pricing loop (→ LHG-172), integração com canais (→ LHG-168).
