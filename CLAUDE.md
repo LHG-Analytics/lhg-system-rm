@@ -935,6 +935,17 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - Confiança: `high` (n≥10), `medium` (n 5–9), `low` (n 3–4); apenas high/medium usadas no `elasticityMap` do lookup
   - **Armadilha:** `rm_pricing_lessons` acumula observações pelos checkpoints — no início (poucos checkpoints) todas as combinações terão `n_observations < 10`, portanto `expected_revenue_change_pct` retornará `null` até acumular dados suficientes
 
+- **LHG-167:** feat(orçamento): sync automático de metas via Google Sheets (service account) ✅ 2026-05-06
+  - Autenticação JWT RS256 com `crypto` nativo do Node (sem googleapis) — service account JSON em `GOOGLE_SERVICE_ACCOUNT_JSON`
+  - `src/lib/budget/google-sheets.ts`: `getAccessToken` (JWT→token OAuth2), `fetchCell` (Sheets API v4 `UNFORMATTED_VALUE`), `syncBudgetForUnit` (lê linha 11 RECEITA BRUTA DE LOCAÇÕES, col de Orçamento do mês atual, upserta `unit_goals.receita_mensal`)
+  - Cálculo da coluna de Orçamento: mês M → índice `4 * M` (D=Jan, H=Fev, L=Mar…); `colLetter(n)` converte índice em letra (A-Z, AA-AZ…)
+  - Migration `20260506000001`: `budget_sheet_url`, `budget_sheet_tab TEXT DEFAULT 'DRE'`, `budget_last_sync TIMESTAMPTZ` em `rm_agent_config`
+  - API `POST /api/admin/budget-sync`: sync manual por unidade (admin+); retorna `{receita_locacoes, month, year, synced_at}`
+  - Cron `run-reviews.ts`: sync diário automático por unidade quando `budget_sheet_url` configurado (falha silenciosa)
+  - UI `unit-settings.tsx`: nova seção "Orçamento — Google Sheets" com campos URL/aba, botão "Sincronizar agora" com feedback de última sync e meta importada
+  - **Setup necessário:** compartilhar a planilha com o e-mail do service account (`client_email` no JSON); adicionar `GOOGLE_SERVICE_ACCOUNT_JSON` na Vercel
+  - **Armadilha:** `valueRenderOption=UNFORMATTED_VALUE` é obrigatório — sem ele a Sheets API retorna string com formato de moeda BR (`"R$ 1.234.567"`) que quebra o `Number()`
+
 ### 🔲 Backlog
 
 #### 📊 Dashboard — enriquecimento
