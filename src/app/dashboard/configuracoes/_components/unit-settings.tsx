@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
 import {
   Select,
   SelectContent,
@@ -11,17 +12,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Building2, CheckCircle2 } from 'lucide-react'
+import { Loader2, Building2, CheckCircle2, RefreshCw, FileSpreadsheet, AlertCircle } from 'lucide-react'
 
 interface UnitConfig {
   unit_id: string
   city: string
   timezone: string
+  budget_sheet_url: string
+  budget_sheet_tab: string
+  budget_last_sync: string | null
 }
 
 interface UnitSettingsProps {
   units: { id: string; name: string; slug: string; city: string | null }[]
-  agentConfigs: { unit_id: string; city: string; timezone: string }[]
+  agentConfigs: { unit_id: string; city: string; timezone: string; budget_sheet_url: string | null; budget_sheet_tab: string | null; budget_last_sync: string | null }[]
   activeUnitSlug: string
 }
 
@@ -37,6 +41,16 @@ const TIMEZONES = [
   { value: 'America/Noronha',      label: 'Fernando de Noronha (UTC−2)' },
 ]
 
+function formatCurrency(value: number): string {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
+}
+
+function formatSyncDate(iso: string): string {
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+}
+
 export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettingsProps) {
   const [selectedSlug, setSelectedSlug] = useState(activeUnitSlug)
   const activeUnit = units.find((u) => u.slug === selectedSlug) ?? units[0]
@@ -44,9 +58,12 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
   const configForUnit = (unitId: string): UnitConfig => {
     const existing = agentConfigs.find((c) => c.unit_id === unitId)
     return {
-      unit_id: unitId,
-      city: existing?.city ?? 'Sao Paulo,BR',
-      timezone: existing?.timezone ?? 'America/Sao_Paulo',
+      unit_id:          unitId,
+      city:             existing?.city ?? 'Sao Paulo,BR',
+      timezone:         existing?.timezone ?? 'America/Sao_Paulo',
+      budget_sheet_url: existing?.budget_sheet_url ?? '',
+      budget_sheet_tab: existing?.budget_sheet_tab ?? 'DRE',
+      budget_last_sync: existing?.budget_last_sync ?? null,
     }
   }
 
@@ -55,9 +72,12 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
     for (const u of units) map[u.id] = configForUnit(u.id)
     return map
   })
-  const [saving, setSaving]   = useState(false)
-  const [saved, setSaved]     = useState(false)
-  const [error, setError]     = useState<string | null>(null)
+  const [saving, setSaving]       = useState(false)
+  const [saved, setSaved]         = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+  const [syncing, setSyncing]     = useState(false)
+  const [syncResult, setSyncResult] = useState<{ receita: number; month: number; year: number } | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
 
   const current = activeUnit ? configs[activeUnit.id] : null
 
@@ -76,7 +96,13 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
       const res = await fetch('/api/admin/agent-config', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unit_id: activeUnit.id, city: current.city, timezone: current.timezone }),
+        body: JSON.stringify({
+          unit_id:          activeUnit.id,
+          city:             current.city,
+          timezone:         current.timezone,
+          budget_sheet_url: current.budget_sheet_url || null,
+          budget_sheet_tab: current.budget_sheet_tab || 'DRE',
+        }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
       setSaved(true)
@@ -88,74 +114,183 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
     }
   }
 
+  async function handleSync() {
+    if (!activeUnit || !current?.budget_sheet_url) return
+    setSyncing(true)
+    setSyncError(null)
+    setSyncResult(null)
+    try {
+      const res = await fetch('/api/admin/budget-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unitSlug: selectedSlug }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Erro ao sincronizar')
+      const syncedAt = new Date().toISOString()
+      setSyncResult({ receita: data.receita_locacoes, month: data.month, year: data.year })
+      updateCurrent({ budget_last_sync: syncedAt })
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Erro ao sincronizar')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   if (!activeUnit || !current) return null
 
+  const MONTHS_PT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+
   return (
-    <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10">
-          <Building2 className="size-4 text-primary" />
+    <div className="flex flex-col gap-4">
+      {/* ─── Configurações gerais da unidade ─── */}
+      <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10">
+            <Building2 className="size-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">Configurações da unidade</p>
+            <p className="text-xs text-muted-foreground">Fuso horário e cidade usados pelo agente RM.</p>
+          </div>
         </div>
-        <div>
-          <p className="text-sm font-semibold">Configurações da unidade</p>
-          <p className="text-xs text-muted-foreground">Fuso horário e cidade usados pelo agente RM.</p>
-        </div>
+
+        {units.length > 1 && (
+          <Select value={selectedSlug} onValueChange={setSelectedSlug}>
+            <SelectTrigger className="h-9 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {units.map((u) => (
+                <SelectItem key={u.slug} value={u.slug}>{u.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        <form onSubmit={handleSave} className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs">Fuso horário</Label>
+              <Select value={current.timezone} onValueChange={(v) => updateCurrent({ timezone: v })} disabled={saving}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIMEZONES.map((tz) => (
+                    <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs">Cidade (para clima e eventos)</Label>
+              <Input
+                placeholder="Ex: Sao Paulo,BR"
+                value={current.city}
+                onChange={(e) => updateCurrent({ city: e.target.value })}
+                disabled={saving}
+                className="h-9 text-sm"
+              />
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Formato da cidade: <span className="font-mono">Nome da Cidade,XX</span> onde XX é o código ISO do país (ex: BR, US).
+          </p>
+
+          <Separator />
+
+          {/* ─── Planilha de orçamento ─── */}
+          <div className="flex items-center gap-2">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/10">
+              <FileSpreadsheet className="size-3.5 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold">Orçamento — Google Sheets</p>
+              <p className="text-[11px] text-muted-foreground">Sincroniza a meta de receita mensal automaticamente da sua DRE.</p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs">URL da planilha</Label>
+              <Input
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                value={current.budget_sheet_url}
+                onChange={(e) => updateCurrent({ budget_sheet_url: e.target.value })}
+                disabled={saving}
+                className="h-9 text-sm font-mono text-[11px]"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs">Nome da aba</Label>
+              <Input
+                placeholder="DRE"
+                value={current.budget_sheet_tab}
+                onChange={(e) => updateCurrent({ budget_sheet_tab: e.target.value })}
+                disabled={saving}
+                className="h-9 text-sm"
+              />
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">
+              Compartilhe a planilha com o e-mail da conta de serviço configurada em{' '}
+              <span className="font-mono bg-muted px-1 rounded">GOOGLE_SERVICE_ACCOUNT_JSON</span>.
+              A meta de receita é lida da linha 11 (RECEITA BRUTA DE LOCAÇÕES) da coluna de Orçamento do mês atual.
+            </p>
+          </div>
+
+          {error && <p className="text-xs text-destructive">{error}</p>}
+
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            {/* Feedback do sync */}
+            <div className="text-xs text-muted-foreground">
+              {current.budget_last_sync && !syncResult && (
+                <span>Último sync: {formatSyncDate(current.budget_last_sync)}</span>
+              )}
+              {syncResult && (
+                <span className="text-emerald-600 flex items-center gap-1">
+                  <CheckCircle2 className="size-3" />
+                  Meta {MONTHS_PT[(syncResult.month - 1)]}. atualizada: {formatCurrency(syncResult.receita)}
+                </span>
+              )}
+              {syncError && (
+                <span className="text-destructive flex items-center gap-1">
+                  <AlertCircle className="size-3" />
+                  {syncError}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {current.budget_sheet_url && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleSync}
+                  disabled={syncing || saving}
+                >
+                  {syncing
+                    ? <Loader2 className="size-3.5 animate-spin" />
+                    : <RefreshCw className="size-3.5" />}
+                  Sincronizar agora
+                </Button>
+              )}
+              <Button type="submit" size="sm" className="gap-1.5" disabled={saving}>
+                {saving
+                  ? <Loader2 className="size-3.5 animate-spin" />
+                  : saved
+                  ? <CheckCircle2 className="size-3.5 text-emerald-500" />
+                  : null}
+                {saved ? 'Salvo!' : 'Salvar'}
+              </Button>
+            </div>
+          </div>
+        </form>
       </div>
-
-      {units.length > 1 && (
-        <Select value={selectedSlug} onValueChange={setSelectedSlug}>
-          <SelectTrigger className="h-9 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {units.map((u) => (
-              <SelectItem key={u.slug} value={u.slug}>{u.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-
-      <form onSubmit={handleSave} className="flex flex-col gap-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs">Fuso horário</Label>
-            <Select value={current.timezone} onValueChange={(v) => updateCurrent({ timezone: v })} disabled={saving}>
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TIMEZONES.map((tz) => (
-                  <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs">Cidade (para clima e eventos)</Label>
-            <Input
-              placeholder="Ex: Sao Paulo,BR"
-              value={current.city}
-              onChange={(e) => updateCurrent({ city: e.target.value })}
-              disabled={saving}
-              className="h-9 text-sm"
-            />
-          </div>
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          Formato da cidade: <span className="font-mono">Nome da Cidade,XX</span> onde XX é o código ISO do país (ex: BR, US).
-        </p>
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        <div className="flex justify-end">
-          <Button type="submit" size="sm" className="gap-1.5" disabled={saving}>
-            {saving
-              ? <Loader2 className="size-3.5 animate-spin" />
-              : saved
-              ? <CheckCircle2 className="size-3.5 text-emerald-500" />
-              : null}
-            {saved ? 'Salvo!' : 'Salvar'}
-          </Button>
-        </div>
-      </form>
     </div>
   )
 }

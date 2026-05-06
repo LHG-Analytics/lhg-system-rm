@@ -669,6 +669,9 @@ export type Database = {
       }
       rm_agent_config: {
         Row: {
+          budget_last_sync: string | null
+          budget_sheet_tab: string
+          budget_sheet_url: string | null
           city: string
           competitor_urls: Json
           created_at: string
@@ -689,6 +692,9 @@ export type Database = {
           weather_insight_cache: Json | null
         }
         Insert: {
+          budget_last_sync?: string | null
+          budget_sheet_tab?: string
+          budget_sheet_url?: string | null
           city?: string
           competitor_urls?: Json
           created_at?: string
@@ -709,6 +715,9 @@ export type Database = {
           weather_insight_cache?: Json | null
         }
         Update: {
+          budget_last_sync?: string | null
+          budget_sheet_tab?: string
+          budget_sheet_url?: string | null
           city?: string
           competitor_urls?: Json
           created_at?: string

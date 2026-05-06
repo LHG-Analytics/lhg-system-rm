@@ -53,6 +53,12 @@ export interface AgentConfig {
   pricing_thresholds: PricingThresholds | null
   /** Metas de desempenho da unidade — injetadas no contexto do agente */
   unit_goals: UnitGoals | null
+  /** URL completa da planilha de orçamento no Google Sheets */
+  budget_sheet_url: string | null
+  /** Nome da aba da planilha (padrão: 'DRE') */
+  budget_sheet_tab: string
+  /** Timestamp do último sync bem-sucedido com a planilha */
+  budget_last_sync: string | null
 }
 
 function getAdminClient() {
@@ -84,7 +90,7 @@ export async function GET(req: NextRequest) {
   const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
 
-  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals'
+  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_sheet_tab, budget_last_sync'
 
   const { data, error: err } = await admin
     .from('rm_agent_config')
@@ -124,8 +130,10 @@ export async function PATCH(req: NextRequest) {
     shared_context?: string | null
     pricing_thresholds?: PricingThresholds | null
     unit_goals?: UnitGoals | null
+    budget_sheet_url?: string | null
+    budget_sheet_tab?: string
   }
-  const { unit_id, competitor_urls, suite_amenities, shared_context, pricing_thresholds, unit_goals, ...rest } = body
+  const { unit_id, competitor_urls, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_sheet_tab, ...rest } = body
   if (!unit_id) return new Response('unit_id obrigatório', { status: 400 })
 
   type DbUpdate = import('@/types/database.types').Database['public']['Tables']['rm_agent_config']['Update']
@@ -136,9 +144,11 @@ export async function PATCH(req: NextRequest) {
     ...(shared_context     !== undefined ? { shared_context                                                                     } : {}),
     ...(pricing_thresholds !== undefined ? { pricing_thresholds: pricing_thresholds as unknown as DbUpdate['pricing_thresholds'] } : {}),
     ...(unit_goals         !== undefined ? { unit_goals:         unit_goals         as unknown as DbUpdate['unit_goals']         } : {}),
+    ...(budget_sheet_url   !== undefined ? { budget_sheet_url                                                                   } : {}),
+    ...(budget_sheet_tab   !== undefined ? { budget_sheet_tab                                                                   } : {}),
   }
 
-  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals'
+  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_sheet_tab, budget_last_sync'
   const admin = getAdminClient()
   const { data, error: err } = await admin
     .from('rm_agent_config')

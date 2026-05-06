@@ -7,6 +7,7 @@ import { recordWeatherObservation } from '@/lib/agente/weather-insight'
 import { recomputeSeasonality } from '@/lib/seasonality/compute'
 import { runAnomalyDetection } from '@/lib/anomaly/detector'
 import { computeAndPersistElasticity } from '@/lib/pricing/elasticity'
+import { syncBudgetForUnit } from '@/lib/budget/google-sheets'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt } from '@/lib/agente/system-prompt'
@@ -388,7 +389,7 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
   // Refreshar cache de eventos + registrar observação clima × demanda para todas as unidades
   const { data: allConfigs } = await admin
     .from('rm_agent_config')
-    .select('unit_id, city, units(slug)')
+    .select('unit_id, city, budget_sheet_url, units(slug)')
     .not('city', 'is', null)
 
   const eventsRefreshed: string[] = []
@@ -438,6 +439,15 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
           await computeAndPersistElasticity(cfg.unit_id)
         } catch {
           // Não bloqueia o cron
+        }
+      }
+
+      // Budget: sync diário de metas a partir da planilha de orçamento (Google Sheets)
+      if (cfg.budget_sheet_url) {
+        try {
+          await syncBudgetForUnit(cfg.unit_id)
+        } catch {
+          // Não bloqueia o cron — planilha pode estar temporariamente inacessível
         }
       }
 
