@@ -23,6 +23,7 @@ import {
 import { buildKPIContext, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
+import { getRealtimeOccupancyByCategory } from '@/lib/automo/realtime-occupancy'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -477,8 +478,9 @@ export async function POST(req: NextRequest) {
     dias_tipo:  [...new Set(activeRows.map((r) => r.dia_tipo))],
     canais:     [...new Set(activeRows.map((r) => r.canal))],
   }
-  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps, elasticityRows] = await Promise.all([
+  const [availabilityRows, realtimeOccupancy, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps, elasticityRows] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
+    getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
     buildRejectionLessonsBlock(unit.id).catch(() => ''),
     buildLessonsBlockForUnit(unit.id, lessonsScenario).catch(() => ''),
     getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
@@ -506,6 +508,7 @@ export async function POST(req: NextRequest) {
       comissao_pct: Number(r.comissao_pct),
       taxa_fixa: Number(r.taxa_fixa),
     })),
+    realtimeOccupancy.length ? realtimeOccupancy : undefined,
   )
 
   // Mapa: "categoria|periodo|dia_tipo" → { min, max }

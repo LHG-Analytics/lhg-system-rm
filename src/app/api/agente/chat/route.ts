@@ -9,6 +9,7 @@ import { queryChannelKPIs, queryPeriodMix } from '@/lib/automo/channel-kpis'
 import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
+import { getRealtimeOccupancyByCategory } from '@/lib/automo/realtime-occupancy'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
@@ -598,8 +599,9 @@ export async function POST(req: NextRequest) {
         dias_tipo:  [...new Set(priceImports[0].rows.map((r) => r.dia_tipo))],
       }
     : {}
-  const [availabilityRows, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps] = await Promise.all([
+  const [availabilityRows, realtimeOccupancy, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
+    getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
     buildRejectionLessonsBlock(unit.id).catch(() => ''),
     buildLessonsBlockForUnit(unit.id, chatLessonsScenario).catch(() => ''),
     getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
@@ -637,6 +639,7 @@ export async function POST(req: NextRequest) {
       comissao_pct: Number(r.comissao_pct),
       taxa_fixa: Number(r.taxa_fixa),
     })),
+    realtimeOccupancy.length ? realtimeOccupancy : undefined,
   )
 
   const forecastBlock = buildForecastBlock(

@@ -1,4 +1,5 @@
 import type { SuiteAvailabilityRow } from '@/lib/automo/suite-availability'
+import type { RealtimeOccupancyRow } from '@/lib/automo/realtime-occupancy'
 
 /**
  * Bloco de "Estrutura da unidade" injetado no system prompt do agente.
@@ -35,6 +36,7 @@ export function buildUnitStructureBlock(
   availability: SuiteAvailabilityRow[],
   capacity: UnitCapacityRow[],
   channelCosts: UnitChannelCostRow[],
+  realtimeOccupancy?: RealtimeOccupancyRow[],
 ): string {
   if (!availability.length && !capacity.length && !channelCosts.length) return ''
 
@@ -77,6 +79,34 @@ export function buildUnitStructureBlock(
       })
       .join('\n')
     sections.push(`**Comissões por canal (impacto na margem líquida):**\n${rows}`)
+  }
+
+  // Ocupação em tempo real — só inclui se houver dados
+  if (realtimeOccupancy && realtimeOccupancy.length > 0) {
+    const now = new Date().toLocaleTimeString('pt-BR', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo',
+    })
+    const totalOcupadas   = realtimeOccupancy.reduce((s, r) => s + r.ocupadas,   0)
+    const totalDisponiveis = realtimeOccupancy.reduce((s, r) => s + r.disponiveis, 0)
+    const totalLivres      = realtimeOccupancy.reduce((s, r) => s + r.livres,     0)
+    const pctGeral = totalDisponiveis > 0
+      ? ` — **${Math.round((totalOcupadas / totalDisponiveis) * 100)}% de ocupação geral**`
+      : ''
+
+    const header = `| Categoria | Ocupadas | Livres | Disponíveis | % Ocup. |`
+    const sep    = `|-----------|----------|--------|-------------|---------|`
+    const rowsLines = realtimeOccupancy.map((r) => {
+      const pct = r.disponiveis > 0 ? Math.round(r.pct_ocupacao) : 0
+      const alert = pct >= 100 ? ' ⚠️ LOTADA' : pct >= 85 ? ' 🔴' : pct >= 60 ? ' 🟡' : ' 🟢'
+      return `| ${r.categoria} | ${r.ocupadas} | ${r.livres} | ${r.disponiveis} | ${pct}%${alert} |`
+    })
+    const footer = `| **Total** | **${totalOcupadas}** | **${totalLivres}** | **${totalDisponiveis}** | — |`
+
+    sections.push(
+      `**Ocupação agora (${now}):**${pctGeral}\n` +
+      [header, sep, ...rowsLines, footer].join('\n') + '\n' +
+      `\n> 🔴 ≥85% · 🟡 60–84% · 🟢 <60%. Use estes dados para decisões imediatas: categoria lotada = oportunidade de aumento; categoria vazia = oportunidade de promoção.`
+    )
   }
 
   return `## Estrutura da unidade
