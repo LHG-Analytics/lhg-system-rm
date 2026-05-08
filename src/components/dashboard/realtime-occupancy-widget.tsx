@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Activity, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface OccupancyRow {
   categoria: string
@@ -12,6 +13,7 @@ interface OccupancyRow {
   ocupadas: number
   livres: number
   pct_ocupacao: number
+  motivos_bloqueio?: string[]
 }
 
 interface Props {
@@ -139,7 +141,27 @@ export function RealtimeOccupancyWidget({ unitSlug }: Props) {
                           <span className="text-muted-foreground">
                             {r.ocupadas}/{r.disponiveis}
                             {r.bloqueadas > 0 && (
-                              <span className="text-muted-foreground/60"> ({r.bloqueadas} bloq.)</span>
+                              r.motivos_bloqueio && r.motivos_bloqueio.length > 0 ? (
+                                <TooltipProvider delayDuration={200}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button className="ml-1 text-amber-500 dark:text-amber-400 underline decoration-dotted cursor-help focus:outline-none">
+                                        ({r.bloqueadas} bloq.)
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="max-w-[220px]">
+                                      <p className="font-semibold mb-1">Motivos do bloqueio:</p>
+                                      <ul className="space-y-0.5">
+                                        {r.motivos_bloqueio.map((m, i) => (
+                                          <li key={i} className="text-xs">• {m}</li>
+                                        ))}
+                                      </ul>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : (
+                                <span className="text-muted-foreground/60"> ({r.bloqueadas} bloq.)</span>
+                              )
                             )}
                           </span>
                           <span className={cn('font-semibold w-10 text-right', pctTextColor(pct))}>

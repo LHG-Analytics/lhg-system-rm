@@ -8,6 +8,7 @@ export interface RealtimeOccupancyRow {
   ocupadas: number     // suítes com locação ativa neste momento
   livres: number       // disponiveis − ocupadas
   pct_ocupacao: number // ocupadas / disponiveis × 100 (0 se disponiveis = 0)
+  motivos_bloqueio: string[]
 }
 
 interface RawRow {
@@ -15,6 +16,7 @@ interface RawRow {
   total:      string
   bloqueadas: string
   ocupadas:   string
+  motivos_bloqueio: string | null
 }
 
 /**
@@ -39,7 +41,7 @@ export async function getRealtimeOccupancyByCategory(
   const sql = `
     WITH
     bloqueios_ativos AS (
-      SELECT aps.id_apartamento
+      SELECT aps.id_apartamento, b.observacao
       FROM bloqueadoapartamento b
       INNER JOIN apartamentostate aps ON b.id_apartamentostate = aps.id
       WHERE aps.datafim IS NULL
@@ -55,7 +57,9 @@ export async function getRealtimeOccupancyByCategory(
       ca.descricao                           AS categoria,
       COUNT(*)                               AS total,
       COUNT(ba.id_apartamento)               AS bloqueadas,
-      COUNT(lo.id_apartamento)               AS ocupadas
+      COUNT(lo.id_apartamento)               AS ocupadas,
+      string_agg(DISTINCT NULLIF(TRIM(ba.observacao), ''), ' / ')
+                                             AS motivos_bloqueio
     FROM apartamento a
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
     LEFT  JOIN bloqueios_ativos ba ON a.id = ba.id_apartamento
@@ -75,7 +79,10 @@ export async function getRealtimeOccupancyByCategory(
       const disponiveis = Math.max(0, total - bloqueadas)
       const livres      = Math.max(0, disponiveis - ocupadas)
       const pct_ocupacao = disponiveis > 0 ? (ocupadas / disponiveis) * 100 : 0
-      return { categoria: r.categoria, total, bloqueadas, disponiveis, ocupadas, livres, pct_ocupacao }
+      const motivos_bloqueio = r.motivos_bloqueio
+        ? r.motivos_bloqueio.split(' / ').filter(Boolean)
+        : []
+      return { categoria: r.categoria, total, bloqueadas, disponiveis, ocupadas, livres, pct_ocupacao, motivos_bloqueio }
     })
   } catch (e) {
     console.error('[realtime-occupancy]', e)
