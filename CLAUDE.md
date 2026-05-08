@@ -998,6 +998,7 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `buildUnitStructureBlock` recebe `realtimeOccupancy?` (4º param opcional) — injeta tabela markdown 🔴/🟡/🟢 no system prompt (chat + proposals, em paralelo, zero latência)
   - `GET /api/dashboard/realtime-occupancy?unitSlug=` — rota autenticada, Cache-Control: no-store
   - `RealtimeOccupancyWidget`: barras de progresso por categoria, auto-refresh 90s, colapsável (`localStorage['occupancy-collapsed']`), entre WeatherWidget e AnomaliesWidget
+  - **LHG-183:** `(N bloq.)` clicável com Tooltip mostrando observações do ERP; `string_agg` na query agrega motivos por categoria
 
 - **LHG-60:** feat(agente): ritmo de check-ins (pace) injetado no contexto do agente ✅ 2026-05-06
   - `src/lib/automo/reservation-pace.ts`: compara check-ins desde 06h BRT com média das últimas 4 semanas no mesmo dia da semana até a mesma hora
