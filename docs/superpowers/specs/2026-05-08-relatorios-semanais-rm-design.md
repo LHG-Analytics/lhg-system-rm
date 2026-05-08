@@ -212,11 +212,11 @@ interface KPISnapshot {
 
 | Método | Rota | Descrição |
 |--------|------|-----------|
-| `GET` | `/api/agente/reports?unitSlug=` | Lista relatórios da unidade (últimas 12 semanas) |
-| `GET` | `/api/agente/reports/[id]` | Retorna dados completos de um relatório |
+| `GET` | `/api/agente/reports?unitSlug=` | Lista relatórios da unidade — retorna **apenas metadados** (`id, period_start, period_end, status, generated_at`), sem `report_data` |
+| `GET` | `/api/agente/reports/[id]` | Retorna dados completos de um relatório (`report_data` + `ai_summary`) |
 | `POST` | `/api/agente/reports/generate` | Geração sob demanda `{ unitSlug, dateFrom, dateTo }` |
 
-A geração retorna imediatamente `{ id, status: 'generating' }`. A página faz polling via `GET /api/agente/reports/[id]` a cada 3s até `status === 'done'`.
+**Geração sob demanda com `after()`:** A rota `POST` insere o registro com `status: 'generating'` e retorna `{ id }` imediatamente. A geração real é disparada via `after(generateWeeklyReport(...))` do Next.js — mesmo padrão já usado no projeto para weather insights e event cache refresh. Isso evita estourar o timeout de 60s do Hobby. A página faz polling via `GET /api/agente/reports/[id]` a cada 3s até `status === 'done' | 'failed'`.
 
 ---
 
@@ -317,7 +317,7 @@ relatorios/
 ```
 
 **Estados da área principal:**
-- **Vazio:** card central "Próximo relatório gerado segunda às 06h" + botão "Gerar agora"
+- **Vazio (sem nenhum relatório):** card central com mensagem "Próximo relatório gerado segunda às 06h" + botão "Gerar agora" + sugestão de backfill: "Quer ver as últimas 4 semanas? [Gerar histórico]" — ao clicar, dispara 4 gerações sequenciais com as semanas anteriores
 - **Gerando:** skeleton com steps animados ("Coletando KPIs... Analisando concorrentes... Escrevendo resumo...")
 - **Pronto:** relatório completo
 - **Comparação:** split 50/50 com scroll sincronizado, dropdown para selecionar relatório de referência no painel esquerdo
