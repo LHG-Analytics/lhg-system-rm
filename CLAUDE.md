@@ -1030,6 +1030,21 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - manager/viewer com unit_id=null NÃO ganham acesso global — só admin
   - **Armadilha:** NULL = NULL é UNKNOWN em SQL, não TRUE — sempre checar `IS NULL` separadamente em policies RLS
 
+- **LHG-184:** feat(relatorios): página de relatórios semanais do agente RM ✅ 2026-05-08
+  - Tabela `rm_weekly_reports` (migration `20260508000001`): `id, unit_id, period_start, period_end, status CHECK('generating','done','failed'), generated_at, error_msg, report_data JSONB, ai_summary TEXT, UNIQUE(unit_id, period_start)`
+  - Pipeline de 18 queries paralelas via `Promise.allSettled`: KPIs atual/semana anterior/ano anterior, preços ativos, propostas aprovadas, descontos ativos, gaps de concorrentes, anomalias, elasticidade, sazonalidade, orçamento, capacidade instalada, lições de pricing, pace de reservas, contexto compartilhado, config do agente
+  - Resumo executivo gerado via `ANALYSIS_MODEL` (gpt-4.1-mini BYOK, `maxOutputTokens: 600`)
+  - 3 rotas API: `GET /api/agente/reports?unitSlug=` (lista), `GET /api/agente/reports/[id]` (full), `POST /api/agente/reports/generate` (fire-and-forget via `after()`)
+  - Cron: segunda-feira detectada em `run-reviews.ts` (`getUTCDay() === 1`) → gera relatório semana anterior para todas as unidades (sem slot extra no Hobby)
+  - Frontend: sidebar 240px com lista + status icons, `DateRangePicker` on-demand, botão "Gerar histórico (4 semanas)", polling 3s durante geração
+  - 11 seções: resumo executivo, banner de evolução, tracking de orçamento, KPIs, precificação, descontos, mix de demanda, concorrentes, outlook sazonal, inteligência, configuração do agente
+  - 4 charts recharts: `KpiComparisonChart` (barras grupadas atual/sem.ant/LY), `ChannelMixChart` (barra horizontal), `GuiaShareChart` (linha com linhas de referência 15%/40%), `SeasonalOutlookChart` (área com fatores dos próximos 30 dias)
+  - Modo comparação: painéis split com divisor arrastável, Select para segundo relatório
+  - **Armadilha recharts Tooltip:** `formatter` espera `(value: unknown, name: unknown)` — nunca tipar como `(v: number)` ou TS 2345 quebra o build
+  - **Armadilha importação Supabase server:** módulo exporta `createClient` (não `createServerClient`); importar como `import { createClient as createServerClient } from '@/lib/supabase/server'`
+  - **Armadilha colunas DB:** `rm_anomalies` usa `detected_at` (não `created_at`); `rm_competitor_price_gaps` usa `categoria_nossa` e `preco_concorrente_mediana`; `rm_pricing_lessons` usa `delta_revpar_pct` e `delta_giro_pct`
+  - **Armadilha AI SDK:** parâmetro correto é `maxOutputTokens` (não `maxTokens`)
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
