@@ -8,6 +8,7 @@ import { recomputeSeasonality } from '@/lib/seasonality/compute'
 import { runAnomalyDetection } from '@/lib/anomaly/detector'
 import { computeAndPersistElasticity } from '@/lib/pricing/elasticity'
 import { syncBudgetForUnit } from '@/lib/budget/google-sheets'
+import { generateWeeklyReport } from '@/lib/reports/generate-weekly-report'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt } from '@/lib/agente/system-prompt'
@@ -466,6 +467,26 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
         // Não bloqueia o cron
       }
     }
+  }
+
+  // Geração de relatórios semanais — toda segunda-feira UTC
+  const cronNow = new Date()
+  if (cronNow.getUTCDay() === 1) {
+    const lastSunday = new Date(cronNow)
+    lastSunday.setUTCDate(cronNow.getUTCDate() - 1)
+    const lastMonday = new Date(lastSunday)
+    lastMonday.setUTCDate(lastSunday.getUTCDate() - 6)
+
+    const periodStart = lastMonday.toISOString().slice(0, 10)
+    const periodEnd   = lastSunday.toISOString().slice(0, 10)
+
+    const reportSlugs = (allConfigs ?? [])
+      .map(c => (c.units as { slug: string } | null)?.slug)
+      .filter(Boolean) as string[]
+
+    await Promise.allSettled(
+      reportSlugs.map(slug => generateWeeklyReport(slug, periodStart, periodEnd))
+    )
   }
 
   return {

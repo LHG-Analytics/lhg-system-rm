@@ -110,7 +110,7 @@ const navItems: NavItem[] = [
   { label: 'Concorrentes', href: '/dashboard/concorrentes', icon: Globe },
   { label: 'Disponibilidade', href: '/dashboard/disponibilidade', icon: Warehouse, disabled: true },
   { label: 'Agente RM', href: '/dashboard/agente', icon: BotMessageSquare },
-  { label: 'Relatórios', href: '/dashboard/relatorios', icon: BarChart3, disabled: true },
+  { label: 'Relatórios', href: '/dashboard/relatorios', icon: BarChart3 },
 ]
 
 const adminNavItems: NavItem[] = [

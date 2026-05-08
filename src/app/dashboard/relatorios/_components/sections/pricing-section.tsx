@@ -1,0 +1,134 @@
+'use client'
+
+import { useState } from 'react'
+import { ChevronDown, ChevronUp, CheckCircle, XCircle, Minus, Shield } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
+import type { WeeklyReportData } from '@/lib/reports/types'
+
+interface Props {
+  data: WeeklyReportData['pricing']
+}
+
+const verdictConfig = {
+  success: { icon: CheckCircle, color: 'text-emerald-600', label: 'Acerto' },
+  neutral:  { icon: Minus,       color: 'text-muted-foreground', label: 'Neutro' },
+  failure:  { icon: XCircle,    color: 'text-destructive', label: 'Falha' },
+}
+
+export function PricingSection({ data }: Props) {
+  const [open, setOpen] = useState(true)
+
+  const hasContent = data.activePriceTable || data.proposalsApprovedThisWeek.length > 0 ||
+    data.lessonsCompleted.length > 0 || data.elasticityHighlights.length > 0
+
+  if (!hasContent) return null
+
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden">
+      <button
+        className="w-full flex items-center justify-between px-5 py-3 hover:bg-muted/30 transition-colors"
+        onClick={() => setOpen(v => !v)}
+      >
+        <div className="flex items-center gap-2">
+          <h3 className="font-medium text-sm">⑤ Desempenho da precificação</h3>
+          {data.proposalsApprovedThisWeek.length > 0 && (
+            <Badge variant="secondary">{data.proposalsApprovedThisWeek.length} proposta(s)</Badge>
+          )}
+        </div>
+        {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 space-y-5">
+          {/* Tabela ativa */}
+          {data.activePriceTable && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                Tabela ativa desde {data.activePriceTable.validFrom}
+              </p>
+              <p className="text-xs text-muted-foreground">{data.activePriceTable.rows.length} combinações cat×período×canal×dia</p>
+            </div>
+          )}
+
+          {/* Propostas aprovadas na semana */}
+          {data.proposalsApprovedThisWeek.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Propostas aprovadas esta semana</p>
+              <div className="space-y-1">
+                {data.proposalsApprovedThisWeek.map(p => (
+                  <div key={p.id} className="flex items-center justify-between text-sm bg-muted/50 rounded-lg px-3 py-2">
+                    <span className="font-mono text-xs text-muted-foreground">{p.id}</span>
+                    <span>{p.rowsCount} linhas · Δ médio {p.avgVariacaoPct > 0 ? '+' : ''}{p.avgVariacaoPct.toFixed(1)}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Lições */}
+          {data.lessonsCompleted.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Lições com checkpoint concluído</p>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-muted-foreground border-b">
+                    <th className="text-left pb-1 font-medium">Categoria / Período</th>
+                    <th className="text-right pb-1 font-medium">Δ Preço</th>
+                    <th className="text-right pb-1 font-medium">Δ RevPAR</th>
+                    <th className="text-right pb-1 font-medium">Δ Giro</th>
+                    <th className="text-right pb-1 font-medium">Resultado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.lessonsCompleted.map((l, i) => {
+                    const vc = verdictConfig[l.verdict]
+                    const VIcon = vc.icon
+                    return (
+                      <tr key={i} className="border-b last:border-0">
+                        <td className="py-1.5">{l.categoria} {l.periodo} ({l.diaTipo})</td>
+                        <td className="text-right">{l.variacaoPct > 0 ? '+' : ''}{l.variacaoPct.toFixed(1)}%</td>
+                        <td className={cn('text-right', l.deltaRevpar >= 0 ? 'text-emerald-600' : 'text-destructive')}>
+                          {l.deltaRevpar >= 0 ? '+' : ''}{l.deltaRevpar.toFixed(2)}
+                        </td>
+                        <td className={cn('text-right', l.deltaGiro >= 0 ? 'text-emerald-600' : 'text-destructive')}>
+                          {l.deltaGiro >= 0 ? '+' : ''}{l.deltaGiro.toFixed(2)}
+                        </td>
+                        <td className="text-right">
+                          <span className={cn('flex items-center justify-end gap-1', vc.color)}>
+                            <VIcon className="w-3.5 h-3.5" />
+                            <span className="text-xs">{vc.label}</span>
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Elasticidades */}
+          {data.elasticityHighlights.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Elasticidades observadas</p>
+              <div className="space-y-1">
+                {data.elasticityHighlights.map((e, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <Shield className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="font-medium">{e.categoria} {e.periodo}</span>
+                    <span className="text-muted-foreground">({e.diaTipo})</span>
+                    <Badge variant={e.confidence === 'high' ? 'default' : 'secondary'} className="text-xs">
+                      ε={e.elasticity.toFixed(2)} · {e.confidence}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{e.interpretation}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

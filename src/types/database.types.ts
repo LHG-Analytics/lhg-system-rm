@@ -1445,6 +1445,50 @@ export type Database = {
           },
         ]
       }
+      rm_weekly_reports: {
+        Row: {
+          ai_summary: string | null
+          error_msg: string | null
+          generated_at: string | null
+          id: string
+          period_end: string
+          period_start: string
+          report_data: Json | null
+          status: string
+          unit_id: string
+        }
+        Insert: {
+          ai_summary?: string | null
+          error_msg?: string | null
+          generated_at?: string | null
+          id?: string
+          period_end: string
+          period_start: string
+          report_data?: Json | null
+          status: string
+          unit_id: string
+        }
+        Update: {
+          ai_summary?: string | null
+          error_msg?: string | null
+          generated_at?: string | null
+          id?: string
+          period_end?: string
+          period_start?: string
+          report_data?: Json | null
+          status?: string
+          unit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rm_weekly_reports_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sales_channels: {
         Row: {
           credentials_vault_key: string | null
