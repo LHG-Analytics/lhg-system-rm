@@ -586,6 +586,16 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (saveError) return Response.json({ error: saveError.message }, { status: 500 })
+
+    // Recomputa gaps com o snapshot fresco (inclui amenitiesBySuite para match por comodidades)
+    try {
+      const { detectPriceChanges, computeAndPersistGaps } = await import('@/lib/competitors/detect-changes')
+      await detectPriceChanges(saved.id, null)
+      await computeAndPersistGaps(unit.id)
+    } catch (e) {
+      console.error('[competitor-analysis/guia] detect/gap falhou (não bloqueia):', e)
+    }
+
     // Amenidades achatadas para o frontend: "Suite X: hidro, ar-condicionado"
     const amenitiesFlat = Object.entries(allAmenities).map(([suite, ams]) => `${suite}: ${ams.join(', ')}`)
     return Response.json({ ...saved, amenities: amenitiesFlat } as unknown as CompetitorSnapshot)

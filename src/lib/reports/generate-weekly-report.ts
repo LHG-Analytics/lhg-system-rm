@@ -11,7 +11,6 @@ import { computeRevenueForecast } from '@/lib/forecast/revenue-forecast'
 import { ANALYSIS_MODEL } from '@/lib/agente/model'
 import type { BudgetYearly } from '@/lib/budget/google-sheets'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
-import { scrapeGuiaUrl } from '@/lib/competitors/guia-scraper'
 import { computeAndPersistGaps } from '@/lib/competitors/detect-changes'
 
 const MONTH_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
@@ -234,59 +233,19 @@ export async function generateWeeklyReport(
     const prevReport = prevReportResult.status === 'fulfilled' ? prevReportResult.value.data?.[0] : null
     const guardrailsCount = guardrailsResult.count ?? 0
 
-    // Auto-refresh concorrentes: SEMPRE re-raspa URLs Guia GM ao gerar o relatório,
-    // garantindo que raw_text.amenitiesBySuite está populado para o match por comodidades.
-    // Gaps existentes podem ser pré-amenidades (categoria_competitor='mercado' em tudo) —
-    // não usar como sinal de "dados OK". Igual ao fluxo da aba Concorrentes da sidebar.
+    // Recomputa gaps usando snapshots existentes (análise já feita na aba Concorrentes).
+    // Não re-raspa — evita latência e respeita o fluxo onde o usuário controla quando analisar.
+    // Inclui match por comodidades (se suite_amenities configurado) e por proximidade de preço.
     try {
-      type CompUrlEntry = { url: string; label?: string }
-      type CompUrl = { name: string; url?: string; urls?: CompUrlEntry[]; mode?: string }
-      const rawUrls = (agentConfig?.competitor_urls as unknown as CompUrl[] | null) ?? []
-      const guiaEntries = rawUrls.filter(c => c.mode === 'guia')
+      const snapshotCutoff = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString()
+      const { count: snapshotCount } = await admin
+        .from('competitor_snapshots')
+        .select('id', { count: 'exact', head: true })
+        .eq('unit_id', unit.id)
+        .eq('status', 'done')
+        .gte('scraped_at', snapshotCutoff)
 
-      let didScrape = false
-
-      if (guiaEntries.length > 0) {
-        // Re-raspa todas as URLs Guia GM — salva snapshot com amenitiesBySuite atualizado
-        for (const entry of guiaEntries) {
-          const urls = entry.urls ?? (entry.url ? [{ url: entry.url }] : [])
-          for (const { url } of urls) {
-            try {
-              const result = await scrapeGuiaUrl(url)
-              if (result.prices.length > 0) {
-                await admin.from('competitor_snapshots').upsert(
-                  {
-                    unit_id: unit.id,
-                    competitor_name: entry.name,
-                    competitor_url: url,
-                    mapped_prices: result.prices as unknown as Database['public']['Tables']['competitor_snapshots']['Insert']['mapped_prices'],
-                    raw_text: JSON.stringify({ prices: result.prices, amenitiesBySuite: result.amenitiesBySuite }),
-                    scraped_at: new Date().toISOString(),
-                    status: 'done',
-                    apify_run_id: null,
-                  },
-                  { onConflict: 'unit_id,competitor_url' }
-                )
-                didScrape = true
-              }
-            } catch { /* URL individual falhou — continua */ }
-          }
-        }
-      }
-
-      if (!didScrape) {
-        // Sem URLs Guia GM (ex: Playwright/Cheerio) — recomputa se há snapshots recentes
-        const snapshotCutoff = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString()
-        const { count: snapshotCount } = await admin
-          .from('competitor_snapshots')
-          .select('id', { count: 'exact', head: true })
-          .eq('unit_id', unit.id)
-          .eq('status', 'done')
-          .gte('scraped_at', snapshotCutoff)
-        didScrape = (snapshotCount ?? 0) > 0
-      }
-
-      if (didScrape) {
+      if ((snapshotCount ?? 0) > 0) {
         await computeAndPersistGaps(unit.id)
         const freshGaps = await admin.from('rm_competitor_price_gaps')
           .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position, categoria_competitor, competitor_name')
@@ -295,7 +254,7 @@ export async function generateWeeklyReport(
           .limit(60)
         if (!freshGaps.error) competitorGaps = freshGaps.data ?? []
       }
-    } catch { /* auto-refresh silencioso — não bloqueia o relatório */ }
+    } catch { /* silencioso — não bloqueia o relatório */ }
 
     const currentSnapshot: KPISnapshot = kpis ? kpiSnapshotFromResponse(kpis) : {
       revpar: 0, trevpar: 0, giro: 0, ocupacao: 0, ticket: 0, receita: 0, locacoes: 0, tmo: 0

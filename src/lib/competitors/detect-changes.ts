@@ -314,6 +314,7 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
     let bucket = competitorBuckets.get(exactKey) ?? competitorBuckets.get(fallbackDiaKey)
 
     // Fallback 2: match por comodidades (Jaccard similarity ≥ 0.25)
+    // Requer que nossas comodidades estejam em rm_agent_config.suite_amenities
     if (!bucket) {
       const ourDistinctive = getDistinctiveAmenities(ourAmenities[cat] ?? [])
       if (ourDistinctive.size > 0) {
@@ -332,7 +333,25 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
       }
     }
 
-    // Fallback 3: mediana de mercado para o período
+    // Fallback 3: match por proximidade de preço (sem necessidade de comodidades configuradas)
+    // Emparelha nossa categoria com a suite do concorrente cujo preço mediano é mais próximo do nosso.
+    // Melhor que mediana de mercado: dá uma comparação específica em vez de média de tudo.
+    if (!bucket) {
+      let bestDist = Infinity
+      let bestBucket: Bucket | undefined
+      for (const [key, b] of competitorBuckets) {
+        const keyPer = key.split('|')[1]
+        const keyDia = key.split('|')[2]
+        if (keyPer !== per || (keyDia !== dia && keyDia !== 'todos')) continue
+        if (!b.precos.length) continue
+        const m = median(b.precos)
+        const dist = Math.abs(m - r.preco)
+        if (dist < bestDist) { bestDist = dist; bestBucket = b }
+      }
+      if (bestBucket) bucket = bestBucket
+    }
+
+    // Fallback 4: mediana de mercado para o período (último recurso — sem nenhum snapshot de concorrente)
     if (!bucket) {
       bucket = periodBuckets.get(`${per}|${dia}`) ?? periodBuckets.get(`${per}|todos`)
     }
