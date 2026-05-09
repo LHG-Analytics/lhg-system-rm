@@ -1045,6 +1045,13 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Armadilha colunas DB:** `rm_anomalies` usa `detected_at` (não `created_at`); `rm_competitor_price_gaps` usa `categoria_nossa` e `preco_concorrente_mediana`; `rm_pricing_lessons` usa `delta_revpar_pct` e `delta_giro_pct`
   - **Armadilha AI SDK:** parâmetro correto é `maxOutputTokens` (não `maxTokens`)
 
+- **fix(relatorios+kpis): 3 correções pós-LHG-184** ✅ 2026-05-09
+  - `competitors-section.tsx`: redesign completo — agrupa por categoria nossa; tabela com colunas Semana × FDS/Feriado (Nosso | Conc. | Gap) lado a lado; badge mostra categoria do concorrente; ⚠️ alerta quando `categoria_competitor='mercado'` (fallback de mediana de mercado por ausência de match de categoria)
+  - `types.ts`: campos opcionais `categoriaConc` e `competitorName` adicionados em `competitors.gaps`
+  - `generate-weekly-report.ts`: ambas as queries de gaps incluem `categoria_competitor, competitor_name`; `freshGaps` (após recompute) corrigido com mesmos campos + limit 60
+  - `channel-kpis.ts (queryPeriodMix)`: `AND la.datafinaldaocupacao IS NOT NULL` excluí locações em aberto sem duração calculável — corrige discrepância de contagem de locações vs BigNumbers
+  - **Armadilha rm_competitor_price_gaps:** a query `freshGaps` dentro do bloco de auto-refresh de concorrentes precisa ter os mesmos campos da query principal — select incompleto causa erro TS2322 na atribuição ao `competitorGaps`
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
