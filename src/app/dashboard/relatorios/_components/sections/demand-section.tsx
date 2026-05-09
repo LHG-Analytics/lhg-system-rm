@@ -15,8 +15,6 @@ export function DemandSection({ data }: Props) {
 
   if (!hasData) return null
 
-  const totalReceita = data.channelMix.reduce((s, c) => s + c.receita, 0)
-
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
       <button
@@ -51,7 +49,7 @@ export function DemandSection({ data }: Props) {
                         <td className="text-right">{c.reservas}</td>
                         <td className="text-right">{c.receita.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}</td>
                         <td className="text-right">{c.reservas > 0 ? (c.receita / c.reservas).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }) : '—'}</td>
-                        <td className="text-right">{totalReceita > 0 ? ((c.receita / totalReceita) * 100).toFixed(1) : '0.0'}%</td>
+                        <td className="text-right">{c.representatividade.toFixed(1)}%</td>
                       </tr>
                     ))}
                 </tbody>

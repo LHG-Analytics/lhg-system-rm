@@ -255,13 +255,13 @@ export async function generateWeeklyReport(
     const evolution: WeeklyReportData['evolution'] = {
       hasPreviousReport: !!prevReport,
       previousPeriodStart: prevReport?.period_start ?? null,
-      kpiDeltas: prevCurrentSnapshot ? {
-        revpar: deltaPct(currentSnapshot.revpar, prevCurrentSnapshot.revpar),
-        giro: deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro),
-        ocupacao: deltaPct(currentSnapshot.ocupacao, prevCurrentSnapshot.ocupacao),
-        ticket: deltaPct(currentSnapshot.ticket, prevCurrentSnapshot.ticket),
-        receita: deltaPct(currentSnapshot.receita, prevCurrentSnapshot.receita),
-        tmo: deltaPct(currentSnapshot.tmo, prevCurrentSnapshot.tmo),
+      kpiDeltas: prevSnapshot ? {
+        revpar: deltaPct(currentSnapshot.revpar, prevSnapshot.revpar),
+        giro: deltaPct(currentSnapshot.giro, prevSnapshot.giro),
+        ocupacao: deltaPct(currentSnapshot.ocupacao, prevSnapshot.ocupacao),
+        ticket: deltaPct(currentSnapshot.ticket, prevSnapshot.ticket),
+        receita: deltaPct(currentSnapshot.receita, prevSnapshot.receita),
+        tmo: deltaPct(currentSnapshot.tmo, prevSnapshot.tmo),
       } : { revpar: 0, giro: 0, ocupacao: 0, ticket: 0, receita: 0, tmo: 0 },
       guiaShareDelta: guiaSharePct - prevGuiaShare,
       metaGapDelta: 0,
@@ -621,6 +621,10 @@ DADOS DO PERÍODO:
 - Posição competitiva dominante: ${competitors.dominantPosition}
 - Meta mensal: R$ ${meta.toFixed(2)} | Projeção: R$ ${projecao.toFixed(2)} | Gap: ${meta > 0 ? ((projecao - meta) / meta * 100).toFixed(1) : 0}%
 - Pace diário necessário: R$ ${paceDiarioNecessario.toFixed(2)} | Pace atual: R$ ${paceDiarioAtual.toFixed(2)}
+${historicalInsights.length > 0 ? `
+APRENDIZADO DE TABELAS HISTÓRICAS:
+${historicalInsights.map(h => `- Transição ${h.fromDate} → ${h.toDate}: ${h.changesCount} preços alterados (média ${h.avgChangePct > 0 ? '+' : ''}${h.avgChangePct.toFixed(1)}%) — Δ RevPAR ${h.deltaRevpar !== null ? `${h.deltaRevpar > 0 ? '+' : ''}${h.deltaRevpar.toFixed(1)}%` : 'sem dados'}, Δ Giro ${h.deltaGiro !== null ? `${h.deltaGiro > 0 ? '+' : ''}${h.deltaGiro.toFixed(1)}%` : 'sem dados'} — Resultado: ${h.verdict === 'success' ? 'positivo' : h.verdict === 'failure' ? 'negativo' : h.verdict === 'neutral' ? 'neutro' : 'sem dados suficientes'}`).join('\n')}
+` : ''}
 
 Retorne um JSON com exatamente essa estrutura:
 {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, Globe } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { WeeklyReportData } from '@/lib/reports/types'
@@ -19,7 +19,25 @@ const positionConfig = {
 export function CompetitorsSection({ data }: Props) {
   const [open, setOpen] = useState(true)
 
-  if (data.gaps.length === 0) return null
+  if (data.gaps.length === 0) {
+    return (
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <div className="px-5 py-3 flex items-center justify-between">
+          <h3 className="font-medium text-sm">⑧ Inteligência competitiva</h3>
+        </div>
+        <div className="px-5 pb-5 flex items-start gap-3 text-sm text-muted-foreground">
+          <Globe className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground/60" />
+          <span>
+            Nenhum dado de concorrentes disponível para este período.{' '}
+            <a href="/dashboard/concorrentes" className="underline underline-offset-2 hover:text-foreground transition-colors">
+              Execute uma análise na página de Concorrentes
+            </a>{' '}
+            para ver os gaps de preço aqui nos próximos relatórios.
+          </span>
+        </div>
+      </div>
+    )
+  }
 
   const dominant = positionConfig[data.dominantPosition]
 

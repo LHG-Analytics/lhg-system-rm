@@ -73,6 +73,16 @@ export function IntelligenceSection({ data }: Props) {
             </div>
           )}
 
+          {insights.length === 0 && (
+            <div className="rounded-lg bg-muted/40 border border-dashed p-4 text-sm text-muted-foreground flex items-start gap-2">
+              <span className="text-base leading-none mt-0.5">📚</span>
+              <div>
+                <p className="font-medium text-foreground mb-1">Aprendizado histórico ainda não disponível</p>
+                <p>É necessário ter pelo menos 2 tabelas de preços importadas com períodos de vigência definidos. O sistema compara os primeiros 30 dias de cada tabela para medir o impacto real das mudanças de preço. Importe tabelas históricas em <a href="/dashboard/precos" className="underline underline-offset-2 hover:text-foreground transition-colors">Preços</a>.</p>
+              </div>
+            </div>
+          )}
+
           {insights.length > 0 && (
             <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
