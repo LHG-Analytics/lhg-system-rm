@@ -7,6 +7,7 @@ import type {
   SuiteCategoryKPI,
   DataTableGiroByWeek,
   DataTableRevparByWeek,
+  BillingRentalTypeItem,
 } from '@/lib/kpis/types'
 import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
 import {
@@ -504,6 +505,122 @@ async function queryTotalRevOcc(
   return { totalRevpar, totalOccupancyRate }
 }
 
+// ─── Period Mix (inline — mesmos params que queryBigNumbers) ─────────────────
+
+const LUSH_TYPE_UNITS_PM = new Set(['lush-ipiranga', 'lush-lapa', 'tout', 'andar-de-cima'])
+
+export const UNIT_VALID_PERIODS_PM: Record<string, string[]> = {
+  'altana':        ['1 hora', '2 horas', '4 horas', '12 horas'],
+  'lush-ipiranga': ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
+  'lush-lapa':     ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
+  'tout':          ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
+  'andar-de-cima': ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
+}
+
+function buildPeriodCaseSQLInline(unitSlug: string): string {
+  if (LUSH_TYPE_UNITS_PM.has(unitSlug)) {
+    return `
+          CASE
+            WHEN dur <= 3.25 THEN '3 horas'
+            WHEN h_in BETWEEN 12 AND 14 AND dur <= 9.0 THEN 'Day Use'
+            WHEN dur <= 6.25 THEN '6 horas'
+            WHEN dur <= 13.5 THEN '12 horas'
+            WHEN h_in BETWEEN 19 AND 21 AND dur < 20.0 THEN 'Pernoite'
+            ELSE 'Diária'
+          END`
+  }
+  return `
+          CASE
+            WHEN dur < 1.5  THEN '1 hora'
+            WHEN dur < 2.5  THEN '2 horas'
+            WHEN dur < 5.0  THEN '4 horas'
+            ELSE '12 horas'
+          END`
+}
+
+async function queryPeriodMixInline(
+  pool: NonNullable<ReturnType<typeof getAutomPool>>,
+  unitSlug: string,
+  catIds: string,
+  isoStart: string,
+  isoEnd: string,
+  timeFilter: string,
+  statusFilter: string,
+  dateCol: string,
+): Promise<BillingRentalTypeItem[]> {
+  const periodCase  = buildPeriodCaseSQLInline(unitSlug)
+  const validPeriods = UNIT_VALID_PERIODS_PM[unitSlug]
+
+  const sql = `
+    WITH base AS (
+      SELECT
+        EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 AS dur,
+        EXTRACT(HOUR FROM la.datainicialdaocupacao)                                       AS h_in,
+        la.valortotal::numeric AS receita
+      FROM locacaoapartamento la
+      INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+      INNER JOIN apartamento a        ON aps.id_apartamento = a.id
+      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      WHERE ${dateCol} >= $1
+        AND ${dateCol} <  $2
+        ${statusFilter}
+        AND ca.id IN (${catIds})
+        ${timeFilter}
+    ),
+    classificado AS (
+      SELECT ${periodCase} AS periodo, receita FROM base
+    ),
+    totais AS (
+      SELECT COALESCE(SUM(receita), 0) AS total FROM classificado
+    )
+    SELECT
+      periodo,
+      ROUND(SUM(receita)::numeric, 2)              AS value,
+      COUNT(*)                                      AS locacoes,
+      CASE WHEN COUNT(*) > 0
+           THEN ROUND((SUM(receita) / COUNT(*))::numeric, 2)
+           ELSE 0
+      END AS ticket,
+      CASE WHEN (SELECT total FROM totais) > 0
+           THEN ROUND((SUM(receita) / (SELECT total FROM totais) * 100)::numeric, 1)
+           ELSE 0
+      END AS percent
+    FROM classificado
+    GROUP BY periodo
+    ORDER BY value DESC
+  `
+
+  try {
+    const { rows } = await pool.query<{
+      periodo: string; value: string; locacoes: string; ticket: string; percent: string
+    }>(sql, [isoStart, isoEnd])
+
+    const all: BillingRentalTypeItem[] = rows.map((r) => ({
+      rentalType: r.periodo,
+      value:      Number(r.value)    || 0,
+      locacoes:   Number(r.locacoes) || 0,
+      ticket:     Number(r.ticket)   || 0,
+      percent:    Number(r.percent)  || 0,
+    }))
+
+    if (validPeriods?.length) {
+      const ordered = validPeriods
+        .map((p) => all.find((r) => r.rentalType === p))
+        .filter((r): r is BillingRentalTypeItem => !!r)
+
+      const totalFiltered = ordered.reduce((s, r) => s + r.value, 0)
+      return ordered.map((r) => ({
+        ...r,
+        percent: totalFiltered > 0 ? +((r.value / totalFiltered) * 100).toFixed(1) : 0,
+      }))
+    }
+    return all
+  } catch (err) {
+    console.error('[PeriodMixInline] Query falhou:', err instanceof Error ? err.message : err)
+    return []
+  }
+}
+
 // ─── Ponto de entrada público ─────────────────────────────────────────────────
 
 /**
@@ -572,7 +689,7 @@ export async function fetchCompanyKPIsFromAutomo(
     }
   }
 
-  const [currentBN, prevBN, prevMonBN, monthBN, revOcc, prevRevOcc, prevMonRevOcc, monthRevOcc, suiteCatTable, weekTables] = await Promise.all([
+  const [currentBN, prevBN, prevMonBN, monthBN, revOcc, prevRevOcc, prevMonRevOcc, monthRevOcc, suiteCatTable, weekTables, periodMix] = await Promise.all([
     queryBigNumbers(pool, catIds, isoStart,         isoEnd,         daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/current')),
     queryBigNumbers(pool, catIds, prevIsoStart,     prevIsoEnd,     daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prev')),
     queryBigNumbers(pool, catIds, prevMonIsoStart,  prevMonIsoEnd,  daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prevMonth')),
@@ -583,6 +700,7 @@ export async function fetchCompanyKPIsFromAutomo(
     queryTotalRevOcc(pool, catIds, monIsoStart,     monIsoEnd,      daysElapsed || 1,   timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc/month')),
     queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff,              timeFilter, statusFilter, dateCol).catch(tagError('DataTableSuiteCategory')),
     queryWeekTables(pool, catIds, isoStart, isoEnd,                                     timeFilter, statusFilter, dateCol).catch(tagError('WeekTables')),
+    queryPeriodMixInline(pool, unitSlug, catIds, isoStart, isoEnd,                      timeFilter, statusFilter, dateCol),
   ])
 
   // Previsão de fechamento do mês
@@ -654,8 +772,7 @@ export async function fetchCompanyKPIsFromAutomo(
   return {
     BigNumbers:                 [bigNumbers],
     TotalResult:                totalResult,
-    // Chart series não renderizadas no dashboard atual — arrays vazios
-    BillingRentalType:          [],
+    BillingRentalType:          periodMix,
     RevenueByDate:              [],
     RevenueBySuiteCategory:     [],
     RentalsByDate:              [],

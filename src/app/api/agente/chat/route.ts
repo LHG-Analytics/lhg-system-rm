@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
-import { queryChannelKPIs, queryPeriodMix } from '@/lib/automo/channel-kpis'
+import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
@@ -294,7 +294,7 @@ export async function POST(req: NextRequest) {
 
   if (startDate && endDate) {
     // ── Modo legado: DD/MM/YYYY (cron/revisoes) ────────────────────────────────
-    const [companyResult, importsResult, channelResult, periodMixResult] = await Promise.allSettled([
+    const [companyResult, importsResult, channelResult] = await Promise.allSettled([
       fetchCompanyKPIsFromAutomo(unit.slug, startDate, endDate),
       admin
         .from('price_imports')
@@ -303,15 +303,15 @@ export async function POST(req: NextRequest) {
         .filter('import_type', 'eq', 'prices')
         .order('valid_from', { ascending: false }),
       queryChannelKPIs(unit.slug, startDate, endDate),
-      queryPeriodMix(unit.slug, startDate, endDate),
     ])
     rawImports = importsResult.status === 'fulfilled' ? (importsResult.value.data ?? []) : []
+    const legacyCompany = companyResult.status === 'fulfilled' ? companyResult.value : null
     kpiPeriods = [{
       period: { startDate, endDate },
-      company: companyResult.status === 'fulfilled' ? companyResult.value : null,
+      company: legacyCompany,
       bookings: null,
       channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
-      periodMix: periodMixResult.status === 'fulfilled' ? periodMixResult.value : undefined,
+      periodMix: legacyCompany?.BillingRentalType,
     }]
   } else {
     // ── Modo automático: backend detecta tabelas e monta contexto ─────────────
@@ -342,17 +342,17 @@ export async function POST(req: NextRequest) {
     if (priceImps.length === 0) {
       // Sem tabela importada — usa trailing year
       const kpiParams = trailingYear()
-      const [companyResult, channelResult, periodMixResult] = await Promise.allSettled([
+      const [companyResult, channelResult] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, kpiParams.startDate, kpiParams.endDate),
         queryChannelKPIs(unit.slug, kpiParams.startDate, kpiParams.endDate),
-        queryPeriodMix(unit.slug, kpiParams.startDate, kpiParams.endDate),
       ])
+      const tyCompany = companyResult.status === 'fulfilled' ? companyResult.value : null
       kpiPeriods = [{
         period: kpiParams,
-        company: companyResult.status === 'fulfilled' ? companyResult.value : null,
+        company: tyCompany,
         bookings: null,
         channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
-        periodMix: periodMixResult.status === 'fulfilled' ? periodMixResult.value : undefined,
+        periodMix: tyCompany?.BillingRentalType,
       }]
     } else if (priceImps.length === 1) {
       // Uma tabela: desde valid_from até hoje
@@ -360,17 +360,17 @@ export async function POST(req: NextRequest) {
       rawImports = [imp]
       const apiFrom = isoToApi(imp.valid_from)
       const apiTo   = isoToApi(todayIso)
-      const [companyResult, channelResult, periodMixResult] = await Promise.allSettled([
+      const [companyResult, channelResult] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, apiFrom, apiTo),
         queryChannelKPIs(unit.slug, apiFrom, apiTo),
-        queryPeriodMix(unit.slug, apiFrom, apiTo),
       ])
+      const oneTableCompany = companyResult.status === 'fulfilled' ? companyResult.value : null
       kpiPeriods = [{
         period: { startDate: apiFrom, endDate: apiTo },
-        company: companyResult.status === 'fulfilled' ? companyResult.value : null,
+        company: oneTableCompany,
         bookings: null,
         channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
-        periodMix: periodMixResult.status === 'fulfilled' ? periodMixResult.value : undefined,
+        periodMix: oneTableCompany?.BillingRentalType,
       }]
     } else {
       // Duas tabelas: importA = anterior, importB = atual (mais recente)
@@ -393,34 +393,34 @@ export async function POST(req: NextRequest) {
       const apiStartB = isoToApi(startB)
       const apiToB    = isoToApi(todayIso)
 
-      const [cA, cB, channelB, periodMixA, periodMixB] = await Promise.allSettled([
+      const [cA, cB, channelB] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, apiFromA, apiEndA),
         fetchCompanyKPIsFromAutomo(unit.slug, apiStartB, apiToB),
         queryChannelKPIs(unit.slug, apiStartB, apiToB),
-        queryPeriodMix(unit.slug, apiFromA, apiEndA),
-        queryPeriodMix(unit.slug, apiStartB, apiToB),
       ])
 
       rawImports = [importA, importB]
 
       const daysA = daysBetween(importA.valid_from, endA)
       const daysB = daysBetween(startB, todayIso)
+      const compA = cA.status === 'fulfilled' ? cA.value : null
+      const compB = cB.status === 'fulfilled' ? cB.value : null
 
       kpiPeriods = [
         {
           label: `Tabela anterior — ${apiFromA} a ${apiEndA} (${daysA} dias)`,
           period: { startDate: apiFromA, endDate: apiEndA },
-          company: cA.status === 'fulfilled' ? cA.value : null,
+          company: compA,
           bookings: null,
-          periodMix: periodMixA.status === 'fulfilled' ? periodMixA.value : undefined,
+          periodMix: compA?.BillingRentalType,
         },
         {
           label: `Tabela atual — ${apiStartB} a ${apiToB} (${daysB} dias)`,
           period: { startDate: apiStartB, endDate: apiToB },
-          company: cB.status === 'fulfilled' ? cB.value : null,
+          company: compB,
           bookings: null,
           channelKPIs: channelB.status === 'fulfilled' ? channelB.value : undefined,
-          periodMix: periodMixB.status === 'fulfilled' ? periodMixB.value : undefined,
+          periodMix: compB?.BillingRentalType,
         },
       ]
 

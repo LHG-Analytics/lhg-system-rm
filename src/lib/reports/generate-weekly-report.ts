@@ -3,7 +3,7 @@ import { generateText } from 'ai'
 import type { Database, Json } from '@/types/database.types'
 import type { WeeklyReportData, KPISnapshot } from './types'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
-import { queryChannelKPIs, queryPeriodMix } from '@/lib/automo/channel-kpis'
+import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { getUpcomingSeasonalFactors } from '@/lib/seasonality/compute'
 import { getElasticityForUnit } from '@/lib/pricing/elasticity'
@@ -122,7 +122,6 @@ export async function generateWeeklyReport(
       prevKpisResult,
       lyKpisResult,
       channelResult,
-      periodMixResult,
       activePriceResult,
       proposalsResult,
       lessonsResult,
@@ -141,7 +140,6 @@ export async function generateWeeklyReport(
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(prevStartStr), isoToDDMMYYYY(prevEndStr)),
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(lyStart.toISOString().slice(0, 10)), isoToDDMMYYYY(lyEnd.toISOString().slice(0, 10))),
       queryChannelKPIs(unitSlug, startDDMM, endDDMM),
-      queryPeriodMix(unitSlug, startDDMM, endDDMM),
       admin.from('price_imports')
         .select('id, valid_from, parsed_data')
         .eq('unit_id', unit.id)
@@ -220,7 +218,7 @@ export async function generateWeeklyReport(
     const prevKpis = prevKpisResult.status === 'fulfilled' ? prevKpisResult.value : null
     const lyKpis = lyKpisResult.status === 'fulfilled' ? lyKpisResult.value : null
     const channelKPIs = channelResult.status === 'fulfilled' ? channelResult.value : []
-    const periodMix = periodMixResult.status === 'fulfilled' ? periodMixResult.value : []
+    const periodMix = kpisResult.status === 'fulfilled' ? (kpisResult.value?.BillingRentalType ?? []) : []
     const activePriceData = activePriceResult.status === 'fulfilled' ? activePriceResult.value.data : null
     const approvedProposals = proposalsResult.status === 'fulfilled' ? proposalsResult.value.data ?? [] : []
     const lessons = lessonsResult.status === 'fulfilled' ? lessonsResult.value.data ?? [] : []

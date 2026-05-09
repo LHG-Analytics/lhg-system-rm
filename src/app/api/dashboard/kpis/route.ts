@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
-import { queryChannelKPIs, queryPeriodMix } from '@/lib/automo/channel-kpis'
+import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { resolvePreset, toLhgDate } from '@/lib/date-range'
 
 const VALID_STATUSES = ['FINALIZADA', 'TRANSFERIDA', 'CANCELADA', 'ABERTA', 'TODAS'] as const
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
   const endDDMMYYYY   = toLhgDate(dateRange.endDate)
 
   try {
-    const [company, channelKPIs, periodMix] = await Promise.all([
+    const [company, channelKPIs] = await Promise.all([
       fetchCompanyKPIsFromAutomo(
         unitSlug,
         startDDMMYYYY,
@@ -55,8 +55,8 @@ export async function GET(req: NextRequest) {
         dateType,
       ),
       queryChannelKPIs(unitSlug, startDDMMYYYY, endDDMMYYYY).catch(() => []),
-      queryPeriodMix(unitSlug, startDDMMYYYY, endDDMMYYYY, rentalStatus, startHour, endHour, dateType).catch(() => []),
     ])
+    const periodMix = company.BillingRentalType
     return NextResponse.json({ company, channelKPIs, periodMix, dateRange }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e) {
     console.error('[/api/dashboard/kpis]', e)
