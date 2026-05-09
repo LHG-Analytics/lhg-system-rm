@@ -167,13 +167,13 @@ export async function runPendingReviews(): Promise<RunReviewsResult> {
     .eq('status', 'pending')
 
   if (fetchError) throw new Error(`Erro ao buscar revisões: ${fetchError.message}`)
-  if (!reviews || reviews.length === 0) {
-    return { executed: 0, done: 0, failed: 0, results: [], eventsRefreshed: [] }
-  }
+
+  // IDs de unidades que têm revisão agendada hoje — serão excluídas do relatório de segunda
+  const reviewedUnitIds = new Set<string>((reviews ?? []).map((r) => r.unit_id))
 
   const results: ReviewRunResult[] = []
 
-  for (const review of reviews) {
+  for (const review of reviews ?? []) {
     try {
       await admin.from('scheduled_reviews').update({ status: 'running' }).eq('id', review.id)
 
@@ -480,7 +480,10 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
     const periodStart = lastMonday.toISOString().slice(0, 10)
     const periodEnd   = lastSunday.toISOString().slice(0, 10)
 
+    // Gera relatório apenas para unidades SEM revisão agendada hoje
+    // (prioridade: revisão > relatório semanal)
     const reportSlugs = (allConfigs ?? [])
+      .filter(c => !reviewedUnitIds.has(c.unit_id))
       .map(c => (c.units as { slug: string } | null)?.slug)
       .filter(Boolean) as string[]
 

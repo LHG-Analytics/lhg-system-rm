@@ -1,7 +1,8 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { TrendingUp, AlertTriangle, Minus, ArrowRight } from 'lucide-react'
+import { TrendingUp, AlertTriangle, Minus, ArrowRight, BotMessageSquare, Settings2 } from 'lucide-react'
+import Link from 'next/link'
 import type { WeeklyReportData } from '@/lib/reports/types'
 
 interface Props {
@@ -53,12 +54,38 @@ export function ExecutiveSummary({ data, aiSummary }: Props) {
       </div>
 
       {data.priorityAction && (
-        <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-4 flex items-start gap-3">
-          <ArrowRight className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
-          <div>
-            <p className="text-xs font-semibold text-primary uppercase tracking-wide mb-1">Ação prioritária para o próximo período</p>
-            <p className="text-sm font-medium">{data.priorityAction}</p>
+        <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <ArrowRight className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-primary uppercase tracking-wide mb-1">Ação prioritária para o próximo período</p>
+              <p className="text-sm font-medium">{data.priorityAction}</p>
+            </div>
           </div>
+
+          {/* Botão de deep link para o Agente RM */}
+          {data.agentPromptLink && data.actionType !== 'none' && (
+            <Link
+              href={data.agentPromptLink}
+              className={cn(
+                'flex items-center gap-2 w-fit px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                'bg-primary text-primary-foreground hover:bg-primary/90'
+              )}
+            >
+              <BotMessageSquare className="w-4 h-4 shrink-0" />
+              {data.actionType === 'price_proposal' && 'Gerar proposta de preços no Agente RM →'}
+              {data.actionType === 'discount_proposal' && 'Gerar proposta de descontos no Agente RM →'}
+              {data.actionType === 'agent_config' && 'Ajustar estratégia no Agente RM →'}
+            </Link>
+          )}
+
+          {/* Sugestão de configuração do agente */}
+          {data.agentConfigSuggestion && (
+            <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/60 rounded-lg px-3 py-2">
+              <Settings2 className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
+              <span><span className="font-medium text-amber-600">Configuração sugerida:</span> {data.agentConfigSuggestion}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

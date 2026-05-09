@@ -25,6 +25,12 @@ export interface WeeklyReportData {
     mainConcern: string
     priorityAction: string
     tone: 'positive' | 'neutral' | 'warning'
+    /** Tipo de ação prioritária para gerar o link correto */
+    actionType: 'price_proposal' | 'discount_proposal' | 'agent_config' | 'none'
+    /** Link /dashboard/agente?unit=X&q=PROMPT — auto-envia o prompt ao clicar */
+    agentPromptLink?: string
+    /** Sugestão de mudança na configuração do agente (ex: estratégia, foco) */
+    agentConfigSuggestion?: string
   }
 
   evolution: {

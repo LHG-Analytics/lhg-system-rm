@@ -677,38 +677,51 @@ export async function generateWeeklyReport(
     }
 
     // AI: executive summary + budget leverage comment
+    // Competitive context summary for the prompt
+    const compContext = competitors.gaps.length > 0
+      ? `\n- Posição vs concorrentes: ${competitors.dominantPosition} | ${competitors.gaps.slice(0, 3).map(g => `${g.categoria} ${g.periodo} gap ${g.gapPct > 0 ? '+' : ''}${g.gapPct.toFixed(1)}%`).join(', ')}`
+      : ''
+
+    const guiaShare = channelKPIs.find(c => c.canal === 'GUIA_GO' || c.canal === 'GUIA_SCHEDULED')
+    const guiaCtx = guiaShare
+      ? `\n- Guia de Motéis: ${guiaShare.representatividade.toFixed(1)}% da receita (referência: 15–40% é saudável)`
+      : ''
+
     const promptContext = `
-Você é um Revenue Manager sênior. Analise o período operacional de ${unit.name} (${periodStart} a ${periodEnd}, ${durationDays} dias).
+Você é um Revenue Manager sênior especialista em motéis. Analise os dados de ${unit.name} (${periodStart} a ${periodEnd}, ${durationDays} dias) e gere um plano de ação ESPECÍFICO E ACIONÁVEL.
 
 DADOS DO PERÍODO:
 - RevPAR: R$ ${currentSnapshot.revpar.toFixed(2)} ${prevCurrentSnapshot ? `(${deltaPct(currentSnapshot.revpar, prevCurrentSnapshot.revpar) >= 0 ? '+' : ''}${deltaPct(currentSnapshot.revpar, prevCurrentSnapshot.revpar).toFixed(1)}% vs sem. ant.)` : ''}
-- Giro: ${currentSnapshot.giro.toFixed(2)} ${prevCurrentSnapshot ? `(${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro) >= 0 ? '+' : ''}${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro).toFixed(1)}%)` : ''} — referência para motéis: <1.0 baixo | 1.0–1.8 normal | >1.8 alto
+- Giro: ${currentSnapshot.giro.toFixed(2)} ${prevCurrentSnapshot ? `(${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro) >= 0 ? '+' : ''}${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro).toFixed(1)}%)` : ''} — <1.0 baixo | 1.0–1.8 normal | >1.8 alto
 - Ocupação: ${(currentSnapshot.ocupacao * 100).toFixed(1)}%
-- Receita: R$ ${currentSnapshot.receita.toFixed(2)}
-- Ticket Médio: R$ ${currentSnapshot.ticket.toFixed(2)}
-- Locações: ${currentSnapshot.locacoes}
-- Lições: ${lessonsSuccess} acertos, ${lessonsFailure} falhas
-- Anomalias novas: ${newAnomalies}
-- Posição competitiva dominante: ${competitors.dominantPosition}
+- Receita: R$ ${currentSnapshot.receita.toFixed(2)} | Ticket: R$ ${currentSnapshot.ticket.toFixed(2)} | Locações: ${currentSnapshot.locacoes}
 - Meta mensal: R$ ${meta.toFixed(2)} | Projeção: R$ ${projecao.toFixed(2)} | Gap: ${meta > 0 ? ((projecao - meta) / meta * 100).toFixed(1) : 0}%
-- Pace diário necessário: R$ ${paceDiarioNecessario.toFixed(2)} | Pace atual: R$ ${paceDiarioAtual.toFixed(2)}
+- Pace atual: R$ ${paceDiarioAtual.toFixed(2)}/dia | Necessário: R$ ${paceDiarioNecessario.toFixed(2)}/dia${compContext}${guiaCtx}
+- Lições de pricing: ${lessonsSuccess} acertos, ${lessonsFailure} falhas
+- Anomalias: ${newAnomalies} novas, ${resolvedAnomalies} resolvidas
 ${historicalInsights.length > 0 ? `
-APRENDIZADO DE TABELAS HISTÓRICAS:
-${historicalInsights.map(h => `- Transição ${h.fromDate} → ${h.toDate}: ${h.changesCount} preços alterados (média ${h.avgChangePct > 0 ? '+' : ''}${h.avgChangePct.toFixed(1)}%) — Δ RevPAR ${h.deltaRevpar !== null ? `${h.deltaRevpar > 0 ? '+' : ''}${h.deltaRevpar.toFixed(1)}%` : 'sem dados'}, Δ Giro ${h.deltaGiro !== null ? `${h.deltaGiro > 0 ? '+' : ''}${h.deltaGiro.toFixed(1)}%` : 'sem dados'} — Resultado: ${h.verdict === 'success' ? 'positivo' : h.verdict === 'failure' ? 'negativo' : h.verdict === 'neutral' ? 'neutro' : 'sem dados suficientes'}`).join('\n')}
+HISTÓRICO DE MUDANÇAS DE TABELA:
+${historicalInsights.map(h => `- Transição ${h.fromDate}→${h.toDate}: ${h.changesCount} preços (${h.avgChangePct > 0 ? '+' : ''}${h.avgChangePct.toFixed(1)}%) → Δ RevPAR ${h.deltaRevpar !== null ? `${h.deltaRevpar > 0 ? '+' : ''}${h.deltaRevpar.toFixed(1)}%` : '?'}, Δ Giro ${h.deltaGiro !== null ? `${h.deltaGiro > 0 ? '+' : ''}${h.deltaGiro.toFixed(1)}%` : '?'} (${h.verdict})`).join('\n')}
 ` : ''}
+Regras para o JSON:
+1. "priorityAction": seja ESPECÍFICO — inclua números reais do período (ex: "Elevar Master 3h semana de R$120 → R$130 (+8%): giro 1.8 acima da meta, concorrente cobra R$150"). NUNCA escreva ações genéricas como "implementar ajustes táticos".
+2. "actionType": classifique como "price_proposal" se a ação envolve reajuste de preços, "discount_proposal" se envolve descontos do Guia, "agent_config" se requer mudança de estratégia/configuração do agente, "none" se não há ação urgente.
+3. "agentPrompt": prompt COMPACTO (máx 300 chars) que será enviado automaticamente ao Agente RM. Deve ser uma instrução direta e completa com os dados-chave do relatório. Exemplo: "Com base no relatório (giro ${currentSnapshot.giro.toFixed(1)}, RevPAR R$${currentSnapshot.revpar.toFixed(0)}, ocupação ${(currentSnapshot.ocupacao * 100).toFixed(0)}%): gerar proposta de preços focando em [CATEGORIA/PERÍODO específico]. Prioridade: [MÉTRICA]."
+4. "agentConfigSuggestion": se a configuração atual do agente (estratégia: ${agentConfig?.pricing_strategy ?? 'moderado'}, foco: ${agentConfig?.focus_metric ?? 'revpar'}) não é ideal para os dados observados, sugira a mudança em 1 frase. Caso contrário, retorne null.
 
-Retorne um JSON com exatamente essa estrutura:
+Retorne APENAS o JSON:
 {
-  "headline": "Uma frase que captura o tom geral da semana",
-  "keyPoints": ["ponto 1", "ponto 2", "ponto 3"],
-  "mainWin": "Principal vitória ou destaque positivo",
-  "mainConcern": "Principal preocupação ou ponto de atenção",
-  "priorityAction": "Ação prioritária para a próxima semana",
-  "tone": "positive",
-  "aiLeverageComment": "Para atingir a meta mensal de R$ X, as principais alavancas são: análise concreta de 2-3 linhas"
+  "headline": "Uma frase que captura o tom geral da semana com dados",
+  "keyPoints": ["ponto específico com número 1", "ponto 2", "ponto 3"],
+  "mainWin": "Vitória específica com dado",
+  "mainConcern": "Preocupação específica com dado",
+  "priorityAction": "AÇÃO ESPECÍFICA COM DADOS REAIS DO PERÍODO",
+  "tone": "positive|neutral|warning",
+  "actionType": "price_proposal|discount_proposal|agent_config|none",
+  "agentPrompt": "Prompt compacto e acionável para o Agente RM",
+  "agentConfigSuggestion": null,
+  "aiLeverageComment": "Para atingir R$ X de meta: alavancas concretas em 2-3 linhas"
 }
-
-Responda APENAS o JSON, sem markdown.
 `.trim()
 
     let executiveSummary: WeeklyReportData['executiveSummary'] = {
@@ -718,6 +731,7 @@ Responda APENAS o JSON, sem markdown.
       mainConcern: '',
       priorityAction: '',
       tone: 'neutral',
+      actionType: 'none',
     }
     let aiLeverageComment = ''
 
@@ -729,6 +743,7 @@ Responda APENAS o JSON, sem markdown.
       })
       const cleaned = text.replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(cleaned)
+      const agentPromptRaw: string | null = parsed.agentPrompt ?? null
       executiveSummary = {
         headline: parsed.headline ?? executiveSummary.headline,
         keyPoints: parsed.keyPoints ?? executiveSummary.keyPoints,
@@ -736,6 +751,11 @@ Responda APENAS o JSON, sem markdown.
         mainConcern: parsed.mainConcern ?? '',
         priorityAction: parsed.priorityAction ?? '',
         tone: parsed.tone ?? 'neutral',
+        actionType: parsed.actionType ?? 'none',
+        agentPromptLink: agentPromptRaw
+          ? `/dashboard/agente?unit=${unitSlug}&q=${encodeURIComponent(agentPromptRaw)}`
+          : undefined,
+        agentConfigSuggestion: parsed.agentConfigSuggestion ?? undefined,
       }
       aiLeverageComment = parsed.aiLeverageComment ?? ''
     } catch (e) {

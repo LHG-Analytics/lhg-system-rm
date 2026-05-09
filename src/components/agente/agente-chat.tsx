@@ -238,6 +238,8 @@ interface AgenteChatInnerProps {
   isAwaitingResponse?: boolean
   displayName?: string | null
   timezone?: string | null
+  /** Prompt a ser enviado automaticamente ao montar o componente (ex: deep link do relatório) */
+  autoSubmitPrompt?: string
   onConversationCreated?: (id: string, title: string) => void
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
   onProposalSaved?: () => void
@@ -251,6 +253,7 @@ function AgenteChatInner({
   contextMode: initialContextMode,
   isAwaitingResponse,
   displayName, timezone,
+  autoSubmitPrompt,
   onConversationCreated, onMessagesUpdate, onProposalSaved, onNavigateToProposals,
   onContextModeChange,
 }: AgenteChatInnerProps) {
@@ -347,6 +350,7 @@ function AgenteChatInner({
   const userScrolledUpRef = useRef(false)
   const prevMessageCountRef = useRef(0)
   const isSubmittingRef = useRef(false)
+  const autoSubmitDoneRef = useRef(false)
 
   function scrollToBottom() {
     const el = scrollAreaRef.current
@@ -404,8 +408,16 @@ function AgenteChatInner({
     }
   }
 
-  async function submit() {
-    const text = textareaRef.current?.value.trim()
+  // Auto-submit quando o componente monta com autoSubmitPrompt (deep link do relatório)
+  useEffect(() => {
+    if (!autoSubmitPrompt || autoSubmitDoneRef.current || !unitId) return
+    autoSubmitDoneRef.current = true
+    const t = setTimeout(() => submit(autoSubmitPrompt), 400)
+    return () => clearTimeout(t)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function submit(overrideText?: string) {
+    const text = overrideText ?? textareaRef.current?.value.trim()
     if (!text || isStreaming || isSubmittingRef.current) return
     isSubmittingRef.current = true
 
@@ -438,7 +450,7 @@ function AgenteChatInner({
     }
 
     sendMessage({ text })
-    if (textareaRef.current) textareaRef.current.value = ''
+    if (!overrideText && textareaRef.current) textareaRef.current.value = ''
     // isSubmittingRef é resetado no useEffect quando status volta a 'ready'
   }
 
@@ -643,7 +655,7 @@ function AgenteChatInner({
         />
         <Button
           size="icon"
-          onClick={submit}
+          onClick={() => submit()}
           disabled={isStreaming || awaitingOnly}
           className="shrink-0 h-[44px] w-[44px]"
         >
@@ -668,6 +680,8 @@ interface AgenteChatProps {
   contextMode?: ContextMode
   displayName?: string | null
   timezone?: string | null
+  /** Prompt a ser enviado automaticamente ao montar (ex: deep link do relatório) */
+  autoSubmitPrompt?: string
   onConversationCreated?: (id: string, title: string) => void
   onMessagesUpdate?: (id: string, msgs: UIMessage[]) => void
   onProposalSaved?: () => void
@@ -682,6 +696,7 @@ export function AgenteChat({
   isAwaitingResponse,
   contextMode,
   displayName, timezone,
+  autoSubmitPrompt,
   onConversationCreated: externalOnCreated,
   onMessagesUpdate: externalOnUpdate,
   onProposalSaved,
@@ -701,6 +716,7 @@ export function AgenteChat({
       contextMode={contextMode}
       displayName={displayName}
       timezone={timezone}
+      autoSubmitPrompt={autoSubmitPrompt}
       onConversationCreated={externalOnCreated}
       onMessagesUpdate={externalOnUpdate}
       onProposalSaved={onProposalSaved}

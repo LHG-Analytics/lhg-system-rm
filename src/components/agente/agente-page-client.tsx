@@ -98,6 +98,19 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
     }
   }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-submit via ?q= param (deep link do relatório semanal)
+  const [autoSubmitPrompt, setAutoSubmitPrompt] = useState<string | null>(() => searchParams.get('q'))
+  const handledQParam = useRef(false)
+  useEffect(() => {
+    if (handledQParam.current) return
+    const qParam = searchParams.get('q')
+    if (qParam) {
+      handledQParam.current = true
+      // Garante nova conversa para o auto-submit
+      handleNewConversation()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function loadConversations() {
     const supabase = createClient()
     const { data } = await supabase
@@ -254,6 +267,8 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
       { id, title, updated_at: new Date().toISOString(), messages: [] },
       ...prev,
     ])
+    // Limpa o prompt de auto-submit após a conversa ser criada
+    if (autoSubmitPrompt) setAutoSubmitPrompt(null)
   }
 
   function handleProposalSaved() {
@@ -464,6 +479,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
             contextMode={contextMode}
             displayName={displayName}
             timezone={timezone}
+            autoSubmitPrompt={autoSubmitPrompt ?? undefined}
             onConversationCreated={handleConversationCreated}
             onMessagesUpdate={handleMessagesUpdate}
             onProposalSaved={handleProposalSaved}
