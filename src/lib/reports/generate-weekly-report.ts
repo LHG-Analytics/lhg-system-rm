@@ -236,48 +236,63 @@ export async function generateWeeklyReport(
     const prevReport = prevReportResult.status === 'fulfilled' ? prevReportResult.value.data?.[0] : null
     const guardrailsCount = guardrailsResult.count ?? 0
 
-    // Auto-refresh concorrentes via Guia GM quando não há gaps calculados
-    if (competitorGaps.length === 0 && agentConfig) {
+    // Auto-refresh concorrentes: se não há gaps, recomputa ou scrapa e recomputa
+    if (competitorGaps.length === 0) {
       try {
-        type CompUrlEntry = { url: string; label?: string }
-        type CompUrl = { name: string; url?: string; urls?: CompUrlEntry[]; mode?: string }
-        const rawUrls = (agentConfig.competitor_urls as unknown as CompUrl[] | null) ?? []
-        const guiaEntries = rawUrls.filter(c => c.mode === 'guia')
+        // Verifica se já existem snapshots recentes (últimos 14 dias)
+        const snapshotCutoff = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString()
+        const { count: snapshotCount } = await admin
+          .from('competitor_snapshots')
+          .select('id', { count: 'exact', head: true })
+          .eq('unit_id', unit.id)
+          .eq('status', 'done')
+          .gte('scraped_at', snapshotCutoff)
 
-        if (guiaEntries.length > 0) {
-          for (const entry of guiaEntries) {
-            const urls = entry.urls ?? (entry.url ? [{ url: entry.url }] : [])
-            for (const { url } of urls) {
-              try {
-                const result = await scrapeGuiaUrl(url)
-                if (result.prices.length > 0) {
-                  await admin.from('competitor_snapshots').upsert(
-                    {
-                      unit_id: unit.id,
-                      competitor_name: entry.name,
-                      competitor_url: url,
-                      mapped_prices: result.prices as unknown as Database['public']['Tables']['competitor_snapshots']['Insert']['mapped_prices'],
-                      raw_text: JSON.stringify({ prices: result.prices, amenitiesBySuite: result.amenitiesBySuite }),
-                      scraped_at: new Date().toISOString(),
-                      status: 'done',
-                      apify_run_id: null,
-                    },
-                    { onConflict: 'unit_id,competitor_url' }
-                  )
-                }
-              } catch { /* URL individual falhou — continua */ }
-            }
-          }
-
+        if ((snapshotCount ?? 0) > 0) {
+          // Snapshots existem mas gaps não foram computados — só recomputa
           await computeAndPersistGaps(unit.id)
+        } else if (agentConfig) {
+          // Sem snapshots recentes — tenta scraping das URLs Guia GM configuradas
+          type CompUrlEntry = { url: string; label?: string }
+          type CompUrl = { name: string; url?: string; urls?: CompUrlEntry[]; mode?: string }
+          const rawUrls = (agentConfig.competitor_urls as unknown as CompUrl[] | null) ?? []
+          const guiaEntries = rawUrls.filter(c => c.mode === 'guia')
 
-          const freshGaps = await admin.from('rm_competitor_price_gaps')
-            .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position')
-            .eq('unit_id', unit.id)
-            .order('gap_pct', { ascending: false })
-            .limit(15)
-          if (!freshGaps.error) competitorGaps = freshGaps.data ?? []
+          if (guiaEntries.length > 0) {
+            for (const entry of guiaEntries) {
+              const urls = entry.urls ?? (entry.url ? [{ url: entry.url }] : [])
+              for (const { url } of urls) {
+                try {
+                  const result = await scrapeGuiaUrl(url)
+                  if (result.prices.length > 0) {
+                    await admin.from('competitor_snapshots').upsert(
+                      {
+                        unit_id: unit.id,
+                        competitor_name: entry.name,
+                        competitor_url: url,
+                        mapped_prices: result.prices as unknown as Database['public']['Tables']['competitor_snapshots']['Insert']['mapped_prices'],
+                        raw_text: JSON.stringify({ prices: result.prices, amenitiesBySuite: result.amenitiesBySuite }),
+                        scraped_at: new Date().toISOString(),
+                        status: 'done',
+                        apify_run_id: null,
+                      },
+                      { onConflict: 'unit_id,competitor_url' }
+                    )
+                  }
+                } catch { /* URL individual falhou — continua */ }
+              }
+            }
+            await computeAndPersistGaps(unit.id)
+          }
         }
+
+        // Re-busca gaps após recompute
+        const freshGaps = await admin.from('rm_competitor_price_gaps')
+          .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position')
+          .eq('unit_id', unit.id)
+          .order('gap_pct', { ascending: false })
+          .limit(15)
+        if (!freshGaps.error) competitorGaps = freshGaps.data ?? []
       } catch { /* auto-refresh silencioso — não bloqueia o relatório */ }
     }
 
@@ -295,8 +310,9 @@ export async function generateWeeklyReport(
     const lessonsNeutral = lessons.filter(l => l.verdict === 'neutral').length
     const lessonsFailure = lessons.filter(l => l.verdict === 'failure').length
 
-    const guiaShare = channelKPIs.find(c => c.canal === 'GUIA_GO' || c.canal === 'GUIA_SCHEDULED')
-    const guiaSharePct = guiaShare ? guiaShare.representatividade : 0
+    const guiaSharePct = channelKPIs
+      .filter(c => c.canal === 'GUIA_GO' || c.canal === 'GUIA_SCHEDULED')
+      .reduce((acc, c) => acc + c.representatividade, 0)
     const prevGuiaShare = prevReportData?.discounts?.guiaSharePct ?? 0
 
     const evolution: WeeklyReportData['evolution'] = {
@@ -427,14 +443,32 @@ export async function generateWeeklyReport(
         : '',
     }
 
+    // Calcula linha Balcão/Walk-in como diferença entre total de KPIs e canais digitais
+    const channelMixRows = channelKPIs.map(c => ({
+      canal: c.canal,
+      label: c.label,
+      reservas: c.reservas,
+      receita: c.receita,
+      representatividade: c.representatividade,
+    }))
+    const sumChannelReceita = channelMixRows.reduce((acc, c) => acc + c.receita, 0)
+    const sumChannelReservas = channelMixRows.reduce((acc, c) => acc + c.reservas, 0)
+    const sumRepresentatividade = channelMixRows.reduce((acc, c) => acc + c.representatividade, 0)
+    const balcaoReceita = Math.max(0, currentSnapshot.receita - sumChannelReceita)
+    const balcaoLocacoes = Math.max(0, currentSnapshot.locacoes - sumChannelReservas)
+    const balcaoRepresentatividade = Math.max(0, +(100 - sumRepresentatividade).toFixed(1))
+    if (balcaoReceita > 0 || balcaoLocacoes > 0) {
+      channelMixRows.push({
+        canal: 'BALCAO',
+        label: 'Balcão / Walk-in',
+        reservas: balcaoLocacoes,
+        receita: balcaoReceita,
+        representatividade: balcaoRepresentatividade,
+      })
+    }
+
     const demand: WeeklyReportData['demand'] = {
-      channelMix: channelKPIs.map(c => ({
-        canal: c.canal,
-        label: c.label,
-        reservas: c.reservas,
-        receita: c.receita,
-        representatividade: c.representatividade,
-      })),
+      channelMix: channelMixRows,
       periodMix: periodMix.map(p => ({
         periodo: p.rentalType,
         locacoes: p.locacoes,

@@ -59,6 +59,17 @@ function median(arr: number[]): number {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
+// Normaliza períodos: "3 horas" → "3h", "3h" → "3h", "Pernoite" → "pernoite"
+function normalizePeriod(p: string): string {
+  const h = parseInt(p.trim())
+  if (!isNaN(h) && h > 0) return `${h}h`
+  const lower = p.toLowerCase().trim()
+  if (lower.includes('pernoite')) return 'pernoite'
+  if (lower.includes('day use') || lower.includes('dayuse')) return 'dayuse'
+  if (lower.includes('diária') || lower.includes('diaria')) return 'diaria'
+  return lower
+}
+
 /**
  * Compara o snapshot recém-salvo com o anterior do mesmo concorrente
  * (mesma unit_id + competitor_name) e popula competitor_snapshots.price_changes.
@@ -194,37 +205,54 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
 
   if (!snapshots?.length) return { inserted: 0 }
 
-  // Estrutura: por (categoria_competitor_lower, periodo_lower, dia_tipo) → preços + nomes
+  // Estrutura: por (categoria_competitor_lower, periodo_norm, dia_tipo) → preços + nomes
   type Bucket = { precos: number[]; competitors: Set<string>; categoria_competitor: string }
   const competitorBuckets = new Map<string, Bucket>()
+  // Fallback: mediana de mercado por período (ignora categoria — útil quando nomes não casam)
+  const periodBuckets = new Map<string, Bucket>()
 
   for (const snap of snapshots) {
     const prices = (snap.mapped_prices as unknown as CompetitorPriceRow[]) ?? []
     for (const p of prices) {
       const cat = p.categoria_concorrente.trim()
-      const per = p.periodo.trim()
+      const per = normalizePeriod(p.periodo)
       const dia = (p.dia_tipo ?? 'todos').trim()
-      const key = `${cat.toLowerCase()}|${per.toLowerCase()}|${dia}`
-      let bucket = competitorBuckets.get(key)
-      if (!bucket) {
-        bucket = { precos: [], competitors: new Set(), categoria_competitor: cat }
-        competitorBuckets.set(key, bucket)
+
+      // Bucket por categoria+período+dia
+      const catKey = `${cat.toLowerCase()}|${per}|${dia}`
+      let catBucket = competitorBuckets.get(catKey)
+      if (!catBucket) {
+        catBucket = { precos: [], competitors: new Set(), categoria_competitor: cat }
+        competitorBuckets.set(catKey, catBucket)
       }
-      bucket.precos.push(p.preco)
-      bucket.competitors.add(snap.competitor_name)
+      catBucket.precos.push(p.preco)
+      catBucket.competitors.add(snap.competitor_name)
+
+      // Bucket de mercado por período+dia (fallback quando categorias não casam)
+      const perKey = `${per}|${dia}`
+      let perBucket = periodBuckets.get(perKey)
+      if (!perBucket) {
+        perBucket = { precos: [], competitors: new Set(), categoria_competitor: 'mercado' }
+        periodBuckets.set(perKey, perBucket)
+      }
+      perBucket.precos.push(p.preco)
+      perBucket.competitors.add(snap.competitor_name)
     }
   }
 
-  // Para cada nossa linha, tenta matching exato; se não houver, tenta sem dia_tipo (todos)
+  // Para cada nossa linha: tenta matching por categoria; se não houver, usa mediana de mercado do período
   const gaps: CompetitorGap[] = []
   for (const r of ourRows) {
     const cat = r.categoria.trim()
-    const per = r.periodo.trim()
+    const per = normalizePeriod(r.periodo)
     const dia = (r.dia_tipo ?? 'todos').trim()
-    const exactKey = `${cat.toLowerCase()}|${per.toLowerCase()}|${dia}`
-    const fallbackKey = `${cat.toLowerCase()}|${per.toLowerCase()}|todos`
+    const exactKey = `${cat.toLowerCase()}|${per}|${dia}`
+    const fallbackDiaKey = `${cat.toLowerCase()}|${per}|todos`
 
-    const bucket = competitorBuckets.get(exactKey) ?? competitorBuckets.get(fallbackKey)
+    const bucket = competitorBuckets.get(exactKey)
+      ?? competitorBuckets.get(fallbackDiaKey)
+      ?? periodBuckets.get(`${per}|${dia}`)   // mediana de mercado para o período
+      ?? periodBuckets.get(`${per}|todos`)     // mediana de mercado sem distinção de dia
     if (!bucket || bucket.precos.length < 1) continue
 
     const mediana = +median(bucket.precos).toFixed(2)

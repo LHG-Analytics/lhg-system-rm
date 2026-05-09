@@ -13,8 +13,7 @@ export function DiscountsSection({ data }: Props) {
   const [open, setOpen] = useState(true)
 
   const shareDelta = data.guiaSharePct - data.guiaSharePrevWeek
-  const shareStatus =
-    data.guiaSharePct < 15 ? 'low' : data.guiaSharePct > 40 ? 'high' : 'ok'
+  const shareStatus = data.guiaSharePct > 40 ? 'high' : 'ok'
 
   const DeltaIcon = shareDelta > 0.5 ? TrendingUp : shareDelta < -0.5 ? TrendingDown : Minus
 
@@ -42,7 +41,7 @@ export function DiscountsSection({ data }: Props) {
           {/* Explicação + 3 cards de participação */}
           <div>
             <p className="text-xs text-muted-foreground mb-3">
-              % das reservas via planos Go e Programado do Guia de Motéis. Abaixo de 15% indica pouca presença no canal; acima de 40% pode indicar dependência excessiva de descontos.
+              % das reservas via planos Go e Programado do Guia de Motéis. Menos participação = menos dependência de descontos e maior margem. O objetivo é manter sempre abaixo de 40%.
             </p>
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-lg bg-muted/50 p-3 text-center">
@@ -66,7 +65,7 @@ export function DiscountsSection({ data }: Props) {
                 {data.guiaSharePrevWeek > 0 && (
                   <p className={cn(
                     'text-xs flex items-center justify-center gap-0.5 mt-0.5',
-                    shareDelta > 0 ? 'text-emerald-600' : shareDelta < 0 ? 'text-destructive' : 'text-muted-foreground'
+                    shareDelta > 0 ? 'text-destructive' : shareDelta < 0 ? 'text-emerald-600' : 'text-muted-foreground'
                   )}>
                     <DeltaIcon className="w-3 h-3" />
                     {shareDelta >= 0 ? '+' : ''}{shareDelta.toFixed(1)} p.p.
@@ -74,8 +73,9 @@ export function DiscountsSection({ data }: Props) {
                 )}
               </div>
               <div className="rounded-lg bg-muted/50 p-3 text-center border border-dashed">
-                <p className="text-xs text-muted-foreground mb-1">Zona alvo</p>
-                <p className="text-xl font-semibold text-muted-foreground">15–40%</p>
+                <p className="text-xs text-muted-foreground mb-1">Máx. recomendado</p>
+                <p className="text-xl font-semibold text-muted-foreground">40%</p>
+                <p className="text-xs text-muted-foreground mt-0.5">minimize este canal</p>
               </div>
             </div>
           </div>
