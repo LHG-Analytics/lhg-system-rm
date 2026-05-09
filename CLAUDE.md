@@ -1052,6 +1052,15 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `channel-kpis.ts (queryPeriodMix)`: `AND la.datafinaldaocupacao IS NOT NULL` excluí locações em aberto sem duração calculável — corrige discrepância de contagem de locações vs BigNumbers
   - **Armadilha rm_competitor_price_gaps:** a query `freshGaps` dentro do bloco de auto-refresh de concorrentes precisa ter os mesmos campos da query principal — select incompleto causa erro TS2322 na atribuição ao `competitorGaps`
 
+- **LHG-185:** feat(relatorios+agente): ação prioritária com dados reais + deep link chat + fix cron segunda-feira ✅ 2026-05-09
+  - `generate-weekly-report.ts`: AI retorna `actionType` (price_proposal/discount_proposal/agent_config/none), `agentPrompt` (máx 300 chars com dados reais) e `agentConfigSuggestion`; `agentPromptLink` = `/dashboard/agente?unit=X&q=PROMPT` (encodeURIComponent)
+  - `executive-summary.tsx`: botão "Ir para o Agente RM →" quando `actionType != none`; badge âmbar com sugestão de configuração quando presente
+  - `agente-chat.tsx`: `autoSubmitPrompt?: string` em `AgenteChatInner`/`AgenteChat`; `submit(overrideText?)` aceita texto direto; `useEffect` com `autoSubmitDoneRef` dispara auto-submit único ao montar (400ms delay)
+  - `agente-page-client.tsx`: lê `?q=` param uma vez na montagem via `useState(() => searchParams.get('q'))`; limpa após `handleConversationCreated`; passa `autoSubmitPrompt` para `AgenteChat`
+  - `run-reviews.ts`: removido early return quando não há revisões (bug: bloqueava geração de relatórios em segundas sem agendamentos); `reviewedUnitIds = new Set(reviews?.map(r => r.unit_id))` filtra unidades da geração de relatório — prioridade: revisão > relatório semanal
+  - `competitors-section.tsx`: toggle ≈ com localStorage para matches aproximados (ex: 2h ≈ 3h); indicador `≈2h` em violeta; `periodoAproximado` e `competitorPeriodo` propagados pelo pipeline
+  - **Armadilha:** `onClick={submit}` vira `onClick={() => submit()}` quando `submit` aceita `overrideText?` — MouseEvent não é string
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
