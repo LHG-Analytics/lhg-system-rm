@@ -5,13 +5,19 @@ import type { WeeklyReportData, KPISnapshot } from './types'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
-import { getUpcomingSeasonalFactors } from '@/lib/seasonality/compute'
-import { getElasticityForUnit } from '@/lib/pricing/elasticity'
-import { computeRevenueForecast } from '@/lib/forecast/revenue-forecast'
+import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
+import { getElasticityForUnit, buildElasticityBlock } from '@/lib/pricing/elasticity'
+import { computeRevenueForecast, buildForecastBlock } from '@/lib/forecast/revenue-forecast'
 import { ANALYSIS_MODEL } from '@/lib/agente/model'
 import type { BudgetYearly } from '@/lib/budget/google-sheets'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
-import { computeAndPersistGaps, parseAmenitiesBySuite } from '@/lib/competitors/detect-changes'
+import { computeAndPersistGaps, parseAmenitiesBySuite, buildCompetitorGapBlock } from '@/lib/competitors/detect-changes'
+import type { CompetitorGap } from '@/lib/competitors/detect-changes'
+import { buildKPIContext } from '@/lib/agente/system-prompt'
+import { buildStrategicMemoryBlock } from '@/lib/agente/context-blocks'
+import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
+import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
+import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 
 const MONTH_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
@@ -148,7 +154,7 @@ export async function generateWeeklyReport(
         .order('valid_from', { ascending: false })
         .limit(1),
       admin.from('price_proposals')
-        .select('id, approved_at, rows')
+        .select('id, approved_at, rows, context, reviewed_at, kpi_baseline')
         .eq('unit_id', unit.id)
         .eq('status', 'approved')
         .gte('approved_at', periodStart)
@@ -689,70 +695,137 @@ export async function generateWeeklyReport(
       })),
     }
 
-    // AI: executive summary + budget leverage comment
+    // AI: executive summary — reutiliza os mesmos builders do Agente RM
 
-    // Preços atuais da tabela ativa (balcão, semana) — max 8 linhas para não explodir o prompt
+    // Bloco KPI completo: categorias, períodos, canais, BigNumbers — mesmo formato do chat
+    const kpiBlock = buildKPIContext(
+      unit.name,
+      { startDate: periodStart, endDate: periodEnd },
+      kpis,
+      null,
+      channelKPIs,
+      periodMix,
+    )
+
+    // Tabela de preços: semana vs FDS lado a lado (buildKPIContext não inclui preços)
     const priceTableCtx = (() => {
       if (activePriceRows.length === 0) return ''
-      const balcaoSemana = activePriceRows.filter(r =>
-        (r.canal?.toLowerCase().includes('balcao') || r.canal?.toLowerCase().includes('site')) &&
-        (r.dia_tipo === 'semana' || r.dia_tipo === 'Semana')
-      )
-      const rows = (balcaoSemana.length > 0 ? balcaoSemana : activePriceRows).slice(0, 8)
-      return `\nPREÇOS ATUAIS (${balcaoSemana.length > 0 ? 'balcão/semana' : 'tabela ativa'}):\n${rows.map(r => `- ${r.categoria} ${r.periodo}: R$${Number(r.preco).toFixed(0)}`).join('\n')}`
+      const isBalcao = (r: ParsedPriceRow) =>
+        r.canal?.toLowerCase().includes('balcao') || r.canal?.toLowerCase().includes('site')
+      const base = activePriceRows.filter(isBalcao).length > 0
+        ? activePriceRows.filter(isBalcao)
+        : activePriceRows
+      const map = new Map<string, { semana?: number; fds?: number }>()
+      for (const r of base) {
+        const key = `${r.categoria}||${r.periodo}`
+        const entry = map.get(key) ?? {}
+        const dt = (r.dia_tipo ?? '').toLowerCase()
+        if (dt === 'semana') entry.semana = Number(r.preco)
+        else if (dt.includes('fds') || dt.includes('feriado')) entry.fds = Number(r.preco)
+        map.set(key, entry)
+      }
+      const lines = [...map.entries()].slice(0, 12).map(([k, v]) => {
+        const [cat, per] = k.split('||')
+        const sem = v.semana != null ? `R$${v.semana.toFixed(0)}` : '—'
+        const fds = v.fds != null ? `R$${v.fds.toFixed(0)}` : '—'
+        return `- ${cat} ${per}: semana ${sem} | FDS/feriado ${fds}`
+      })
+      return lines.length > 0 ? `\n## Preços atuais (balcão)\n${lines.join('\n')}` : ''
     })()
 
-    // Gap vs concorrentes com preços absolutos (NOSSA categoria ≠ concorrente)
-    const compContext = competitors.gaps.length > 0 ? (() => {
-      const top = competitors.gaps.slice(0, 5)
-      const lines = top.map(g => {
-        const nos = g.precoNosso > 0 ? `R$${g.precoNosso.toFixed(0)}` : '?'
-        const med = g.medianaConc > 0 ? `R$${g.medianaConc.toFixed(0)}` : '?'
-        const sinal = g.gapPct > 0 ? '+' : ''
-        return `- NOSSA suíte "${g.categoria}" ${g.periodo} ${g.diaTipo}: ${nos} | conc. "${g.competitorName ?? 'mercado'}": ${med} → gap ${sinal}${g.gapPct.toFixed(1)}%`
-      })
-      return `\nGAP DE PREÇO vs CONCORRENTES (posição geral: ${competitors.dominantPosition}):\n${lines.join('\n')}`
+    // Descontos vigentes do Guia (não coberto pelos builders do agente de forma compacta)
+    const discountCtx = discountRows.length > 0 ? (() => {
+      const lines = discountRows.slice(0, 8).map(d =>
+        `- ${d.categoria} ${d.periodo} ${d.dia_semana ?? ''}: ${d.valor}% ${d.tipo_desconto ?? ''} ${d.faixa_horaria ? `(${d.faixa_horaria})` : ''}`.trim()
+      )
+      return `\n## Descontos vigentes (Guia)\n${lines.join('\n')}`
     })() : ''
 
-    const guiaShare = channelKPIs.find(c => c.canal === 'GUIA_GO' || c.canal === 'GUIA_SCHEDULED')
-    const guiaCtx = guiaShare
-      ? `\n- Guia de Motéis: ${guiaShare.representatividade.toFixed(1)}% da receita (referência: 15–40% é saudável)`
-      : ''
+    // Contexto de concorrentes — mesmo builder do agente
+    const competitorGapsTyped: CompetitorGap[] = competitorGaps.map(g => ({
+      categoria_nossa: g.categoria_nossa ?? '',
+      categoria_competitor: (g as { categoria_competitor?: string }).categoria_competitor ?? '',
+      periodo: g.periodo ?? '',
+      dia_tipo: g.dia_tipo ?? '',
+      preco_nosso: g.preco_nosso ?? 0,
+      preco_concorrente_mediana: g.preco_concorrente_mediana ?? 0,
+      preco_concorrente_min: 0,
+      preco_concorrente_max: 0,
+      gap_pct: g.gap_pct ?? 0,
+      position: (g.position ?? 'aligned') as 'underprice' | 'aligned' | 'overprice',
+      competitor_name: (g as { competitor_name?: string }).competitor_name ?? '',
+      competitor_periodo: g.competitor_periodo ?? undefined,
+      is_approximated: g.is_approximated ?? false,
+    }))
+    const competitorBlock = buildCompetitorGapBlock(competitorGapsTyped)
+
+    // Sazonalidade, elasticidade, forecast — mesmos builders do agente
+    const seasonalityBlock = buildSeasonalityBlock(seasonalFactors)
+    const elasticityBlock = buildElasticityBlock(elasticity)
+    const forecastBlock = buildForecastBlock(
+      computeRevenueForecast(kpis, (agentConfig?.budget_yearly as BudgetYearly | null) ?? null)
+    )
+
+    // Memória estratégica (propostas aprovadas + resultado)
+    const strategicMemoryBlock = buildStrategicMemoryBlock(
+      approvedProposals as Parameters<typeof buildStrategicMemoryBlock>[0],
+      kpis,
+      prevKpis,
+    )
+
+    // Lições de pricing + rejeições — fazem fetch próprio, chamados em paralelo
+    const [lessonsBlock, rejectionBlock] = await Promise.all([
+      buildLessonsBlockForUnit(unit.id, {}).catch(() => ''),
+      buildRejectionLessonsBlock(unit.id).catch(() => ''),
+    ])
+
+    // Capacidade e estrutura da unidade
+    const unitStructureBlock = buildUnitStructureBlock(suiteAvail, [], [])
+
+    // Contexto histórico de tabelas (aprendizado de mudanças passadas)
+    const historicalCtx = historicalInsights.length > 0 ? `
+## Histórico de mudanças de tabela (aprendizado)
+${historicalInsights.map(h => `- ${h.fromDate}→${h.toDate}: ${h.changesCount} preços (${h.avgChangePct > 0 ? '+' : ''}${h.avgChangePct.toFixed(1)}%) → Δ RevPAR ${h.deltaRevpar !== null ? `${h.deltaRevpar > 0 ? '+' : ''}${h.deltaRevpar.toFixed(1)}%` : '?'}, Δ Giro ${h.deltaGiro !== null ? `${h.deltaGiro > 0 ? '+' : ''}${h.deltaGiro.toFixed(1)}%` : '?'} (${h.verdict})`).join('\n')}` : ''
 
     const promptContext = `
-Você é um Revenue Manager sênior especialista em motéis. Analise os dados de ${unit.name} (${periodStart} a ${periodEnd}, ${durationDays} dias) e gere um plano de ação ESPECÍFICO E ACIONÁVEL.
+Você é um Revenue Manager sênior especialista em motéis.
+Analise o contexto operacional completo de ${unit.name} (${periodStart}–${periodEnd}, ${durationDays} dias) abaixo — é o MESMO contexto que o Agente RM usa para análises e propostas, incluindo histórico de tabelas importadas e aprendizado de decisões passadas.
 
-DADOS DO PERÍODO:
-- RevPAR: R$ ${currentSnapshot.revpar.toFixed(2)} ${prevCurrentSnapshot ? `(${deltaPct(currentSnapshot.revpar, prevCurrentSnapshot.revpar) >= 0 ? '+' : ''}${deltaPct(currentSnapshot.revpar, prevCurrentSnapshot.revpar).toFixed(1)}% vs sem. ant.)` : ''}
-- Giro: ${currentSnapshot.giro.toFixed(2)} ${prevCurrentSnapshot ? `(${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro) >= 0 ? '+' : ''}${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro).toFixed(1)}%)` : ''} — <1.0 baixo | 1.0–1.8 normal | >1.8 alto
-- Ocupação: ${(currentSnapshot.ocupacao * 100).toFixed(1)}%
-- Receita: R$ ${currentSnapshot.receita.toFixed(2)} | Ticket: R$ ${currentSnapshot.ticket.toFixed(2)} | Locações: ${currentSnapshot.locacoes}
-- Meta mensal: R$ ${meta.toFixed(2)} | Projeção: R$ ${projecao.toFixed(2)} | Gap: ${meta > 0 ? ((projecao - meta) / meta * 100).toFixed(1) : 0}%
-- Pace atual: R$ ${paceDiarioAtual.toFixed(2)}/dia | Necessário: R$ ${paceDiarioNecessario.toFixed(2)}/dia${guiaCtx}
-- Lições de pricing: ${lessonsSuccess} acertos, ${lessonsFailure} falhas
-- Anomalias: ${newAnomalies} novas, ${resolvedAnomalies} resolvidas${priceTableCtx}${compContext}
-${historicalInsights.length > 0 ? `
-HISTÓRICO DE MUDANÇAS DE TABELA:
-${historicalInsights.map(h => `- Transição ${h.fromDate}→${h.toDate}: ${h.changesCount} preços (${h.avgChangePct > 0 ? '+' : ''}${h.avgChangePct.toFixed(1)}%) → Δ RevPAR ${h.deltaRevpar !== null ? `${h.deltaRevpar > 0 ? '+' : ''}${h.deltaRevpar.toFixed(1)}%` : '?'}, Δ Giro ${h.deltaGiro !== null ? `${h.deltaGiro > 0 ? '+' : ''}${h.deltaGiro.toFixed(1)}%` : '?'} (${h.verdict})`).join('\n')}
-` : ''}
-Regras para o JSON:
-1. "priorityAction": use APENAS os preços reais listados acima (PREÇOS ATUAIS e GAP DE PREÇO). NUNCA invente valores nem use placeholders como "R$ xxx", "R$ preço concorrente", "preço atual", "valor X". Se não há dados de preço disponíveis, baseie a ação apenas nos KPIs. Exemplo correto: "Elevar CLUB pernoite de R$280 → R$300 (+7%): concorrente cobra R$320, giro 1.9 acima da meta". Exemplo ERRADO: "Reduzir de R$ xxx para R$ preço concorrente".
-2. "actionType": classifique como "price_proposal" se a ação envolve reajuste de preços, "discount_proposal" se envolve descontos do Guia, "agent_config" se requer mudança de estratégia/configuração do agente, "none" se não há ação urgente.
-3. "agentPrompt": prompt COMPACTO (máx 300 chars) que será enviado automaticamente ao Agente RM. Deve ser uma instrução direta e completa com os dados-chave do relatório. Exemplo: "Com base no relatório (giro ${currentSnapshot.giro.toFixed(1)}, RevPAR R$${currentSnapshot.revpar.toFixed(0)}, ocupação ${(currentSnapshot.ocupacao * 100).toFixed(0)}%): gerar proposta de preços focando em [CATEGORIA/PERÍODO específico]. Prioridade: [MÉTRICA]."
-4. "agentConfigSuggestion": se a configuração atual do agente (estratégia: ${agentConfig?.pricing_strategy ?? 'moderado'}, foco: ${agentConfig?.focus_metric ?? 'revpar'}) não é ideal para os dados observados, sugira a mudança em 1 frase. Caso contrário, retorne null.
+---
+${kpiBlock}
+${priceTableCtx}
+${discountCtx}
+${competitorBlock}
+${seasonalityBlock}
+${elasticityBlock}
+${forecastBlock}
+${strategicMemoryBlock}
+${lessonsBlock}
+${rejectionBlock}
+${unitStructureBlock}
+${historicalCtx}
+---
+
+Config do agente: estratégia ${agentConfig?.pricing_strategy ?? 'moderado'}, foco ${agentConfig?.focus_metric ?? 'revpar'}, variação máx ${agentConfig?.max_variation_pct ?? 15}%
+
+REGRAS PARA O JSON:
+1. "priorityAction": use dados REAIS do contexto (preços, KPIs, concorrentes). NUNCA escreva "R$ xxx" ou placeholders. Pode sugerir criar nova tabela para um dia específico da semana se o padrão de giro/RevPAR justificar (ex: "criar tabela para sexta-feira com Master 3h a R$X, dado giro 1.9 na sexta vs 1.1 na segunda").
+2. "actionType": "price_proposal" | "discount_proposal" | "agent_config" | "none".
+3. "agentPrompt": instrução COMPACTA (máx 280 chars) para o Agente RM executar. Com números reais.
+4. "agentConfigSuggestion": se estratégia/foco atual não é ideal, sugira em 1 frase. Null se adequado.
 
 Retorne APENAS o JSON:
 {
-  "headline": "Uma frase que captura o tom geral da semana com dados",
-  "keyPoints": ["ponto específico com número 1", "ponto 2", "ponto 3"],
-  "mainWin": "Vitória específica com dado",
-  "mainConcern": "Preocupação específica com dado",
-  "priorityAction": "AÇÃO ESPECÍFICA COM DADOS REAIS DO PERÍODO",
+  "headline": "Uma frase com dado numérico que captura o tom da semana",
+  "keyPoints": ["insight com número 1", "insight 2", "insight 3"],
+  "mainWin": "Maior vitória do período com dado real",
+  "mainConcern": "Maior preocupação com dado real",
+  "priorityAction": "AÇÃO ESPECÍFICA COM DADOS REAIS — sem placeholders",
   "tone": "positive|neutral|warning",
   "actionType": "price_proposal|discount_proposal|agent_config|none",
-  "agentPrompt": "Prompt compacto e acionável para o Agente RM",
+  "agentPrompt": "Prompt compacto para o Agente RM",
   "agentConfigSuggestion": null,
-  "aiLeverageComment": "Para atingir R$ X de meta: alavancas concretas em 2-3 linhas"
+  "aiLeverageComment": "2-3 alavancas concretas com números para atingir a meta"
 }
 `.trim()
 
