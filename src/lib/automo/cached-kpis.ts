@@ -8,7 +8,7 @@ const REVALIDATE = 300
 
 export const cachedCompanyKPIs = unstable_cache(
   fetchCompanyKPIsFromAutomo,
-  ['automo-company-kpis-v2'],
+  ['automo-company-kpis-v3'],
   { revalidate: REVALIDATE },
 )
 
