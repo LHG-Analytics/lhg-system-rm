@@ -1055,6 +1055,13 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
 - **LHG-185:** feat(relatorios+agente): ação prioritária com dados reais + deep link chat + fix cron segunda-feira ✅ 2026-05-09
   - `generate-weekly-report.ts`: AI retorna `actionType` (price_proposal/discount_proposal/agent_config/none), `agentPrompt` (máx 300 chars com dados reais) e `agentConfigSuggestion`; `agentPromptLink` = `/dashboard/agente?unit=X&q=PROMPT` (encodeURIComponent)
   - `executive-summary.tsx`: botão "Ir para o Agente RM →" quando `actionType != none`; badge âmbar com sugestão de configuração quando presente
+
+- **LHG-186:** fix+refactor(relatorios): resumo executivo com dados reais + builders do Agente RM ✅ 2026-05-09
+  - Fix "Sem Sem" duplicado na sidebar: `formatPeriod()` já prefixava com "Sem" — JSX adicionava outro "Sem " → removido prefix redundante do JSX
+  - Refactor do prompt do resumo executivo: reutiliza os 9 builders do Agente RM (`buildKPIContext`, `buildSeasonalityBlock`, `buildCompetitorGapBlock`, `buildElasticityBlock`, `buildForecastBlock`, `buildStrategicMemoryBlock`, `buildLessonsBlockForUnit`, `buildRejectionLessonsBlock`, `buildUnitStructureBlock`) em vez de reconstruir contexto do zero
+  - Injeta tabela real de preços semana vs FDS/feriado extraída de `activePriceRows` (balcão/site)
+  - REGRA explícita no prompt: nunca usar "R$ xxx"; pode sugerir criar nova tabela para dia específico da semana quando giro/RevPAR justificar
+  - **Armadilha:** `buildUnitStructureBlock(availability, capacity, channelCosts)` — terceiro parâmetro é `UnitChannelCostRow[]`, não `null`; passar `[]` quando não disponível
   - `agente-chat.tsx`: `autoSubmitPrompt?: string` em `AgenteChatInner`/`AgenteChat`; `submit(overrideText?)` aceita texto direto; `useEffect` com `autoSubmitDoneRef` dispara auto-submit único ao montar (400ms delay)
   - `agente-page-client.tsx`: lê `?q=` param uma vez na montagem via `useState(() => searchParams.get('q'))`; limpa após `handleConversationCreated`; passa `autoSubmitPrompt` para `AgenteChat`
   - `run-reviews.ts`: removido early return quando não há revisões (bug: bloqueava geração de relatórios em segundas sem agendamentos); `reviewedUnitIds = new Set(reviews?.map(r => r.unit_id))` filtra unidades da geração de relatório — prioridade: revisão > relatório semanal
