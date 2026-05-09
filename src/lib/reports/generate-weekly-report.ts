@@ -246,7 +246,7 @@ export async function generateWeeklyReport(
         .gte('scraped_at', snapshotCutoff)
 
       if ((snapshotCount ?? 0) > 0) {
-        await computeAndPersistGaps(unit.id)
+        await computeAndPersistGaps(unit.id, 14)
         const freshGaps = await admin.from('rm_competitor_price_gaps')
           .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position, categoria_competitor, competitor_name')
           .eq('unit_id', unit.id)

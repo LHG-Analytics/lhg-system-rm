@@ -227,7 +227,25 @@ export async function detectPriceChanges(
  *
  * Substitui gaps anteriores da mesma unidade (truncate + reinsert).
  */
-export async function computeAndPersistGaps(unitId: string): Promise<{ inserted: number }> {
+/**
+ * Computa price gaps em duas fases:
+ *
+ * Fase 1 — match no nível de CATEGORIA (uma suite do concorrente por categoria nossa):
+ *   Para cada (nossa_categoria, concorrente), escolhe a suite mais equivalente usando
+ *   nome exato → Jaccard de comodidades → proximidade de preço global (mediana de todos
+ *   os períodos da categoria). Isso garante que 3h/6h/12h/pernoite de uma mesma
+ *   categoria sempre comparam contra a MESMA suite do concorrente, sem inversões de preço.
+ *
+ * Fase 2 — gap por (nossa_cat, periodo, dia_tipo, concorrente):
+ *   Com a suite fixada na Fase 1, busca os preços daquela suite para cada período e
+ *   calcula gap_pct = (nosso − mediana_deles) / mediana_deles * 100.
+ *
+ * @param cutoffDays - janela de snapshots válidos (default 7 dias; relatório usa 14)
+ */
+export async function computeAndPersistGaps(
+  unitId: string,
+  cutoffDays = 7,
+): Promise<{ inserted: number }> {
   const admin = getAdmin()
 
   // Tabela de preços ativa (nossa)
@@ -262,8 +280,8 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
     .maybeSingle()
   const ourAmenities = (agentCfg?.suite_amenities as Record<string, string[]> | null) ?? {}
 
-  // Snapshots de concorrentes dos últimos 7 dias (status done)
-  const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
+  // Snapshots de concorrentes dentro da janela (status done)
+  const cutoff = new Date(Date.now() - cutoffDays * 24 * 3600 * 1000).toISOString()
   const { data: snapshots } = await admin
     .from('competitor_snapshots')
     .select('id, competitor_name, mapped_prices, scraped_at, raw_text')
@@ -277,7 +295,7 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
 
   // Estrutura por concorrente: competitor_name → (cat_lower|per|dia) → Bucket
   const perCompetitorData = new Map<string, {
-    catBuckets: Map<string, Bucket>
+    catBuckets:     Map<string, Bucket>
     amenitiesBySuite: Record<string, string[]>
   }>()
 
@@ -293,7 +311,6 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
       compData = { catBuckets: new Map(), amenitiesBySuite: {} }
       perCompetitorData.set(snap.competitor_name, compData)
     }
-    // Merge amenidades de múltiplos snapshots do mesmo concorrente
     Object.assign(compData.amenitiesBySuite, amenitiesBySuite)
 
     for (const p of prices) {
@@ -301,7 +318,6 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
       const per = normalizePeriod(p.periodo)
       const dia = (p.dia_tipo ?? 'todos').trim()
 
-      // Bucket por categoria+período+dia dentro deste concorrente
       const catKey = `${cat.toLowerCase()}|${per}|${dia}`
       let catBucket = compData.catBuckets.get(catKey)
       if (!catBucket) {
@@ -311,7 +327,6 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
       }
       catBucket.precos.push(p.preco)
 
-      // Bucket de mercado (fallback cross-competitor)
       const perKey = `${per}|${dia}`
       let perBucket = periodBuckets.get(perKey)
       if (!perBucket) {
@@ -322,50 +337,80 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
     }
   }
 
-  // Encapsula a lógica de matching para reutilização por concorrente
-  function findBucket(
-    r: ParsedPriceRow,
-    cat: string,
-    per: string,
-    dia: string,
-    catBuckets: Map<string, Bucket>,
-  ): Bucket | undefined {
-    const exactKey     = `${cat.toLowerCase()}|${per}|${dia}`
-    const fallbackKey  = `${cat.toLowerCase()}|${per}|todos`
+  // ─── FASE 1: match no nível de categoria ────────────────────────────────────
+  // Para cada (nossa categoria, concorrente), decide qual suite do concorrente é
+  // equivalente — a mesma suite será usada para TODOS os períodos daquela categoria.
+  // Isso evita inversões (6h > 12h) causadas por matching independente por período.
 
-    let bucket = catBuckets.get(exactKey) ?? catBuckets.get(fallbackKey)
-
-    // Fallback 2: Jaccard similarity por comodidades (≥ 0.25)
-    if (!bucket) {
-      const ourDistinctive = getDistinctiveAmenities(ourAmenities[cat] ?? [])
-      if (ourDistinctive.size > 0) {
-        let bestScore = 0, bestBucket: Bucket | undefined
-        for (const [key, b] of catBuckets) {
-          const [, kPer, kDia] = key.split('|')
-          if (kPer !== per || (kDia !== dia && kDia !== 'todos')) continue
-          if (!b.amenities?.length) continue
-          const score = jaccardSimilarity(ourDistinctive, getDistinctiveAmenities(b.amenities))
-          if (score > bestScore) { bestScore = score; bestBucket = b }
-        }
-        if (bestScore >= 0.25 && bestBucket) bucket = bestBucket
+  // Agrega preços por (cat_lower) dentro de cada concorrente (para proximidade global)
+  const compCatAggregates = new Map<string, Map<string, { precos: number[]; amenities?: string[]; originalName: string }>>()
+  for (const [competitorName, compData] of perCompetitorData) {
+    const catAgg = new Map<string, { precos: number[]; amenities?: string[]; originalName: string }>()
+    compCatAggregates.set(competitorName, catAgg)
+    for (const [key, b] of compData.catBuckets) {
+      const compCatLower = key.split('|')[0]
+      let agg = catAgg.get(compCatLower)
+      if (!agg) {
+        agg = { precos: [], amenities: b.amenities, originalName: b.categoria_competitor }
+        catAgg.set(compCatLower, agg)
       }
+      agg.precos.push(...b.precos)
+      if (!agg.amenities && b.amenities) agg.amenities = b.amenities
     }
-
-    // Fallback 3: proximidade de preço (suíte com preço mediano mais próximo do nosso)
-    if (!bucket) {
-      let bestDist = Infinity, bestBucket: Bucket | undefined
-      for (const [key, b] of catBuckets) {
-        const [, kPer, kDia] = key.split('|')
-        if (kPer !== per || (kDia !== dia && kDia !== 'todos')) continue
-        if (!b.precos.length) continue
-        const dist = Math.abs(median(b.precos) - r.preco)
-        if (dist < bestDist) { bestDist = dist; bestBucket = b }
-      }
-      if (bestBucket) bucket = bestBucket
-    }
-
-    return bucket
   }
+
+  // Agrega preços por (nossa_cat) para proximidade global
+  const ourCatGlobalMedian = new Map<string, number>()
+  const ourCatsPer: Map<string, number[]> = new Map()
+  for (const r of ourDeduped.values()) {
+    const cat = r.categoria.trim()
+    const arr = ourCatsPer.get(cat) ?? []
+    arr.push(r.preco)
+    ourCatsPer.set(cat, arr)
+  }
+  for (const [cat, prices] of ourCatsPer) {
+    ourCatGlobalMedian.set(cat, median(prices))
+  }
+
+  // categoryMatches: competitor_name → our_cat → matched_comp_cat_lower
+  const categoryMatches = new Map<string, Map<string, string>>()
+
+  for (const [competitorName, catAgg] of compCatAggregates) {
+    const matchMap = new Map<string, string>()
+    categoryMatches.set(competitorName, matchMap)
+
+    for (const ourCat of ourCatsPer.keys()) {
+      // 1) Nome exato
+      if (catAgg.has(ourCat.toLowerCase())) {
+        matchMap.set(ourCat, ourCat.toLowerCase())
+        continue
+      }
+
+      // 2) Jaccard de comodidades (≥ 0.25)
+      const ourDistinctive = getDistinctiveAmenities(ourAmenities[ourCat] ?? [])
+      if (ourDistinctive.size > 0) {
+        let bestScore = 0, bestCat: string | undefined
+        for (const [compCatLower, agg] of catAgg) {
+          if (!agg.amenities?.length) continue
+          const score = jaccardSimilarity(ourDistinctive, getDistinctiveAmenities(agg.amenities))
+          if (score > bestScore) { bestScore = score; bestCat = compCatLower }
+        }
+        if (bestScore >= 0.25 && bestCat) { matchMap.set(ourCat, bestCat); continue }
+      }
+
+      // 3) Proximidade de preço global (mediana de TODOS os períodos da categoria)
+      const ourMed = ourCatGlobalMedian.get(ourCat) ?? 0
+      let bestDist = Infinity, bestCat: string | undefined
+      for (const [compCatLower, agg] of catAgg) {
+        if (!agg.precos.length) continue
+        const dist = Math.abs(median(agg.precos) - ourMed)
+        if (dist < bestDist) { bestDist = dist; bestCat = compCatLower }
+      }
+      if (bestCat) matchMap.set(ourCat, bestCat)
+    }
+  }
+
+  // ─── FASE 2: gaps usando a suite fixada na Fase 1 ───────────────────────────
 
   function makeGap(
     r: ParsedPriceRow,
@@ -405,12 +450,18 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
 
     let anyMatched = false
 
-    // Um gap por concorrente com dados para este (cat, per, dia)
     for (const [competitorName, compData] of perCompetitorData) {
-      const bucket = findBucket(r, cat, per, dia, compData.catBuckets)
+      const matchedCompCatLower = categoryMatches.get(competitorName)?.get(cat)
+      if (!matchedCompCatLower) continue
+
+      // Busca bucket da suite fixada para este período
+      const key         = `${matchedCompCatLower}|${per}|${dia}`
+      const fallbackKey = `${matchedCompCatLower}|${per}|todos`
+      const bucket      = compData.catBuckets.get(key) ?? compData.catBuckets.get(fallbackKey)
+
       if (!bucket || !bucket.precos.length) continue
-      const med = median(bucket.precos)
-      if (med === 0) continue
+      if (median(bucket.precos) === 0) continue
+
       anyMatched = true
       gaps.push(makeGap(r, cat, per, dia, bucket, competitorName))
     }
@@ -426,7 +477,6 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
 
   if (!gaps.length) return { inserted: 0 }
 
-  // Substitui o conjunto anterior (recompute total): truncate + insert
   await admin.from('rm_competitor_price_gaps').delete().eq('unit_id', unitId)
   const { error } = await admin
     .from('rm_competitor_price_gaps')
