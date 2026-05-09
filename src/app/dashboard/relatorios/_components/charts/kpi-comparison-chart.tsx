@@ -31,7 +31,7 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
   const data = MONETARY_METRICS.map(m => ({
     name: m.label,
     Atual: current[m.key],
-    'Período ant.': previousWeek ? previousWeek[m.key] : undefined,
+    'Semana ant.': previousWeek ? previousWeek[m.key] : undefined,
     'Ano anterior': sameWeekLastYear ? sameWeekLastYear[m.key] : undefined,
   }))
 
@@ -52,7 +52,7 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar dataKey="Atual" fill="#3b82f6" radius={[3, 3, 0, 0]} />
-        {previousWeek && <Bar dataKey="Período ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
+        {previousWeek && <Bar dataKey="Semana ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
         {sameWeekLastYear && <Bar dataKey="Ano anterior" fill="#64748b" radius={[3, 3, 0, 0]} />}
       </BarChart>
     </ResponsiveContainer>
@@ -64,7 +64,7 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
     {
       name: 'Giro (loc/suíte/dia)',
       Atual: current.giro,
-      'Período ant.': previousWeek?.giro ?? undefined,
+      'Semana ant.': previousWeek?.giro ?? undefined,
       'Ano anterior': sameWeekLastYear?.giro ?? undefined,
     },
   ]
@@ -80,7 +80,7 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar dataKey="Atual" fill="#3b82f6" radius={[3, 3, 0, 0]} />
-        {previousWeek && <Bar dataKey="Período ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
+        {previousWeek && <Bar dataKey="Semana ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
         {sameWeekLastYear && <Bar dataKey="Ano anterior" fill="#64748b" radius={[3, 3, 0, 0]} />}
       </BarChart>
     </ResponsiveContainer>

@@ -51,7 +51,7 @@ export function KpisSection({ data }: Props) {
           </div>
 
           <div>
-            <p className="text-xs text-muted-foreground mb-1">Giro (locações/suíte/dia) — referência: &lt;1.0 baixo · 1.0–1.8 normal · &gt;1.8 alto</p>
+            <p className="text-xs text-muted-foreground mb-1">Giro (locações/suíte/dia) — referência: &lt;1.3 baixo · 1.3–1.6 normal · &gt;1.6 alto</p>
             <GiroKpiChart
               current={data.current}
               previousWeek={data.previousWeek}
@@ -64,7 +64,7 @@ export function KpisSection({ data }: Props) {
               <tr className="text-xs text-muted-foreground border-b">
                 <th className="text-left pb-1 font-medium">KPI</th>
                 <th className="text-right pb-1 font-medium">Este período</th>
-                {data.previousWeek && <th className="text-right pb-1 font-medium">Período ant.</th>}
+                {data.previousWeek && <th className="text-right pb-1 font-medium">Semana ant.</th>}
                 {data.sameWeekLastYear && <th className="text-right pb-1 font-medium">Ano anterior</th>}
               </tr>
             </thead>
