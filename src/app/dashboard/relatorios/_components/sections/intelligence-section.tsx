@@ -18,7 +18,7 @@ export function IntelligenceSection({ data }: Props) {
         className="w-full flex items-center justify-between px-5 py-3 hover:bg-muted/30 transition-colors"
         onClick={() => setOpen(v => !v)}
       >
-        <h3 className="font-medium text-sm">⑩ O que o agente aprendeu esta semana</h3>
+        <h3 className="font-medium text-sm">⑩ O que o agente aprendeu no período</h3>
         {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
       </button>
 
@@ -26,7 +26,7 @@ export function IntelligenceSection({ data }: Props) {
         <div className="px-5 pb-5 space-y-4">
           {data.weekHighlight && (
             <div className="text-sm bg-muted/50 rounded-lg p-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Destaque da semana</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Destaque do período</p>
               <p>{data.weekHighlight}</p>
             </div>
           )}

@@ -44,7 +44,7 @@ export function DiscountsSection({ data }: Props) {
             </div>
             <div className="space-y-3 text-sm">
               <div>
-                <p className="text-xs text-muted-foreground">Participação esta semana</p>
+                <p className="text-xs text-muted-foreground">Participação no período</p>
                 <p className={cn('text-lg font-semibold', shareStatus !== 'ok' ? 'text-amber-600' : 'text-emerald-600')}>
                   {data.guiaSharePct.toFixed(1)}%
                 </p>

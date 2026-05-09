@@ -11,6 +11,18 @@ interface SeasonalFactor {
   level: 'hot' | 'normal' | 'cold'
 }
 
+const TOOLTIP_STYLE = {
+  contentStyle: {
+    backgroundColor: '#18181b',
+    border: '1px solid #3f3f46',
+    borderRadius: '8px',
+    fontSize: '12px',
+    color: '#f4f4f5',
+  },
+  labelStyle: { color: '#a1a1aa', marginBottom: 4 },
+  itemStyle: { color: '#f4f4f5' },
+}
+
 export function SeasonalOutlookChart({ data }: { data: SeasonalFactor[] }) {
   const chartData = data.map(d => ({
     name: format(new Date(d.date + 'T12:00:00Z'), 'dd/MM', { locale: ptBR }),
@@ -23,7 +35,10 @@ export function SeasonalOutlookChart({ data }: { data: SeasonalFactor[] }) {
       <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
         <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={1} />
         <YAxis domain={[0.5, 1.8]} tick={{ fontSize: 11 }} tickFormatter={v => `${v.toFixed(1)}x`} />
-        <Tooltip formatter={(value: unknown) => [`${Number(value).toFixed(2)}x`, 'Fator RevPAR']} />
+        <Tooltip
+          {...TOOLTIP_STYLE}
+          formatter={(value: unknown) => [`${Number(value).toFixed(2)}x`, 'Fator RevPAR']}
+        />
         <ReferenceLine y={1} stroke="#64748b" strokeDasharray="3 3" />
         <ReferenceLine y={1.15} stroke="#10b981" strokeDasharray="2 2" opacity={0.7} />
         <ReferenceLine y={0.85} stroke="#ef4444" strokeDasharray="2 2" opacity={0.7} />

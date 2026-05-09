@@ -51,8 +51,8 @@ export function KpisSection({ data }: Props) {
             <thead>
               <tr className="text-xs text-muted-foreground border-b">
                 <th className="text-left pb-1 font-medium">KPI</th>
-                <th className="text-right pb-1 font-medium">Esta semana</th>
-                {data.previousWeek && <th className="text-right pb-1 font-medium">Sem. ant.</th>}
+                <th className="text-right pb-1 font-medium">Este período</th>
+                {data.previousWeek && <th className="text-right pb-1 font-medium">Per. ant.</th>}
                 {data.sameWeekLastYear && <th className="text-right pb-1 font-medium">Mesmo LY</th>}
               </tr>
             </thead>

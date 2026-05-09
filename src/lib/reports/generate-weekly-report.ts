@@ -27,7 +27,7 @@ function kpiSnapshotFromResponse(r: CompanyKPIResponse): KPISnapshot {
     revpar: t.totalRevpar,
     trevpar: t.totalTrevpar,
     giro: t.totalGiro,
-    ocupacao: t.totalOccupancyRate,
+    ocupacao: t.totalOccupancyRate / 100,
     ticket: t.totalAllTicketAverage,
     receita: t.totalAllValue,
     locacoes: t.totalAllRentalsApartments,
@@ -90,11 +90,16 @@ export async function generateWeeklyReport(
   const startDDMM = isoToDDMMYYYY(periodStart)
   const endDDMM = isoToDDMMYYYY(periodEnd)
 
-  // Previous week
+  // Duration of selected period — previous period uses same duration
+  const periodStartMs = new Date(periodStart + 'T12:00:00Z').getTime()
+  const periodEndMs = new Date(periodEnd + 'T12:00:00Z').getTime()
+  const durationDays = Math.round((periodEndMs - periodStartMs) / 86400000) + 1
+
+  // Previous period of same duration
   const prevEnd = new Date(periodStart + 'T12:00:00Z')
   prevEnd.setUTCDate(prevEnd.getUTCDate() - 1)
   const prevStart = new Date(prevEnd)
-  prevStart.setUTCDate(prevEnd.getUTCDate() - 6)
+  prevStart.setUTCDate(prevEnd.getUTCDate() - (durationDays - 1))
   const prevStartStr = prevStart.toISOString().slice(0, 10)
   const prevEndStr = prevEnd.toISOString().slice(0, 10)
 
@@ -461,7 +466,7 @@ export async function generateWeeklyReport(
       newLessonsCount: lessons.length,
       elasticityUpdatedCount: elasticity.filter(e => e.n_observations >= 3).length,
       seasonalityRecomputed: false,
-      weekHighlight: weekHighlightParts.join('; ') || 'Sem destaques significativos esta semana',
+      weekHighlight: weekHighlightParts.join('; ') || 'Sem lições de pricing ou anomalias registradas neste período',
     }
 
     const agentConfigSection: WeeklyReportData['agentConfig'] = {
@@ -481,9 +486,9 @@ export async function generateWeeklyReport(
 
     // AI: executive summary + budget leverage comment
     const promptContext = `
-Você é um Revenue Manager sênior. Analise a semana operacional de ${unit.name} (${periodStart} a ${periodEnd}).
+Você é um Revenue Manager sênior. Analise o período operacional de ${unit.name} (${periodStart} a ${periodEnd}, ${durationDays} dias).
 
-DADOS DA SEMANA:
+DADOS DO PERÍODO:
 - RevPAR: R$ ${currentSnapshot.revpar.toFixed(2)} ${prevCurrentSnapshot ? `(${deltaPct(currentSnapshot.revpar, prevCurrentSnapshot.revpar) >= 0 ? '+' : ''}${deltaPct(currentSnapshot.revpar, prevCurrentSnapshot.revpar).toFixed(1)}% vs sem. ant.)` : ''}
 - Giro: ${currentSnapshot.giro.toFixed(2)} ${prevCurrentSnapshot ? `(${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro) >= 0 ? '+' : ''}${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro).toFixed(1)}%)` : ''} — referência para motéis: <1.0 baixo | 1.0–1.8 normal | >1.8 alto
 - Ocupação: ${(currentSnapshot.ocupacao * 100).toFixed(1)}%
@@ -524,7 +529,7 @@ Responda APENAS o JSON, sem markdown.
       const { text } = await generateText({
         model: ANALYSIS_MODEL,
         prompt: promptContext,
-        maxOutputTokens: 600,
+        maxOutputTokens: 900,
       })
       const cleaned = text.replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(cleaned)

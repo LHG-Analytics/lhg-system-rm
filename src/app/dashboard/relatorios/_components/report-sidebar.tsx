@@ -31,7 +31,9 @@ interface Props {
 function formatPeriod(start: string, end: string): string {
   const s = new Date(start + 'T12:00:00Z')
   const e = new Date(end + 'T12:00:00Z')
-  return `${format(s, 'dd/MM', { locale: ptBR })}–${format(e, 'dd/MM', { locale: ptBR })}`
+  const days = Math.round((e.getTime() - s.getTime()) / 86400000) + 1
+  const range = `${format(s, 'dd/MM', { locale: ptBR })}–${format(e, 'dd/MM', { locale: ptBR })}`
+  return days <= 8 ? `Sem ${range}` : range
 }
 
 export function ReportSidebar({ reports, selectedId, unitSlug, onSelect, onGenerated, onDelete }: Props) {

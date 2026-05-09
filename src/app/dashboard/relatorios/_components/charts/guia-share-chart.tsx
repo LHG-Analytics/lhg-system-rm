@@ -7,10 +7,22 @@ interface Props {
   prevPct: number
 }
 
+const TOOLTIP_STYLE = {
+  contentStyle: {
+    backgroundColor: '#18181b',
+    border: '1px solid #3f3f46',
+    borderRadius: '8px',
+    fontSize: '12px',
+    color: '#f4f4f5',
+  },
+  labelStyle: { color: '#a1a1aa', marginBottom: 4 },
+  itemStyle: { color: '#f4f4f5' },
+}
+
 export function GuiaShareChart({ currentPct, prevPct }: Props) {
   const data = [
-    { name: 'Sem. ant.', share: prevPct },
-    { name: 'Esta sem.', share: currentPct },
+    { name: 'Per. ant.', share: prevPct },
+    { name: 'Este per.', share: currentPct },
   ]
 
   return (
@@ -18,7 +30,10 @@ export function GuiaShareChart({ currentPct, prevPct }: Props) {
       <LineChart data={data} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
         <XAxis dataKey="name" tick={{ fontSize: 11 }} />
         <YAxis domain={[0, 50]} tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} />
-        <Tooltip formatter={(value: unknown) => [`${Number(value).toFixed(1)}%`, 'Participação no Guia']} />
+        <Tooltip
+          {...TOOLTIP_STYLE}
+          formatter={(value: unknown) => [`${Number(value).toFixed(1)}%`, 'Participação no Guia']}
+        />
         <ReferenceLine y={15} stroke="#ef4444" strokeDasharray="3 3" label={{ value: '15%', fontSize: 10 }} />
         <ReferenceLine y={40} stroke="#ef4444" strokeDasharray="3 3" label={{ value: '40%', fontSize: 10 }} />
         <Line type="monotone" dataKey="share" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} />
