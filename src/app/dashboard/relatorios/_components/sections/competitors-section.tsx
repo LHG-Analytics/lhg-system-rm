@@ -117,9 +117,9 @@ export function CompetitorsSection({ data }: Props) {
             const firstEntry = Object.values(grouped[cat]).flatMap(p => Object.values(p))[0]
             const isMercado = firstEntry?.categoriaConc === 'mercado'
             const concLabel = isMercado
-              ? 'mediana de mercado (sem categoria equivalente)'
+              ? 'sem categoria equivalente — mediana de mercado'
               : firstEntry?.categoriaConc
-                ? `${firstEntry.categoriaConc}${firstEntry.competitorName ? ` — ${firstEntry.competitorName}` : ''}`
+                ? `${firstEntry.categoriaConc}${firstEntry.competitorName ? ` — ${firstEntry.competitorName}` : ''} (comodidades)`
                 : null
 
             return (
@@ -200,7 +200,7 @@ export function CompetitorsSection({ data }: Props) {
           {hasMercadoFallback && (
             <p className="text-xs text-muted-foreground flex items-start gap-1.5 mt-1">
               <AlertTriangle className="w-3 h-3 text-amber-500 mt-0.5 shrink-0" />
-              Categorias marcadas com <span className="font-medium text-amber-600">⚠️</span> usam mediana geral de mercado — os concorrentes não têm categoria com nome idêntico ao nosso. Configure comodidades no admin para comparações mais precisas.
+              Categorias marcadas com <span className="font-medium text-amber-600">⚠</span> usam mediana geral de mercado pois não foi possível fazer match por comodidades. Configure as comodidades das suas suítes em Admin → Agente RM → Capacidade para comparações mais precisas.
             </p>
           )}
         </div>

@@ -59,6 +59,58 @@ function median(arr: number[]): number {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
+// ─── Amenity matching helpers ─────────────────────────────────────────────────
+
+/** Normaliza uma comodidade para forma canônica (lida com variações de escrita) */
+function normalizeAmenity(a: string): string {
+  const s = a.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (/hidro|jacuzzi|whirlpool/.test(s))           return 'hidromassagem'
+  if (/piscin/.test(s))                             return 'piscina'
+  if (/banheira/.test(s))                           return 'banheira'
+  if (/sauna/.test(s))                              return 'sauna'
+  if (/ducha.roman|chuveiro.roman/.test(s))         return 'ducha_romantica'
+  if (/varanda|deck|area.extern|terrac/.test(s))    return 'area_externa'
+  if (/vista/.test(s))                              return 'vista'
+  return s
+}
+
+// Amenidades genéricas demais para distinguir categorias
+const GENERIC_AMENITIES = new Set([
+  'tv', 'televisao', 'ar condicionado', 'ar-condicionado', 'wifi',
+  'internet', 'frigobar', 'minibar', 'banheiro', 'chuveiro', 'cama',
+])
+
+function getDistinctiveAmenities(amenities: string[]): Set<string> {
+  return new Set(
+    amenities.map(normalizeAmenity).filter(a => a.length > 1 && !GENERIC_AMENITIES.has(a))
+  )
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0
+  const intersection = [...a].filter(x => b.has(x)).length
+  const union = new Set([...a, ...b]).size
+  return union > 0 ? intersection / union : 0
+}
+
+function parseAmenitiesBySuite(rawText: unknown): Record<string, string[]> {
+  try {
+    const parsed = typeof rawText === 'string' ? JSON.parse(rawText) : rawText
+    if (parsed && typeof parsed === 'object') {
+      const abs = (parsed as Record<string, unknown>).amenitiesBySuite
+      if (abs && typeof abs === 'object' && !Array.isArray(abs))
+        return abs as Record<string, string[]>
+    }
+  } catch { /* ignore */ }
+  return {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Normaliza períodos: "3 horas" → "3h", "3h" → "3h", "Pernoite" → "pernoite"
 function normalizePeriod(p: string): string {
   const h = parseInt(p.trim())
@@ -194,35 +246,45 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
   const ourRows = (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? []
   if (!ourRows.length) return { inserted: 0 }
 
+  // Comodidades das nossas suítes (para match semântico)
+  const { data: agentCfg } = await admin
+    .from('rm_agent_config')
+    .select('suite_amenities')
+    .eq('unit_id', unitId)
+    .maybeSingle()
+  const ourAmenities = (agentCfg?.suite_amenities as Record<string, string[]> | null) ?? {}
+
   // Snapshots de concorrentes dos últimos 7 dias (status done)
   const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
   const { data: snapshots } = await admin
     .from('competitor_snapshots')
-    .select('id, competitor_name, mapped_prices, scraped_at')
+    .select('id, competitor_name, mapped_prices, scraped_at, raw_text')
     .eq('unit_id', unitId)
     .eq('status', 'done')
     .gte('scraped_at', cutoff)
 
   if (!snapshots?.length) return { inserted: 0 }
 
-  // Estrutura: por (categoria_competitor_lower, periodo_norm, dia_tipo) → preços + nomes
-  type Bucket = { precos: number[]; competitors: Set<string>; categoria_competitor: string }
+  // Estrutura: por (categoria_competitor_lower, periodo_norm, dia_tipo) → preços + nomes + amenidades
+  type Bucket = { precos: number[]; competitors: Set<string>; categoria_competitor: string; amenities?: string[] }
   const competitorBuckets = new Map<string, Bucket>()
   // Fallback: mediana de mercado por período (ignora categoria — útil quando nomes não casam)
   const periodBuckets = new Map<string, Bucket>()
 
   for (const snap of snapshots) {
+    const amenitiesBySuite = parseAmenitiesBySuite(snap.raw_text)
     const prices = (snap.mapped_prices as unknown as CompetitorPriceRow[]) ?? []
     for (const p of prices) {
       const cat = p.categoria_concorrente.trim()
       const per = normalizePeriod(p.periodo)
       const dia = (p.dia_tipo ?? 'todos').trim()
 
-      // Bucket por categoria+período+dia
+      // Bucket por categoria+período+dia (inclui amenidades da suíte se disponíveis)
       const catKey = `${cat.toLowerCase()}|${per}|${dia}`
       let catBucket = competitorBuckets.get(catKey)
       if (!catBucket) {
-        catBucket = { precos: [], competitors: new Set(), categoria_competitor: cat }
+        const suiteAmenities = amenitiesBySuite[cat] ?? amenitiesBySuite[cat.toLowerCase()] ?? undefined
+        catBucket = { precos: [], competitors: new Set(), categoria_competitor: cat, amenities: suiteAmenities }
         competitorBuckets.set(catKey, catBucket)
       }
       catBucket.precos.push(p.preco)
@@ -240,7 +302,7 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
     }
   }
 
-  // Para cada nossa linha: tenta matching por categoria; se não houver, usa mediana de mercado do período
+  // Para cada nossa linha: 1) nome exato  2) comodidades  3) mediana de mercado
   const gaps: CompetitorGap[] = []
   for (const r of ourRows) {
     const cat = r.categoria.trim()
@@ -249,10 +311,32 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
     const exactKey = `${cat.toLowerCase()}|${per}|${dia}`
     const fallbackDiaKey = `${cat.toLowerCase()}|${per}|todos`
 
-    const bucket = competitorBuckets.get(exactKey)
-      ?? competitorBuckets.get(fallbackDiaKey)
-      ?? periodBuckets.get(`${per}|${dia}`)   // mediana de mercado para o período
-      ?? periodBuckets.get(`${per}|todos`)     // mediana de mercado sem distinção de dia
+    let bucket = competitorBuckets.get(exactKey) ?? competitorBuckets.get(fallbackDiaKey)
+
+    // Fallback 2: match por comodidades (Jaccard similarity ≥ 0.25)
+    if (!bucket) {
+      const ourDistinctive = getDistinctiveAmenities(ourAmenities[cat] ?? [])
+      if (ourDistinctive.size > 0) {
+        let bestScore = 0
+        let bestBucket: Bucket | undefined
+        for (const [key, b] of competitorBuckets) {
+          const keyPer = key.split('|')[1]
+          const keyDia = key.split('|')[2]
+          if (keyPer !== per || (keyDia !== dia && keyDia !== 'todos')) continue
+          if (!b.amenities?.length) continue
+          const theirDistinctive = getDistinctiveAmenities(b.amenities)
+          const score = jaccardSimilarity(ourDistinctive, theirDistinctive)
+          if (score > bestScore) { bestScore = score; bestBucket = b }
+        }
+        if (bestScore >= 0.25 && bestBucket) bucket = bestBucket
+      }
+    }
+
+    // Fallback 3: mediana de mercado para o período
+    if (!bucket) {
+      bucket = periodBuckets.get(`${per}|${dia}`) ?? periodBuckets.get(`${per}|todos`)
+    }
+
     if (!bucket || bucket.precos.length < 1) continue
 
     const mediana = +median(bucket.precos).toFixed(2)
