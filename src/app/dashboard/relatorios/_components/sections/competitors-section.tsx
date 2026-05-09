@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronDown, ChevronUp, Globe, AlertTriangle } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { ChevronDown, ChevronUp, Globe, AlertTriangle, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WeeklyReportData } from '@/lib/reports/types'
 
@@ -34,8 +34,31 @@ function GapCell({ g }: { g: GapEntry | undefined }) {
   )
 }
 
+// Ordenação de períodos
+const PERIOD_ORDER = ['3h', '3 horas', '6h', '6 horas', '12h', '12 horas', 'Day Use', 'Diária', 'Pernoite', 'pernoite']
+const sortPeriods = (a: string, b: string) => {
+  const ia = PERIOD_ORDER.findIndex(p => p.toLowerCase() === a.toLowerCase())
+  const ib = PERIOD_ORDER.findIndex(p => p.toLowerCase() === b.toLowerCase())
+  if (ia >= 0 && ib >= 0) return ia - ib
+  return a.localeCompare(b)
+}
+
 export function CompetitorsSection({ data }: Props) {
   const [open, setOpen] = useState(true)
+
+  // Lista de concorrentes únicos (excluindo fallback 'mercado')
+  const competitorNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const g of data.gaps) {
+      if (g.competitorName && g.competitorName !== 'mercado') names.add(g.competitorName)
+    }
+    return [...names].sort()
+  }, [data.gaps])
+
+  const [selectedCompetitor, setSelectedCompetitor] = useState<string | null>(null)
+
+  // Concorrente efetivo — inicializa com o primeiro da lista
+  const effectiveCompetitor = selectedCompetitor ?? competitorNames[0] ?? null
 
   if (data.gaps.length === 0) {
     return (
@@ -57,31 +80,31 @@ export function CompetitorsSection({ data }: Props) {
     )
   }
 
+  // Filtra gaps pelo concorrente selecionado
+  const filteredGaps = effectiveCompetitor
+    ? data.gaps.filter(g => g.competitorName === effectiveCompetitor)
+    : data.gaps
+
+  // Posição dominante do concorrente selecionado
+  const posCounts = { underprice: 0, aligned: 0, overprice: 0 }
+  for (const g of filteredGaps) {
+    if (g.position in posCounts) posCounts[g.position as keyof typeof posCounts]++
+  }
+  const dominant = (Object.entries(posCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'aligned') as keyof typeof posLabel
+
   // Agrupa por categoria nossa → período → dia_tipo
   type ByPeriod = Record<string, Record<string, GapEntry>>
   type ByCategoria = Record<string, ByPeriod>
 
   const grouped: ByCategoria = {}
-  for (const g of data.gaps) {
+  for (const g of filteredGaps) {
     if (!grouped[g.categoria]) grouped[g.categoria] = {}
     if (!grouped[g.categoria][g.periodo]) grouped[g.categoria][g.periodo] = {}
     grouped[g.categoria][g.periodo][g.diaTipo] = g
   }
 
-  // Ordenação de períodos
-  const PERIOD_ORDER = ['3h', '3 horas', '6h', '6 horas', '12h', '12 horas', 'Day Use', 'Diária', 'Pernoite', 'pernoite']
-  const sortPeriods = (a: string, b: string) => {
-    const ia = PERIOD_ORDER.findIndex(p => p.toLowerCase() === a.toLowerCase())
-    const ib = PERIOD_ORDER.findIndex(p => p.toLowerCase() === b.toLowerCase())
-    if (ia >= 0 && ib >= 0) return ia - ib
-    return a.localeCompare(b)
-  }
-
   const categorias = Object.keys(grouped).sort()
-  const dominant = data.dominantPosition
-
-  // Detecta se existem dados de fallback de mercado (sem match de categoria)
-  const hasMercadoFallback = data.gaps.some(g => g.categoriaConc === 'mercado')
+  const hasMercadoFallback = filteredGaps.some(g => g.categoriaConc === 'mercado')
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
@@ -89,11 +112,14 @@ export function CompetitorsSection({ data }: Props) {
         className="w-full flex items-center justify-between px-5 py-3 hover:bg-muted/30 transition-colors"
         onClick={() => setOpen(v => !v)}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <h3 className="font-medium text-sm">⑧ Inteligência competitiva</h3>
           <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full', posColor[dominant])}>
             {posLabel[dominant]}
           </span>
+          {effectiveCompetitor && competitorNames.length === 1 && (
+            <span className="text-xs text-muted-foreground">vs {effectiveCompetitor}</span>
+          )}
           {hasMercadoFallback && (
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <AlertTriangle className="w-3 h-3 text-amber-500" />
@@ -107,24 +133,51 @@ export function CompetitorsSection({ data }: Props) {
       {open && (
         <div className="px-5 pb-5 space-y-5">
           <p className="text-xs text-muted-foreground">
-            Preço nosso vs mediana dos concorrentes nos últimos 7 dias. Gap negativo = abaixo do mercado; positivo = acima.
+            Preço nosso vs mediana do concorrente selecionado (snapshots dos últimos 7 dias). Gap negativo = abaixo do mercado; positivo = acima.
           </p>
+
+          {/* Seletor de concorrentes — aparece apenas com 2+ concorrentes */}
+          {competitorNames.length > 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-muted-foreground shrink-0">Comparando com:</span>
+              {competitorNames.map(name => (
+                <button
+                  key={name}
+                  onClick={() => setSelectedCompetitor(name)}
+                  className={cn(
+                    'text-xs px-3 py-1 rounded-full border transition-colors',
+                    effectiveCompetitor === name
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-muted/40 text-muted-foreground border-border hover:bg-muted/60'
+                  )}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {categorias.length === 0 && (
+            <p className="text-xs text-muted-foreground italic">
+              Nenhuma comparação disponível para este concorrente.
+            </p>
+          )}
 
           {categorias.map(cat => {
             const periodos = Object.keys(grouped[cat]).sort(sortPeriods)
 
-            // Pega info de concorrente a partir da primeira entrada disponível
+            // Pega info da primeira entrada disponível na categoria
             const firstEntry = Object.values(grouped[cat]).flatMap(p => Object.values(p))[0]
             const isMercado = firstEntry?.categoriaConc === 'mercado'
             const concLabel = isMercado
               ? 'sem categoria equivalente — mediana de mercado'
-              : firstEntry?.categoriaConc
-                ? `${firstEntry.categoriaConc}${firstEntry.competitorName ? ` — ${firstEntry.competitorName}` : ''} (comodidades)`
-                : null
+              : firstEntry?.categoriaConc ?? null
+
+            const advantage = firstEntry?.amenityAdvantage ?? []
 
             return (
               <div key={cat}>
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className="text-xs font-semibold uppercase tracking-wide">{cat}</span>
                   {concLabel && (
                     <span className={cn(
@@ -135,6 +188,13 @@ export function CompetitorsSection({ data }: Props) {
                     )}>
                       {isMercado && <AlertTriangle className="w-2.5 h-2.5 inline mr-0.5" />}
                       vs {concLabel}
+                    </span>
+                  )}
+                  {advantage.length > 0 && (
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 flex items-center gap-0.5">
+                      <Sparkles className="w-2.5 h-2.5" />
+                      {advantage.slice(0, 2).join(', ')}
+                      {advantage.length > 2 && ` +${advantage.length - 2}`}
                     </span>
                   )}
                 </div>
@@ -175,7 +235,6 @@ export function CompetitorsSection({ data }: Props) {
                         <tr key={per} className="border-b last:border-0">
                           <td className="py-1.5 font-medium text-xs">{per}</td>
                           {hasTodos ? (
-                            // Só tem "todos" — mostra spanning ambas as colunas
                             <>
                               <GapCell g={byDia['todos']} />
                               <td className="w-3" />

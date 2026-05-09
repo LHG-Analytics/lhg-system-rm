@@ -11,7 +11,7 @@ import { computeRevenueForecast } from '@/lib/forecast/revenue-forecast'
 import { ANALYSIS_MODEL } from '@/lib/agente/model'
 import type { BudgetYearly } from '@/lib/budget/google-sheets'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
-import { computeAndPersistGaps } from '@/lib/competitors/detect-changes'
+import { computeAndPersistGaps, parseAmenitiesBySuite } from '@/lib/competitors/detect-changes'
 
 const MONTH_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
@@ -179,7 +179,7 @@ export async function generateWeeklyReport(
         .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position, categoria_competitor, competitor_name')
         .eq('unit_id', unit.id)
         .order('gap_pct', { ascending: false })
-        .limit(60),
+        .limit(200),
       getUpcomingSeasonalFactors(unit.id, 14),
       admin.from('unit_events')
         .select('title, event_date, event_type, impact_description')
@@ -194,7 +194,7 @@ export async function generateWeeklyReport(
         .gte('detected_at', periodStart)
         .order('detected_at', { ascending: false }),
       admin.from('rm_agent_config')
-        .select('pricing_strategy, focus_metric, max_variation_pct, shared_context, unit_goals, budget_yearly, competitor_urls')
+        .select('pricing_strategy, focus_metric, max_variation_pct, shared_context, unit_goals, budget_yearly, competitor_urls, suite_amenities')
         .eq('unit_id', unit.id)
         .single(),
       getSuiteAvailabilityByCategory(unitSlug),
@@ -251,7 +251,7 @@ export async function generateWeeklyReport(
           .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position, categoria_competitor, competitor_name')
           .eq('unit_id', unit.id)
           .order('gap_pct', { ascending: false })
-          .limit(60)
+          .limit(200)
         if (!freshGaps.error) competitorGaps = freshGaps.data ?? []
       }
     } catch { /* silencioso — não bloqueia o relatório */ }
@@ -423,6 +423,33 @@ export async function generateWeeklyReport(
       valleyDow: 'quarta-feira',
     }
 
+    // Carrega amenidades dos concorrentes para calcular vantagem qualitativa
+    const ourSuiteAmenities = (agentConfig?.suite_amenities as Record<string, string[]> | null) ?? {}
+    const compAmenitiesByName: Record<string, Record<string, string[]>> = {}
+    if (Object.keys(ourSuiteAmenities).length > 0 && competitorGaps.length > 0) {
+      const compNames = [...new Set(
+        competitorGaps.map(g => (g as { competitor_name?: string }).competitor_name ?? '').filter(Boolean)
+      )]
+      const snapResults = await Promise.allSettled(
+        compNames.map(name =>
+          admin.from('competitor_snapshots')
+            .select('competitor_name, raw_text')
+            .eq('unit_id', unit.id)
+            .eq('competitor_name', name)
+            .eq('status', 'done')
+            .order('scraped_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        )
+      )
+      for (const result of snapResults) {
+        if (result.status === 'fulfilled' && result.value.data) {
+          const snap = result.value.data
+          compAmenitiesByName[snap.competitor_name] = parseAmenitiesBySuite(snap.raw_text)
+        }
+      }
+    }
+
     // competitors — fixed: use categoria_nossa / preco_concorrente_mediana
     const dominantCount = { underprice: 0, aligned: 0, overprice: 0 }
     for (const g of competitorGaps) {
@@ -432,17 +459,34 @@ export async function generateWeeklyReport(
     const dominant = Object.entries(dominantCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'aligned'
 
     const competitors: WeeklyReportData['competitors'] = {
-      gaps: competitorGaps.map(g => ({
-        categoria: g.categoria_nossa ?? '',
-        periodo: g.periodo ?? '',
-        diaTipo: g.dia_tipo ?? '',
-        precoNosso: g.preco_nosso ?? 0,
-        medianaConc: g.preco_concorrente_mediana ?? 0,
-        gapPct: g.gap_pct ?? 0,
-        position: (g.position ?? 'aligned') as 'underprice' | 'aligned' | 'overprice',
-        categoriaConc: (g as { categoria_competitor?: string }).categoria_competitor ?? undefined,
-        competitorName: (g as { competitor_name?: string }).competitor_name ?? undefined,
-      })),
+      gaps: competitorGaps.map(g => {
+        const catNossa = g.categoria_nossa ?? ''
+        const catConc  = (g as { categoria_competitor?: string }).categoria_competitor ?? ''
+        const compName = (g as { competitor_name?: string }).competitor_name ?? ''
+
+        // Comodidades que TEMOS e o concorrente NÃO tem
+        let amenityAdvantage: string[] | undefined
+        const ourAmens  = ourSuiteAmenities[catNossa] ?? []
+        const compAmens = compAmenitiesByName[compName]?.[catConc] ?? []
+        if (ourAmens.length > 0 && compAmens.length > 0) {
+          const compSet = new Set(compAmens.map((a: string) => a.toLowerCase()))
+          const advantage = ourAmens.filter(a => !compSet.has(a.toLowerCase()))
+          if (advantage.length > 0) amenityAdvantage = advantage
+        }
+
+        return {
+          categoria: catNossa,
+          periodo: g.periodo ?? '',
+          diaTipo: g.dia_tipo ?? '',
+          precoNosso: g.preco_nosso ?? 0,
+          medianaConc: g.preco_concorrente_mediana ?? 0,
+          gapPct: g.gap_pct ?? 0,
+          position: (g.position ?? 'aligned') as 'underprice' | 'aligned' | 'overprice',
+          categoriaConc: catConc || undefined,
+          competitorName: compName || undefined,
+          amenityAdvantage,
+        }
+      }),
       changesDetectedCount: 0,
       changesDirection: 'none',
       dominantPosition: dominant as 'underprice' | 'aligned' | 'overprice',

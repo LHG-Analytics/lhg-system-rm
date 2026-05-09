@@ -97,7 +97,7 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
   return union > 0 ? intersection / union : 0
 }
 
-function parseAmenitiesBySuite(rawText: unknown): Record<string, string[]> {
+export function parseAmenitiesBySuite(rawText: unknown): Record<string, string[]> {
   try {
     const parsed = typeof rawText === 'string' ? JSON.parse(rawText) : rawText
     if (parsed && typeof parsed === 'object') {
@@ -243,8 +243,16 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
     .maybeSingle()
 
   if (!activeImport) return { inserted: 0 }
-  const ourRows = (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? []
-  if (!ourRows.length) return { inserted: 0 }
+  const allOurRows = (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? []
+  if (!allOurRows.length) return { inserted: 0 }
+
+  // Deduplica nossas linhas por (cat, per, dia) — prefere balcao_site; evita gaps duplicados por canal
+  const ourDeduped = new Map<string, ParsedPriceRow>()
+  for (const r of allOurRows) {
+    const key = `${r.categoria.trim()}|${normalizePeriod(r.periodo)}|${(r.dia_tipo ?? 'todos').trim()}`
+    const existing = ourDeduped.get(key)
+    if (!existing || r.canal === 'balcao_site') ourDeduped.set(key, r)
+  }
 
   // Comodidades das nossas suítes (para match semântico)
   const { data: agentCfg } = await admin
@@ -265,123 +273,155 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
 
   if (!snapshots?.length) return { inserted: 0 }
 
-  // Estrutura: por (categoria_competitor_lower, periodo_norm, dia_tipo) → preços + nomes + amenidades
-  type Bucket = { precos: number[]; competitors: Set<string>; categoria_competitor: string; amenities?: string[] }
-  const competitorBuckets = new Map<string, Bucket>()
-  // Fallback: mediana de mercado por período (ignora categoria — útil quando nomes não casam)
+  type Bucket = { precos: number[]; categoria_competitor: string; amenities?: string[] }
+
+  // Estrutura por concorrente: competitor_name → (cat_lower|per|dia) → Bucket
+  const perCompetitorData = new Map<string, {
+    catBuckets: Map<string, Bucket>
+    amenitiesBySuite: Record<string, string[]>
+  }>()
+
+  // Fallback: mediana de mercado por período (todos os concorrentes juntos)
   const periodBuckets = new Map<string, Bucket>()
 
   for (const snap of snapshots) {
     const amenitiesBySuite = parseAmenitiesBySuite(snap.raw_text)
     const prices = (snap.mapped_prices as unknown as CompetitorPriceRow[]) ?? []
+
+    let compData = perCompetitorData.get(snap.competitor_name)
+    if (!compData) {
+      compData = { catBuckets: new Map(), amenitiesBySuite: {} }
+      perCompetitorData.set(snap.competitor_name, compData)
+    }
+    // Merge amenidades de múltiplos snapshots do mesmo concorrente
+    Object.assign(compData.amenitiesBySuite, amenitiesBySuite)
+
     for (const p of prices) {
       const cat = p.categoria_concorrente.trim()
       const per = normalizePeriod(p.periodo)
       const dia = (p.dia_tipo ?? 'todos').trim()
 
-      // Bucket por categoria+período+dia (inclui amenidades da suíte se disponíveis)
+      // Bucket por categoria+período+dia dentro deste concorrente
       const catKey = `${cat.toLowerCase()}|${per}|${dia}`
-      let catBucket = competitorBuckets.get(catKey)
+      let catBucket = compData.catBuckets.get(catKey)
       if (!catBucket) {
         const suiteAmenities = amenitiesBySuite[cat] ?? amenitiesBySuite[cat.toLowerCase()] ?? undefined
-        catBucket = { precos: [], competitors: new Set(), categoria_competitor: cat, amenities: suiteAmenities }
-        competitorBuckets.set(catKey, catBucket)
+        catBucket = { precos: [], categoria_competitor: cat, amenities: suiteAmenities }
+        compData.catBuckets.set(catKey, catBucket)
       }
       catBucket.precos.push(p.preco)
-      catBucket.competitors.add(snap.competitor_name)
 
-      // Bucket de mercado por período+dia (fallback quando categorias não casam)
+      // Bucket de mercado (fallback cross-competitor)
       const perKey = `${per}|${dia}`
       let perBucket = periodBuckets.get(perKey)
       if (!perBucket) {
-        perBucket = { precos: [], competitors: new Set(), categoria_competitor: 'mercado' }
+        perBucket = { precos: [], categoria_competitor: 'mercado' }
         periodBuckets.set(perKey, perBucket)
       }
       perBucket.precos.push(p.preco)
-      perBucket.competitors.add(snap.competitor_name)
     }
   }
 
-  // Para cada nossa linha: 1) nome exato  2) comodidades  3) mediana de mercado
-  const gaps: CompetitorGap[] = []
-  for (const r of ourRows) {
-    const cat = r.categoria.trim()
-    const per = normalizePeriod(r.periodo)
-    const dia = (r.dia_tipo ?? 'todos').trim()
-    const exactKey = `${cat.toLowerCase()}|${per}|${dia}`
-    const fallbackDiaKey = `${cat.toLowerCase()}|${per}|todos`
+  // Encapsula a lógica de matching para reutilização por concorrente
+  function findBucket(
+    r: ParsedPriceRow,
+    cat: string,
+    per: string,
+    dia: string,
+    catBuckets: Map<string, Bucket>,
+  ): Bucket | undefined {
+    const exactKey     = `${cat.toLowerCase()}|${per}|${dia}`
+    const fallbackKey  = `${cat.toLowerCase()}|${per}|todos`
 
-    let bucket = competitorBuckets.get(exactKey) ?? competitorBuckets.get(fallbackDiaKey)
+    let bucket = catBuckets.get(exactKey) ?? catBuckets.get(fallbackKey)
 
-    // Fallback 2: match por comodidades (Jaccard similarity ≥ 0.25)
-    // Requer que nossas comodidades estejam em rm_agent_config.suite_amenities
+    // Fallback 2: Jaccard similarity por comodidades (≥ 0.25)
     if (!bucket) {
       const ourDistinctive = getDistinctiveAmenities(ourAmenities[cat] ?? [])
       if (ourDistinctive.size > 0) {
-        let bestScore = 0
-        let bestBucket: Bucket | undefined
-        for (const [key, b] of competitorBuckets) {
-          const keyPer = key.split('|')[1]
-          const keyDia = key.split('|')[2]
-          if (keyPer !== per || (keyDia !== dia && keyDia !== 'todos')) continue
+        let bestScore = 0, bestBucket: Bucket | undefined
+        for (const [key, b] of catBuckets) {
+          const [, kPer, kDia] = key.split('|')
+          if (kPer !== per || (kDia !== dia && kDia !== 'todos')) continue
           if (!b.amenities?.length) continue
-          const theirDistinctive = getDistinctiveAmenities(b.amenities)
-          const score = jaccardSimilarity(ourDistinctive, theirDistinctive)
+          const score = jaccardSimilarity(ourDistinctive, getDistinctiveAmenities(b.amenities))
           if (score > bestScore) { bestScore = score; bestBucket = b }
         }
         if (bestScore >= 0.25 && bestBucket) bucket = bestBucket
       }
     }
 
-    // Fallback 3: match por proximidade de preço (sem necessidade de comodidades configuradas)
-    // Emparelha nossa categoria com a suite do concorrente cujo preço mediano é mais próximo do nosso.
-    // Melhor que mediana de mercado: dá uma comparação específica em vez de média de tudo.
+    // Fallback 3: proximidade de preço (suíte com preço mediano mais próximo do nosso)
     if (!bucket) {
-      let bestDist = Infinity
-      let bestBucket: Bucket | undefined
-      for (const [key, b] of competitorBuckets) {
-        const keyPer = key.split('|')[1]
-        const keyDia = key.split('|')[2]
-        if (keyPer !== per || (keyDia !== dia && keyDia !== 'todos')) continue
+      let bestDist = Infinity, bestBucket: Bucket | undefined
+      for (const [key, b] of catBuckets) {
+        const [, kPer, kDia] = key.split('|')
+        if (kPer !== per || (kDia !== dia && kDia !== 'todos')) continue
         if (!b.precos.length) continue
-        const m = median(b.precos)
-        const dist = Math.abs(m - r.preco)
+        const dist = Math.abs(median(b.precos) - r.preco)
         if (dist < bestDist) { bestDist = dist; bestBucket = b }
       }
       if (bestBucket) bucket = bestBucket
     }
 
-    // Fallback 4: mediana de mercado para o período (último recurso — sem nenhum snapshot de concorrente)
-    if (!bucket) {
-      bucket = periodBuckets.get(`${per}|${dia}`) ?? periodBuckets.get(`${per}|todos`)
-    }
+    return bucket
+  }
 
-    if (!bucket || bucket.precos.length < 1) continue
-
-    const mediana = +median(bucket.precos).toFixed(2)
-    if (mediana === 0) continue
-
-    const min = Math.min(...bucket.precos)
-    const max = Math.max(...bucket.precos)
-    const gap_pct = +(((r.preco - mediana) / mediana) * 100).toFixed(2)
+  function makeGap(
+    r: ParsedPriceRow,
+    cat: string,
+    per: string,
+    dia: string,
+    bucket: Bucket,
+    competitorName: string,
+  ): CompetitorGap {
+    const med     = +median(bucket.precos).toFixed(2)
+    const min     = +Math.min(...bucket.precos).toFixed(2)
+    const max     = +Math.max(...bucket.precos).toFixed(2)
+    const gap_pct = +(((r.preco - med) / med) * 100).toFixed(2)
     const position: CompetitorGap['position'] =
-      Math.abs(gap_pct) < 5 ? 'aligned'
-      : gap_pct < 0 ? 'underprice'
-      : 'overprice'
-
-    gaps.push({
+      Math.abs(gap_pct) < 5 ? 'aligned' : gap_pct < 0 ? 'underprice' : 'overprice'
+    return {
       categoria_nossa:           cat,
       categoria_competitor:      bucket.categoria_competitor,
       periodo:                   per,
       dia_tipo:                  dia,
       preco_nosso:               +r.preco.toFixed(2),
-      preco_concorrente_mediana: mediana,
-      preco_concorrente_min:     +min.toFixed(2),
-      preco_concorrente_max:     +max.toFixed(2),
+      preco_concorrente_mediana: med,
+      preco_concorrente_min:     min,
+      preco_concorrente_max:     max,
       gap_pct,
       position,
-      competitor_name:           [...bucket.competitors][0] ?? 'mercado',
-    })
+      competitor_name:           competitorName,
+    }
+  }
+
+  const gaps: CompetitorGap[] = []
+
+  for (const r of ourDeduped.values()) {
+    const cat = r.categoria.trim()
+    const per = normalizePeriod(r.periodo)
+    const dia = (r.dia_tipo ?? 'todos').trim()
+
+    let anyMatched = false
+
+    // Um gap por concorrente com dados para este (cat, per, dia)
+    for (const [competitorName, compData] of perCompetitorData) {
+      const bucket = findBucket(r, cat, per, dia, compData.catBuckets)
+      if (!bucket || !bucket.precos.length) continue
+      const med = median(bucket.precos)
+      if (med === 0) continue
+      anyMatched = true
+      gaps.push(makeGap(r, cat, per, dia, bucket, competitorName))
+    }
+
+    // Fallback de mercado apenas quando nenhum concorrente emparelhou
+    if (!anyMatched) {
+      const bucket = periodBuckets.get(`${per}|${dia}`) ?? periodBuckets.get(`${per}|todos`)
+      if (bucket && bucket.precos.length >= 1 && median(bucket.precos) > 0) {
+        gaps.push(makeGap(r, cat, per, dia, bucket, 'mercado'))
+      }
+    }
   }
 
   if (!gaps.length) return { inserted: 0 }
@@ -392,7 +432,7 @@ export async function computeAndPersistGaps(unitId: string): Promise<{ inserted:
     .from('rm_competitor_price_gaps')
     .insert(gaps.map((g) => ({
       unit_id:                   unitId,
-      snapshot_id:               null, // gap agregado de múltiplos snapshots
+      snapshot_id:               null,
       competitor_name:           g.competitor_name,
       categoria_nossa:           g.categoria_nossa,
       categoria_competitor:      g.categoria_competitor,

@@ -131,6 +131,8 @@ export interface WeeklyReportData {
       position: 'underprice' | 'aligned' | 'overprice'
       categoriaConc?: string
       competitorName?: string
+      /** Comodidades que temos e o concorrente não tem (vantagem qualitativa) */
+      amenityAdvantage?: string[]
     }[]
     changesDetectedCount: number
     changesDirection: 'up' | 'down' | 'mixed' | 'none'
