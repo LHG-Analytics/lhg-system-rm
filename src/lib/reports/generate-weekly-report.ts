@@ -11,6 +11,8 @@ import { computeRevenueForecast } from '@/lib/forecast/revenue-forecast'
 import { ANALYSIS_MODEL } from '@/lib/agente/model'
 import type { BudgetYearly } from '@/lib/budget/google-sheets'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
+import { scrapeGuiaUrl } from '@/lib/competitors/guia-scraper'
+import { computeAndPersistGaps } from '@/lib/competitors/detect-changes'
 
 const MONTH_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
@@ -195,7 +197,7 @@ export async function generateWeeklyReport(
         .gte('detected_at', periodStart)
         .order('detected_at', { ascending: false }),
       admin.from('rm_agent_config')
-        .select('pricing_strategy, focus_metric, max_variation_pct, shared_context, unit_goals, budget_yearly')
+        .select('pricing_strategy, focus_metric, max_variation_pct, shared_context, unit_goals, budget_yearly, competitor_urls')
         .eq('unit_id', unit.id)
         .single(),
       getSuiteAvailabilityByCategory(unitSlug),
@@ -225,7 +227,7 @@ export async function generateWeeklyReport(
     const elasticity = elasticityResult.status === 'fulfilled' ? elasticityResult.value : []
     const activeDiscountData = activeDiscountsResult.status === 'fulfilled' ? activeDiscountsResult.value.data : null
     const discountProposals = discountProposalsResult.status === 'fulfilled' ? discountProposalsResult.value.data ?? [] : []
-    const competitorGaps = competitorGapsResult.status === 'fulfilled' ? competitorGapsResult.value.data ?? [] : []
+    let competitorGaps = competitorGapsResult.status === 'fulfilled' ? competitorGapsResult.value.data ?? [] : []
     const seasonalFactors = seasonalResult.status === 'fulfilled' ? seasonalResult.value : []
     const upcomingEvents = eventsResult.status === 'fulfilled' ? eventsResult.value.data ?? [] : []
     const anomalies = anomaliesResult.status === 'fulfilled' ? anomaliesResult.value.data ?? [] : []
@@ -233,6 +235,51 @@ export async function generateWeeklyReport(
     const suiteAvail = suiteAvailResult.status === 'fulfilled' ? suiteAvailResult.value : []
     const prevReport = prevReportResult.status === 'fulfilled' ? prevReportResult.value.data?.[0] : null
     const guardrailsCount = guardrailsResult.count ?? 0
+
+    // Auto-refresh concorrentes via Guia GM quando não há gaps calculados
+    if (competitorGaps.length === 0 && agentConfig) {
+      try {
+        type CompUrlEntry = { url: string; label?: string }
+        type CompUrl = { name: string; url?: string; urls?: CompUrlEntry[]; mode?: string }
+        const rawUrls = (agentConfig.competitor_urls as unknown as CompUrl[] | null) ?? []
+        const guiaEntries = rawUrls.filter(c => c.mode === 'guia')
+
+        if (guiaEntries.length > 0) {
+          for (const entry of guiaEntries) {
+            const urls = entry.urls ?? (entry.url ? [{ url: entry.url }] : [])
+            for (const { url } of urls) {
+              try {
+                const result = await scrapeGuiaUrl(url)
+                if (result.prices.length > 0) {
+                  await admin.from('competitor_snapshots').upsert(
+                    {
+                      unit_id: unit.id,
+                      competitor_name: entry.name,
+                      competitor_url: url,
+                      mapped_prices: result.prices as unknown as Database['public']['Tables']['competitor_snapshots']['Insert']['mapped_prices'],
+                      raw_text: JSON.stringify({ prices: result.prices, amenitiesBySuite: result.amenitiesBySuite }),
+                      scraped_at: new Date().toISOString(),
+                      status: 'done',
+                      apify_run_id: null,
+                    },
+                    { onConflict: 'unit_id,competitor_url' }
+                  )
+                }
+              } catch { /* URL individual falhou — continua */ }
+            }
+          }
+
+          await computeAndPersistGaps(unit.id)
+
+          const freshGaps = await admin.from('rm_competitor_price_gaps')
+            .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position')
+            .eq('unit_id', unit.id)
+            .order('gap_pct', { ascending: false })
+            .limit(15)
+          if (!freshGaps.error) competitorGaps = freshGaps.data ?? []
+        }
+      } catch { /* auto-refresh silencioso — não bloqueia o relatório */ }
+    }
 
     const currentSnapshot: KPISnapshot = kpis ? kpiSnapshotFromResponse(kpis) : {
       revpar: 0, trevpar: 0, giro: 0, ocupacao: 0, ticket: 0, receita: 0, locacoes: 0, tmo: 0

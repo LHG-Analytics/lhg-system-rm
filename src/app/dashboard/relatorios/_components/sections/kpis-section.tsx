@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { WeeklyReportData, KPISnapshot } from '@/lib/reports/types'
-import { KpiComparisonChart } from '../charts/kpi-comparison-chart'
+import { MonetaryKpiChart, GiroKpiChart } from '../charts/kpi-comparison-chart'
 
 interface Props {
   data: WeeklyReportData['kpis']
@@ -35,25 +35,37 @@ export function KpisSection({ data }: Props) {
         className="w-full flex items-center justify-between px-5 py-3 hover:bg-muted/30 transition-colors"
         onClick={() => setOpen(v => !v)}
       >
-        <h3 className="font-medium text-sm">④ KPIs da semana</h3>
+        <h3 className="font-medium text-sm">④ KPIs do período</h3>
         {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
       </button>
 
       {open && (
         <div className="px-5 pb-5 space-y-4">
-          <KpiComparisonChart
-            current={data.current}
-            previousWeek={data.previousWeek}
-            sameWeekLastYear={data.sameWeekLastYear}
-          />
+          <div>
+            <p className="text-xs text-muted-foreground mb-2">RevPAR · TRevPAR · Ticket Médio (R$/suíte)</p>
+            <MonetaryKpiChart
+              current={data.current}
+              previousWeek={data.previousWeek}
+              sameWeekLastYear={data.sameWeekLastYear}
+            />
+          </div>
+
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Giro (locações/suíte/dia) — referência: &lt;1.0 baixo · 1.0–1.8 normal · &gt;1.8 alto</p>
+            <GiroKpiChart
+              current={data.current}
+              previousWeek={data.previousWeek}
+              sameWeekLastYear={data.sameWeekLastYear}
+            />
+          </div>
 
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-muted-foreground border-b">
                 <th className="text-left pb-1 font-medium">KPI</th>
                 <th className="text-right pb-1 font-medium">Este período</th>
-                {data.previousWeek && <th className="text-right pb-1 font-medium">Per. ant.</th>}
-                {data.sameWeekLastYear && <th className="text-right pb-1 font-medium">Mesmo LY</th>}
+                {data.previousWeek && <th className="text-right pb-1 font-medium">Período ant.</th>}
+                {data.sameWeekLastYear && <th className="text-right pb-1 font-medium">Ano anterior</th>}
               </tr>
             </thead>
             <tbody>

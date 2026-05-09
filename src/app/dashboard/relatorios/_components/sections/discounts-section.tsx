@@ -1,9 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import type { WeeklyReportData } from '@/lib/reports/types'
-import { GuiaShareChart } from '../charts/guia-share-chart'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -16,6 +15,8 @@ export function DiscountsSection({ data }: Props) {
   const shareDelta = data.guiaSharePct - data.guiaSharePrevWeek
   const shareStatus =
     data.guiaSharePct < 15 ? 'low' : data.guiaSharePct > 40 ? 'high' : 'ok'
+
+  const DeltaIcon = shareDelta > 0.5 ? TrendingUp : shareDelta < -0.5 ? TrendingDown : Minus
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
@@ -38,36 +39,52 @@ export function DiscountsSection({ data }: Props) {
 
       {open && (
         <div className="px-5 pb-5 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <GuiaShareChart currentPct={data.guiaSharePct} prevPct={data.guiaSharePrevWeek} />
-            </div>
-            <div className="space-y-3 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">Participação no período</p>
-                <p className={cn('text-lg font-semibold', shareStatus !== 'ok' ? 'text-amber-600' : 'text-emerald-600')}>
+          {/* Explicação + 3 cards de participação */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-3">
+              % das reservas via planos Go e Programado do Guia de Motéis. Abaixo de 15% indica pouca presença no canal; acima de 40% pode indicar dependência excessiva de descontos.
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg bg-muted/50 p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Período anterior</p>
+                <p className="text-xl font-semibold">
+                  {data.guiaSharePrevWeek > 0 ? `${data.guiaSharePrevWeek.toFixed(1)}%` : '—'}
+                </p>
+              </div>
+              <div className={cn(
+                'rounded-lg p-3 text-center border-2',
+                shareStatus === 'ok' ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800' :
+                'bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800'
+              )}>
+                <p className="text-xs text-muted-foreground mb-1">Este período</p>
+                <p className={cn(
+                  'text-xl font-semibold',
+                  shareStatus === 'ok' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
+                )}>
                   {data.guiaSharePct.toFixed(1)}%
                 </p>
                 {data.guiaSharePrevWeek > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {shareDelta >= 0 ? '+' : ''}{shareDelta.toFixed(1)} p.p. vs sem. ant.
+                  <p className={cn(
+                    'text-xs flex items-center justify-center gap-0.5 mt-0.5',
+                    shareDelta > 0 ? 'text-emerald-600' : shareDelta < 0 ? 'text-destructive' : 'text-muted-foreground'
+                  )}>
+                    <DeltaIcon className="w-3 h-3" />
+                    {shareDelta >= 0 ? '+' : ''}{shareDelta.toFixed(1)} p.p.
                   </p>
                 )}
               </div>
-              {data.discountProposalsApprovedThisWeek > 0 && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Propostas de desconto aprovadas</p>
-                  <p className="font-medium">{data.discountProposalsApprovedThisWeek}</p>
-                </div>
-              )}
-              {data.topDiscountImpact && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Maior impacto</p>
-                  <p className="text-sm">{data.topDiscountImpact}</p>
-                </div>
-              )}
+              <div className="rounded-lg bg-muted/50 p-3 text-center border border-dashed">
+                <p className="text-xs text-muted-foreground mb-1">Zona alvo</p>
+                <p className="text-xl font-semibold text-muted-foreground">15–40%</p>
+              </div>
             </div>
           </div>
+
+          {data.discountProposalsApprovedThisWeek > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {data.discountProposalsApprovedThisWeek} proposta(s) de desconto aprovada(s) neste período.
+            </p>
+          )}
 
           {data.activeDiscounts.length > 0 && (
             <div>

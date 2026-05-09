@@ -53,6 +53,22 @@ export function DemandSection({ data }: Props) {
                       </tr>
                     ))}
                 </tbody>
+                {(() => {
+                  const totRes = data.channelMix.reduce((s, c) => s + c.reservas, 0)
+                  const totRec = data.channelMix.reduce((s, c) => s + c.receita, 0)
+                  const totPct = data.channelMix.reduce((s, c) => s + c.representatividade, 0)
+                  return (
+                    <tfoot>
+                      <tr className="border-t font-semibold text-xs">
+                        <td className="pt-1.5">Total</td>
+                        <td className="text-right pt-1.5">{totRes}</td>
+                        <td className="text-right pt-1.5">{totRec.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}</td>
+                        <td className="text-right pt-1.5">{totRes > 0 ? (totRec / totRes).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }) : '—'}</td>
+                        <td className="text-right pt-1.5">{totPct.toFixed(1)}%</td>
+                      </tr>
+                    </tfoot>
+                  )
+                })()}
               </table>
             </div>
           )}
@@ -81,6 +97,22 @@ export function DemandSection({ data }: Props) {
                     </tr>
                   ))}
                 </tbody>
+                {(() => {
+                  const totLoc = data.periodMix.reduce((s, p) => s + p.locacoes, 0)
+                  const totRec = data.periodMix.reduce((s, p) => s + p.receita, 0)
+                  const totPct = data.periodMix.reduce((s, p) => s + p.pct, 0)
+                  return (
+                    <tfoot>
+                      <tr className="border-t font-semibold text-xs">
+                        <td className="pt-1.5">Total</td>
+                        <td className="text-right pt-1.5">{totLoc}</td>
+                        <td className="text-right pt-1.5">{totRec.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}</td>
+                        <td className="text-right pt-1.5">{totLoc > 0 ? (totRec / totLoc).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }) : '—'}</td>
+                        <td className="text-right pt-1.5">{totPct.toFixed(1)}%</td>
+                      </tr>
+                    </tfoot>
+                  )
+                })()}
               </table>
             </div>
           )}

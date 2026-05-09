@@ -9,13 +9,6 @@ interface Props {
   sameWeekLastYear: KPISnapshot | null
 }
 
-const METRICS: { key: keyof KPISnapshot; label: string; prefix?: string }[] = [
-  { key: 'revpar', label: 'RevPAR', prefix: 'R$' },
-  { key: 'trevpar', label: 'TRevPAR', prefix: 'R$' },
-  { key: 'giro', label: 'Giro' },
-  { key: 'ticket', label: 'Ticket', prefix: 'R$' },
-]
-
 const TOOLTIP_STYLE = {
   contentStyle: {
     backgroundColor: '#18181b',
@@ -28,16 +21,22 @@ const TOOLTIP_STYLE = {
   itemStyle: { color: '#f4f4f5' },
 }
 
-export function KpiComparisonChart({ current, previousWeek, sameWeekLastYear }: Props) {
-  const data = METRICS.map(m => ({
+const MONETARY_METRICS = [
+  { key: 'revpar' as keyof KPISnapshot, label: 'RevPAR', prefix: 'R$' },
+  { key: 'trevpar' as keyof KPISnapshot, label: 'TRevPAR', prefix: 'R$' },
+  { key: 'ticket' as keyof KPISnapshot, label: 'Ticket', prefix: 'R$' },
+]
+
+export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Props) {
+  const data = MONETARY_METRICS.map(m => ({
     name: m.label,
     Atual: current[m.key],
-    'Per. ant.': previousWeek ? previousWeek[m.key] : undefined,
-    'Mesmo LY': sameWeekLastYear ? sameWeekLastYear[m.key] : undefined,
+    'Período ant.': previousWeek ? previousWeek[m.key] : undefined,
+    'Ano anterior': sameWeekLastYear ? sameWeekLastYear[m.key] : undefined,
   }))
 
   return (
-    <ResponsiveContainer width="100%" height={220}>
+    <ResponsiveContainer width="100%" height={200}>
       <BarChart data={data} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
         <XAxis dataKey="name" tick={{ fontSize: 12 }} />
         <YAxis tick={{ fontSize: 11 }} width={50} />
@@ -47,15 +46,48 @@ export function KpiComparisonChart({ current, previousWeek, sameWeekLastYear }: 
             const v = Number(value)
             const n = String(name)
             const metricName = (item as { payload?: { name?: string } })?.payload?.name ?? ''
-            const metric = METRICS.find(m => m.label === metricName)
+            const metric = MONETARY_METRICS.find(m => m.label === metricName)
             return [metric?.prefix ? `${metric.prefix} ${v.toFixed(2)}` : v.toFixed(2), n]
           }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar dataKey="Atual" fill="#3b82f6" radius={[3, 3, 0, 0]} />
-        {previousWeek && <Bar dataKey="Per. ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
-        {sameWeekLastYear && <Bar dataKey="Mesmo LY" fill="#64748b" radius={[3, 3, 0, 0]} />}
+        {previousWeek && <Bar dataKey="Período ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
+        {sameWeekLastYear && <Bar dataKey="Ano anterior" fill="#64748b" radius={[3, 3, 0, 0]} />}
       </BarChart>
     </ResponsiveContainer>
   )
+}
+
+export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props) {
+  const data = [
+    {
+      name: 'Giro (loc/suíte/dia)',
+      Atual: current.giro,
+      'Período ant.': previousWeek?.giro ?? undefined,
+      'Ano anterior': sameWeekLastYear?.giro ?? undefined,
+    },
+  ]
+
+  return (
+    <ResponsiveContainer width="100%" height={130}>
+      <BarChart data={data} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+        <YAxis tick={{ fontSize: 11 }} width={36} domain={[0, 'auto']} />
+        <Tooltip
+          {...TOOLTIP_STYLE}
+          formatter={(value: unknown, name: unknown) => [Number(value).toFixed(2), String(name)]}
+        />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <Bar dataKey="Atual" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+        {previousWeek && <Bar dataKey="Período ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
+        {sameWeekLastYear && <Bar dataKey="Ano anterior" fill="#64748b" radius={[3, 3, 0, 0]} />}
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+// Backward compat export
+export function KpiComparisonChart(props: Props) {
+  return <MonetaryKpiChart {...props} />
 }
