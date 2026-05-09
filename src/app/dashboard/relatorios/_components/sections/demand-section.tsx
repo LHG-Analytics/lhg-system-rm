@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { WeeklyReportData } from '@/lib/reports/types'
-import { ChannelMixChart } from '../charts/channel-mix-chart'
 
 interface Props {
   data: WeeklyReportData['demand']
@@ -15,6 +14,8 @@ export function DemandSection({ data }: Props) {
   const hasData = data.channelMix.length > 0 || data.periodMix.length > 0
 
   if (!hasData) return null
+
+  const totalReceita = data.channelMix.reduce((s, c) => s + c.receita, 0)
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
@@ -31,7 +32,30 @@ export function DemandSection({ data }: Props) {
           {data.channelMix.length > 0 && (
             <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Mix por canal</p>
-              <ChannelMixChart data={data.channelMix} />
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-muted-foreground border-b">
+                    <th className="text-left pb-1 font-medium">Canal</th>
+                    <th className="text-right pb-1 font-medium">Reservas</th>
+                    <th className="text-right pb-1 font-medium">Receita</th>
+                    <th className="text-right pb-1 font-medium">Ticket</th>
+                    <th className="text-right pb-1 font-medium">% Receita</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.channelMix
+                    .sort((a, b) => b.receita - a.receita)
+                    .map((c, i) => (
+                      <tr key={i} className="border-b last:border-0">
+                        <td className="py-1.5 font-medium">{c.label}</td>
+                        <td className="text-right">{c.reservas}</td>
+                        <td className="text-right">{c.receita.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}</td>
+                        <td className="text-right">{c.reservas > 0 ? (c.receita / c.reservas).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }) : '—'}</td>
+                        <td className="text-right">{totalReceita > 0 ? ((c.receita / totalReceita) * 100).toFixed(1) : '0.0'}%</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
             </div>
           )}
 

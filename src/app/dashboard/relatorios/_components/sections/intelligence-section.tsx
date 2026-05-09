@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, ChevronUp, AlertTriangle, CheckCircle } from 'lucide-react'
+import { ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { format } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { WeeklyReportData } from '@/lib/reports/types'
 
@@ -9,8 +11,23 @@ interface Props {
   data: WeeklyReportData['intelligence']
 }
 
+const VERDICT_STYLE = {
+  success: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  failure: 'bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-400',
+  neutral: 'bg-muted text-muted-foreground',
+  unknown: 'bg-muted text-muted-foreground',
+} as const
+
+const VERDICT_LABEL = {
+  success: '✓ Positivo',
+  failure: '✕ Negativo',
+  neutral: '— Neutro',
+  unknown: '? Sem dados',
+} as const
+
 export function IntelligenceSection({ data }: Props) {
   const [open, setOpen] = useState(true)
+  const insights = data.historicalInsights ?? []
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
@@ -52,6 +69,73 @@ export function IntelligenceSection({ data }: Props) {
                     <span className="text-xs text-muted-foreground truncate">{a.scope}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {insights.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                Aprendizado das tabelas históricas
+              </p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Comparação dos primeiros 30 dias de cada tabela importada para medir o impacto real das mudanças de preço.
+              </p>
+              <div className="space-y-3">
+                {insights.map((insight, i) => {
+                  const fromLabel = format(new Date(insight.fromDate + 'T12:00:00Z'), "MMM'/'yy", { locale: ptBR })
+                  const toLabel = format(new Date(insight.toDate + 'T12:00:00Z'), "MMM'/'yy", { locale: ptBR })
+                  return (
+                    <div key={i} className="rounded-lg border p-3 text-sm">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium">
+                          Tabela {fromLabel} → {toLabel}
+                        </span>
+                        <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full', VERDICT_STYLE[insight.verdict])}>
+                          {VERDICT_LABEL[insight.verdict]}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap gap-3 mb-2">
+                        <span className="text-xs text-muted-foreground">
+                          {insight.changesCount} preço(s) alterado(s) — média {insight.avgChangePct > 0 ? '+' : ''}{insight.avgChangePct.toFixed(1)}%
+                        </span>
+                        {insight.deltaRevpar !== null && (
+                          <span className={cn('text-xs font-medium', insight.deltaRevpar > 0 ? 'text-emerald-600' : 'text-destructive')}>
+                            RevPAR {insight.deltaRevpar > 0 ? '+' : ''}{insight.deltaRevpar.toFixed(1)}%
+                          </span>
+                        )}
+                        {insight.deltaGiro !== null && (
+                          <span className={cn('text-xs font-medium', insight.deltaGiro > 0 ? 'text-emerald-600' : insight.deltaGiro < -5 ? 'text-destructive' : 'text-muted-foreground')}>
+                            Giro {insight.deltaGiro > 0 ? '+' : ''}{insight.deltaGiro.toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+
+                      {insight.kpiBefore && insight.kpiAfter && (
+                        <div className="grid grid-cols-2 gap-2 mb-2 text-xs text-muted-foreground">
+                          <div>Antes: RevPAR R$ {insight.kpiBefore.revpar.toFixed(2)} · Giro {insight.kpiBefore.giro.toFixed(2)}</div>
+                          <div>Depois: RevPAR R$ {insight.kpiAfter.revpar.toFixed(2)} · Giro {insight.kpiAfter.giro.toFixed(2)}</div>
+                        </div>
+                      )}
+
+                      {insight.topChanges.length > 0 && (
+                        <div className="space-y-0.5">
+                          {insight.topChanges.slice(0, 4).map((c, j) => (
+                            <div key={j} className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <span className="truncate">{c.categoria} · {c.periodo} · {c.diaTipo}</span>
+                              <span className="shrink-0">→</span>
+                              <span className={cn('shrink-0 font-medium', c.variacaoPct > 0 ? 'text-emerald-600' : 'text-destructive')}>
+                                {c.variacaoPct > 0 ? '+' : ''}{c.variacaoPct.toFixed(1)}%
+                                {' '}(R${c.precoAnterior.toFixed(0)}→R${c.precoNovo.toFixed(0)})
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}

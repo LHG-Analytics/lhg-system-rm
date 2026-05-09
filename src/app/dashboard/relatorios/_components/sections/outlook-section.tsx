@@ -72,7 +72,7 @@ export function OutlookSection({ data }: Props) {
           {data.revenueForecast.length > 0 && (
             <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Previsão de receita</p>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-3 mb-2">
                 {data.revenueForecast.slice(0, 3).map((m, i) => (
                   <div key={i} className="rounded-lg bg-muted/50 p-3 text-sm">
                     <p className="text-xs text-muted-foreground mb-1 capitalize">{m.month}</p>
@@ -85,6 +85,11 @@ export function OutlookSection({ data }: Props) {
                   </div>
                 ))}
               </div>
+              <p className="text-xs text-muted-foreground">
+                Metodologia: mês atual = projeção do ERP com base no ritmo diário acumulado × dias restantes.
+                Meses seguintes = orçamento ajustado pelo ritmo atual com amortecimento 50% → 25%
+                (desvio não é extrapolado — evita superestimar anomalias pontuais).
+              </p>
             </div>
           )}
         </div>

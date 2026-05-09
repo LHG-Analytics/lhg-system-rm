@@ -164,6 +164,26 @@ export interface WeeklyReportData {
     elasticityUpdatedCount: number
     seasonalityRecomputed: boolean
     weekHighlight: string
+    historicalInsights?: {
+      fromDate: string
+      toDate: string
+      changesCount: number
+      avgChangePct: number
+      kpiBefore: { revpar: number; giro: number } | null
+      kpiAfter: { revpar: number; giro: number } | null
+      deltaRevpar: number | null
+      deltaGiro: number | null
+      verdict: 'success' | 'neutral' | 'failure' | 'unknown'
+      topChanges: {
+        categoria: string
+        periodo: string
+        diaTipo: string
+        canal: string
+        precoAnterior: number
+        precoNovo: number
+        variacaoPct: number
+      }[]
+    }[]
   }
 
   agentConfig: {

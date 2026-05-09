@@ -445,11 +445,131 @@ export async function generateWeeklyReport(
       })),
     }
 
+    // Historical price table analysis — learn from imported tables, not just proposals/checkpoints
+    type HistoricalInsight = NonNullable<WeeklyReportData['intelligence']['historicalInsights']>[0]
+    const historicalInsights: HistoricalInsight[] = []
+
+    try {
+      const allImportsResult = await admin
+        .from('price_imports')
+        .select('id, valid_from, valid_until, parsed_data')
+        .eq('unit_id', unit.id)
+        .eq('import_type', 'prices')
+        .not('parsed_data', 'is', null)
+        .order('valid_from', { ascending: false })
+        .limit(5)
+
+      const allImports = (allImportsResult.data ?? []).reverse() // oldest first
+
+      if (allImports.length >= 2) {
+        const todayStr = new Date().toISOString().slice(0, 10)
+        const capDate = (start: string, end: string | null): string => {
+          const maxEnd = new Date(new Date(start + 'T12:00:00Z').getTime() + 30 * 86400000).toISOString().slice(0, 10)
+          const e = end ?? todayStr
+          return e < maxEnd ? e : maxEnd
+        }
+
+        // Up to 3 most recent consecutive pairs
+        const startIdx = Math.max(0, allImports.length - 4)
+        const pairs: [typeof allImports[0], typeof allImports[0]][] = []
+        for (let i = startIdx; i < allImports.length - 1; i++) {
+          pairs.push([allImports[i], allImports[i + 1]])
+        }
+
+        // Parallel KPI fetches for all pairs
+        const kpiResults = await Promise.allSettled(
+          pairs.flatMap(([a, b]) => [
+            fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(a.valid_from), isoToDDMMYYYY(capDate(a.valid_from, a.valid_until))),
+            fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(b.valid_from), isoToDDMMYYYY(capDate(b.valid_from, b.valid_until))),
+          ])
+        )
+
+        for (let pi = 0; pi < pairs.length; pi++) {
+          const [tblA, tblB] = pairs[pi]
+          const kpiAResult = kpiResults[pi * 2]
+          const kpiBResult = kpiResults[pi * 2 + 1]
+
+          const rowsA = (tblA.parsed_data ?? []) as ParsedPriceRow[]
+          const rowsB = (tblB.parsed_data ?? []) as ParsedPriceRow[]
+
+          const mapA: Record<string, number> = {}
+          for (const r of rowsA) {
+            mapA[`${r.categoria}|${r.periodo}|${r.dia_tipo}|${r.canal}`] = r.preco
+          }
+
+          const changes: HistoricalInsight['topChanges'] = []
+          for (const r of rowsB) {
+            const key = `${r.categoria}|${r.periodo}|${r.dia_tipo}|${r.canal}`
+            const prev = mapA[key]
+            if (prev != null && Math.abs((r.preco - prev) / prev) >= 0.01) {
+              changes.push({
+                categoria: r.categoria,
+                periodo: r.periodo,
+                diaTipo: r.dia_tipo,
+                canal: r.canal,
+                precoAnterior: prev,
+                precoNovo: r.preco,
+                variacaoPct: ((r.preco - prev) / prev) * 100,
+              })
+            }
+          }
+
+          if (changes.length === 0) continue
+
+          const snapA = kpiAResult.status === 'fulfilled' ? kpiSnapshotFromResponse(kpiAResult.value) : null
+          const snapB = kpiBResult.status === 'fulfilled' ? kpiSnapshotFromResponse(kpiBResult.value) : null
+
+          const drRevpar = snapA && snapB ? deltaPct(snapB.revpar, snapA.revpar) : null
+          const drGiro = snapA && snapB ? deltaPct(snapB.giro, snapA.giro) : null
+          const avgChangePct = changes.reduce((s, c) => s + c.variacaoPct, 0) / changes.length
+
+          let verdict: HistoricalInsight['verdict'] = 'unknown'
+          if (drRevpar !== null && drGiro !== null) {
+            if (avgChangePct > 0) {
+              verdict = drRevpar > 2 ? 'success' : (drRevpar < -3 || drGiro < -10) ? 'failure' : 'neutral'
+            } else {
+              verdict = (drGiro > 5 && drRevpar > -3) ? 'success' : drRevpar < -5 ? 'failure' : 'neutral'
+            }
+          }
+
+          historicalInsights.push({
+            fromDate: tblA.valid_from,
+            toDate: tblB.valid_from,
+            changesCount: changes.length,
+            avgChangePct,
+            kpiBefore: snapA ? { revpar: snapA.revpar, giro: snapA.giro } : null,
+            kpiAfter: snapB ? { revpar: snapB.revpar, giro: snapB.giro } : null,
+            deltaRevpar: drRevpar,
+            deltaGiro: drGiro,
+            verdict,
+            topChanges: changes
+              .sort((a, b) => Math.abs(b.variacaoPct) - Math.abs(a.variacaoPct))
+              .slice(0, 6),
+          })
+        }
+      }
+    } catch (e) {
+      console.warn('[generateWeeklyReport] Historical insights failed:', e)
+    }
+
     const weekHighlightParts: string[] = []
     if (lessonsSuccess > 0) weekHighlightParts.push(`${lessonsSuccess} lição(ões) com acerto`)
     if (lessonsFailure > 0) weekHighlightParts.push(`${lessonsFailure} falha(s) identificada(s)`)
     const highConfEl = elasticity.filter(e => e.confidence === 'high').length
     if (highConfEl > 0) weekHighlightParts.push(`${highConfEl} elasticidade(s) com alta confiança`)
+
+    let weekHighlight = weekHighlightParts.join('; ')
+    if (!weekHighlight && historicalInsights.length > 0) {
+      const latest = historicalInsights[historicalInsights.length - 1]
+      const revStr = latest.deltaRevpar !== null
+        ? `RevPAR ${latest.deltaRevpar >= 0 ? '+' : ''}${latest.deltaRevpar.toFixed(1)}%`
+        : null
+      const giroStr = latest.deltaGiro !== null
+        ? `Giro ${latest.deltaGiro >= 0 ? '+' : ''}${latest.deltaGiro.toFixed(1)}%`
+        : null
+      weekHighlight = `Última transição de tabela (${latest.fromDate} → ${latest.toDate}): ${latest.changesCount} preços alterados — ${[revStr, giroStr].filter(Boolean).join(', ')} — resultado ${latest.verdict === 'success' ? 'positivo' : latest.verdict === 'failure' ? 'negativo' : latest.verdict === 'neutral' ? 'neutro' : 'sem dados suficientes'}`
+    }
+    if (!weekHighlight) weekHighlight = 'Sem lições de pricing ou anomalias registradas neste período'
 
     const intelligence: WeeklyReportData['intelligence'] = {
       // fixed: use detected_at instead of created_at; status field is present
@@ -466,7 +586,8 @@ export async function generateWeeklyReport(
       newLessonsCount: lessons.length,
       elasticityUpdatedCount: elasticity.filter(e => e.n_observations >= 3).length,
       seasonalityRecomputed: false,
-      weekHighlight: weekHighlightParts.join('; ') || 'Sem lições de pricing ou anomalias registradas neste período',
+      weekHighlight,
+      historicalInsights,
     }
 
     const agentConfigSection: WeeklyReportData['agentConfig'] = {
