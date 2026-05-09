@@ -11,8 +11,8 @@ interface Props {
 const KPI_LABELS: Record<string, string> = {
   revpar: 'RevPAR',
   giro: 'Giro',
-  ocupacao: 'Ocup.',
-  ticket: 'Ticket',
+  ocupacao: 'Ocupação',
+  ticket: 'Ticket Médio',
   receita: 'Receita',
   tmo: 'TMO',
 }
@@ -30,7 +30,7 @@ export function EvolutionBanner({ data }: Props) {
         {items.map(([key, val]) => (
           <DeltaChip key={key} label={KPI_LABELS[key] ?? key} value={val} />
         ))}
-        <DeltaChip label="Guia %" value={data.guiaShareDelta} suffix="pp" />
+        <DeltaChip label="Guia de Motéis" value={data.guiaShareDelta} suffix=" p.p." />
       </div>
       {(data.lessonsVerdict.acertos > 0 || data.lessonsVerdict.falhas > 0) && (
         <div className="mt-3 pt-3 border-t flex gap-4 text-xs text-muted-foreground">

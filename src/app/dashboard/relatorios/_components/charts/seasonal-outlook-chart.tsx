@@ -24,14 +24,14 @@ export function SeasonalOutlookChart({ data }: { data: SeasonalFactor[] }) {
         <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={1} />
         <YAxis domain={[0.5, 1.8]} tick={{ fontSize: 11 }} tickFormatter={v => `${v.toFixed(1)}x`} />
         <Tooltip formatter={(value: unknown) => [`${Number(value).toFixed(2)}x`, 'Fator RevPAR']} />
-        <ReferenceLine y={1} stroke="hsl(var(--border))" strokeDasharray="3 3" />
-        <ReferenceLine y={1.15} stroke="hsl(var(--primary))" strokeDasharray="2 2" opacity={0.5} />
-        <ReferenceLine y={0.85} stroke="hsl(var(--destructive))" strokeDasharray="2 2" opacity={0.5} />
+        <ReferenceLine y={1} stroke="#64748b" strokeDasharray="3 3" />
+        <ReferenceLine y={1.15} stroke="#10b981" strokeDasharray="2 2" opacity={0.7} />
+        <ReferenceLine y={0.85} stroke="#ef4444" strokeDasharray="2 2" opacity={0.7} />
         <Area
           type="monotone"
           dataKey="fator"
-          stroke="hsl(var(--primary))"
-          fill="hsl(var(--primary)/0.15)"
+          stroke="#3b82f6"
+          fill="#3b82f620"
           strokeWidth={2}
         />
       </AreaChart>

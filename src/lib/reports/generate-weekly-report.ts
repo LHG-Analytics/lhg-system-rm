@@ -485,7 +485,7 @@ Você é um Revenue Manager sênior. Analise a semana operacional de ${unit.name
 
 DADOS DA SEMANA:
 - RevPAR: R$ ${currentSnapshot.revpar.toFixed(2)} ${prevCurrentSnapshot ? `(${deltaPct(currentSnapshot.revpar, prevCurrentSnapshot.revpar) >= 0 ? '+' : ''}${deltaPct(currentSnapshot.revpar, prevCurrentSnapshot.revpar).toFixed(1)}% vs sem. ant.)` : ''}
-- Giro: ${currentSnapshot.giro.toFixed(2)} ${prevCurrentSnapshot ? `(${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro) >= 0 ? '+' : ''}${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro).toFixed(1)}%)` : ''}
+- Giro: ${currentSnapshot.giro.toFixed(2)} ${prevCurrentSnapshot ? `(${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro) >= 0 ? '+' : ''}${deltaPct(currentSnapshot.giro, prevCurrentSnapshot.giro).toFixed(1)}%)` : ''} — referência para motéis: <1.0 baixo | 1.0–1.8 normal | >1.8 alto
 - Ocupação: ${(currentSnapshot.ocupacao * 100).toFixed(1)}%
 - Receita: R$ ${currentSnapshot.receita.toFixed(2)}
 - Ticket Médio: R$ ${currentSnapshot.ticket.toFixed(2)}

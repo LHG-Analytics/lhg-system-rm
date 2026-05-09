@@ -44,14 +44,14 @@ export function BudgetTracking({ data }: Props) {
         )}
       </div>
 
-      {/* Pace */}
+      {/* Ritmo */}
       <div className="grid grid-cols-3 gap-3 text-sm pt-1">
         <div>
-          <p className="text-xs text-muted-foreground">Pace atual</p>
+          <p className="text-xs text-muted-foreground">Ritmo atual</p>
           <p className="font-medium">{fmt(data.paceDiarioAtual)}/dia</p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">Pace necessário</p>
+          <p className="text-xs text-muted-foreground">Ritmo necessário</p>
           <p className={cn('font-medium', data.paceDiarioNecessario > data.paceDiarioAtual ? 'text-amber-600' : 'text-emerald-600')}>
             {fmt(data.paceDiarioNecessario)}/dia
           </p>

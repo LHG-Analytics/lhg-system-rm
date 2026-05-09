@@ -86,6 +86,15 @@ export function RelatoriosPageClient({ initialReports, unitSlug, unitName, unitI
     loadReport(id)
   }
 
+  async function handleDelete(id: string) {
+    await fetch(`/api/agente/reports/${id}`, { method: 'DELETE' })
+    setReports(prev => prev.filter(r => r.id !== id))
+    if (selectedId === id) {
+      setSelectedId(null)
+      setSelectedReport(null)
+    }
+  }
+
   // Auto-select first done report on mount
   useEffect(() => {
     const firstDone = reports.find(r => r.status === 'done')
@@ -104,6 +113,7 @@ export function RelatoriosPageClient({ initialReports, unitSlug, unitName, unitI
         unitSlug={unitSlug}
         onSelect={loadReport}
         onGenerated={handleGenerated}
+        onDelete={handleDelete}
       />
 
       <div className="flex-1 flex flex-col min-w-0">

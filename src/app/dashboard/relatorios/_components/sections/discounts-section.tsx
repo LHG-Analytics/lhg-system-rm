@@ -30,7 +30,7 @@ export function DiscountsSection({ data }: Props) {
             shareStatus === 'ok' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
             'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
           )}>
-            Guia {data.guiaSharePct.toFixed(1)}%
+            Participação {data.guiaSharePct.toFixed(1)}%
           </span>
         </div>
         {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
@@ -44,13 +44,13 @@ export function DiscountsSection({ data }: Props) {
             </div>
             <div className="space-y-3 text-sm">
               <div>
-                <p className="text-xs text-muted-foreground">Share esta semana</p>
+                <p className="text-xs text-muted-foreground">Participação esta semana</p>
                 <p className={cn('text-lg font-semibold', shareStatus !== 'ok' ? 'text-amber-600' : 'text-emerald-600')}>
                   {data.guiaSharePct.toFixed(1)}%
                 </p>
                 {data.guiaSharePrevWeek > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    {shareDelta >= 0 ? '+' : ''}{shareDelta.toFixed(1)}pp vs sem. ant.
+                    {shareDelta >= 0 ? '+' : ''}{shareDelta.toFixed(1)} p.p. vs sem. ant.
                   </p>
                 )}
               </div>

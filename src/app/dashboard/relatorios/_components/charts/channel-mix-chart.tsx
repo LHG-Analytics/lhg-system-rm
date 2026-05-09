@@ -10,7 +10,7 @@ interface ChannelItem {
   representatividade: number
 }
 
-const COLORS = ['hsl(var(--primary))', 'hsl(var(--primary)/0.7)', 'hsl(var(--primary)/0.5)', 'hsl(var(--primary)/0.35)', 'hsl(var(--primary)/0.2)']
+const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444']
 
 export function ChannelMixChart({ data }: { data: ChannelItem[] }) {
   const sorted = [...data].sort((a, b) => b.representatividade - a.representatividade).slice(0, 5)

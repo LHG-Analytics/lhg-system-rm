@@ -37,9 +37,9 @@ export function KpiComparisonChart({ current, previousWeek, sameWeekLastYear }: 
           }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="Atual" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
-        {previousWeek && <Bar dataKey="Sem. Ant." fill="hsl(var(--muted-foreground))" opacity={0.6} radius={[3, 3, 0, 0]} />}
-        {sameWeekLastYear && <Bar dataKey="Mesmo LY" fill="hsl(var(--muted-foreground))" opacity={0.3} radius={[3, 3, 0, 0]} />}
+        <Bar dataKey="Atual" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+        {previousWeek && <Bar dataKey="Sem. Ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
+        {sameWeekLastYear && <Bar dataKey="Mesmo LY" fill="#cbd5e1" radius={[3, 3, 0, 0]} />}
       </BarChart>
     </ResponsiveContainer>
   )
