@@ -92,7 +92,7 @@ function ReportItem({ report: r, selected, onSelect, onDelete }: {
         <StatusIcon status={r.status} />
         <div className="min-w-0">
           <p className="text-sm font-medium truncate">
-            Sem {formatPeriod(r.period_start, r.period_end)}
+            {formatPeriod(r.period_start, r.period_end)}
           </p>
           <p className="text-xs text-muted-foreground">
             {r.status === 'done' && r.generated_at
