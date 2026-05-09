@@ -568,12 +568,12 @@ export async function generateWeeklyReport(
             mapA[`${r.categoria}|${r.periodo}|${r.dia_tipo}|${r.canal}`] = r.preco
           }
 
-          const changes: HistoricalInsight['topChanges'] = []
+          const rawChanges: HistoricalInsight['topChanges'] = []
           for (const r of rowsB) {
             const key = `${r.categoria}|${r.periodo}|${r.dia_tipo}|${r.canal}`
             const prev = mapA[key]
             if (prev != null && Math.abs((r.preco - prev) / prev) >= 0.01) {
-              changes.push({
+              rawChanges.push({
                 categoria: r.categoria,
                 periodo: r.periodo,
                 diaTipo: r.dia_tipo,
@@ -585,7 +585,17 @@ export async function generateWeeklyReport(
             }
           }
 
-          if (changes.length === 0) continue
+          if (rawChanges.length === 0) continue
+
+          // Deduplica por categoria+periodo+diaTipo (múltiplos canais geram duplicatas visuais)
+          // Mantém a linha com maior variação absoluta como representativa
+          const dedupMap = new Map<string, typeof rawChanges[0]>()
+          for (const c of rawChanges) {
+            const k = `${c.categoria}|${c.periodo}|${c.diaTipo}`
+            const ex = dedupMap.get(k)
+            if (!ex || Math.abs(c.variacaoPct) > Math.abs(ex.variacaoPct)) dedupMap.set(k, c)
+          }
+          const changes = [...dedupMap.values()]
 
           const snapA = kpiAResult.status === 'fulfilled' ? kpiSnapshotFromResponse(kpiAResult.value) : null
           const snapB = kpiBResult.status === 'fulfilled' ? kpiSnapshotFromResponse(kpiBResult.value) : null
@@ -597,9 +607,12 @@ export async function generateWeeklyReport(
           let verdict: HistoricalInsight['verdict'] = 'unknown'
           if (drRevpar !== null && drGiro !== null) {
             if (avgChangePct > 0) {
-              verdict = drRevpar > 2 ? 'success' : (drRevpar < -3 || drGiro < -10) ? 'failure' : 'neutral'
+              // Aumentou preços: sucesso = RevPAR subiu significativamente
+              verdict = drRevpar > 3 ? 'success' : (drRevpar < -3 || drGiro < -10) ? 'failure' : 'neutral'
             } else {
-              verdict = (drGiro > 5 && drRevpar > -3) ? 'success' : drRevpar < -5 ? 'failure' : 'neutral'
+              // Reduziu preços: sucesso só se RevPAR ficou estável E giro cresceu muito
+              // Queda de RevPAR com redução de preços = neutro (volume não compensou)
+              verdict = (drGiro > 10 && drRevpar > -1) ? 'success' : drRevpar < -5 ? 'failure' : 'neutral'
             }
           }
 
@@ -678,8 +691,9 @@ export async function generateWeeklyReport(
 
     // AI: executive summary + budget leverage comment
     // Competitive context summary for the prompt
+    // IMPORTANTE: categoria = NOSSA suíte; competitorName = nome do concorrente externo
     const compContext = competitors.gaps.length > 0
-      ? `\n- Posição vs concorrentes: ${competitors.dominantPosition} | ${competitors.gaps.slice(0, 3).map(g => `${g.categoria} ${g.periodo} gap ${g.gapPct > 0 ? '+' : ''}${g.gapPct.toFixed(1)}%`).join(', ')}`
+      ? `\n- Gap de preço vs concorrentes (ATENÇÃO: as categorias abaixo são NOSSAS suítes, não concorrentes): posição geral ${competitors.dominantPosition} | ${competitors.gaps.slice(0, 4).map(g => `nossa suíte "${g.categoria}" ${g.periodo} vs concorrente "${g.competitorName ?? 'mercado'}": gap ${g.gapPct > 0 ? '+' : ''}${g.gapPct.toFixed(1)}%`).join(' | ')}`
       : ''
 
     const guiaShare = channelKPIs.find(c => c.canal === 'GUIA_GO' || c.canal === 'GUIA_SCHEDULED')
