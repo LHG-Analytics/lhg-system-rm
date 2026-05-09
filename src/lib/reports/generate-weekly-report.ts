@@ -690,11 +690,29 @@ export async function generateWeeklyReport(
     }
 
     // AI: executive summary + budget leverage comment
-    // Competitive context summary for the prompt
-    // IMPORTANTE: categoria = NOSSA suíte; competitorName = nome do concorrente externo
-    const compContext = competitors.gaps.length > 0
-      ? `\n- Gap de preço vs concorrentes (ATENÇÃO: as categorias abaixo são NOSSAS suítes, não concorrentes): posição geral ${competitors.dominantPosition} | ${competitors.gaps.slice(0, 4).map(g => `nossa suíte "${g.categoria}" ${g.periodo} vs concorrente "${g.competitorName ?? 'mercado'}": gap ${g.gapPct > 0 ? '+' : ''}${g.gapPct.toFixed(1)}%`).join(' | ')}`
-      : ''
+
+    // Preços atuais da tabela ativa (balcão, semana) — max 8 linhas para não explodir o prompt
+    const priceTableCtx = (() => {
+      if (activePriceRows.length === 0) return ''
+      const balcaoSemana = activePriceRows.filter(r =>
+        (r.canal?.toLowerCase().includes('balcao') || r.canal?.toLowerCase().includes('site')) &&
+        (r.dia_tipo === 'semana' || r.dia_tipo === 'Semana')
+      )
+      const rows = (balcaoSemana.length > 0 ? balcaoSemana : activePriceRows).slice(0, 8)
+      return `\nPREÇOS ATUAIS (${balcaoSemana.length > 0 ? 'balcão/semana' : 'tabela ativa'}):\n${rows.map(r => `- ${r.categoria} ${r.periodo}: R$${Number(r.preco).toFixed(0)}`).join('\n')}`
+    })()
+
+    // Gap vs concorrentes com preços absolutos (NOSSA categoria ≠ concorrente)
+    const compContext = competitors.gaps.length > 0 ? (() => {
+      const top = competitors.gaps.slice(0, 5)
+      const lines = top.map(g => {
+        const nos = g.precoNosso > 0 ? `R$${g.precoNosso.toFixed(0)}` : '?'
+        const med = g.medianaConc > 0 ? `R$${g.medianaConc.toFixed(0)}` : '?'
+        const sinal = g.gapPct > 0 ? '+' : ''
+        return `- NOSSA suíte "${g.categoria}" ${g.periodo} ${g.diaTipo}: ${nos} | conc. "${g.competitorName ?? 'mercado'}": ${med} → gap ${sinal}${g.gapPct.toFixed(1)}%`
+      })
+      return `\nGAP DE PREÇO vs CONCORRENTES (posição geral: ${competitors.dominantPosition}):\n${lines.join('\n')}`
+    })() : ''
 
     const guiaShare = channelKPIs.find(c => c.canal === 'GUIA_GO' || c.canal === 'GUIA_SCHEDULED')
     const guiaCtx = guiaShare
@@ -710,15 +728,15 @@ DADOS DO PERÍODO:
 - Ocupação: ${(currentSnapshot.ocupacao * 100).toFixed(1)}%
 - Receita: R$ ${currentSnapshot.receita.toFixed(2)} | Ticket: R$ ${currentSnapshot.ticket.toFixed(2)} | Locações: ${currentSnapshot.locacoes}
 - Meta mensal: R$ ${meta.toFixed(2)} | Projeção: R$ ${projecao.toFixed(2)} | Gap: ${meta > 0 ? ((projecao - meta) / meta * 100).toFixed(1) : 0}%
-- Pace atual: R$ ${paceDiarioAtual.toFixed(2)}/dia | Necessário: R$ ${paceDiarioNecessario.toFixed(2)}/dia${compContext}${guiaCtx}
+- Pace atual: R$ ${paceDiarioAtual.toFixed(2)}/dia | Necessário: R$ ${paceDiarioNecessario.toFixed(2)}/dia${guiaCtx}
 - Lições de pricing: ${lessonsSuccess} acertos, ${lessonsFailure} falhas
-- Anomalias: ${newAnomalies} novas, ${resolvedAnomalies} resolvidas
+- Anomalias: ${newAnomalies} novas, ${resolvedAnomalies} resolvidas${priceTableCtx}${compContext}
 ${historicalInsights.length > 0 ? `
 HISTÓRICO DE MUDANÇAS DE TABELA:
 ${historicalInsights.map(h => `- Transição ${h.fromDate}→${h.toDate}: ${h.changesCount} preços (${h.avgChangePct > 0 ? '+' : ''}${h.avgChangePct.toFixed(1)}%) → Δ RevPAR ${h.deltaRevpar !== null ? `${h.deltaRevpar > 0 ? '+' : ''}${h.deltaRevpar.toFixed(1)}%` : '?'}, Δ Giro ${h.deltaGiro !== null ? `${h.deltaGiro > 0 ? '+' : ''}${h.deltaGiro.toFixed(1)}%` : '?'} (${h.verdict})`).join('\n')}
 ` : ''}
 Regras para o JSON:
-1. "priorityAction": seja ESPECÍFICO — inclua números reais do período (ex: "Elevar Master 3h semana de R$120 → R$130 (+8%): giro 1.8 acima da meta, concorrente cobra R$150"). NUNCA escreva ações genéricas como "implementar ajustes táticos".
+1. "priorityAction": use APENAS os preços reais listados acima (PREÇOS ATUAIS e GAP DE PREÇO). NUNCA invente valores nem use placeholders como "R$ xxx", "R$ preço concorrente", "preço atual", "valor X". Se não há dados de preço disponíveis, baseie a ação apenas nos KPIs. Exemplo correto: "Elevar CLUB pernoite de R$280 → R$300 (+7%): concorrente cobra R$320, giro 1.9 acima da meta". Exemplo ERRADO: "Reduzir de R$ xxx para R$ preço concorrente".
 2. "actionType": classifique como "price_proposal" se a ação envolve reajuste de preços, "discount_proposal" se envolve descontos do Guia, "agent_config" se requer mudança de estratégia/configuração do agente, "none" se não há ação urgente.
 3. "agentPrompt": prompt COMPACTO (máx 300 chars) que será enviado automaticamente ao Agente RM. Deve ser uma instrução direta e completa com os dados-chave do relatório. Exemplo: "Com base no relatório (giro ${currentSnapshot.giro.toFixed(1)}, RevPAR R$${currentSnapshot.revpar.toFixed(0)}, ocupação ${(currentSnapshot.ocupacao * 100).toFixed(0)}%): gerar proposta de preços focando em [CATEGORIA/PERÍODO específico]. Prioridade: [MÉTRICA]."
 4. "agentConfigSuggestion": se a configuração atual do agente (estratégia: ${agentConfig?.pricing_strategy ?? 'moderado'}, foco: ${agentConfig?.focus_metric ?? 'revpar'}) não é ideal para os dados observados, sugira a mudança em 1 frase. Caso contrário, retorne null.
