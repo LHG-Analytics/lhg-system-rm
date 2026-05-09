@@ -163,6 +163,7 @@ async function queryBigNumbers(
         ${statusFilter}
         AND sei.cancelado IS NULL
         AND ca_apt.id IN (${catIds})
+        AND a.dataexclusao IS NULL
         ${timeFilter}
       GROUP BY la.id_apartamentostate
     ),
@@ -209,6 +210,7 @@ async function queryBigNumbers(
       AND ${dateCol} <  $2
       ${statusFilter}
       AND ca.id IN (${catIds})
+      AND a.dataexclusao IS NULL
       ${timeFilter}
   `
 
@@ -565,6 +567,7 @@ async function queryPeriodMixInline(
         AND ${dateCol} <  $2
         ${statusFilter}
         AND ca.id IN (${catIds})
+        AND a.dataexclusao IS NULL
         ${timeFilter}
     ),
     classificado AS (
