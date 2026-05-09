@@ -145,6 +145,7 @@ async function queryBigNumbers(
   const sql = `
     WITH ${cteBaseSuiteDays(catIds)},
     ${cteSuiteDaysTotal()},
+    ${cteSuiteDaysByCategory()},
     receita_consumo AS (
       SELECT
         la.id_apartamentostate AS id_locacao,
@@ -155,6 +156,7 @@ async function queryBigNumbers(
       INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
       INNER JOIN apartamento a       ON aps.id_apartamento = a.id
       INNER JOIN categoriaapartamento ca_apt ON a.id_categoriaapartamento = ca_apt.id
+      INNER JOIN suite_dias_por_cat  spc ON ca_apt.descricao = spc.categoria
       INNER JOIN vendalocacao vl     ON la.id_apartamentostate = vl.id_locacaoapartamento
       INNER JOIN saidaestoque se     ON vl.id_saidaestoque = se.id
       INNER JOIN saidaestoqueitem sei ON se.id = sei.id_saidaestoque
@@ -163,7 +165,6 @@ async function queryBigNumbers(
         ${statusFilter}
         AND sei.cancelado IS NULL
         AND ca_apt.id IN (${catIds})
-        AND a.dataexclusao IS NULL
         ${timeFilter}
       GROUP BY la.id_apartamentostate
     ),
@@ -205,12 +206,12 @@ async function queryBigNumbers(
     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
     INNER JOIN apartamento a        ON aps.id_apartamento = a.id
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+    INNER JOIN suite_dias_por_cat  spc ON ca.descricao = spc.categoria
     LEFT JOIN  receita_consumo rc   ON la.id_apartamentostate = rc.id_locacao
     WHERE ${dateCol} >= $1
       AND ${dateCol} <  $2
       ${statusFilter}
       AND ca.id IN (${catIds})
-      AND a.dataexclusao IS NULL
       ${timeFilter}
   `
 
@@ -554,7 +555,9 @@ async function queryPeriodMixInline(
   const validPeriods = UNIT_VALID_PERIODS_PM[unitSlug]
 
   const sql = `
-    WITH base AS (
+    WITH ${cteBaseSuiteDays(catIds)},
+    ${cteSuiteDaysByCategory()},
+    base AS (
       SELECT
         EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 AS dur,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)                                       AS h_in,
@@ -563,11 +566,11 @@ async function queryPeriodMixInline(
       INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
       INNER JOIN apartamento a        ON aps.id_apartamento = a.id
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      INNER JOIN suite_dias_por_cat  spc ON ca.descricao = spc.categoria
       WHERE ${dateCol} >= $1
         AND ${dateCol} <  $2
         ${statusFilter}
         AND ca.id IN (${catIds})
-        AND a.dataexclusao IS NULL
         ${timeFilter}
     ),
     classificado AS (
