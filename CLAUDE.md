@@ -1068,6 +1068,15 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `competitors-section.tsx`: toggle ≈ com localStorage para matches aproximados (ex: 2h ≈ 3h); indicador `≈2h` em violeta; `periodoAproximado` e `competitorPeriodo` propagados pelo pipeline
   - **Armadilha:** `onClick={submit}` vira `onClick={() => submit()}` quando `submit` aceita `overrideText?` — MouseEvent não é string
 
+- **LHG-187:** feat(cron+agente): atualização diária de concorrentes Guia GM + bootstrap de aprendizado histórico ✅ 2026-05-09
+  - **Cron Guia GM:** `src/lib/competitors/cron-update.ts` — `updateGuiaCompetitorsForUnit(unitId)`: filtra `competitor_urls` com `mode='guia'`, chama `scrapeGuiaUrl` para cada URL, upsert em `competitor_snapshots`, `detectPriceChanges` + `computeAndPersistGaps`; adicionado no loop do cron diário em `run-reviews.ts` — gratuito e instantâneo, sem slot extra no Hobby
+  - **Bootstrap de aprendizado:** `src/lib/agente/bootstrap-learning.ts` — `bootstrapPricingLessons(unitId, unitSlug)` trata cada par de imports adjacentes como "experimento natural": compara KPIs nos 28 dias antes e 28 dias após a troca de tabela; insere em `rm_pricing_lessons` com `proposal_id: null` e `conditions.source='bootstrap'`; chama `computeAndPersistElasticity` ao fim
+  - Auto-skip se unidade já tem ≥5 lições com `proposal_id IS NOT NULL` (dados reais têm prioridade)
+  - `POST /api/admin/bootstrap-learning` — trigger manual admin+; aceita `{ unitSlug? }` para uma unidade ou todas em paralelo
+  - Cron verifica `lessonCount === 0` antes de rodar bootstrap (fast no-op após primeira execução)
+  - **Armadilha:** `proposal_id: null` já é suportado pelo schema (nullable em `database.types.ts`) — sem migration necessária
+  - **STRATEGY_MODEL** confirmado como `openai/gpt-4.1-mini` via BYOK (mudança feita em LHG-122 — CLAUDE.md estava desatualizado)
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
