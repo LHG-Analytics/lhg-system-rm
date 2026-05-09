@@ -9,6 +9,8 @@ import { runAnomalyDetection } from '@/lib/anomaly/detector'
 import { computeAndPersistElasticity } from '@/lib/pricing/elasticity'
 import { syncBudgetForUnit } from '@/lib/budget/google-sheets'
 import { generateWeeklyReport } from '@/lib/reports/generate-weekly-report'
+import { updateGuiaCompetitorsForUnit } from '@/lib/competitors/cron-update'
+import { bootstrapPricingLessons } from '@/lib/agente/bootstrap-learning'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { buildSystemPrompt } from '@/lib/agente/system-prompt'
@@ -463,6 +465,29 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
           .limit(1)
           .maybeSingle()
         await runAnomalyDetection(cfg.unit_id, unitSlug, notifyTarget?.user_id ?? null)
+      } catch {
+        // Não bloqueia o cron
+      }
+
+      // Concorrentes: atualiza snapshots de modo 'guia' diariamente.
+      // Gratuito e instantâneo — sem Apify, sem tokens de IA.
+      try {
+        await updateGuiaCompetitorsForUnit(cfg.unit_id)
+      } catch {
+        // Não bloqueia o cron
+      }
+
+      // Bootstrap: popula rm_pricing_lessons a partir do histórico de tabelas importadas.
+      // Roda apenas 1x por unidade (auto-skip quando já há lições). Dispara elasticidade
+      // imediatamente, sem esperar pelos checkpoints de 7/14/28 dias.
+      try {
+        const { count: lessonCount } = await admin
+          .from('rm_pricing_lessons')
+          .select('id', { count: 'exact', head: true })
+          .eq('unit_id', cfg.unit_id)
+        if ((lessonCount ?? 0) === 0) {
+          await bootstrapPricingLessons(cfg.unit_id, unitSlug)
+        }
       } catch {
         // Não bloqueia o cron
       }
