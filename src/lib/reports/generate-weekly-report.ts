@@ -443,32 +443,14 @@ export async function generateWeeklyReport(
         : '',
     }
 
-    // Calcula linha Balcão/Walk-in como diferença entre total de KPIs e canais digitais
-    const channelMixRows = channelKPIs.map(c => ({
-      canal: c.canal,
-      label: c.label,
-      reservas: c.reservas,
-      receita: c.receita,
-      representatividade: c.representatividade,
-    }))
-    const sumChannelReceita = channelMixRows.reduce((acc, c) => acc + c.receita, 0)
-    const sumChannelReservas = channelMixRows.reduce((acc, c) => acc + c.reservas, 0)
-    const sumRepresentatividade = channelMixRows.reduce((acc, c) => acc + c.representatividade, 0)
-    const balcaoReceita = Math.max(0, currentSnapshot.receita - sumChannelReceita)
-    const balcaoLocacoes = Math.max(0, currentSnapshot.locacoes - sumChannelReservas)
-    const balcaoRepresentatividade = Math.max(0, +(100 - sumRepresentatividade).toFixed(1))
-    if (balcaoReceita > 0 || balcaoLocacoes > 0) {
-      channelMixRows.push({
-        canal: 'BALCAO',
-        label: 'Balcão / Walk-in',
-        reservas: balcaoLocacoes,
-        receita: balcaoReceita,
-        representatividade: balcaoRepresentatividade,
-      })
-    }
-
     const demand: WeeklyReportData['demand'] = {
-      channelMix: channelMixRows,
+      channelMix: channelKPIs.map(c => ({
+        canal: c.canal,
+        label: c.label,
+        reservas: c.reservas,
+        receita: c.receita,
+        representatividade: c.representatividade,
+      })),
       periodMix: periodMix.map(p => ({
         periodo: p.rentalType,
         locacoes: p.locacoes,

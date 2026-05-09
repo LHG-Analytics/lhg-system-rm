@@ -29,12 +29,13 @@ export function DemandSection({ data }: Props) {
         <div className="px-5 pb-5 space-y-5">
           {data.channelMix.length > 0 && (
             <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Mix por canal</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Mix por canal</p>
+              <p className="text-xs text-muted-foreground mb-2">Canais de reserva digital — % sobre receita total da unidade.</p>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-xs text-muted-foreground border-b">
                     <th className="text-left pb-1 font-medium">Canal</th>
-                    <th className="text-right pb-1 font-medium">Reservas</th>
+                    <th className="text-right pb-1 font-medium">Atend.</th>
                     <th className="text-right pb-1 font-medium">Receita</th>
                     <th className="text-right pb-1 font-medium">Ticket</th>
                     <th className="text-right pb-1 font-medium">% Receita</th>
