@@ -247,6 +247,7 @@ export async function queryPeriodMix(
         ${statusFilter}
         ${timeFilter}
         AND ca.id IN (${idList})
+        AND la.datafinaldaocupacao IS NOT NULL
     ),
     classificado AS (
       SELECT

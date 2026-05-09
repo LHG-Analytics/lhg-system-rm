@@ -129,6 +129,8 @@ export interface WeeklyReportData {
       medianaConc: number
       gapPct: number
       position: 'underprice' | 'aligned' | 'overprice'
+      categoriaConc?: string
+      competitorName?: string
     }[]
     changesDetectedCount: number
     changesDirection: 'up' | 'down' | 'mixed' | 'none'

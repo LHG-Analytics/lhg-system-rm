@@ -179,10 +179,10 @@ export async function generateWeeklyReport(
         .lte('approved_at', periodEnd + 'T23:59:59Z'),
       // rm_competitor_price_gaps: colunas corretas do banco
       admin.from('rm_competitor_price_gaps')
-        .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position')
+        .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position, categoria_competitor, competitor_name')
         .eq('unit_id', unit.id)
         .order('gap_pct', { ascending: false })
-        .limit(15),
+        .limit(60),
       getUpcomingSeasonalFactors(unit.id, 14),
       admin.from('unit_events')
         .select('title, event_date, event_type, impact_description')
@@ -288,10 +288,10 @@ export async function generateWeeklyReport(
 
         // Re-busca gaps após recompute
         const freshGaps = await admin.from('rm_competitor_price_gaps')
-          .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position')
+          .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position, categoria_competitor, competitor_name')
           .eq('unit_id', unit.id)
           .order('gap_pct', { ascending: false })
-          .limit(15)
+          .limit(60)
         if (!freshGaps.error) competitorGaps = freshGaps.data ?? []
       } catch { /* auto-refresh silencioso — não bloqueia o relatório */ }
     }
@@ -480,6 +480,8 @@ export async function generateWeeklyReport(
         medianaConc: g.preco_concorrente_mediana ?? 0,
         gapPct: g.gap_pct ?? 0,
         position: (g.position ?? 'aligned') as 'underprice' | 'aligned' | 'overprice',
+        categoriaConc: (g as { categoria_competitor?: string }).categoria_competitor ?? undefined,
+        competitorName: (g as { competitor_name?: string }).competitor_name ?? undefined,
       })),
       changesDetectedCount: 0,
       changesDirection: 'none',
