@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { ChevronDown, ChevronUp, Globe, AlertTriangle, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WeeklyReportData } from '@/lib/reports/types'
@@ -45,6 +45,17 @@ const sortPeriods = (a: string, b: string) => {
 
 export function CompetitorsSection({ data }: Props) {
   const [open, setOpen] = useState(true)
+  const [showApprox, setShowApprox] = useState(false)
+
+  useEffect(() => {
+    if (localStorage.getItem('competitors-show-approx') === 'true') setShowApprox(true)
+  }, [])
+
+  const handleToggleApprox = () => {
+    const next = !showApprox
+    setShowApprox(next)
+    localStorage.setItem('competitors-show-approx', String(next))
+  }
 
   // Lista de concorrentes únicos (excluindo fallback 'mercado')
   const competitorNames = useMemo(() => {
@@ -80,10 +91,18 @@ export function CompetitorsSection({ data }: Props) {
     )
   }
 
-  // Filtra gaps pelo concorrente selecionado
-  const filteredGaps = effectiveCompetitor
+  // Gaps do concorrente selecionado (antes do filtro de aproximados)
+  const gapsByCompetitor = effectiveCompetitor
     ? data.gaps.filter(g => g.competitorName === effectiveCompetitor)
     : data.gaps
+
+  // Verifica se há gaps aproximados para exibir o toggle
+  const hasApproxGaps = gapsByCompetitor.some(g => g.periodoAproximado)
+
+  // Aplica filtro de aproximados
+  const filteredGaps = showApprox
+    ? gapsByCompetitor
+    : gapsByCompetitor.filter(g => !g.periodoAproximado)
 
   // Posição dominante do concorrente selecionado
   const posCounts = { underprice: 0, aligned: 0, overprice: 0 }
@@ -133,7 +152,7 @@ export function CompetitorsSection({ data }: Props) {
       {open && (
         <div className="px-5 pb-5 space-y-5">
           <p className="text-xs text-muted-foreground">
-            Preço nosso vs mediana do concorrente selecionado (snapshots dos últimos 7 dias). Gap negativo = abaixo do mercado; positivo = acima.
+            Preço nosso vs mediana do concorrente selecionado (snapshots dos últimos 14 dias). Gap negativo = abaixo do mercado; positivo = acima.
           </p>
 
           {/* Seletor de concorrentes — aparece apenas com 2+ concorrentes */}
@@ -155,6 +174,23 @@ export function CompetitorsSection({ data }: Props) {
                 </button>
               ))}
             </div>
+          )}
+
+          {/* Toggle de períodos equivalentes — só aparece quando há gaps aproximados */}
+          {hasApproxGaps && (
+            <button
+              onClick={handleToggleApprox}
+              className={cn(
+                'flex items-center gap-1.5 text-xs px-3 py-1 rounded-full border transition-colors',
+                showApprox
+                  ? 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/30 dark:text-violet-400 dark:border-violet-800'
+                  : 'bg-muted/40 text-muted-foreground border-border hover:bg-muted/60'
+              )}
+            >
+              <span className="font-medium tabular-nums">≈</span>
+              Incluir períodos equivalentes
+              <span className="text-muted-foreground/60">(ex: 2h ≈ 3h)</span>
+            </button>
           )}
 
           {categorias.length === 0 && (
@@ -231,9 +267,23 @@ export function CompetitorsSection({ data }: Props) {
                       const fds    = byDia['fds_feriado'] ?? byDia['todos']
                       const hasTodos = !byDia['semana'] && !byDia['fds_feriado'] && !!byDia['todos']
 
+                      // Detecta match aproximado e qual período o concorrente usa
+                      const isApprox = semana?.periodoAproximado || fds?.periodoAproximado
+                      const compPer  = semana?.competitorPeriodo ?? fds?.competitorPeriodo
+
                       return (
                         <tr key={per} className="border-b last:border-0">
-                          <td className="py-1.5 font-medium text-xs">{per}</td>
+                          <td className="py-1.5 font-medium text-xs">
+                            <span>{per}</span>
+                            {isApprox && compPer && (
+                              <span
+                                className="ml-1 text-[10px] text-violet-500 font-normal"
+                                title={`Concorrente usa ${compPer} (match aproximado)`}
+                              >
+                                ≈{compPer}
+                              </span>
+                            )}
+                          </td>
                           {hasTodos ? (
                             <>
                               <GapCell g={byDia['todos']} />

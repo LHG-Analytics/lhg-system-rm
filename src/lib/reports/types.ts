@@ -133,6 +133,10 @@ export interface WeeklyReportData {
       competitorName?: string
       /** Comodidades que temos e o concorrente não tem (vantagem qualitativa) */
       amenityAdvantage?: string[]
+      /** Período real do concorrente quando houve match aproximado (ex: "2h" para nosso "3h") */
+      competitorPeriodo?: string
+      /** TRUE quando o período foi aproximado para casar com o nosso */
+      periodoAproximado?: boolean
     }[]
     changesDetectedCount: number
     changesDirection: 'up' | 'down' | 'mixed' | 'none'

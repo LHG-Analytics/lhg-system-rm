@@ -176,7 +176,7 @@ export async function generateWeeklyReport(
         .lte('approved_at', periodEnd + 'T23:59:59Z'),
       // rm_competitor_price_gaps: colunas corretas do banco
       admin.from('rm_competitor_price_gaps')
-        .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position, categoria_competitor, competitor_name')
+        .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position, categoria_competitor, competitor_name, competitor_periodo, is_approximated')
         .eq('unit_id', unit.id)
         .order('gap_pct', { ascending: false })
         .limit(200),
@@ -248,7 +248,7 @@ export async function generateWeeklyReport(
       if ((snapshotCount ?? 0) > 0) {
         await computeAndPersistGaps(unit.id, 14)
         const freshGaps = await admin.from('rm_competitor_price_gaps')
-          .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position, categoria_competitor, competitor_name')
+          .select('categoria_nossa, periodo, dia_tipo, preco_nosso, preco_concorrente_mediana, gap_pct, position, categoria_competitor, competitor_name, competitor_periodo, is_approximated')
           .eq('unit_id', unit.id)
           .order('gap_pct', { ascending: false })
           .limit(200)
@@ -485,6 +485,8 @@ export async function generateWeeklyReport(
           categoriaConc: catConc || undefined,
           competitorName: compName || undefined,
           amenityAdvantage,
+          competitorPeriodo: g.competitor_periodo ?? undefined,
+          periodoAproximado: g.is_approximated ?? false,
         }
       }),
       changesDetectedCount: 0,

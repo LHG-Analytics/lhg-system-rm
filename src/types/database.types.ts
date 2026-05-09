@@ -869,10 +869,12 @@ export type Database = {
           categoria_competitor: string | null
           categoria_nossa: string
           competitor_name: string
+          competitor_periodo: string | null
           computed_at: string
           dia_tipo: string
           gap_pct: number
           id: string
+          is_approximated: boolean
           periodo: string
           position: string
           preco_concorrente_max: number | null
@@ -886,10 +888,12 @@ export type Database = {
           categoria_competitor?: string | null
           categoria_nossa: string
           competitor_name: string
+          competitor_periodo?: string | null
           computed_at?: string
           dia_tipo: string
           gap_pct: number
           id?: string
+          is_approximated?: boolean
           periodo: string
           position: string
           preco_concorrente_max?: number | null
@@ -903,10 +907,12 @@ export type Database = {
           categoria_competitor?: string | null
           categoria_nossa?: string
           competitor_name?: string
+          competitor_periodo?: string | null
           computed_at?: string
           dia_tipo?: string
           gap_pct?: number
           id?: string
+          is_approximated?: boolean
           periodo?: string
           position?: string
           preco_concorrente_max?: number | null

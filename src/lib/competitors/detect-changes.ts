@@ -42,7 +42,11 @@ export interface CompetitorGap {
   preco_concorrente_max:     number
   gap_pct:                   number
   position:                  'underprice' | 'aligned' | 'overprice'
-  competitor_name:           string  // representativo (mediana mais próxima)
+  competitor_name:           string
+  /** Período real do concorrente quando aproximado (ex: "2h" para nosso "3h"). */
+  competitor_periodo?:       string
+  /** TRUE quando o período foi aproximado para casar com o nosso. */
+  is_approximated?:          boolean
 }
 
 function getAdmin() {
@@ -120,6 +124,20 @@ function normalizePeriod(p: string): string {
   if (lower.includes('day use') || lower.includes('dayuse')) return 'dayuse'
   if (lower.includes('diária') || lower.includes('diaria')) return 'diaria'
   return lower
+}
+
+/** Converte período normalizado "2h"/"3h" etc. em número de horas. Retorna null se não parseable */
+function parseHoursFromPeriod(normPeriod: string): number | null {
+  const m = normPeriod.match(/^(\d+(?:\.\d+)?)h$/)
+  return m ? parseFloat(m[1]) : null
+}
+
+/** Faixa de horas aceita para match aproximado por nosso período normalizado */
+function approxHoursRange(ourNorm: string): [number, number] | null {
+  if (ourNorm === '3h')  return [1.5, 3.75]
+  if (ourNorm === '6h')  return [3.75, 7.5]
+  if (ourNorm === '12h') return [7.5, 16]
+  return null
 }
 
 /**
@@ -419,6 +437,8 @@ export async function computeAndPersistGaps(
     dia: string,
     bucket: Bucket,
     competitorName: string,
+    competitorPeriodo?: string,
+    isApproximated?: boolean,
   ): CompetitorGap {
     const med     = +median(bucket.precos).toFixed(2)
     const min     = +Math.min(...bucket.precos).toFixed(2)
@@ -438,6 +458,8 @@ export async function computeAndPersistGaps(
       gap_pct,
       position,
       competitor_name:           competitorName,
+      competitor_periodo:        competitorPeriodo,
+      is_approximated:           isApproximated,
     }
   }
 
@@ -457,13 +479,32 @@ export async function computeAndPersistGaps(
       // Busca bucket da suite fixada para este período
       const key         = `${matchedCompCatLower}|${per}|${dia}`
       const fallbackKey = `${matchedCompCatLower}|${per}|todos`
-      const bucket      = compData.catBuckets.get(key) ?? compData.catBuckets.get(fallbackKey)
+      let bucket = compData.catBuckets.get(key) ?? compData.catBuckets.get(fallbackKey)
+      let approxPeriodo: string | undefined
+
+      // Match aproximado de período: 2h→3h, 4h→6h etc. (concorrentes com grades diferentes)
+      if (!bucket) {
+        const range = approxHoursRange(per)
+        if (range) {
+          let bestDist = Infinity
+          for (const [bKey, bBucket] of compData.catBuckets) {
+            const parts = bKey.split('|')
+            if (parts[0] !== matchedCompCatLower) continue
+            if (parts[2] !== dia && parts[2] !== 'todos') continue
+            const bHours = parseHoursFromPeriod(parts[1])
+            if (bHours === null || bHours < range[0] || bHours >= range[1]) continue
+            const ourHours = parseHoursFromPeriod(per) ?? 0
+            const dist = Math.abs(bHours - ourHours)
+            if (dist < bestDist) { bestDist = dist; bucket = bBucket; approxPeriodo = parts[1] }
+          }
+        }
+      }
 
       if (!bucket || !bucket.precos.length) continue
       if (median(bucket.precos) === 0) continue
 
       anyMatched = true
-      gaps.push(makeGap(r, cat, per, dia, bucket, competitorName))
+      gaps.push(makeGap(r, cat, per, dia, bucket, competitorName, approxPeriodo, !!approxPeriodo))
     }
 
     // Fallback de mercado apenas quando nenhum concorrente emparelhou
@@ -494,6 +535,8 @@ export async function computeAndPersistGaps(
       preco_concorrente_max:     g.preco_concorrente_max,
       gap_pct:                   g.gap_pct,
       position:                  g.position,
+      competitor_periodo:        g.competitor_periodo ?? null,
+      is_approximated:           g.is_approximated ?? false,
     })))
 
   if (error) {
@@ -528,6 +571,8 @@ export async function getRecentGaps(unitId: string): Promise<CompetitorGap[]> {
     gap_pct:                   Number(g.gap_pct),
     position:                  g.position as CompetitorGap['position'],
     competitor_name:           g.competitor_name,
+    competitor_periodo:        g.competitor_periodo ?? undefined,
+    is_approximated:           g.is_approximated ?? false,
   }))
 }
 
