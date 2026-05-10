@@ -109,9 +109,16 @@ export function buildUnitStructureBlock(
     )
   }
 
+  // Identifica categorias volume-constrained (≤ 2 suítes no total)
+  const volumeConstrained = availability.filter((r) => r.total <= 2)
+
+  const vcWarning = volumeConstrained.length > 0
+    ? `\n\n> ⚠️ **CATEGORIAS VOLUME-CONSTRAINED** (inventário ≤ 2 suítes — ${volumeConstrained.map((r) => r.categoria).join(', ')}): o giro e a ocupação dessas categorias são ESTRUTURALMENTE LIMITADOS pelo inventário, não pelo preço. NÃO reduzir preço para perseguir giro — isso só reduz receita sem aumentar volume. Estratégia obrigatória: maximizar RevPAR e ticket médio. Giro/ocupação baixos são ESPERADOS e aceitáveis quando comparados a categorias com mais suítes.`
+    : ''
+
   return `## Estrutura da unidade
 
 ${sections.join('\n\n')}
 
-> Use estes dados para cálculos de margem e nunca pergunte ao usuário o total de suítes ou comissões — eles estão acima. Suítes bloqueadas (em obras, manutenção etc) NÃO contam como disponíveis para venda.`
+> Use estes dados para cálculos de margem e nunca pergunte ao usuário o total de suítes ou comissões — eles estão acima. Suítes bloqueadas (em obras, manutenção etc) NÃO contam como disponíveis para venda.${vcWarning}`
 }
