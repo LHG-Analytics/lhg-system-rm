@@ -724,7 +724,9 @@ export async function POST(req: NextRequest) {
         'Palavras como "oportunidades", "melhorias", "analisar", "investigar", "revisar", "sugestões" ' +
         'NÃO autorizam chamar esta tool — nesses casos, use sugerir_respostas com "Gerar proposta de preços" como opção. ' +
         'A aprovação final acontece na aba Propostas, nunca no chat. ' +
-        'Após salvar, NÃO repita "a proposta foi salva" no texto — apenas use sugerir_respostas.',
+        'Após salvar: ZERO texto adicional. Chame APENAS sugerir_respostas com opções de PRÓXIMOS PASSOS ' +
+        '(ex: "Agendar revisão", "Gerar proposta de descontos", "Analisar outra categoria"). ' +
+        'NUNCA inclua "Gerar proposta de preços" ou "Quer que eu gere a proposta?" no sugerir_respostas pós-save — a proposta já está salva.',
       inputSchema: z.object({
         context: z.string().describe('Resumo em 2–3 frases da lógica geral da proposta'),
         rows: z.array(z.object({
