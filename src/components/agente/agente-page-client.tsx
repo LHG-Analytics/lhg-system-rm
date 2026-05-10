@@ -1,11 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { Plus, MessageSquare, Trash2, BotMessageSquare, ClipboardCheck, CalendarClock, Settings2, BarChart2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { AgenteChat } from '@/components/agente/agente-chat'
@@ -47,6 +52,7 @@ function isAwaitingResponse(msgs: UIMessage[]): boolean {
 
 export function AgenteChatPage({ activeUnit, initialProposals, userRole, units = [], displayName, timezone }: AgenteChatPageProps) {
   const searchParams = useSearchParams()
+  const router   = useRouter()
   const unitId   = activeUnit?.id   ?? ''
   const unitSlug = searchParams.get('unit') ?? activeUnit?.slug ?? ''
   const [configOpen, setConfigOpen] = useState(false)
@@ -62,6 +68,8 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
   const [activeTab,        setActiveTab]        = useState('chat')
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null)
   const [contextMode,      setContextMode]      = useState<ContextMode>('org')
+  const [deleteConfirmId, setDeleteConfirmId]   = useState<string | null>(null)
+  const [isDeleting,      setIsDeleting]        = useState(false)
 
   // Reseta o chat quando a unidade muda (troca via sidebar)
   const prevUnitIdRef = useRef<string>('')
@@ -99,6 +107,9 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
   }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-submit via ?q= param (deep link do relatório semanal)
+  // IMPORTANTE: após capturar o ?q=, remove o parâmetro da URL imediatamente via
+  // router.replace — sem isso, ao navegar para outra página e voltar o componente
+  // remonta, lê ?q= novamente e cria uma segunda conversa/proposta duplicada.
   const [autoSubmitPrompt, setAutoSubmitPrompt] = useState<string | null>(() => searchParams.get('q'))
   const handledQParam = useRef(false)
   useEffect(() => {
@@ -106,6 +117,10 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
     const qParam = searchParams.get('q')
     if (qParam) {
       handledQParam.current = true
+      // Remove ?q= da URL antes de qualquer coisa para não duplicar ao navegar
+      const url = new URL(window.location.href)
+      url.searchParams.delete('q')
+      router.replace(url.pathname + url.search, { scroll: false })
       // Garante nova conversa para o auto-submit
       handleNewConversation()
     }
@@ -291,10 +306,24 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
     )
   }
 
-  async function handleDeleteConversation(id: string, e: React.MouseEvent) {
+  function handleDeleteConversation(id: string, e: React.MouseEvent) {
     e.stopPropagation()
+    setDeleteConfirmId(id)
+  }
+
+  async function confirmDeleteConversation() {
+    if (!deleteConfirmId) return
+    const id = deleteConfirmId
+    setIsDeleting(true)
     const supabase = createClient()
-    await supabase.from('rm_conversations').delete().eq('id', id)
+    const { error } = await supabase.from('rm_conversations').delete().eq('id', id)
+    setIsDeleting(false)
+    setDeleteConfirmId(null)
+    if (error) {
+      console.error('[confirmDeleteConversation]', error)
+      alert(`Não foi possível excluir a conversa: ${error.message}`)
+      return
+    }
     setConversations((prev) => prev.filter((c) => c.id !== id))
     if (selectedConvId === id) handleNewConversation()
   }
@@ -316,6 +345,27 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
   const awaitingResponse = selectedConvId ? isAwaitingResponse(currentMsgs) : false
 
   return (
+    <>
+    <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null) }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Excluir conversa?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Esta ação não pode ser desfeita. A conversa será removida permanentemente.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={confirmDeleteConversation}
+            disabled={isDeleting}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {isDeleting ? 'Excluindo…' : 'Excluir'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <div className="flex flex-1 min-h-0 h-full gap-4">
 
       {/* ── Sidebar de histórico ─────────────────────────────────────── */}
@@ -531,5 +581,6 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
         </TabsContent>
       </Tabs>
     </div>
+    </>
   )
 }
