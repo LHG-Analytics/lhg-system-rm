@@ -451,14 +451,12 @@ export async function POST(req: NextRequest) {
     valid_until: imp.valid_until,
   }))
 
-  // 6. Buscar config + clima + concorrentes + eventos + capacity + histórico + guardrails em paralelo
+  // 6. Buscar config + capacity + guardrails em paralelo (contexto essencial estático)
+  // Concorrentes, histórico, sazonalidade e eventos são carregados via ferramentas lazy.
   const snapshotCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const [
     agentConfigResult,
-    competitorResult,
-    eventsResult,
     capacityResult,
-    approvedHistoryResult,
     guardrailsResult,
     channelCostsResult,
   ] = await Promise.allSettled([
@@ -468,30 +466,10 @@ export async function POST(req: NextRequest) {
       .eq('unit_id', unit.id)
       .maybeSingle(),
     admin
-      .from('competitor_snapshots')
-      .select('competitor_name, mapped_prices, scraped_at, raw_text')
-      .eq('unit_id', unit.id)
-      .eq('status', 'done')
-      .gte('scraped_at', snapshotCutoff)
-      .order('scraped_at', { ascending: false }),
-    admin
-      .from('unit_events')
-      .select('title, event_date, event_end_date, event_type, impact_description')
-      .eq('unit_id', unit.id)
-      .order('event_date', { ascending: false })
-      .limit(30),
-    admin
       .from('unit_capacity')
       .select('categoria, custo_variavel_locacao, notes')
       .eq('unit_id', unit.id)
       .order('categoria'),
-    admin
-      .from('price_proposals')
-      .select('id, rows, context, reviewed_at, kpi_baseline')
-      .eq('unit_id', unit.id)
-      .eq('status', 'approved')
-      .order('reviewed_at', { ascending: false })
-      .limit(3),
     admin
       .from('agent_price_guardrails')
       .select('categoria, periodo, dia_tipo, preco_minimo, preco_maximo')
@@ -533,50 +511,9 @@ export async function POST(req: NextRequest) {
     ? `\n\n## Contexto estratégico da unidade (compartilhado)\n${sharedContext}`
     : ''
 
-  // Calendário de eventualidades — todos os eventos da unidade
-  const unitEventRows = eventsResult.status === 'fulfilled' ? (eventsResult.value.data ?? []) : []
-  const eventsContext = unitEventRows.length
-    ? `## Calendário de Eventualidades — ${unit.name}\n` +
-      'Eventos registrados que podem ter afetado ou que afetarão o desempenho da unidade.\n' +
-      'Ao analisar um período que coincide com um desses eventos, mencione proativamente o contexto.\n\n' +
-      unitEventRows.map((e) => {
-        const icons: Record<string, string> = { positivo: '🟢', negativo: '🔴', neutro: '⚪' }
-        const icon = icons[e.event_type as string] ?? '⚪'
-        const dateStr = e.event_end_date && e.event_end_date !== e.event_date
-          ? `${e.event_date} → ${e.event_end_date}`
-          : String(e.event_date)
-        return `${icon} **${e.title}** (${dateStr})${e.impact_description ? `: ${e.impact_description}` : ''}`
-      }).join('\n')
-    : null
-
-  // Monta bloco de concorrentes para o system prompt
+  // Tipos auxiliares para o bloco de concorrentes (usado na ferramenta lazy buscar_analise_concorrentes)
   interface CMappedPrice { categoria_concorrente: string; periodo: string; preco: number; dia_tipo?: string }
   interface CGuiaMeta { mode: 'guia'; amenitiesBySuite?: Record<string, string[]>; amenities?: string[] }
-  const competitorSnaps = competitorResult.status === 'fulfilled' ? (competitorResult.value.data ?? []) : []
-  const competitorBlock = competitorSnaps.length
-    ? `## Preços de concorrentes (última análise — referência de mercado)\n\n` +
-      competitorSnaps.map((snap) => {
-        const prices = (snap.mapped_prices as unknown as CMappedPrice[]) ?? []
-        if (!prices.length) return `**${snap.competitor_name}**: sem preços extraídos`
-        const date = new Date(snap.scraped_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-        let amenitiesBlock = ''
-        try {
-          const meta = JSON.parse((snap as { raw_text?: string }).raw_text ?? '') as CGuiaMeta
-          if (meta.mode === 'guia') {
-            if (meta.amenitiesBySuite && Object.keys(meta.amenitiesBySuite).length) {
-              const lines = Object.entries(meta.amenitiesBySuite)
-                .map(([s, ams]) => `  - **${s}**: ${ams.join(', ')}`).join('\n')
-              amenitiesBlock = `\n  Comodidades:\n${lines}`
-            }
-          }
-        } catch { /* não é JSON */ }
-        const lines = prices.map((p) =>
-          `  | ${p.categoria_concorrente} | ${p.periodo} | ${p.dia_tipo ?? 'todos'} | R$ ${p.preco.toFixed(2)} |`
-        ).join('\n')
-        return `**${snap.competitor_name}** (${date})${amenitiesBlock}\n  | Suíte | Período | Dia | Preço |\n  |-------|---------|-----|-------|\n${lines}`
-      }).join('\n\n') +
-      '\n\n> Compare comodidades equivalentes ao sugerir posicionamento de preço.'
-    : ''
 
   // Bloco de comodidades das nossas suítes
   const ownAmenitiesBlock = Object.keys(suiteAmenities).length
@@ -593,43 +530,17 @@ export async function POST(req: NextRequest) {
   // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
   const capacityRows = capacityResult.status === 'fulfilled' ? (capacityResult.value.data ?? []) : []
   const channelCostRows = channelCostsResult.status === 'fulfilled' ? (channelCostsResult.value.data ?? []) : []
-  // Para chat, scenario é amplo (toda a unidade) — sem rows específicos como em propostas
-  const chatLessonsScenario = priceImports[0]?.rows?.length
-    ? {
-        categorias: [...new Set(priceImports[0].rows.map((r) => r.categoria))],
-        periodos:   [...new Set(priceImports[0].rows.map((r) => r.periodo))],
-        dias_tipo:  [...new Set(priceImports[0].rows.map((r) => r.dia_tipo))],
-      }
-    : {}
-  const [availabilityRows, realtimeOccupancy, reservationPace, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps, weatherContext] = await Promise.all([
+  const [availabilityRows, realtimeOccupancy, reservationPace, weatherContext] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
     getReservationPace(unit.slug).catch(() => null),
-    buildRejectionLessonsBlock(unit.id).catch(() => ''),
-    buildLessonsBlockForUnit(unit.id, chatLessonsScenario).catch(() => ''),
-    getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
-    getRecentGaps(unit.id).catch(() => []),
     fetchWeatherContext(city).catch(() => null),
   ])
-  const seasonalityBlock = buildSeasonalityBlock(seasonalFactors)
-  const competitorGapBlock = buildCompetitorGapBlock(competitorGaps)
 
-  // Memória estratégica + guardrails (texto) para o chat
-  const approvedHistoryRows = approvedHistoryResult.status === 'fulfilled'
-    ? (approvedHistoryResult.value.data ?? [])
-    : []
+  // Guardrails sempre no prompt estático — safety-critical para o agente
   const guardrailRowsForBlock = guardrailsResult.status === 'fulfilled'
     ? (guardrailsResult.value.data ?? [])
     : []
-
-  // Para o chat, kpiAfter = primeiro período (ativo); kpiBefore opcional
-  const kpiAfterForMemory  = kpiPeriods[0]?.company ?? null
-  const kpiBeforeForMemory = kpiPeriods[1]?.company ?? null
-  const memoryBlock = buildStrategicMemoryBlock(
-    approvedHistoryRows,
-    kpiAfterForMemory,
-    kpiBeforeForMemory,
-  )
   const guardrailsTextBlock = buildGuardrailsBlock(guardrailRowsForBlock)
   const unitStructureBlock = buildUnitStructureBlock(
     availabilityRows,
@@ -652,10 +563,12 @@ export async function POST(req: NextRequest) {
 
   const paceBlock = buildPaceBlock(reservationPace)
 
+  // Contexto estático: KPIs, estrutura, config, metas, clima — dados operacionais essenciais.
+  // Histórico, concorrentes, sazonalidade e eventos são carregados via ferramentas lazy.
   const systemPrompt =
     buildSystemPrompt(
       unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext,
-      contextMode === 'org' ? eventsContext : null,
+      null,
       unitStructureBlock || null,
     ) +
     `\n\n${agentConfigBlock}` +
@@ -665,13 +578,7 @@ export async function POST(req: NextRequest) {
     (forecastBlock ? `\n\n${forecastBlock}` : '') +
     (paceBlock ? `\n\n${paceBlock}` : '') +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
-    (competitorBlock ? `\n\n${competitorBlock}` : '') +
-    (memoryBlock ? `\n\n${memoryBlock}` : '') +
-    (guardrailsTextBlock ? `\n\n${guardrailsTextBlock}` : '') +
-    (seasonalityBlock ? `\n\n${seasonalityBlock}` : '') +
-    (competitorGapBlock ? `\n\n${competitorGapBlock}` : '') +
-    (pricingLessonsBlock ? `\n\n${pricingLessonsBlock}` : '') +
-    (rejectionLessonsBlock ? `\n\n${rejectionLessonsBlock}` : '')
+    (guardrailsTextBlock ? `\n\n${guardrailsTextBlock}` : '')
 
   const agentTools = {
     buscar_kpis_periodo: tool({
@@ -894,6 +801,125 @@ export async function POST(req: NextRequest) {
           console.error(`[agente/automo] Erro query (${unit.slug}):`, msg)
           return `Erro ao consultar Automo: ${msg}`
         }
+      },
+    }),
+
+    buscar_historico_propostas: tool({
+      description:
+        'Busca o histórico de propostas de preço aprovadas e lições extraídas de rejeições. ' +
+        'Use antes de gerar uma nova proposta (para não repetir padrões rejeitados), ' +
+        'quando o usuário perguntar sobre decisões passadas, ou para avaliar se a estratégia está evoluindo. ' +
+        'Inclui: últimas 3 propostas aprovadas com impacto nos KPIs e últimas rejeições com motivo estruturado.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        const [historyResult, rejBlock] = await Promise.allSettled([
+          admin
+            .from('price_proposals')
+            .select('id, rows, context, reviewed_at, kpi_baseline')
+            .eq('unit_id', unit.id)
+            .eq('status', 'approved')
+            .order('reviewed_at', { ascending: false })
+            .limit(3),
+          buildRejectionLessonsBlock(unit.id).catch(() => ''),
+        ])
+        const approvedRows = historyResult.status === 'fulfilled' ? (historyResult.value.data ?? []) : []
+        const rejLessons   = rejBlock.status === 'fulfilled' ? rejBlock.value : ''
+        const kpiAfter  = kpiPeriods[0]?.company ?? null
+        const kpiBefore = kpiPeriods[1]?.company ?? null
+        const memory = buildStrategicMemoryBlock(approvedRows, kpiAfter, kpiBefore)
+        const parts = [memory, rejLessons].filter(Boolean)
+        return parts.length ? parts.join('\n\n') : 'Nenhum histórico de propostas aprovadas encontrado para esta unidade.'
+      },
+    }),
+
+    buscar_analise_concorrentes: tool({
+      description:
+        'Busca preços de concorrentes (últimos 7 dias) e o gap de posicionamento atual por categoria/período. ' +
+        'Use quando o usuário pedir comparação com concorrentes, quiser saber o posicionamento de mercado, ' +
+        'ou antes de propor mudanças de preço baseadas em mercado.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        const [snapsResult, gaps] = await Promise.all([
+          admin
+            .from('competitor_snapshots')
+            .select('competitor_name, mapped_prices, scraped_at, raw_text')
+            .eq('unit_id', unit.id)
+            .eq('status', 'done')
+            .gte('scraped_at', snapshotCutoff)
+            .order('scraped_at', { ascending: false }),
+          getRecentGaps(unit.id).catch(() => []),
+        ])
+        const snaps = snapsResult.data ?? []
+        const cBlock = snaps.length
+          ? `## Preços de concorrentes (última análise — referência de mercado)\n\n` +
+            snaps.map((snap) => {
+              const prices = (snap.mapped_prices as unknown as CMappedPrice[]) ?? []
+              if (!prices.length) return `**${snap.competitor_name}**: sem preços extraídos`
+              const date = new Date(snap.scraped_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+              let amenBlock = ''
+              try {
+                const meta = JSON.parse((snap as { raw_text?: string }).raw_text ?? '') as CGuiaMeta
+                if (meta.mode === 'guia' && meta.amenitiesBySuite && Object.keys(meta.amenitiesBySuite).length) {
+                  const lines = Object.entries(meta.amenitiesBySuite)
+                    .map(([s, ams]) => `  - **${s}**: ${ams.join(', ')}`).join('\n')
+                  amenBlock = `\n  Comodidades:\n${lines}`
+                }
+              } catch { /* não é JSON */ }
+              const lines = prices.map((p) =>
+                `  | ${p.categoria_concorrente} | ${p.periodo} | ${p.dia_tipo ?? 'todos'} | R$ ${p.preco.toFixed(2)} |`
+              ).join('\n')
+              return `**${snap.competitor_name}** (${date})${amenBlock}\n  | Suíte | Período | Dia | Preço |\n  |-------|---------|-----|-------|\n${lines}`
+            }).join('\n\n') +
+            '\n\n> Compare comodidades equivalentes ao sugerir posicionamento de preço.'
+          : 'Nenhum snapshot de concorrentes disponível nos últimos 7 dias.'
+        const gapBlock = buildCompetitorGapBlock(gaps)
+        const parts = [cBlock, gapBlock].filter(Boolean)
+        return parts.join('\n\n') || 'Sem dados de concorrentes disponíveis.'
+      },
+    }),
+
+    buscar_sazonalidade_e_eventos: tool({
+      description:
+        'Busca fatores de sazonalidade dos próximos 30 dias, lições de pricing de experimentos passados, ' +
+        'e o calendário de eventualidades da unidade (feriados, eventos, obras). ' +
+        'Use antes de gerar propostas para datas futuras, quando o usuário perguntar sobre feriados ou sazonalidade, ' +
+        'ou ao planejar precificação de fim de semana/feriado específico.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        const scenario = priceImports[0]?.rows?.length
+          ? {
+              categorias: [...new Set(priceImports[0].rows.map((r) => r.categoria))],
+              periodos:   [...new Set(priceImports[0].rows.map((r) => r.periodo))],
+              dias_tipo:  [...new Set(priceImports[0].rows.map((r) => r.dia_tipo))],
+            }
+          : {}
+        const [seasonFactors, lessonsBlock, eventsResult] = await Promise.all([
+          getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
+          buildLessonsBlockForUnit(unit.id, scenario).catch(() => ''),
+          admin
+            .from('unit_events')
+            .select('title, event_date, event_end_date, event_type, impact_description')
+            .eq('unit_id', unit.id)
+            .order('event_date', { ascending: false })
+            .limit(30),
+        ])
+        const seasonBlock = buildSeasonalityBlock(seasonFactors)
+        const evRows = eventsResult.data ?? []
+        const evBlock = evRows.length
+          ? `## Calendário de Eventualidades — ${unit.name}\n` +
+            'Eventos registrados que podem ter afetado ou que afetarão o desempenho.\n' +
+            'Ao analisar um período que coincide com um desses eventos, mencione o contexto.\n\n' +
+            evRows.map((e) => {
+              const icons: Record<string, string> = { positivo: '🟢', negativo: '🔴', neutro: '⚪' }
+              const icon = icons[e.event_type as string] ?? '⚪'
+              const dateStr = e.event_end_date && e.event_end_date !== e.event_date
+                ? `${e.event_date} → ${e.event_end_date}`
+                : String(e.event_date)
+              return `${icon} **${e.title}** (${dateStr})${e.impact_description ? `: ${e.impact_description}` : ''}`
+            }).join('\n')
+          : ''
+        const parts = [seasonBlock, lessonsBlock, evBlock].filter(Boolean)
+        return parts.length ? parts.join('\n\n') : 'Sem dados de sazonalidade e eventos para esta unidade.'
       },
     }),
   }
