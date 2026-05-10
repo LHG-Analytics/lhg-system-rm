@@ -355,10 +355,13 @@ export async function POST(req: NextRequest) {
         periodMix: tyCompany?.BillingRentalType,
       }]
     } else if (priceImps.length === 1) {
-      // Uma tabela: desde valid_from até hoje
+      // Uma tabela: período padrão = mês atual (1º → hoje), alinhado com o dashboard
       const imp = priceImps[0]
       rawImports = [imp]
-      const apiFrom = isoToApi(imp.valid_from)
+      const monthStart = todayIso.slice(0, 7) + '-01' // YYYY-MM-01
+      // Se a tabela foi importada após o início do mês, usa o valid_from como limite inferior
+      const effectiveFrom = maxDate(imp.valid_from, monthStart)
+      const apiFrom = isoToApi(effectiveFrom)
       const apiTo   = isoToApi(todayIso)
       const [companyResult, channelResult] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, apiFrom, apiTo),
