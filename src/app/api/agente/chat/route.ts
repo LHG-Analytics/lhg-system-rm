@@ -630,9 +630,11 @@ export async function POST(req: NextRequest) {
         'Palavras como "oportunidades", "melhorias", "analisar", "investigar", "revisar", "sugestões" ' +
         'NÃO autorizam chamar esta tool — nesses casos, use sugerir_respostas com "Gerar proposta de preços" como opção. ' +
         'A aprovação final acontece na aba Propostas, nunca no chat. ' +
-        'Após salvar: ZERO texto adicional. Chame APENAS sugerir_respostas com opções de PRÓXIMOS PASSOS ' +
-        '(ex: "Agendar revisão", "Gerar proposta de descontos", "Analisar outra categoria"). ' +
-        'NUNCA inclua "Gerar proposta de preços" ou "Quer que eu gere a proposta?" no sugerir_respostas pós-save — a proposta já está salva.',
+        'FLUXO OBRIGATÓRIO APÓS SALVAR: (1) avalie imediatamente o desconto do Guia de Motéis — se houver ' +
+        'oportunidade de ajuste (share fora de 15–40% ou ajuste possível por dia/faixa horária), ' +
+        'chame salvar_proposta_desconto ANTES de qualquer outra coisa; ' +
+        '(2) depois chame sugerir_respostas. ZERO texto entre as tool calls. ' +
+        'NUNCA inclua "Gerar proposta de descontos" no sugerir_respostas — já foi avaliado proativamente.',
       inputSchema: z.object({
         context: z.string().describe('Resumo em 2–3 frases da lógica geral da proposta'),
         rows: z.array(z.object({
@@ -665,11 +667,15 @@ export async function POST(req: NextRequest) {
 
     salvar_proposta_desconto: tool({
       description:
-        'Salva uma proposta de ajuste de desconto do Guia de Motéis no banco de dados. ' +
-        'Use quando o usuário pedir análise de canais e o Guia de Motéis estiver com desempenho baixo ou alto — ' +
-        'proponha ajuste de desconto baseado no share de canal e nos dados de giro/ocupação. ' +
-        'O preço efetivo (preco_base × (1 − desconto_proposto_pct/100)) NUNCA pode ficar abaixo do guardrail mínimo. ' +
-        'Após salvar, use sugerir_respostas com opções de próximos passos — NÃO escreva texto adicional.',
+        'Salva uma proposta de ajuste de desconto do Guia de Motéis. ' +
+        'Use PROATIVAMENTE após salvar qualquer proposta de preços — não espere o usuário pedir. ' +
+        'O desconto impacta o faturamento efetivo: preco_base × (1 − desconto/100) = receita real por locação do Guia. ' +
+        'Reduzir desconto excessivo aumenta margem; aumentar desconto insuficiente recupera volume no canal. ' +
+        'Avalie: share do Guia no total (ideal 15–40%), desconto por categoria/período/dia da semana/faixa horária. ' +
+        'Salve a proposta se: share fora de 15–40% OU há oportunidade de ajuste em dia ou faixa horária específica. ' +
+        'Se nenhum ajuste necessário, escreva "O desconto atual do Guia está adequado" antes de sugerir_respostas. ' +
+        'O preço efetivo NUNCA pode ficar abaixo do guardrail mínimo. ' +
+        'Após salvar: ZERO texto — chame sugerir_respostas diretamente.',
       inputSchema: z.object({
         context: z.string().describe('Resumo em 2–3 frases da lógica da proposta de desconto'),
         rows: z.array(z.object({
