@@ -18,6 +18,10 @@ interface AgentSidePanelProps {
   userRole: string
 }
 
+function storageKey(unitId: string) {
+  return `lhg-panel-conv-${unitId}`
+}
+
 function AgentSidePanelInner({ units }: AgentSidePanelProps) {
   const pathname     = usePathname()
   const searchParams = useSearchParams()
@@ -30,9 +34,32 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
   const unitSlug   = searchParams.get('unit') ?? units[0]?.slug ?? ''
   const activeUnit = units.find((u) => u.slug === unitSlug) ?? units[0]
 
-  // Carrega última conversa ao abrir o painel
-  const loadedForRef = useRef('')
+  // Persiste o convId no localStorage para sobreviver a remounts por Suspense
+  useEffect(() => {
+    if (!activeUnit || !selectedConvId) return
+    try { localStorage.setItem(storageKey(activeUnit.id), selectedConvId) } catch {}
+  }, [selectedConvId, activeUnit?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Carrega uma conversa específica por ID
+  const loadConversationById = useCallback(async (unitId: string, convId: string) => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('rm_conversations')
+      .select('id, messages')
+      .eq('unit_id', unitId)
+      .eq('id', convId)
+      .maybeSingle()
+
+    if (data) {
+      setSelectedConvId(data.id)
+      setSelectedMessages((data.messages as unknown as UIMessage[]) ?? [])
+    } else {
+      // convId salvo não existe mais — cai no fallback de última conversa
+      loadLastConversation(unitId) // eslint-disable-line
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Carrega a última conversa da unidade
   const loadLastConversation = useCallback(async (unitId: string) => {
     const supabase = createClient()
     const { data } = await supabase
@@ -49,20 +76,42 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
     }
   }, [])
 
+  // Ref para saber se já carregamos para este unit+chatKey
+  const loadedForRef = useRef('')
+  // Ref para ler selectedConvId sem adicionar como dep no effect principal
+  const selectedConvIdRef = useRef<string | null>(null)
+  useEffect(() => { selectedConvIdRef.current = selectedConvId }, [selectedConvId])
+
   useEffect(() => {
     if (!isOpen || !activeUnit) return
     const key = `${activeUnit.id}:${chatKey}`
-    if (loadedForRef.current === key) return
-    loadedForRef.current = key
 
+    // Nova conversa solicitada explicitamente
     if (chatKey > 0) {
+      if (loadedForRef.current === key) return
+      loadedForRef.current = key
       setSelectedConvId(null)
       setSelectedMessages(undefined)
+      try { localStorage.removeItem(storageKey(activeUnit.id)) } catch {}
       return
     }
 
+    // Já carregou para este key E tem conversa montada — não refaz
+    if (loadedForRef.current === key && selectedConvIdRef.current) return
+    loadedForRef.current = key
+
+    // Tenta restaurar a partir do localStorage (sobrevive remounts por Suspense)
+    try {
+      const savedConvId = localStorage.getItem(storageKey(activeUnit.id))
+      if (savedConvId) {
+        loadConversationById(activeUnit.id, savedConvId)
+        return
+      }
+    } catch {}
+
+    // Sem localStorage — carrega a última conversa do banco
     loadLastConversation(activeUnit.id)
-  }, [isOpen, activeUnit?.id, chatKey, loadLastConversation]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, activeUnit?.id, chatKey, loadConversationById, loadLastConversation]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resetar ao trocar de unidade
   const prevSlugRef = useRef(unitSlug)
@@ -79,6 +128,9 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
   }, [unitSlug, isOpen])
 
   function handleNewConversation() {
+    if (activeUnit) {
+      try { localStorage.removeItem(storageKey(activeUnit.id)) } catch {}
+    }
     loadedForRef.current = `${activeUnit?.id ?? ''}:new`
     setSelectedConvId(null)
     setSelectedMessages(undefined)

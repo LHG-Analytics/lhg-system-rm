@@ -719,10 +719,12 @@ export async function POST(req: NextRequest) {
     salvar_proposta: tool({
       description:
         'Salva a proposta de ajuste de preços no sistema para registro e revisão pelo gerente. ' +
-        'Chame IMEDIATAMENTE ao concluir a tabela de proposta — não espere o usuário aprovar. ' +
+        'CHAME SOMENTE se o último pedido do usuário contiver explicitamente: "proposta", "proponha", ' +
+        '"gerar proposta", "crie uma proposta", "faça uma proposta", "nova tabela de preços" ou equivalente direto. ' +
+        'Palavras como "oportunidades", "melhorias", "analisar", "investigar", "revisar", "sugestões" ' +
+        'NÃO autorizam chamar esta tool — nesses casos, use sugerir_respostas com "Gerar proposta de preços" como opção. ' +
         'A aprovação final acontece na aba Propostas, nunca no chat. ' +
-        'Após salvar, NÃO repita "a proposta foi salva" no texto — isso já aparece como chip de confirmação. ' +
-        'Apenas use sugerir_respostas com as opções de próximos passos.',
+        'Após salvar, NÃO repita "a proposta foi salva" no texto — apenas use sugerir_respostas.',
       inputSchema: z.object({
         context: z.string().describe('Resumo em 2–3 frases da lógica geral da proposta'),
         rows: z.array(z.object({
