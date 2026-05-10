@@ -669,11 +669,12 @@ export async function POST(req: NextRequest) {
       description:
         'Salva uma proposta de ajuste de desconto do Guia de Motéis. ' +
         'Use PROATIVAMENTE após salvar qualquer proposta de preços — não espere o usuário pedir. ' +
-        'O desconto impacta o faturamento efetivo: preco_base × (1 − desconto/100) = receita real por locação do Guia. ' +
-        'Reduzir desconto excessivo aumenta margem; aumentar desconto insuficiente recupera volume no canal. ' +
-        'Avalie: share do Guia no total (ideal 15–40%), desconto por categoria/período/dia da semana/faixa horária. ' +
-        'Salve a proposta se: share fora de 15–40% OU há oportunidade de ajuste em dia ou faixa horária específica. ' +
-        'Se nenhum ajuste necessário, escreva "O desconto atual do Guia está adequado" antes de sugerir_respostas. ' +
+        'Fluxo obrigatório: (1) chame buscar_padrao_horario para ver demanda por dia × faixa horária; ' +
+        '(2) compute margem real = preco_base × (1 - desconto/100) × (1 - comissao_guia/100) ' +
+        '   usando a comissão em "Comissões por canal" da estrutura da unidade; ' +
+        '(3) compare share do Guia — saudável = 5–20%; < 5% = invisível; > 20% = dependência excessiva; ' +
+        '(4) salve proposta se share fora de 5–20% OU ajuste possível em faixa de baixa/alta demanda; ' +
+        '(5) se nenhum ajuste, escreva "O desconto atual do Guia está adequado (share X%, margem Y%)". ' +
         'O preço efetivo NUNCA pode ficar abaixo do guardrail mínimo. ' +
         'Após salvar: ZERO texto — chame sugerir_respostas diretamente.',
       inputSchema: z.object({
@@ -881,6 +882,95 @@ export async function POST(req: NextRequest) {
         const gapBlock = buildCompetitorGapBlock(gaps)
         const parts = [cBlock, gapBlock].filter(Boolean)
         return parts.join('\n\n') || 'Sem dados de concorrentes disponíveis.'
+      },
+    }),
+
+    buscar_padrao_horario: tool({
+      description:
+        'Retorna o volume de locações por dia da semana × faixa horária (padrão: últimos 60 dias). ' +
+        'Use SEMPRE antes de gerar proposta de desconto do Guia de Motéis — os dados identificam ' +
+        'faixas com baixa demanda (candidatas a aumento de desconto) e alta demanda ' +
+        '(candidatas a redução de desconto), por dia específico. ' +
+        'As faixas horárias retornadas (00:00-05:59 / 06:00-11:59 / 12:00-17:59 / 18:00-23:59) ' +
+        'são compatíveis com a estrutura de descontos do Guia.',
+      inputSchema: z.object({
+        days: z.number().optional().describe('Dias retroativos para análise (padrão: 60)'),
+      }),
+      execute: async ({ days = 60 }) => {
+        const pool = getAutomPool(unit.slug)
+        if (!pool) return `Conexão Automo não configurada para ${unit.slug}.`
+
+        const categoryIds = UNIT_CATEGORY_IDS[unit.slug]
+        if (!categoryIds?.length) return 'IDs de categoria não configurados para esta unidade.'
+
+        const idList = categoryIds.join(',')
+        const sql = `
+          WITH slots AS (
+            SELECT
+              EXTRACT(DOW FROM la.datainicialdaocupacao)::int AS dow,
+              CASE
+                WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 6  THEN '00:00-05:59'
+                WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 12 THEN '06:00-11:59'
+                WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 18 THEN '12:00-17:59'
+                ELSE '18:00-23:59'
+              END AS faixa,
+              COUNT(*) AS locacoes
+            FROM locacaoapartamento la
+            INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+            INNER JOIN apartamento a        ON aps.id_apartamento = a.id
+            INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+            WHERE la.datainicialdaocupacao >= CURRENT_DATE - INTERVAL '${days} days'
+              AND la.fimocupacaotipo = 'FINALIZADA'
+              AND ca.id IN (${idList})
+            GROUP BY 1, 2
+          )
+          SELECT
+            CASE dow
+              WHEN 0 THEN 'domingo' WHEN 1 THEN 'segunda' WHEN 2 THEN 'terca'
+              WHEN 3 THEN 'quarta'  WHEN 4 THEN 'quinta'  WHEN 5 THEN 'sexta'
+              WHEN 6 THEN 'sabado'
+            END AS dia_semana,
+            faixa AS faixa_horaria,
+            SUM(locacoes)::int AS locacoes,
+            ROUND(SUM(locacoes) * 100.0 / SUM(SUM(locacoes)) OVER (), 1) AS share_pct
+          FROM slots
+          GROUP BY dow, faixa
+          ORDER BY dow, faixa
+        `
+
+        try {
+          const result = await pool.query<{
+            dia_semana: string; faixa_horaria: string; locacoes: number; share_pct: number
+          }>(sql)
+
+          if (!result.rows.length) return 'Sem dados de locações para o período informado.'
+
+          const total = result.rows.reduce((acc, r) => acc + r.locacoes, 0)
+          const avgShare = 100 / result.rows.length
+          const header = `Padrão de demanda — ${unit.name} | últimos ${days} dias | ${total} locações\n\n`
+          const table = [
+            '| Dia da Semana | Faixa Horária | Locações | Share % |',
+            '|---------------|---------------|----------|---------|',
+            ...result.rows.map((r) =>
+              `| ${r.dia_semana} | ${r.faixa_horaria} | ${r.locacoes} | ${r.share_pct}% |`
+            ),
+          ].join('\n')
+
+          const low  = result.rows.filter((r) => r.share_pct < avgShare * 0.7)
+            .map((r) => `${r.dia_semana} ${r.faixa_horaria} (${r.share_pct}%)`)
+          const high = result.rows.filter((r) => r.share_pct > avgShare * 1.4)
+            .map((r) => `${r.dia_semana} ${r.faixa_horaria} (${r.share_pct}%)`)
+
+          const insights = [
+            low.length  ? `\n\n🔵 Baixa demanda (candidatas a aumento de desconto Guia): ${low.join(', ')}` : '',
+            high.length ? `\n🟢 Alta demanda (candidatas a redução de desconto Guia): ${high.join(', ')}` : '',
+          ].join('')
+
+          return header + table + insights
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          return `Erro ao consultar padrão horário: ${msg}`
+        }
       },
     }),
 
