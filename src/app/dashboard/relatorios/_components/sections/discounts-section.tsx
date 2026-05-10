@@ -13,7 +13,7 @@ export function DiscountsSection({ data }: Props) {
   const [open, setOpen] = useState(true)
 
   const shareDelta = data.guiaSharePct - data.guiaSharePrevWeek
-  const shareStatus = data.guiaSharePct > 40 ? 'high' : 'ok'
+  const shareStatus = data.guiaSharePct > 20 ? 'high' : data.guiaSharePct < 5 ? 'low' : 'ok'
 
   const DeltaIcon = shareDelta > 0.5 ? TrendingUp : shareDelta < -0.5 ? TrendingDown : Minus
 
@@ -27,7 +27,8 @@ export function DiscountsSection({ data }: Props) {
           <h3 className="font-medium text-sm">⑥ Descontos Guia de Motéis</h3>
           <span className={cn(
             'text-xs font-medium px-2 py-0.5 rounded-full',
-            shareStatus === 'ok' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+            shareStatus === 'ok'   ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+            shareStatus === 'low'  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
             'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
           )}>
             Participação {data.guiaSharePct.toFixed(1)}%
@@ -41,7 +42,7 @@ export function DiscountsSection({ data }: Props) {
           {/* Explicação + 3 cards de participação */}
           <div>
             <p className="text-xs text-muted-foreground mb-3">
-              % das reservas via planos Go e Programado do Guia de Motéis. Menos participação = menos dependência de descontos e maior margem. O objetivo é manter sempre abaixo de 40%.
+              % das reservas via planos Go e Programado do Guia de Motéis. Faixa saudável: 5–20%. Abaixo de 5% = invisível no canal (considere aumentar desconto); acima de 20% = dependência excessiva (avalie reduzir desconto para melhorar margem).
             </p>
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-lg bg-muted/50 p-3 text-center">
@@ -52,13 +53,16 @@ export function DiscountsSection({ data }: Props) {
               </div>
               <div className={cn(
                 'rounded-lg p-3 text-center border-2',
-                shareStatus === 'ok' ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800' :
+                shareStatus === 'ok'  ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800' :
+                shareStatus === 'low' ? 'bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-800' :
                 'bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800'
               )}>
                 <p className="text-xs text-muted-foreground mb-1">Este período</p>
                 <p className={cn(
                   'text-xl font-semibold',
-                  shareStatus === 'ok' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
+                  shareStatus === 'ok'  ? 'text-emerald-700 dark:text-emerald-400' :
+                  shareStatus === 'low' ? 'text-blue-700 dark:text-blue-400' :
+                  'text-amber-700 dark:text-amber-400'
                 )}>
                   {data.guiaSharePct.toFixed(1)}%
                 </p>
@@ -73,9 +77,11 @@ export function DiscountsSection({ data }: Props) {
                 )}
               </div>
               <div className="rounded-lg bg-muted/50 p-3 text-center border border-dashed">
-                <p className="text-xs text-muted-foreground mb-1">Máx. recomendado</p>
-                <p className="text-xl font-semibold text-muted-foreground">40%</p>
-                <p className="text-xs text-muted-foreground mt-0.5">minimize este canal</p>
+                <p className="text-xs text-muted-foreground mb-1">Faixa saudável</p>
+                <p className="text-xl font-semibold text-muted-foreground">5–20%</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {shareStatus === 'low' ? 'invisível no canal' : shareStatus === 'high' ? 'dependência excessiva' : 'participação ideal'}
+                </p>
               </div>
             </div>
           </div>
