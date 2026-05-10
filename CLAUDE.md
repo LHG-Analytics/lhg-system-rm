@@ -1077,6 +1077,16 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Armadilha:** `proposal_id: null` já é suportado pelo schema (nullable em `database.types.ts`) — sem migration necessária
   - **STRATEGY_MODEL** confirmado como `openai/gpt-4.1-mini` via BYOK (mudança feita em LHG-122 — CLAUDE.md estava desatualizado)
 
+- **LHG-188:** feat(agente): painel lateral flutuante do Agente RM em todas as páginas ✅ 2026-05-09
+  - `src/components/agente/agent-side-panel.tsx`: FAB fixo `bottom-6 right-6 z-40` abre `Sheet side="right" w-[440px]` com `AgenteChat` completo
+  - Oculto automaticamente em `/dashboard/agente` via `usePathname()`
+  - Header: ícone `BotMessageSquare` + nome da unidade + botão Nova conversa (`Plus`) + link página completa (`ExternalLink`) + fechar (`X`); `showCloseButton={false}` no `SheetContent` evita botão X duplicado
+  - `useSearchParams()` resolve unidade ativa do `?unit=` da URL; fallback para `units[0]`
+  - `prevSlugRef` detecta troca de unidade e reseta `chatKey` (remonta chat) apenas se painel estiver aberto
+  - Exporta `AgentSidePanel` que envolve o inner com `<Suspense fallback={null}>` (necessário pelo `useSearchParams`)
+  - `dashboard/layout.tsx`: importa e renderiza após `</SidebarInset>`, dentro de `<Suspense fallback={null}>`
+  - **Armadilha:** `AgenteChat` usa `flex flex-col flex-1 min-h-0` no container pai para o scroll interno funcionar — container do painel usa `flex flex-col flex-1 min-h-0 overflow-hidden`
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
