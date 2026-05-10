@@ -6,6 +6,7 @@ import { AppSidebar } from '@/components/app-sidebar'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import { AgentStreamingProvider } from '@/components/agente/agent-streaming-provider'
+import { AgentSidePanel } from '@/components/agente/agent-side-panel'
 import { OnboardingGuide } from '@/components/onboarding/onboarding-guide'
 import {
   SidebarInset,
@@ -96,6 +97,9 @@ export default async function DashboardLayout({
           </AgentStreamingProvider>
         </main>
       </SidebarInset>
+      <Suspense fallback={null}>
+        <AgentSidePanel units={units} userRole={profile.role ?? ''} />
+      </Suspense>
     </SidebarProvider>
   )
 }
