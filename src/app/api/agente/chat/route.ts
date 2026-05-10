@@ -23,6 +23,7 @@ import {
 import { fetchWeatherContext } from '@/lib/agente/weather'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
+import { queryDemandPattern } from '@/lib/automo/demand-pattern'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 import type { PriceImportForPrompt, KPIPeriod, VigenciaInfo } from '@/lib/agente/system-prompt'
@@ -903,79 +904,37 @@ export async function POST(req: NextRequest) {
         days: z.number().optional().describe('Dias retroativos para análise (padrão: 60)'),
       }),
       execute: async ({ days = 60 }) => {
-        const pool = getAutomPool(unit.slug)
-        if (!pool) return `Conexão Automo não configurada para ${unit.slug}.`
-
-        const categoryIds = UNIT_CATEGORY_IDS[unit.slug]
-        if (!categoryIds?.length) return 'IDs de categoria não configurados para esta unidade.'
-
-        const idList = categoryIds.join(',')
-        const sql = `
-          WITH slots AS (
-            SELECT
-              EXTRACT(DOW FROM la.datainicialdaocupacao)::int AS dow,
-              CASE
-                WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 6  THEN '00:00-05:59'
-                WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 12 THEN '06:00-11:59'
-                WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 18 THEN '12:00-17:59'
-                ELSE '18:00-23:59'
-              END AS faixa,
-              COUNT(*) AS locacoes
-            FROM locacaoapartamento la
-            INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
-            INNER JOIN apartamento a        ON aps.id_apartamento = a.id
-            INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-            WHERE la.datainicialdaocupacao >= CURRENT_DATE - INTERVAL '${days} days'
-              AND la.fimocupacaotipo = 'FINALIZADA'
-              AND ca.id IN (${idList})
-            GROUP BY 1, 2
-          )
-          SELECT
-            CASE dow
-              WHEN 0 THEN 'domingo' WHEN 1 THEN 'segunda' WHEN 2 THEN 'terca'
-              WHEN 3 THEN 'quarta'  WHEN 4 THEN 'quinta'  WHEN 5 THEN 'sexta'
-              WHEN 6 THEN 'sabado'
-            END AS dia_semana,
-            faixa AS faixa_horaria,
-            SUM(locacoes)::int AS locacoes,
-            ROUND(SUM(locacoes) * 100.0 / SUM(SUM(locacoes)) OVER (), 1) AS share_pct
-          FROM slots
-          GROUP BY dow, faixa
-          ORDER BY dow, faixa
-        `
-
+        if (!getAutomPool(unit.slug)) return `Conexão Automo não configurada para ${unit.slug}.`
+        if (!UNIT_CATEGORY_IDS[unit.slug]?.length) return 'IDs de categoria não configurados para esta unidade.'
         try {
-          const result = await pool.query<{
-            dia_semana: string; faixa_horaria: string; locacoes: number; share_pct: number
-          }>(sql)
+          const pattern = await queryDemandPattern(unit.slug, days)
+          if (!pattern) return 'Sem dados de locações para o período informado.'
 
-          if (!result.rows.length) return 'Sem dados de locações para o período informado.'
-
-          const total = result.rows.reduce((acc, r) => acc + r.locacoes, 0)
-          const avgShare = 100 / result.rows.length
-          const header = `Padrão de demanda — ${unit.name} | últimos ${days} dias | ${total} locações\n\n`
+          const header = `Padrão de demanda — ${unit.name} | últimos ${days} dias | ${pattern.totalLocacoes} locações\n\n`
           const table = [
             '| Dia da Semana | Faixa Horária | Locações | Share % |',
             '|---------------|---------------|----------|---------|',
-            ...result.rows.map((r) =>
+            ...pattern.rows.map(r =>
               `| ${r.dia_semana} | ${r.faixa_horaria} | ${r.locacoes} | ${r.share_pct}% |`
             ),
           ].join('\n')
 
-          const low  = result.rows.filter((r) => r.share_pct < avgShare * 0.7)
-            .map((r) => `${r.dia_semana} ${r.faixa_horaria} (${r.share_pct}%)`)
-          const high = result.rows.filter((r) => r.share_pct > avgShare * 1.4)
-            .map((r) => `${r.dia_semana} ${r.faixa_horaria} (${r.share_pct}%)`)
-
-          const insights = [
-            low.length  ? `\n\n🔵 Baixa demanda (candidatas a aumento de desconto Guia): ${low.join(', ')}` : '',
-            high.length ? `\n🟢 Alta demanda (candidatas a redução de desconto Guia): ${high.join(', ')}` : '',
-          ].join('')
-
-          return header + table + insights
+          const lines: string[] = [header + table]
+          if (pattern.fdsSemanaRatio !== null) {
+            lines.push(`\nRatio FDS÷Semana: ${pattern.fdsSemanaRatio.toFixed(2)}x`)
+          }
+          if (pattern.highDemandDays.length > 0) {
+            lines.push(`Dias com demanda acima da média: ${pattern.highDemandDays.join(', ')} — candidatos a tier próprio`)
+          }
+          if (pattern.lowDemandSlots.length > 0) {
+            lines.push(`\n🔵 Baixa demanda (estímulo): ${pattern.lowDemandSlots.join(', ')}`)
+          }
+          if (pattern.highDemandSlots.length > 0) {
+            lines.push(`🟢 Alta demanda (preço agressivo): ${pattern.highDemandSlots.join(', ')}`)
+          }
+          return lines.join('\n')
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
-          return `Erro ao consultar padrão horário: ${msg}`
+          return `Erro ao consultar padrão horário: ${err instanceof Error ? err.message : String(err)}`
         }
       },
     }),

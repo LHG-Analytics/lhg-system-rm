@@ -18,6 +18,7 @@ import { buildStrategicMemoryBlock } from '@/lib/agente/context-blocks'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
+import { queryDemandPattern, buildDemandPatternBlock } from '@/lib/automo/demand-pattern'
 
 const MONTH_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
@@ -140,6 +141,7 @@ export async function generateWeeklyReport(
       agentConfigResult,
       suiteAvailResult,
       prevReportResult,
+      demandPatternResult,
     ] = await Promise.allSettled([
       fetchCompanyKPIsFromAutomo(unitSlug, startDDMM, endDDMM),
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(prevStartStr), isoToDDMMYYYY(prevEndStr)),
@@ -211,6 +213,7 @@ export async function generateWeeklyReport(
         .lt('period_start', periodStart)
         .order('period_start', { ascending: false })
         .limit(1),
+      queryDemandPattern(unitSlug, 60),
     ])
 
     const guardrailsResult = await admin
@@ -237,6 +240,7 @@ export async function generateWeeklyReport(
     const agentConfig = agentConfigResult.status === 'fulfilled' ? agentConfigResult.value.data : null
     const suiteAvail = suiteAvailResult.status === 'fulfilled' ? suiteAvailResult.value : []
     const prevReport = prevReportResult.status === 'fulfilled' ? prevReportResult.value.data?.[0] : null
+    const demandPattern = demandPatternResult.status === 'fulfilled' ? demandPatternResult.value : null
     const guardrailsCount = guardrailsResult.count ?? 0
 
     // Recomputa gaps usando snapshots existentes (análise já feita na aba Concorrentes).
@@ -424,9 +428,9 @@ export async function generateWeeklyReport(
         ticket: p.ticket,
         pct: p.percent,
       })),
-      peakDow: 'sexta-feira',
-      peakHourRange: '20h–22h',
-      valleyDow: 'quarta-feira',
+      peakDow: demandPattern?.highDemandDays[0] ?? 'sexta-feira',
+      peakHourRange: demandPattern?.highDemandSlots[0]?.match(/\d{2}:\d{2}-\d{2}:\d{2}/)?.[0] ?? '18:00-23:59',
+      valleyDow: demandPattern?.lowDemandSlots[0]?.split(' ')[0] ?? 'quarta-feira',
     }
 
     // Carrega amenidades dos concorrentes para calcular vantagem qualitativa
@@ -782,6 +786,11 @@ export async function generateWeeklyReport(
     // Capacidade e estrutura da unidade
     const unitStructureBlock = buildUnitStructureBlock(suiteAvail, [], [])
 
+    // Padrão de demanda hora × dia — fundamental para calibrar premium FDS/semana e detectar tiers
+    const demandPatternCtx = demandPattern
+      ? '\n' + buildDemandPatternBlock(demandPattern, unit.name, 60)
+      : ''
+
     // Contexto histórico de tabelas (aprendizado de mudanças passadas)
     const historicalCtx = historicalInsights.length > 0 ? `
 ## Histórico de mudanças de tabela (aprendizado)
@@ -795,6 +804,7 @@ Analise o contexto operacional completo de ${unit.name} (${periodStart}–${peri
 ${kpiBlock}
 ${priceTableCtx}
 ${discountCtx}
+${demandPatternCtx}
 ${competitorBlock}
 ${seasonalityBlock}
 ${elasticityBlock}
