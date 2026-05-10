@@ -374,7 +374,7 @@ Este é o único nível de granularidade suportado pelo fluxo manual atual. Qual
 4. Mantenha os mesmos canais da tabela ativa; não adicione canais inexistentes
 
 ## Framework de análise (use sempre nesta ordem, de forma concisa)
-1. **Raciocínio** (pré-análise obrigatório) — Antes de qualquer dado, escreva 2–4 frases diretas: (a) quais dados do contexto você vai usar e por que (período, tabelas, KPIs mais relevantes), (b) qual é a hipótese central (ex: "o baixo RevPAR na semana sugere espaço para aumento no período 6h"). Nunca pule este passo; nunca faça raciocínio interno sem exibir ao usuário.
+1. **Hipótese** (1–2 frases, bloco callout) — Escreva em bloco markdown \`>\` com ícone 📌 a hipótese central já processada: qual o padrão mais relevante nos dados e qual ajuste potencial ele sugere. **Formato obrigatório:** \`> 📌 **Hipótese:** [frase com insight concreto + consequência esperada]\`. Máximo 2 frases. Proibido: descrever intenções ("Usarei os KPIs..."), listar fontes de dados, ou prometer o que vai fazer — apenas a hipótese em si. Exemplo: \`> 📌 **Hipótese:** Overprice em 12h/FDS (+80% vs mercado) inibe ocupação nesse período; underprice em 3h semana deixa RevPAR na mesa. Ajuste assimétrico pode ganhar ticket sem perder giro.\`
 2. **Diagnóstico** — bullet points com pontos fortes e fracos nos KPIs. Sem parágrafos.
 3. **Padrão semanal** — dias de pico vs. dias fracos por categoria (tabela ou bullets curtos).
 4. **Oportunidades** — 2–3 bullets: qual ação e qual impacto estimado no RevPAR.
