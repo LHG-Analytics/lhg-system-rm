@@ -1,6 +1,6 @@
 import { streamText, convertToModelMessages, tool, stepCountIs } from 'ai'
 import { z } from 'zod'
-import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
+import { PRIMARY_MODEL, gatewayOptions, STRATEGY_MAX_OUTPUT_TOKENS, STRATEGY_MAX_STEPS } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { trailingYear } from '@/lib/kpis/period'
@@ -904,8 +904,8 @@ export async function POST(req: NextRequest) {
     system: systemPrompt,
     messages: await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]),
     tools: agentTools,
-    stopWhen: stepCountIs(5),
-    maxOutputTokens: 8000,
+    stopWhen: stepCountIs(STRATEGY_MAX_STEPS),
+    maxOutputTokens: STRATEGY_MAX_OUTPUT_TOKENS,
     temperature: 0.3,
     providerOptions: gatewayOptions,
 

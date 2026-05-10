@@ -1,5 +1,5 @@
 import { generateText } from 'ai'
-import { ANALYSIS_MODEL, gatewayOptions } from '@/lib/agente/model'
+import { ANALYSIS_MODEL, gatewayOptions, ANALYSIS_MAX_OUTPUT_TOKENS } from '@/lib/agente/model'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -300,7 +300,7 @@ Inclua APENAS as linhas com alteração de desconto (variacao_pts ≠ 0). Para c
       model: ANALYSIS_MODEL,
       ...gatewayOptions,
       prompt,
-      maxOutputTokens: 8000,
+      maxOutputTokens: ANALYSIS_MAX_OUTPUT_TOKENS,
     })
     parsed = extractJSON(text)
   } catch (err) {

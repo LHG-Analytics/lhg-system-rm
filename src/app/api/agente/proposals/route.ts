@@ -1,5 +1,5 @@
 import { generateText } from 'ai'
-import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
+import { PRIMARY_MODEL, gatewayOptions, ANALYSIS_MAX_OUTPUT_TOKENS } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -772,7 +772,7 @@ A cobertura total já foi instruída acima — NUNCA omita uma combinação que 
     model: PRIMARY_MODEL,
     providerOptions: gatewayOptions,
     prompt,
-    maxOutputTokens: 10000,
+    maxOutputTokens: ANALYSIS_MAX_OUTPUT_TOKENS,
     temperature: 0.2,
   })
 
