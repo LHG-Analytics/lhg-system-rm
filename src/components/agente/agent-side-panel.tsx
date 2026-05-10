@@ -6,9 +6,9 @@ import { BotMessageSquare, ExternalLink, Plus, X } from 'lucide-react'
 import Link from 'next/link'
 import type { UIMessage } from 'ai'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { AgenteChat } from '@/components/agente/agente-chat'
 import { createClient } from '@/lib/supabase/client'
+import { cn } from '@/lib/utils'
 import type { Database } from '@/types/database.types'
 
 type Unit = Database['public']['Tables']['units']['Row']
@@ -30,10 +30,9 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
   const unitSlug   = searchParams.get('unit') ?? units[0]?.slug ?? ''
   const activeUnit = units.find((u) => u.slug === unitSlug) ?? units[0]
 
-  // Ref para evitar double-fetch: carrega apenas 1x por (unitId + chatKey)
+  // Carrega última conversa ao abrir o painel
   const loadedForRef = useRef('')
 
-  // Carrega a última conversa quando o painel abre
   const loadLastConversation = useCallback(async (unitId: string) => {
     const supabase = createClient()
     const { data } = await supabase
@@ -56,7 +55,6 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
     if (loadedForRef.current === key) return
     loadedForRef.current = key
 
-    // chatKey > 0 = nova conversa pedida pelo usuário — não carregar histórico
     if (chatKey > 0) {
       setSelectedConvId(null)
       setSelectedMessages(undefined)
@@ -66,7 +64,7 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
     loadLastConversation(activeUnit.id)
   }, [isOpen, activeUnit?.id, chatKey, loadLastConversation]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Resetar tudo quando a unidade muda com o painel aberto
+  // Resetar ao trocar de unidade
   const prevSlugRef = useRef(unitSlug)
   useEffect(() => {
     if (prevSlugRef.current !== unitSlug) {
@@ -81,13 +79,13 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
   }, [unitSlug, isOpen])
 
   function handleNewConversation() {
-    loadedForRef.current = `${activeUnit?.id ?? ''}:new` // evita re-fetch imediato
+    loadedForRef.current = `${activeUnit?.id ?? ''}:new`
     setSelectedConvId(null)
     setSelectedMessages(undefined)
     setChatKey((k) => k + 1)
   }
 
-  function handleConversationCreated(id: string, _title: string) {
+  function handleConversationCreated(id: string) {
     setSelectedConvId(id)
   }
 
@@ -98,11 +96,8 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
     }
   }
 
-  // Ocultar FAB na página principal do Agente RM (já tem chat completo)
-  if (pathname?.startsWith('/dashboard/agente')) return null
-  if (!activeUnit) return null
+  const isAgentePage = pathname?.startsWith('/dashboard/agente')
 
-  // Conversa retomada aguardando resposta do servidor
   const isAwaitingResponse =
     !!selectedConvId &&
     !!selectedMessages?.length &&
@@ -110,66 +105,86 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
 
   return (
     <>
-      {/* FAB fixo no canto inferior direito */}
-      <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-primary text-primary-foreground rounded-full shadow-lg hover:shadow-xl px-4 py-3 text-sm font-medium hover:bg-primary/90 transition-all active:scale-95"
-        aria-label="Abrir Agente RM"
-      >
-        <BotMessageSquare className="size-4 shrink-0" />
-        <span>Agente RM</span>
-      </button>
-
-      <Sheet open={isOpen} onOpenChange={setIsOpen}>
-        <SheetContent
-          side="right"
-          showCloseButton={false}
-          className="w-[440px] sm:max-w-[440px] flex flex-col gap-0 p-0 overflow-hidden"
+      {/* FAB — oculto na página do agente e quando o painel está aberto */}
+      {!isAgentePage && !isOpen && (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-primary text-primary-foreground rounded-full shadow-lg hover:shadow-xl px-4 py-3 text-sm font-medium hover:bg-primary/90 transition-all active:scale-95"
+          aria-label="Abrir Agente RM"
         >
-          {/* Cabeçalho do painel */}
-          <div className="flex items-center gap-2 px-4 py-3 border-b shrink-0">
-            <BotMessageSquare className="size-4 text-primary shrink-0" />
-            <span className="text-sm font-medium flex-1 truncate min-w-0">
-              {activeUnit.name}
-            </span>
-            <div className="flex items-center gap-0.5">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7"
-                onClick={handleNewConversation}
-                title="Nova conversa"
-              >
-                <Plus className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7"
-                asChild
-                title="Abrir página completa"
-              >
-                <Link
-                  href={`/dashboard/agente?unit=${activeUnit.slug}`}
-                  onClick={() => setIsOpen(false)}
-                >
-                  <ExternalLink className="size-3.5" />
-                </Link>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7"
-                onClick={() => setIsOpen(false)}
-                title="Fechar"
-              >
-                <X className="size-3.5" />
-              </Button>
-            </div>
-          </div>
+          <BotMessageSquare className="size-4 shrink-0" />
+          <span>Agente RM</span>
+        </button>
+      )}
 
-          {/* Área do chat — flex-1 para preencher o restante da altura */}
-          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      {/* Overlay — apenas quando aberto */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 transition-opacity duration-300"
+          onClick={() => setIsOpen(false)}
+        />
+      )}
+
+      {/*
+        Painel SEMPRE montado — CSS slide em vez de Radix Sheet.
+        Isso garante que o estado do chat (incluindo streaming em andamento)
+        nunca é perdido durante navegação ou ao fechar/reabrir o painel.
+      */}
+      <div
+        className={cn(
+          'fixed inset-y-0 right-0 z-50 w-[440px] flex flex-col',
+          'bg-background border-l shadow-xl',
+          'transition-transform duration-300 ease-in-out',
+          isOpen ? 'translate-x-0' : 'translate-x-full',
+          isAgentePage && 'hidden',
+        )}
+        aria-hidden={!isOpen}
+      >
+        {/* Cabeçalho */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b shrink-0">
+          <BotMessageSquare className="size-4 text-primary shrink-0" />
+          <span className="text-sm font-medium flex-1 truncate min-w-0">
+            {activeUnit?.name ?? 'Agente RM'}
+          </span>
+          <div className="flex items-center gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={handleNewConversation}
+              title="Nova conversa"
+            >
+              <Plus className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              asChild
+              title="Abrir página completa"
+            >
+              <Link
+                href={`/dashboard/agente?unit=${activeUnit?.slug ?? ''}`}
+                onClick={() => setIsOpen(false)}
+              >
+                <ExternalLink className="size-3.5" />
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={() => setIsOpen(false)}
+              title="Fechar"
+            >
+              <X className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Chat — preenchendo o restante da altura */}
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {activeUnit && (
             <AgenteChat
               key={chatKey}
               unitSlug={activeUnit.slug}
@@ -180,9 +195,9 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
               onConversationCreated={handleConversationCreated}
               onMessagesUpdate={handleMessagesUpdate}
             />
-          </div>
-        </SheetContent>
-      </Sheet>
+          )}
+        </div>
+      </div>
     </>
   )
 }
