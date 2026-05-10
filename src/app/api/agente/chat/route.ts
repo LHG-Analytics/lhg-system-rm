@@ -904,8 +904,8 @@ export async function POST(req: NextRequest) {
     system: systemPrompt,
     messages: await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]),
     tools: agentTools,
-    stopWhen: stepCountIs(3),
-    maxOutputTokens: 2500,
+    stopWhen: stepCountIs(5),
+    maxOutputTokens: 8000,
     temperature: 0.3,
     providerOptions: gatewayOptions,
 
