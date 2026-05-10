@@ -630,8 +630,12 @@ export async function POST(req: NextRequest) {
         'Palavras como "oportunidades", "melhorias", "analisar", "investigar", "revisar", "sugestões" ' +
         'NÃO autorizam chamar esta tool — nesses casos, use sugerir_respostas com "Gerar proposta de preços" como opção. ' +
         'A aprovação final acontece na aba Propostas, nunca no chat. ' +
+        'FLUXO ANTES DE MONTAR A TABELA DE PROPOSTA: chame buscar_padrao_horario para entender o padrão ' +
+        'de demanda por dia × faixa horária — use para calibrar o premium FDS/semana, identificar se algum ' +
+        'dia específico (ex: quinta-sexta com share alto) justifica um terceiro tier de preço, e verificar ' +
+        'se o split semana/FDS atual é suficiente ou precisa ser refinado. ' +
         'FLUXO OBRIGATÓRIO APÓS SALVAR: (1) avalie imediatamente o desconto do Guia de Motéis — se houver ' +
-        'oportunidade de ajuste (share fora de 15–40% ou ajuste possível por dia/faixa horária), ' +
+        'oportunidade de ajuste (share fora de 5–20% ou ajuste possível por dia/faixa horária), ' +
         'chame salvar_proposta_desconto ANTES de qualquer outra coisa; ' +
         '(2) depois chame sugerir_respostas. ZERO texto entre as tool calls. ' +
         'NUNCA inclua "Gerar proposta de descontos" no sugerir_respostas — já foi avaliado proativamente.',
@@ -888,11 +892,13 @@ export async function POST(req: NextRequest) {
     buscar_padrao_horario: tool({
       description:
         'Retorna o volume de locações por dia da semana × faixa horária (padrão: últimos 60 dias). ' +
-        'Use SEMPRE antes de gerar proposta de desconto do Guia de Motéis — os dados identificam ' +
-        'faixas com baixa demanda (candidatas a aumento de desconto) e alta demanda ' +
-        '(candidatas a redução de desconto), por dia específico. ' +
-        'As faixas horárias retornadas (00:00-05:59 / 06:00-11:59 / 12:00-17:59 / 18:00-23:59) ' +
-        'são compatíveis com a estrutura de descontos do Guia.',
+        'É a ferramenta fundamental de Revenue Management — use ANTES de qualquer proposta de preço ou desconto. ' +
+        'Responde as perguntas mais críticas: (a) o split semana/FDS é suficiente ou há dias com demanda similar ' +
+        'ao FDS dentro da semana (ex: quinta-sexta com share alto = terceiro tier de preço)? ' +
+        '(b) qual o ratio real de demanda FDS÷semana para calibrar o premium? ' +
+        '(c) quais faixas horárias têm demanda estruturalmente baixa (preço estimulante) vs alta (preço agressivo)? ' +
+        '(d) quais dias × faixas do Guia têm desconto desalinhado com a demanda real? ' +
+        'O resultado já sinaliza 🔵 baixa demanda e 🟢 alta demanda por slot.',
       inputSchema: z.object({
         days: z.number().optional().describe('Dias retroativos para análise (padrão: 60)'),
       }),
