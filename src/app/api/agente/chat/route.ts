@@ -525,8 +525,6 @@ export async function POST(req: NextRequest) {
 - **Variação máxima permitida:** ±${maxVariationPct}%
 - **Foco principal:** ${FOCUS_LABELS[focusMetric] ?? focusMetric}`
 
-  const weatherContext = await fetchWeatherContext(city).catch(() => null)
-
   // Bloco de regras de ajuste dinâmico por giro/ocupação
   const pricingRulesBlock = buildPricingThresholdsBlock(pricingThresholds)
 
@@ -603,7 +601,7 @@ export async function POST(req: NextRequest) {
         dias_tipo:  [...new Set(priceImports[0].rows.map((r) => r.dia_tipo))],
       }
     : {}
-  const [availabilityRows, realtimeOccupancy, reservationPace, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps] = await Promise.all([
+  const [availabilityRows, realtimeOccupancy, reservationPace, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps, weatherContext] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
     getReservationPace(unit.slug).catch(() => null),
@@ -611,6 +609,7 @@ export async function POST(req: NextRequest) {
     buildLessonsBlockForUnit(unit.id, chatLessonsScenario).catch(() => ''),
     getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
     getRecentGaps(unit.id).catch(() => []),
+    fetchWeatherContext(city).catch(() => null),
   ])
   const seasonalityBlock = buildSeasonalityBlock(seasonalFactors)
   const competitorGapBlock = buildCompetitorGapBlock(competitorGaps)

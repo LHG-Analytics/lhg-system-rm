@@ -188,15 +188,51 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
   // Realtime: price_proposals + scheduled_reviews desta unidade
   useEffect(() => {
     if (!unitId) return
-    const loadProposals = () => {
+
+    // Re-fetch completo — usado apenas como fallback para UPDATE sem payload completo
+    const refetchAll = () => {
       fetch(`/api/agente/proposals?unitSlug=${unitSlug}`)
         .then((r) => r.json())
         .then((data) => { if (Array.isArray(data)) setProposals(data as PriceProposal[]) })
         .catch(() => {})
     }
+
     const ch = supabase
       .channel(`proposals:${unitId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'price_proposals', filter: `unit_id=eq.${unitId}` }, loadProposals)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'price_proposals', filter: `unit_id=eq.${unitId}` },
+        (payload) => {
+          const row = payload.new as PriceProposal
+          // Adiciona diretamente ao estado — sem round-trip HTTP
+          setProposals((prev) => {
+            if (prev.some((p) => p.id === row.id)) return prev
+            return [row, ...prev]
+          })
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'price_proposals', filter: `unit_id=eq.${unitId}` },
+        (payload) => {
+          // payload.new tem todos os campos quando REPLICA IDENTITY FULL está ativo.
+          // Quando tem `rows` (campo JSONB), atualiza diretamente; senão faz re-fetch.
+          const partial = payload.new as Partial<PriceProposal> & { id: string }
+          if (partial.rows) {
+            setProposals((prev) => prev.map((p) => p.id === partial.id ? { ...p, ...partial } as PriceProposal : p))
+          } else {
+            refetchAll()
+          }
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'price_proposals', filter: `unit_id=eq.${unitId}` },
+        (payload) => {
+          const id = (payload.old as { id: string }).id
+          if (id) setProposals((prev) => prev.filter((p) => p.id !== id))
+        },
+      )
       .on('postgres_changes', { event: '*', schema: 'public', table: 'scheduled_reviews', filter: `unit_id=eq.${unitId}` }, () => { loadPendingReviews() })
       .subscribe()
     return () => { void supabase.removeChannel(ch) }
