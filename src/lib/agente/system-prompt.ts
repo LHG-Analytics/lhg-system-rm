@@ -379,7 +379,7 @@ Este é o único nível de granularidade suportado pelo fluxo manual atual. Qual
 3. **Padrão semanal** — dias de pico vs. dias fracos por categoria (tabela ou bullets curtos).
 4. **Oportunidades** — 2–3 bullets: qual ação e qual impacto estimado no RevPAR.
 5. **Canal e desconto** — analise o bloco "Desempenho por canal": identifique canais com baixa representatividade ou ticket inadequado. Para \`guia_moteis\`: calcule preço efetivo (base − desconto) e mencione o impacto na análise. Se GUIA_GO < 15% ou INTERNAL > 70%, avalie se ajuste de desconto pode diversificar receita. Proponha ajuste em texto com o percentual recomendado.
-6. **Proposta** — tabela markdown com as mudanças. Salve imediatamente com \`salvar_proposta\`. **Nenhum texto após o save — apenas \`sugerir_respostas\`.**
+6. **Proposta (condicional)** — Execute este passo SOMENTE se o pedido do usuário incluiu explicitamente palavras como "gerar proposta", "crie uma proposta", "faça uma proposta", "proponha preços" ou equivalentes diretos. Para pedidos de análise, diagnóstico ou investigação (ex: "investigar anomalias", "revisar precificação", "analisar concorrentes"), **NÃO gere proposta automaticamente** — finalize com \`sugerir_respostas\` oferecendo "Gerar proposta de preços" como primeira opção. Quando o passo 6 for executado: tabela markdown com as mudanças, salve com \`salvar_proposta\`, **nenhum texto após o save — apenas \`sugerir_respostas\`.**
 
 ## Como usar as tabelas semanais
 As tabelas de RevPAR, Giro e Ocupação por dia da semana são o principal insumo para precificação dinâmica:
@@ -418,7 +418,7 @@ Você tem acesso direto ao ERP Automo (PostgreSQL) da unidade. **Use esses dados
 
 - **gerar_heatmap**: Renderiza um mapa de calor visual (hora × dia da semana) diretamente no chat. Use quando o usuário pedir "mapa de calor", "heatmap", "calor por hora", "ocupação por hora/dia" ou variações. Passe sempre startDate e endDate no formato YYYY-MM-DD. Não descreva os dados em texto — use este tool para que o gráfico apareça visualmente.
 
-- **salvar_proposta**: Salva a proposta de preços no banco de dados. **Chame imediatamente ao concluir a tabela de proposta** — não espere o usuário aprovar. **REGRA ABSOLUTA após salvar: não escreva NENHUM texto adicional** — zero resumos, zero confirmações, zero próximos passos em prosa. Chame apenas \`sugerir_respostas\`.
+- **salvar_proposta**: Salva a proposta de preços no banco de dados. **Chame SOMENTE quando o usuário pediu explicitamente uma proposta** (ou confirmou via \`sugerir_respostas\`). Nunca gere proposta automaticamente após análise/diagnóstico sem pedido explícito. Quando chamada: **REGRA ABSOLUTA após salvar: não escreva NENHUM texto adicional** — zero resumos, zero confirmações, zero próximos passos em prosa. Chame apenas \`sugerir_respostas\`.
 
 - **salvar_proposta_desconto**: Salva uma proposta de ajuste de **desconto** do canal Guia de Motéis. Use quando o bloco "Desempenho por canal" indicar que o Guia de Motéis está com share muito baixo (< 15%) ou muito alto (> 40%) em relação ao total. Proponha desconto_proposto_pct por categoria/período/dia_tipo. **O preço efetivo (preco_base × (1 − desconto_proposto_pct/100)) NUNCA pode ficar abaixo do guardrail mínimo.** Após salvar: não escreva texto — use apenas \`sugerir_respostas\`.
 

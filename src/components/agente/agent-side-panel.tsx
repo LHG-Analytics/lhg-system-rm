@@ -1,12 +1,14 @@
 'use client'
 
-import { useState, useRef, useEffect, Suspense } from 'react'
+import { useState, useRef, useEffect, useCallback, Suspense } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { BotMessageSquare, ExternalLink, Plus, X } from 'lucide-react'
 import Link from 'next/link'
+import type { UIMessage } from 'ai'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { AgenteChat } from '@/components/agente/agente-chat'
+import { createClient } from '@/lib/supabase/client'
 import type { Database } from '@/types/database.types'
 
 type Unit = Database['public']['Tables']['units']['Row']
@@ -17,26 +19,94 @@ interface AgentSidePanelProps {
 }
 
 function AgentSidePanelInner({ units }: AgentSidePanelProps) {
-  const pathname    = usePathname()
+  const pathname     = usePathname()
   const searchParams = useSearchParams()
-  const [isOpen, setIsOpen] = useState(false)
-  const [chatKey, setChatKey] = useState(0)
+
+  const [isOpen,           setIsOpen]           = useState(false)
+  const [chatKey,          setChatKey]          = useState(0)
+  const [selectedConvId,   setSelectedConvId]   = useState<string | null>(null)
+  const [selectedMessages, setSelectedMessages] = useState<UIMessage[] | undefined>()
 
   const unitSlug   = searchParams.get('unit') ?? units[0]?.slug ?? ''
   const activeUnit = units.find((u) => u.slug === unitSlug) ?? units[0]
 
-  // Resetar chat quando a unidade muda (enquanto o painel está aberto)
+  // Ref para evitar double-fetch: carrega apenas 1x por (unitId + chatKey)
+  const loadedForRef = useRef('')
+
+  // Carrega a última conversa quando o painel abre
+  const loadLastConversation = useCallback(async (unitId: string) => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('rm_conversations')
+      .select('id, messages')
+      .eq('unit_id', unitId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (data) {
+      setSelectedConvId(data.id)
+      setSelectedMessages((data.messages as unknown as UIMessage[]) ?? [])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isOpen || !activeUnit) return
+    const key = `${activeUnit.id}:${chatKey}`
+    if (loadedForRef.current === key) return
+    loadedForRef.current = key
+
+    // chatKey > 0 = nova conversa pedida pelo usuário — não carregar histórico
+    if (chatKey > 0) {
+      setSelectedConvId(null)
+      setSelectedMessages(undefined)
+      return
+    }
+
+    loadLastConversation(activeUnit.id)
+  }, [isOpen, activeUnit?.id, chatKey, loadLastConversation]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resetar tudo quando a unidade muda com o painel aberto
   const prevSlugRef = useRef(unitSlug)
   useEffect(() => {
     if (prevSlugRef.current !== unitSlug) {
       prevSlugRef.current = unitSlug
-      if (isOpen) setChatKey((k) => k + 1)
+      if (isOpen) {
+        loadedForRef.current = ''
+        setSelectedConvId(null)
+        setSelectedMessages(undefined)
+        setChatKey(0)
+      }
     }
   }, [unitSlug, isOpen])
+
+  function handleNewConversation() {
+    loadedForRef.current = `${activeUnit?.id ?? ''}:new` // evita re-fetch imediato
+    setSelectedConvId(null)
+    setSelectedMessages(undefined)
+    setChatKey((k) => k + 1)
+  }
+
+  function handleConversationCreated(id: string, _title: string) {
+    setSelectedConvId(id)
+  }
+
+  function handleMessagesUpdate(id: string, msgs: UIMessage[]) {
+    if (id === selectedConvId || !selectedConvId) {
+      setSelectedConvId(id)
+      setSelectedMessages(msgs)
+    }
+  }
 
   // Ocultar FAB na página principal do Agente RM (já tem chat completo)
   if (pathname?.startsWith('/dashboard/agente')) return null
   if (!activeUnit) return null
+
+  // Conversa retomada aguardando resposta do servidor
+  const isAwaitingResponse =
+    !!selectedConvId &&
+    !!selectedMessages?.length &&
+    selectedMessages[selectedMessages.length - 1].role === 'user'
 
   return (
     <>
@@ -67,7 +137,7 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
                 variant="ghost"
                 size="icon"
                 className="size-7"
-                onClick={() => setChatKey((k) => k + 1)}
+                onClick={handleNewConversation}
                 title="Nova conversa"
               >
                 <Plus className="size-3.5" />
@@ -104,6 +174,11 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
               key={chatKey}
               unitSlug={activeUnit.slug}
               unitId={activeUnit.id}
+              selectedConvId={selectedConvId}
+              selectedMessages={selectedMessages}
+              isAwaitingResponse={isAwaitingResponse}
+              onConversationCreated={handleConversationCreated}
+              onMessagesUpdate={handleMessagesUpdate}
             />
           </div>
         </SheetContent>
