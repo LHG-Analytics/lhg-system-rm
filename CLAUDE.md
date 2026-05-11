@@ -1099,6 +1099,17 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Armadilha:** `getAutomPool` é agora async — todos os call sites precisam de `await`
   - **Armadilha:** adicionar nova unidade requer apenas INSERT no banco com `period_type` correto — sem alteração de código
 
+- **feat(i18n): localização de moeda por unidade — LIV exibe USD/$ em vez de BRL/R$** ✅ 2026-05-11
+  - `src/lib/utils/currency.ts`: `getCurrencyConfig(slug)` + `makeCurrencyFormatter(slug)` — mapa `{ liv: { locale: 'en-US', currency: 'USD' } }`; todas as outras unidades → BRL/pt-BR
+  - `src/components/currency-context.tsx`: `CurrencyProvider` lê `?unit=` via `useSearchParams`, fornece `formatMoney(v, decimals?)` e `symbol` via Context
+  - `dashboard/layout.tsx`: `<CurrencyProvider>` envolve conteúdo principal dentro de `<Suspense>` (obrigatório pelo `useSearchParams`)
+  - Migrados de BRL hardcoded: `kpi-cards.tsx`, `charts.tsx`, `anomalies-widget.tsx`, `revenue-forecast-widget.tsx`, `heatmap.tsx`, e todas as 7 sections de relatórios + `kpi-comparison-chart.tsx`
+  - `fmtMetricValue` em `anomalies-widget.tsx` recebeu `symbol` como 3º parâmetro (não pode usar hooks em função pura)
+  - `formatValue` em `heatmap.tsx` recebeu `fm: (v: number) => string` como 3º parâmetro — chamada com `fm` do `useCurrency()` no componente
+  - `getKpiItems(fm)` em `kpis-section.tsx` — fábrica que recebe `formatMoney`, evita `KPI_ITEMS` de módulo com BRL hardcoded
+  - **Armadilha:** `Recharts LabelList formatter` não é componente React — capturar `formatMoney` da closure do componente pai
+  - **Para adicionar nova moeda:** adicionar entrada em `UNIT_CURRENCY` em `src/lib/utils/currency.ts`
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
