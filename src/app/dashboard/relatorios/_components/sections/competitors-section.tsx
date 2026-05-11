@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { ChevronDown, ChevronUp, Globe, AlertTriangle, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WeeklyReportData } from '@/lib/reports/types'
+import { useCurrency } from '@/components/currency-context'
 
 interface Props {
   data: WeeklyReportData['competitors']
@@ -22,11 +23,12 @@ const posColor = {
 }
 
 function GapCell({ g }: { g: GapEntry | undefined }) {
+  const { symbol } = useCurrency()
   if (!g) return <td className="text-right text-muted-foreground/40 text-xs" colSpan={3}>—</td>
   return (
     <>
-      <td className="text-right text-xs tabular-nums">R$ {g.precoNosso.toFixed(0)}</td>
-      <td className="text-right text-xs tabular-nums text-muted-foreground">R$ {g.medianaConc.toFixed(0)}</td>
+      <td className="text-right text-xs tabular-nums">{symbol} {g.precoNosso.toFixed(0)}</td>
+      <td className="text-right text-xs tabular-nums text-muted-foreground">{symbol} {g.medianaConc.toFixed(0)}</td>
       <td className={cn('text-right text-xs font-semibold tabular-nums', gapColor(g.gapPct))}>
         {g.gapPct > 0 ? '+' : ''}{g.gapPct.toFixed(1)}%
       </td>

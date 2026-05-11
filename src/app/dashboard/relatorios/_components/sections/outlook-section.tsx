@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { WeeklyReportData } from '@/lib/reports/types'
 import { SeasonalOutlookChart } from '../charts/seasonal-outlook-chart'
+import { useCurrency } from '@/components/currency-context'
 
 interface Props {
   data: WeeklyReportData['outlook']
@@ -14,6 +15,7 @@ interface Props {
 
 export function OutlookSection({ data }: Props) {
   const [open, setOpen] = useState(true)
+  const { formatMoney: fm } = useCurrency()
 
   const hasContent = data.seasonalFactors.length > 0 || data.upcomingEvents.length > 0 || data.revenueForecast.length > 0
 
@@ -76,7 +78,7 @@ export function OutlookSection({ data }: Props) {
                 {data.revenueForecast.slice(0, 3).map((m, i) => (
                   <div key={i} className="rounded-lg bg-muted/50 p-3 text-sm">
                     <p className="text-xs text-muted-foreground mb-1 capitalize">{m.month}</p>
-                    <p className="font-semibold">{m.projected.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}</p>
+                    <p className="font-semibold">{fm(m.projected)}</p>
                     {m.budgeted > 0 && (
                       <p className={cn('text-xs', m.gapPct >= -2 ? 'text-emerald-600' : m.gapPct >= -8 ? 'text-amber-600' : 'text-destructive')}>
                         {m.gapPct >= 0 ? '+' : ''}{m.gapPct.toFixed(1)}% vs meta

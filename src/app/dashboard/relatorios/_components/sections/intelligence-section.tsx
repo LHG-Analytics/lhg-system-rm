@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { WeeklyReportData } from '@/lib/reports/types'
+import { useCurrency } from '@/components/currency-context'
 
 interface Props {
   data: WeeklyReportData['intelligence']
@@ -72,6 +73,7 @@ function generateInsight(insight: HistoricalInsight): string {
 export function IntelligenceSection({ data }: Props) {
   const [open, setOpen]         = useState(true)
   const [expanded, setExpanded] = useState<number[]>([])
+  const { symbol } = useCurrency()
   const insights = data.historicalInsights ?? []
 
   function toggleDetail(i: number) {
@@ -149,7 +151,7 @@ export function IntelligenceSection({ data }: Props) {
                             before={insight.kpiBefore.revpar}
                             after={insight.kpiAfter.revpar}
                             delta={insight.deltaRevpar}
-                            prefix="R$"
+                            prefix={symbol}
                             decimals={0}
                           />
                           <MetricCard
@@ -188,7 +190,7 @@ export function IntelligenceSection({ data }: Props) {
                                   <span className={cn('font-medium tabular-nums', c.variacaoPct > 0 ? 'text-emerald-600' : 'text-destructive')}>
                                     {c.variacaoPct > 0 ? '+' : ''}{c.variacaoPct.toFixed(1)}%
                                     <span className="text-muted-foreground font-normal ml-1">
-                                      R${c.precoAnterior.toFixed(0)} → R${c.precoNovo.toFixed(0)}
+                                      {symbol}{c.precoAnterior.toFixed(0)} → {symbol}{c.precoNovo.toFixed(0)}
                                     </span>
                                   </span>
                                 </div>

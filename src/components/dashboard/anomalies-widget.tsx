@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { useCurrency } from '@/components/currency-context'
 
 interface Anomaly {
   id:              string
@@ -34,10 +35,10 @@ const METRIC_LABEL: Record<Anomaly['metric'], string> = {
   ticket:   'Ticket Médio',
 }
 
-function fmtMetricValue(metric: Anomaly['metric'], value: number): string {
+function fmtMetricValue(metric: Anomaly['metric'], value: number, symbol: string): string {
   if (metric === 'ocupacao') return `${value.toFixed(1)}%`
   if (metric === 'giro') return value.toFixed(2)
-  return `R$ ${value.toFixed(2).replace('.', ',')}`
+  return `${symbol} ${value.toFixed(2).replace('.', ',')}`
 }
 
 function timeAgo(iso: string): string {
@@ -50,6 +51,7 @@ function timeAgo(iso: string): string {
 
 export function AnomaliesWidget({ unitSlug }: Props) {
   const router = useRouter()
+  const { symbol } = useCurrency()
   const [anomalies, setAnomalies] = useState<Anomaly[]>([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState<string | null>(null)
@@ -89,7 +91,7 @@ export function AnomaliesWidget({ unitSlug }: Props) {
       const metric = METRIC_LABEL[anomaly.metric]
       const direction = anomaly.direction === 'negative_outlier' ? 'queda' : 'alta'
       const initialMessage = encodeURIComponent(
-        `Detectei uma ${direction} anômala em ${metric} (z-score ${anomaly.z_score.toFixed(1)}). Valor atual: ${fmtMetricValue(anomaly.metric, anomaly.current_value)} vs baseline ${fmtMetricValue(anomaly.metric, anomaly.baseline_mean)}. Pode investigar?`
+        `Detectei uma ${direction} anômala em ${metric} (z-score ${anomaly.z_score.toFixed(1)}). Valor atual: ${fmtMetricValue(anomaly.metric, anomaly.current_value, symbol)} vs baseline ${fmtMetricValue(anomaly.metric, anomaly.baseline_mean, symbol)}. Pode investigar?`
       )
       router.push(`/dashboard/agente?unit=${unitSlug}&q=${initialMessage}`)
     }
@@ -129,8 +131,8 @@ export function AnomaliesWidget({ unitSlug }: Props) {
                   <span className="text-[10px] text-muted-foreground ml-auto">{timeAgo(a.detected_at)}</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Atual <strong className={colorClass}>{fmtMetricValue(a.metric, a.current_value)}</strong>
-                  {' '}vs baseline {fmtMetricValue(a.metric, a.baseline_mean)} ± {fmtMetricValue(a.metric, a.baseline_stddev)}
+                  Atual <strong className={colorClass}>{fmtMetricValue(a.metric, a.current_value, symbol)}</strong>
+                  {' '}vs baseline {fmtMetricValue(a.metric, a.baseline_mean, symbol)} ± {fmtMetricValue(a.metric, a.baseline_stddev, symbol)}
                 </p>
                 <div className="flex gap-1 mt-2">
                   <Button

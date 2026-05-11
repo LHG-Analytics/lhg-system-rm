@@ -20,6 +20,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { cn } from '@/lib/utils'
+import { useCurrency } from '@/components/currency-context'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -28,9 +29,6 @@ import type { CompanyKPIResponse } from '@/lib/kpis/types'
 
 // ─── Formatadores ─────────────────────────────────────────────────────────────
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
-}
 function formatPercent(value: number) {
   return `${value.toFixed(1)}%`
 }
@@ -213,6 +211,7 @@ interface DashboardKPICardsProps {
 }
 
 export function DashboardKPICards({ company, compact, budgetMonth }: DashboardKPICardsProps) {
+  const { formatMoney: formatCurrency } = useCurrency()
   const [compareMode, setCompareMode] = useState<CompareMode>('aa')
   const [order, setOrder] = useState<string[]>(DEFAULT_ORDER)
 

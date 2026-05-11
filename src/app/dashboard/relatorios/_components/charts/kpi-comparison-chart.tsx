@@ -2,6 +2,7 @@
 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, LabelList, ResponsiveContainer } from 'recharts'
 import type { KPISnapshot } from '@/lib/reports/types'
+import { useCurrency } from '@/components/currency-context'
 
 interface Props {
   current: KPISnapshot
@@ -21,13 +22,16 @@ const TOOLTIP_STYLE = {
   itemStyle: { color: '#f4f4f5' },
 }
 
+const MONETARY_METRIC_LABELS = ['RevPAR', 'TRevPAR', 'Ticket']
 const MONETARY_METRICS = [
-  { key: 'revpar' as keyof KPISnapshot, label: 'RevPAR', prefix: 'R$' },
-  { key: 'trevpar' as keyof KPISnapshot, label: 'TRevPAR', prefix: 'R$' },
-  { key: 'ticket' as keyof KPISnapshot, label: 'Ticket', prefix: 'R$' },
+  { key: 'revpar' as keyof KPISnapshot, label: 'RevPAR' },
+  { key: 'trevpar' as keyof KPISnapshot, label: 'TRevPAR' },
+  { key: 'ticket' as keyof KPISnapshot, label: 'Ticket' },
 ]
 
 export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Props) {
+  const { symbol, formatMoney } = useCurrency()
+
   const data = MONETARY_METRICS.map(m => ({
     name: m.label,
     Atual: current[m.key],
@@ -46,8 +50,8 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
             const v = Number(value)
             const n = String(name)
             const metricName = (item as { payload?: { name?: string } })?.payload?.name ?? ''
-            const metric = MONETARY_METRICS.find(m => m.label === metricName)
-            return [metric?.prefix ? `${metric.prefix} ${v.toFixed(2)}` : v.toFixed(2), n]
+            const isMoney = MONETARY_METRIC_LABELS.includes(metricName)
+            return [isMoney ? `${symbol} ${v.toFixed(2)}` : v.toFixed(2), n]
           }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -56,7 +60,7 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
             dataKey="Atual"
             position="top"
             style={{ fontSize: 10, fill: '#94a3b8' }}
-            formatter={(v: unknown) => `R$${Number(v).toFixed(0)}`}
+            formatter={(v: unknown) => formatMoney(Number(v))}
           />
         </Bar>
         {previousWeek && <Bar dataKey="Semana ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}

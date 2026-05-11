@@ -4,13 +4,10 @@ import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronUp, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ForecastResult } from '@/lib/forecast/revenue-forecast'
+import { useCurrency } from '@/components/currency-context'
 
 interface Props {
   forecast: ForecastResult | null
-}
-
-function fmtBRL(n: number): string {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(n)
 }
 
 function fmtPct(n: number): string {
@@ -50,6 +47,7 @@ function ProgressBar({ projected, budget }: { projected: number | null; budget: 
 
 export function RevenueForecastWidget({ forecast }: Props) {
   const [collapsed, setCollapsed] = useState(false)
+  const { formatMoney: fmtBRL } = useCurrency()
 
   useEffect(() => {
     const stored = localStorage.getItem('forecast-collapsed')

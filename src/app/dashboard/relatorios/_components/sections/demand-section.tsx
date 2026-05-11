@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { WeeklyReportData } from '@/lib/reports/types'
+import { useCurrency } from '@/components/currency-context'
 
 interface Props {
   data: WeeklyReportData['demand']
@@ -10,6 +11,7 @@ interface Props {
 
 export function DemandSection({ data }: Props) {
   const [open, setOpen] = useState(true)
+  const { formatMoney: fm } = useCurrency()
 
   const hasData = data.channelMix.length > 0 || data.periodMix.length > 0
 
@@ -48,8 +50,8 @@ export function DemandSection({ data }: Props) {
                       <tr key={i} className="border-b last:border-0">
                         <td className="py-1.5 font-medium">{c.label}</td>
                         <td className="text-right">{c.reservas}</td>
-                        <td className="text-right">{c.receita.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}</td>
-                        <td className="text-right">{c.reservas > 0 ? (c.receita / c.reservas).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }) : '—'}</td>
+                        <td className="text-right">{fm(c.receita)}</td>
+                        <td className="text-right">{c.reservas > 0 ? fm(c.receita / c.reservas, 2) : '—'}</td>
                         <td className="text-right">{c.representatividade.toFixed(1)}%</td>
                       </tr>
                     ))}
@@ -63,8 +65,8 @@ export function DemandSection({ data }: Props) {
                       <tr className="border-t font-semibold text-xs">
                         <td className="pt-1.5">Total</td>
                         <td className="text-right pt-1.5">{totRes}</td>
-                        <td className="text-right pt-1.5">{totRec.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}</td>
-                        <td className="text-right pt-1.5">{totRes > 0 ? (totRec / totRes).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }) : '—'}</td>
+                        <td className="text-right pt-1.5">{fm(totRec)}</td>
+                        <td className="text-right pt-1.5">{totRes > 0 ? fm(totRec / totRes, 2) : '—'}</td>
                         <td className="text-right pt-1.5">{totPct.toFixed(1)}%</td>
                       </tr>
                     </tfoot>
@@ -92,8 +94,8 @@ export function DemandSection({ data }: Props) {
                     <tr key={i} className="border-b last:border-0">
                       <td className="py-1.5 font-medium">{p.periodo}</td>
                       <td className="text-right">{p.locacoes}</td>
-                      <td className="text-right">{p.receita.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}</td>
-                      <td className="text-right">{p.ticket.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 })}</td>
+                      <td className="text-right">{fm(p.receita)}</td>
+                      <td className="text-right">{fm(p.ticket, 2)}</td>
                       <td className="text-right">{p.pct.toFixed(1)}%</td>
                     </tr>
                   ))}
@@ -107,8 +109,8 @@ export function DemandSection({ data }: Props) {
                       <tr className="border-t font-semibold text-xs">
                         <td className="pt-1.5">Total</td>
                         <td className="text-right pt-1.5">{totLoc}</td>
-                        <td className="text-right pt-1.5">{totRec.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}</td>
-                        <td className="text-right pt-1.5">{totLoc > 0 ? (totRec / totLoc).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }) : '—'}</td>
+                        <td className="text-right pt-1.5">{fm(totRec)}</td>
+                        <td className="text-right pt-1.5">{totLoc > 0 ? fm(totRec / totLoc, 2) : '—'}</td>
                         <td className="text-right pt-1.5">{totPct.toFixed(1)}%</td>
                       </tr>
                     </tfoot>

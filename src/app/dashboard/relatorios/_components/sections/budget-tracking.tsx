@@ -3,16 +3,14 @@
 import { Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WeeklyReportData } from '@/lib/reports/types'
+import { useCurrency } from '@/components/currency-context'
 
 interface Props {
   data: WeeklyReportData['budgetTracking']
 }
 
-function fmt(n: number) {
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
-}
-
 export function BudgetTracking({ data }: Props) {
+  const { formatMoney: fmt } = useCurrency()
   const progressPct = data.meta > 0 ? Math.min((data.realizado / data.meta) * 100, 100) : 0
   const projecaoPct = data.meta > 0 ? Math.min((data.projecao / data.meta) * 100, 100) : 0
   const gapPct = data.meta > 0 ? ((data.projecao - data.meta) / data.meta) * 100 : 0
@@ -75,11 +73,12 @@ export function BudgetTracking({ data }: Props) {
 function ProgressRow({ label, value, pct, color, isMeta }: {
   label: string; value: number; pct: number; color: string; isMeta?: boolean
 }) {
+  const { formatMoney } = useCurrency()
   return (
     <div className="space-y-1">
       <div className="flex justify-between text-xs">
         <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium">{value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}</span>
+        <span className="font-medium">{formatMoney(value)}</span>
       </div>
       <div className="h-2 bg-muted rounded-full overflow-hidden">
         <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${pct}%` }} />

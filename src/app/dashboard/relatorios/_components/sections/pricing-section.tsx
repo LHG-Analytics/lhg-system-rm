@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, CheckCircle, XCircle, Minus, Shield } from 'luc
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { WeeklyReportData } from '@/lib/reports/types'
+import { useCurrency } from '@/components/currency-context'
 
 interface Props {
   data: WeeklyReportData['pricing']
@@ -66,6 +67,7 @@ function buildPriceMatrix(rows: { categoria: string; periodo: string; diaTipo: s
 
 export function PricingSection({ data }: Props) {
   const [open, setOpen] = useState(true)
+  const { symbol } = useCurrency()
 
   const hasContent = data.activePriceTable || data.proposalsApprovedThisWeek.length > 0 ||
     data.lessonsCompleted.length > 0 || data.elasticityHighlights.length > 0
@@ -119,7 +121,7 @@ export function PricingSection({ data }: Props) {
                           const price = matrix[cat]?.[`${c.periodo}|${c.diaTipo}`]
                           return (
                             <td key={`${c.periodo}|${c.diaTipo}`} className="text-right px-2 text-muted-foreground">
-                              {price != null ? `R$ ${price.toFixed(0)}` : '—'}
+                              {price != null ? `${symbol} ${price.toFixed(0)}` : '—'}
                             </td>
                           )
                         })}

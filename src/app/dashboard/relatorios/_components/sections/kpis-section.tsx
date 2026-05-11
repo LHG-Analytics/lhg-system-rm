@@ -4,21 +4,24 @@ import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { WeeklyReportData, KPISnapshot } from '@/lib/reports/types'
 import { MonetaryKpiChart, GiroKpiChart } from '../charts/kpi-comparison-chart'
+import { useCurrency } from '@/components/currency-context'
 
 interface Props {
   data: WeeklyReportData['kpis']
 }
 
-const KPI_ITEMS: { key: keyof KPISnapshot; label: string; fmt: (v: number) => string }[] = [
-  { key: 'receita', label: 'Receita', fmt: v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }) },
-  { key: 'revpar', label: 'RevPAR', fmt: v => `R$ ${v.toFixed(2)}` },
-  { key: 'trevpar', label: 'TRevPAR', fmt: v => `R$ ${v.toFixed(2)}` },
-  { key: 'giro', label: 'Giro', fmt: v => v.toFixed(2) },
-  { key: 'ocupacao', label: 'Ocupação', fmt: v => `${(v * 100).toFixed(1)}%` },
-  { key: 'ticket', label: 'Ticket Médio', fmt: v => `R$ ${v.toFixed(2)}` },
-  { key: 'locacoes', label: 'Locações', fmt: v => v.toFixed(0) },
-  { key: 'tmo', label: 'TMO (h)', fmt: v => v.toFixed(1) },
-]
+function getKpiItems(fm: (v: number, d?: number) => string): { key: keyof KPISnapshot; label: string; fmt: (v: number) => string }[] {
+  return [
+    { key: 'receita',  label: 'Receita',      fmt: v => fm(v) },
+    { key: 'revpar',   label: 'RevPAR',        fmt: v => fm(v, 2) },
+    { key: 'trevpar',  label: 'TRevPAR',       fmt: v => fm(v, 2) },
+    { key: 'giro',     label: 'Giro',          fmt: v => v.toFixed(2) },
+    { key: 'ocupacao', label: 'Ocupação',      fmt: v => `${(v * 100).toFixed(1)}%` },
+    { key: 'ticket',   label: 'Ticket Médio',  fmt: v => fm(v, 2) },
+    { key: 'locacoes', label: 'Locações',      fmt: v => v.toFixed(0) },
+    { key: 'tmo',      label: 'TMO (h)',       fmt: v => v.toFixed(1) },
+  ]
+}
 
 function deltaPct(curr: number, prev: number): string {
   if (!prev) return '—'
@@ -28,6 +31,8 @@ function deltaPct(curr: number, prev: number): string {
 
 export function KpisSection({ data }: Props) {
   const [open, setOpen] = useState(true)
+  const { formatMoney, symbol } = useCurrency()
+  const KPI_ITEMS = getKpiItems(formatMoney)
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
@@ -42,7 +47,7 @@ export function KpisSection({ data }: Props) {
       {open && (
         <div className="px-5 pb-5 space-y-4">
           <div>
-            <p className="text-xs text-muted-foreground mb-2">RevPAR · TRevPAR · Ticket Médio (R$/suíte)</p>
+            <p className="text-xs text-muted-foreground mb-2">RevPAR · TRevPAR · Ticket Médio ({symbol}/suíte)</p>
             <MonetaryKpiChart
               current={data.current}
               previousWeek={data.previousWeek}

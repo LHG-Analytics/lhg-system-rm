@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { HeatmapCell, HeatmapMetric, HeatmapDateType, HeatmapCategory } from '@/app/api/heatmap/route'
+import { useCurrency } from '@/components/currency-context'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -59,11 +60,10 @@ function getColor(value: number | undefined, metric: HeatmapMetric, maxVal: numb
   return 'bg-orange-400/80'
 }
 
-function formatValue(value: number | undefined, metric: HeatmapMetric): string {
+function formatValue(value: number | undefined, metric: HeatmapMetric, fm: (v: number) => string): string {
   if (value === undefined) return '–'
   if (metric === 'ocupacao') return `${value.toFixed(0)}%`
-  if (metric === 'revpar' || metric === 'trevpar')
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value)
+  if (metric === 'revpar' || metric === 'trevpar') return fm(value)
   return value.toFixed(2)
 }
 
@@ -80,6 +80,7 @@ interface HeatmapProps {
 
 export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, statusOverride, dateTypeOverride }: HeatmapProps) {
   const searchParams = useSearchParams()
+  const { formatMoney: fm, symbol } = useCurrency()
   const rentalStatus = statusOverride ?? searchParams.get('status') ?? 'FINALIZADA'
 
   const urlDateType = dateTypeOverride ?? (searchParams.get('dateType') ?? 'all') as HeatmapDateType
@@ -146,7 +147,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
     giro: 'Giro', ocupacao: 'Tx. Ocupação', revpar: 'RevPAR', trevpar: 'TRevPAR',
   }
   const subtitle = (metric === 'revpar' || metric === 'trevpar')
-    ? `${metricLabel[metric]} por hora × dia da semana (R$)`
+    ? `${metricLabel[metric]} por hora × dia da semana (${symbol})`
     : dateType === 'all'
       ? 'Dia da semana × hora · entradas e saídas'
       : `Dia da semana × hora · por data de ${DATE_TYPE_LABELS[dateType].toLowerCase()}`
@@ -253,7 +254,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
         <span>Alto</span>
         {!loading && !error && (
           <span className="ml-auto">
-            Máx: {formatValue(maxVal, metric)}
+            Máx: {formatValue(maxVal, metric, fm)}
           </span>
         )}
       </div>
@@ -296,12 +297,12 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
                 {HOURS.map((h) => {
                   const val = matrix.get(`${day}-${h}`)
                   const label = val !== undefined
-                    ? formatValue(val, metric)
+                    ? formatValue(val, metric, fm)
                     : '–'
                   return (
                     <div
                       key={h}
-                      title={`${DAY_LABELS[day]} ${h}h — ${formatValue(val, metric)}`}
+                      title={`${DAY_LABELS[day]} ${h}h — ${formatValue(val, metric, fm)}`}
                       className={cn(
                         'flex-1 rounded-sm h-6 cursor-default transition-opacity hover:opacity-80 flex items-center justify-center',
                         getColor(val, metric, maxVal)

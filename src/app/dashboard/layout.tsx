@@ -6,6 +6,7 @@ import { AppSidebar } from '@/components/app-sidebar'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import { AgentStreamingProvider } from '@/components/agente/agent-streaming-provider'
+import { CurrencyProvider } from '@/components/currency-context'
 import { AgentSidePanel } from '@/components/agente/agent-side-panel'
 import { OnboardingGuide } from '@/components/onboarding/onboarding-guide'
 import {
@@ -92,9 +93,13 @@ export default async function DashboardLayout({
           <ThemeToggle />
         </header>
         <main className="flex flex-1 flex-col gap-4 p-4 min-w-0 overflow-x-hidden">
-          <AgentStreamingProvider>
-            {children}
-          </AgentStreamingProvider>
+          <Suspense fallback={null}>
+            <CurrencyProvider>
+              <AgentStreamingProvider>
+                {children}
+              </AgentStreamingProvider>
+            </CurrencyProvider>
+          </Suspense>
         </main>
       </SidebarInset>
       <Suspense fallback={null}>

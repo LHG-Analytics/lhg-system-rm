@@ -20,9 +20,8 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { cn } from '@/lib/utils'
+import { useCurrency } from '@/components/currency-context'
 import type { CompanyKPIResponse, DataTableGiroByWeek, DataTableRevparByWeek, CompanyTotalResult, ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
-
-const fmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
 type SortDir = 'asc' | 'desc'
 type SortState = { key: string; dir: SortDir } | null
@@ -195,28 +194,28 @@ const SUITE_COLS = [
   { key: 'tmo',       label: 'TMO' },
 ]
 
-function renderSuiteCell(row: SuiteRow, key: string): React.ReactNode {
+function renderSuiteCell(row: SuiteRow, key: string, fm: (v: number) => string): React.ReactNode {
   switch (key) {
     case 'rentals':   return row.totalRentalsApartments
-    case 'value':     return fmt.format(row.totalValue)
-    case 'ticket':    return fmt.format(row.totalTicketAverage)
+    case 'value':     return fm(row.totalValue)
+    case 'ticket':    return fm(row.totalTicketAverage)
     case 'giro':      return row.giro.toFixed(2)
-    case 'revpar':    return fmt.format(row.revpar)
+    case 'revpar':    return fm(row.revpar)
     case 'occupancy': return `${row.occupancyRate.toFixed(1)}%`
     case 'tmo':       return row.averageOccupationTime
     default:          return '–'
   }
 }
 
-function renderSuiteTotalCell(total: CompanyTotalResult, rows: SuiteRow[], key: string): React.ReactNode {
+function renderSuiteTotalCell(total: CompanyTotalResult, rows: SuiteRow[], key: string, fm: (v: number) => string): React.ReactNode {
   const sumRentals = rows.reduce((s, r) => s + r.totalRentalsApartments, 0)
   const sumValue   = rows.reduce((s, r) => s + r.totalValue, 0)
   switch (key) {
     case 'rentals':   return sumRentals
-    case 'value':     return fmt.format(sumValue)
-    case 'ticket':    return sumRentals > 0 ? fmt.format(sumValue / sumRentals) : '–'
+    case 'value':     return fm(sumValue)
+    case 'ticket':    return sumRentals > 0 ? fm(sumValue / sumRentals) : '–'
     case 'giro':      return total.totalGiro.toFixed(2)
-    case 'revpar':    return fmt.format(total.totalRevpar)
+    case 'revpar':    return fm(total.totalRevpar)
     case 'occupancy': return `${total.totalOccupancyRate.toFixed(1)}%`
     case 'tmo':       return total.totalAverageOccupationTime
     default:          return '–'
@@ -224,6 +223,7 @@ function renderSuiteTotalCell(total: CompanyTotalResult, rows: SuiteRow[], key: 
 }
 
 const SuiteCategoryTable = memo(function SuiteCategoryTable({ company, dragHandle }: { company: CompanyKPIResponse; dragHandle?: React.ReactNode }) {
+  const { formatMoney: fm } = useCurrency()
   const rawRows: SuiteRow[] = (company.DataTableSuiteCategory ?? []).flatMap((item) =>
     Object.entries(item).map(([category, kpi]) => ({ category, ...kpi }))
   )
@@ -343,7 +343,7 @@ const SuiteCategoryTable = memo(function SuiteCategoryTable({ company, dragHandl
                         </td>
                         {orderedCols.map((col) => (
                           <td key={col.key} className="px-4 py-3 text-right tabular-nums">
-                            {renderSuiteCell(row, col.key)}
+                            {renderSuiteCell(row, col.key, fm)}
                           </td>
                         ))}
                       </>
@@ -359,7 +359,7 @@ const SuiteCategoryTable = memo(function SuiteCategoryTable({ company, dragHandl
                 <td className="px-4 py-3">Total</td>
                 {orderedCols.map((col) => (
                   <td key={col.key} className="px-4 py-3 text-right tabular-nums">
-                    {renderSuiteTotalCell(total, rows, col.key)}
+                    {renderSuiteTotalCell(total, rows, col.key, fm)}
                   </td>
                 ))}
               </tr>
@@ -533,6 +533,7 @@ const GiroWeekTable = memo(function GiroWeekTable({ title, data, dragHandle }: {
 type RevparRow = { cat: string; days: DataTableRevparByWeek[string] }
 
 const RevparWeekTable = memo(function RevparWeekTable({ title, data, dragHandle }: { title: string; data: DataTableRevparByWeek[]; dragHandle?: React.ReactNode }) {
+  const { formatMoney: fm } = useCurrency()
   const rawRows: RevparRow[] = (data ?? []).map((item) => {
     const [cat, days] = Object.entries(item)[0]
     return { cat, days }
@@ -650,7 +651,7 @@ const RevparWeekTable = memo(function RevparWeekTable({ title, data, dragHandle 
                         </td>
                         {visibleCols.map((d) => (
                           <td key={d} className="px-4 py-3 text-right tabular-nums">
-                            {days[d] !== undefined ? fmt.format(days[d].revpar) : '–'}
+                            {days[d] !== undefined ? fm(days[d].revpar) : '–'}
                           </td>
                         ))}
                       </>
@@ -665,7 +666,7 @@ const RevparWeekTable = memo(function RevparWeekTable({ title, data, dragHandle 
               <td className="px-4 py-3 whitespace-nowrap">Total</td>
               {visibleCols.map((d) => (
                 <td key={d} className="px-4 py-3 text-right tabular-nums">
-                  {totalByDay[d] !== undefined ? fmt.format(totalByDay[d]) : '–'}
+                  {totalByDay[d] !== undefined ? fm(totalByDay[d]) : '–'}
                 </td>
               ))}
             </tr>
@@ -687,17 +688,18 @@ const CHANNEL_COLS = [
   { key: 'representatividade', label: '% Receita' },
 ]
 
-function renderChannelCell(r: ChannelKPIRow, key: string): React.ReactNode {
+function renderChannelCell(r: ChannelKPIRow, key: string, fm: (v: number) => string): React.ReactNode {
   switch (key) {
     case 'reservas':           return r.reservas.toLocaleString('pt-BR')
-    case 'receita':            return fmt.format(r.receita)
-    case 'ticket':             return fmt.format(r.ticket)
+    case 'receita':            return fm(r.receita)
+    case 'ticket':             return fm(r.ticket)
     case 'representatividade': return `${r.representatividade.toFixed(1)}%`
     default:                   return '–'
   }
 }
 
 const ChannelMixTable = memo(function ChannelMixTable({ rows, dragHandle }: { rows: ChannelKPIRow[]; dragHandle?: React.ReactNode }) {
+  const { formatMoney: fm } = useCurrency()
   const [sort, setSort]   = useState<SortState>(null)
   const [order, setOrder] = useState<string[]>([])
 
@@ -813,7 +815,7 @@ const ChannelMixTable = memo(function ChannelMixTable({ rows, dragHandle }: { ro
                         </td>
                         {orderedCols.map((col) => (
                           <td key={col.key} className="px-4 py-3 text-right tabular-nums">
-                            {renderChannelCell(row, col.key)}
+                            {renderChannelCell(row, col.key, fm)}
                           </td>
                         ))}
                       </>
@@ -829,8 +831,8 @@ const ChannelMixTable = memo(function ChannelMixTable({ rows, dragHandle }: { ro
               {orderedCols.map((col) => (
                 <td key={col.key} className="px-4 py-3 text-right tabular-nums">
                   {col.key === 'reservas'           ? totalReservas.toLocaleString('pt-BR')
-                  : col.key === 'receita'           ? fmt.format(totalReceita)
-                  : col.key === 'ticket'            ? fmt.format(totalTicket)
+                  : col.key === 'receita'           ? fm(totalReceita)
+                  : col.key === 'ticket'            ? fm(totalTicket)
                   : col.key === 'representatividade' ? `${totalRepresentativ.toFixed(1)}%`
                   : '–'}
                 </td>
@@ -854,6 +856,7 @@ const PERIOD_COLS = [
 ]
 
 const PeriodMixTable = memo(function PeriodMixTable({ rows, dragHandle }: { rows: BillingRentalTypeItem[]; dragHandle?: React.ReactNode }) {
+  const { formatMoney: fm } = useCurrency()
   const [sort, setSort]   = useState<SortState>(null)
   const [order, setOrder] = useState<string[]>([])
 
@@ -968,8 +971,8 @@ const PeriodMixTable = memo(function PeriodMixTable({ rows, dragHandle }: { rows
                         </td>
                         {orderedCols.map((col) => (
                           <td key={col.key} className="px-4 py-3 text-right tabular-nums">
-                            {col.key === 'value'    ? fmt.format(row.value)
-                            : col.key === 'ticket'  ? fmt.format(row.ticket)
+                            {col.key === 'value'    ? fm(row.value)
+                            : col.key === 'ticket'  ? fm(row.ticket)
                             : col.key === 'locacoes' ? row.locacoes.toLocaleString('pt-BR')
                             : col.key === 'percent' ? `${row.percent.toFixed(1)}%`
                             : '–'}
@@ -987,8 +990,8 @@ const PeriodMixTable = memo(function PeriodMixTable({ rows, dragHandle }: { rows
               <td className="px-4 py-3">Total</td>
               {orderedCols.map((col) => (
                 <td key={col.key} className="px-4 py-3 text-right tabular-nums">
-                  {col.key === 'value'    ? fmt.format(totalValue)
-                  : col.key === 'ticket'  ? fmt.format(totalTicket)
+                  {col.key === 'value'    ? fm(totalValue)
+                  : col.key === 'ticket'  ? fm(totalTicket)
                   : col.key === 'locacoes' ? totalLocacoes.toLocaleString('pt-BR')
                   : '100%'}
                 </td>
