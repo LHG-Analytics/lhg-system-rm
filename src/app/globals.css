@@ -166,3 +166,69 @@
     display: none;
   }
 }
+
+/* =========================================================
+   Print / PDF Export — usado pelo botão "Exportar PDF" nos relatórios
+   ========================================================= */
+@media print {
+  /* Preserva cores exatas: badges emerald/amber/red, fundos coloridos */
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Página A4 com margens confortáveis */
+  @page {
+    margin: 1.5cm;
+    size: A4 portrait;
+  }
+
+  /* Oculta a sidebar global do app */
+  [data-sidebar="sidebar"],
+  [data-sidebar="rail"],
+  [data-slot="sidebar-rail"] {
+    display: none !important;
+  }
+
+  /* Remove margem lateral que a sidebar inset adiciona */
+  [data-slot="sidebar-inset"] {
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  /* Fundo branco — evita gastar tinta com o fundo escuro do dark mode */
+  body,
+  html {
+    background: white !important;
+  }
+
+  /* Remove restrições de overflow que clipam conteúdo na impressão */
+  .overflow-hidden,
+  .overflow-y-auto,
+  .overflow-x-auto,
+  .overflow-y-scroll {
+    overflow: visible !important;
+  }
+
+  /* Remove height: 100% que limita conteúdo ao viewport em vez de expandir */
+  .h-full,
+  .h-screen,
+  .min-h-svh {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  /* Recharts ResponsiveContainer: define largura explícita para evitar
+     o problema de 0px quando ResizeObserver não dispara em print */
+  .recharts-responsive-container {
+    width: 680px !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Evita quebra de página no meio de cards de seção */
+  .rounded-xl {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}

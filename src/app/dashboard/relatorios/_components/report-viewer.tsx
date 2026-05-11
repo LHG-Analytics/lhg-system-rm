@@ -1,6 +1,6 @@
 'use client'
 
-import { FileText, Loader2 } from 'lucide-react'
+import { FileText, Loader2, Printer } from 'lucide-react'
 import type { WeeklyReportData } from '@/lib/reports/types'
 import { ExecutiveSummary } from './sections/executive-summary'
 import { EvolutionBanner } from './sections/evolution-banner'
@@ -99,9 +99,20 @@ export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-6 space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold">{data.period.unit}</h2>
-        <p className="text-sm text-muted-foreground">{periodLabel}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">{data.period.unit}</h2>
+          <p className="text-sm text-muted-foreground">{periodLabel}</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2 shrink-0 print:hidden"
+          onClick={() => window.print()}
+        >
+          <Printer className="w-4 h-4" />
+          Exportar PDF
+        </Button>
       </div>
 
       <ExecutiveSummary data={data.executiveSummary} aiSummary={report.ai_summary} />

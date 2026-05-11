@@ -107,18 +107,20 @@ export function RelatoriosPageClient({ initialReports, unitSlug, unitName, unitI
 
   return (
     <div className="flex h-full overflow-hidden">
-      <ReportSidebar
-        reports={reports}
-        selectedId={selectedId}
-        unitSlug={unitSlug}
-        onSelect={loadReport}
-        onGenerated={handleGenerated}
-        onDelete={handleDelete}
-      />
+      <div className="print:hidden">
+        <ReportSidebar
+          reports={reports}
+          selectedId={selectedId}
+          unitSlug={unitSlug}
+          onSelect={loadReport}
+          onGenerated={handleGenerated}
+          onDelete={handleDelete}
+        />
+      </div>
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-3 border-b shrink-0">
+        <div className="print:hidden flex items-center justify-between px-6 py-3 border-b shrink-0">
           <h1 className="font-semibold">Relatórios — {unitName}</h1>
           {doneReports.length >= 2 && selectedReport?.status === 'done' && (
             <Button
