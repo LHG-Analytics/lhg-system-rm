@@ -7,6 +7,7 @@ import lushLogoSrc from '../../public/lush-logo.png'
 import altanaLogoSrc from '../../public/altana-logo.webp'
 import andarLogoSrc from '../../public/andar-de-cima-logo.png'
 import toutLogoSrc from '../../public/tout-logo.png'
+import livLogoSrc from '../../public/liv-logo.png'
 import {
   BarChart3,
   BotMessageSquare,
@@ -65,6 +66,7 @@ const UNIT_LOGO_CONFIG: Record<string, { src: string; darkBg?: boolean }> = {
   'altana':        { src: altanaLogoSrc.src, darkBg: true },
   'andar-de-cima': { src: andarLogoSrc.src },
   'tout':          { src: toutLogoSrc.src },
+  'liv':           { src: livLogoSrc.src },
 }
 
 function UnitLogo({ slug, name, size = 32 }: { slug: string; name: string; size?: number }) {
