@@ -106,7 +106,7 @@ export function RelatoriosPageClient({ initialReports, unitSlug, unitName, unitI
   const doneReports = reports.filter(r => r.status === 'done')
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden print:block print:h-auto print:overflow-visible">
       <div className="print:hidden">
         <ReportSidebar
           reports={reports}
@@ -118,7 +118,7 @@ export function RelatoriosPageClient({ initialReports, unitSlug, unitName, unitI
         />
       </div>
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 print:block print:h-auto">
         {/* Header */}
         <div className="print:hidden flex items-center justify-between px-6 py-3 border-b shrink-0">
           <h1 className="font-semibold">Relatórios — {unitName}</h1>
@@ -136,7 +136,7 @@ export function RelatoriosPageClient({ initialReports, unitSlug, unitName, unitI
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden print:block print:h-auto print:overflow-visible">
           {comparisonMode && selectedReport ? (
             <ReportComparisonMode
               primaryReport={selectedReport}
@@ -144,7 +144,7 @@ export function RelatoriosPageClient({ initialReports, unitSlug, unitName, unitI
               unitSlug={unitSlug}
             />
           ) : (
-            <div className="h-full overflow-y-auto">
+            <div className="h-full overflow-y-auto print:h-auto print:overflow-visible">
               <ReportViewer
                 report={selectedReport}
                 loading={loadingReport}

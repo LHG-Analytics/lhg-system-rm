@@ -183,6 +183,23 @@
     size: A4 portrait;
   }
 
+  /* Reset nuclear: quebra o contexto flex/height do layout do app para que todo
+     o conteúdo do relatório seja renderizado (não apenas o visível no viewport).
+     Sem isso, a cadeia flex-1 → h-full → overflow-y-auto limita ao viewport
+     e o conteúdo scrollado abaixo não aparece no PDF. */
+  html,
+  body,
+  #__next,
+  [data-slot="sidebar-inset"] {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+
   /* Oculta a sidebar global do app */
   [data-sidebar="sidebar"],
   [data-sidebar="rail"],
@@ -190,19 +207,10 @@
     display: none !important;
   }
 
-  /* Remove margem lateral que a sidebar inset adiciona */
-  [data-slot="sidebar-inset"] {
-    margin: 0 !important;
-    border-radius: 0 !important;
-  }
+  /* Fundo branco */
+  body { background: white !important; }
 
-  /* Fundo branco — evita gastar tinta com o fundo escuro do dark mode */
-  body,
-  html {
-    background: white !important;
-  }
-
-  /* Remove restrições de overflow que clipam conteúdo na impressão */
+  /* Remove todas as restrições de overflow e altura */
   .overflow-hidden,
   .overflow-y-auto,
   .overflow-x-auto,
@@ -210,7 +218,6 @@
     overflow: visible !important;
   }
 
-  /* Remove height: 100% que limita conteúdo ao viewport em vez de expandir */
   .h-full,
   .h-screen,
   .min-h-svh {
@@ -218,17 +225,18 @@
     min-height: 0 !important;
   }
 
-  /* Recharts ResponsiveContainer: 100% funciona depois de remover overflow:hidden
-     dos containers pai. Evita 680px fixo > área útil do A4 (~632px com margens). */
+  /* Recharts: 100% funciona porque os containers pai agora têm width definido */
   .recharts-responsive-container {
     width: 100% !important;
     min-width: 200px !important;
     overflow: visible !important;
   }
 
-  /* Evita quebra de página no meio de cards de seção */
+  /* NÃO usar break-inside: avoid no .rounded-xl — causa grandes espaços em branco
+     porque seções inteiras pulam para a próxima página. Apenas elementos menores
+     (linhas de tabela, stat cards) devem evitar quebra no meio. */
   .rounded-xl {
-    page-break-inside: avoid;
-    break-inside: avoid;
+    break-inside: auto;
+    page-break-inside: auto;
   }
 }
