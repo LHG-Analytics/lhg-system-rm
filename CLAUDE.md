@@ -1087,6 +1087,18 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `dashboard/layout.tsx`: importa e renderiza após `</SidebarInset>`, dentro de `<Suspense fallback={null}>`
   - **Armadilha:** `AgenteChat` usa `flex flex-col flex-1 min-h-0` no container pai para o scroll interno funcionar — container do painel usa `flex flex-col flex-1 min-h-0 overflow-hidden`
 
+- **LHG-189:** feat(admin+infra): configuração de unidades no banco + nova unidade LIV (Quito) ✅ 2026-05-11
+  - Migration `20260511000001_unit_config_columns.sql`: colunas `automo_env_key TEXT`, `automo_category_ids INTEGER[] NOT NULL DEFAULT '{}'`, `period_type TEXT CHECK ('standard','altana')`, `logo_path TEXT` adicionadas à tabela `units`; seeds das 5 unidades existentes + INSERT da LIV
+  - LIV: nome "LIV", slug "liv", city "Quito", state "EC", automo_env_key "LIV", category_ids `{1,2,3,4,5,7,8,9,10,11}`, period_type "standard"
+  - `src/lib/automo/unit-config.ts`: cache em memória (TTL 5 min) que lê `units` via admin client; `getUnitConfig(slug)`, `getAllUnitConfigs()`, `invalidateUnitCache(slug?)`
+  - `src/lib/automo/client.ts`: `getAutomPool` agora **async** — lê `automo_env_key` do banco; `getUnitCategoryIds(slug)`, `getUnitPeriodType(slug)`, `invalidatePool(slug)`; removidos `UNIT_ENV_MAP` e `UNIT_CATEGORY_IDS` hardcoded
+  - `src/lib/automo/period-helpers.ts`: `getValidPeriodsForType(periodType)` e `buildPeriodCaseSQL(periodType)` — evita importação circular entre `channel-kpis.ts` e `company-kpis.ts`
+  - `src/app/api/admin/units/route.ts`: GET (admin+), POST (super_admin), PATCH (super_admin); PATCH chama `invalidateUnitCache` + `invalidatePool` após update
+  - `src/app/dashboard/admin/_components/unit-manager.tsx`: CRUD visual — lista expansível, edição inline, toggle is_active; `catRaw` separado de `automo_category_ids` para input seguro de IDs
+  - Admin page: aba "Unidades" (Building2) adicionada; `allUnitsResult` inclui unidades inativas
+  - **Armadilha:** `getAutomPool` é agora async — todos os call sites precisam de `await`
+  - **Armadilha:** adicionar nova unidade requer apenas INSERT no banco com `period_type` correto — sem alteração de código
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
