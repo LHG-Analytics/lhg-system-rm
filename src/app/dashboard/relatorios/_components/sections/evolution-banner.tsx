@@ -24,7 +24,7 @@ export function EvolutionBanner({ data }: Props) {
   return (
     <div className="rounded-xl border bg-card p-4">
       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-        Evolução vs período anterior (mesma duração)
+        Evolução vs semana anterior
       </p>
       <div className="flex flex-wrap gap-x-6 gap-y-2">
         {items.map(([key, val]) => (

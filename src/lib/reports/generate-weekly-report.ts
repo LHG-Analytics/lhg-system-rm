@@ -799,21 +799,27 @@ ${historicalInsights.map(h => `- ${h.fromDate}→${h.toDate}: ${h.changesCount} 
     if (demandPatternCtx) agentSystemPrompt += demandPatternCtx
     if (historicalCtx) agentSystemPrompt += historicalCtx
 
-    // Períodos de referência para a mensagem do usuário
+    // Períodos de referência para a mensagem do usuário — formato DD/MM/AAAA
     const lyStartStr = lyStart.toISOString().slice(0, 10)
     const lyEndStr   = lyEnd.toISOString().slice(0, 10)
+    const fmtPeriodStart  = isoToDDMMYYYY(periodStart)
+    const fmtPeriodEnd    = isoToDDMMYYYY(periodEnd)
+    const fmtPrevStart    = isoToDDMMYYYY(prevStartStr)
+    const fmtPrevEnd      = isoToDDMMYYYY(prevEndStr)
+    const fmtLyStart      = isoToDDMMYYYY(lyStartStr)
+    const fmtLyEnd        = isoToDDMMYYYY(lyEndStr)
 
     // Mensagem do usuário: pede o JSON do relatório semanal com contexto de períodos
-    const weeklyReportUserMsg = `Elabore o resumo executivo do relatório semanal de ${unit.name} para o período ${periodStart} a ${periodEnd}.
+    const weeklyReportUserMsg = `Elabore o resumo executivo do relatório semanal de ${unit.name} para o período ${fmtPeriodStart} a ${fmtPeriodEnd}.
 
-PERÍODOS DE REFERÊNCIA (cite SEMPRE ao mencionar variações):
-- Período atual: ${periodStart} a ${periodEnd} (${durationDays} dias)
-- Período anterior (mesma duração): ${prevStartStr} a ${prevEndStr}
-- Mesmo período ano anterior: ${lyStartStr} a ${lyEndStr}
+PERÍODOS DE REFERÊNCIA (cite SEMPRE ao mencionar variações — use APENAS o formato DD/MM/AAAA, NUNCA ISO):
+- Período atual: ${fmtPeriodStart} a ${fmtPeriodEnd} (${durationDays} dias)
+- Semana anterior (mesma duração): ${fmtPrevStart} a ${fmtPrevEnd}
+- Mesmo período do ano anterior: ${fmtLyStart} a ${fmtLyEnd}
 
 REGRAS INVIOLÁVEIS para o JSON:
-1. "headline": inclua o período atual e um dado numérico chave.
-2. "keyPoints": termine cada bullet com o período de referência (ex: "vs ${prevStartStr}–${prevEndStr}" ou "vs LY ${lyStartStr}–${lyEndStr}").
+1. "headline": inclua o período atual em DD/MM e um dado numérico chave.
+2. "keyPoints": termine cada bullet com o período de referência. Use "vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})" ou "vs ano anterior (${fmtLyStart}–${fmtLyEnd})". NUNCA use siglas como "LY" ou "yoy".
 3. "priorityAction": use dados REAIS. NUNCA sugira variação > ${maxVar}% — se o mercado exigir mais, diga "ajustar em ${maxVar}% agora e reavaliar". Pode propor novo tier de dia se o padrão horário justificar.
 4. "agentPrompt": instrução compacta (máx 280 chars) respeitando variação máx ${maxVar}%.
 5. "actionType": "price_proposal" | "discount_proposal" | "agent_config" | "none".
