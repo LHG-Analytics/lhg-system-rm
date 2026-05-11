@@ -796,9 +796,24 @@ export async function generateWeeklyReport(
 ## Histórico de mudanças de tabela (aprendizado)
 ${historicalInsights.map(h => `- ${h.fromDate}→${h.toDate}: ${h.changesCount} preços (${h.avgChangePct > 0 ? '+' : ''}${h.avgChangePct.toFixed(1)}%) → Δ RevPAR ${h.deltaRevpar !== null ? `${h.deltaRevpar > 0 ? '+' : ''}${h.deltaRevpar.toFixed(1)}%` : '?'}, Δ Giro ${h.deltaGiro !== null ? `${h.deltaGiro > 0 ? '+' : ''}${h.deltaGiro.toFixed(1)}%` : '?'} (${h.verdict})`).join('\n')}` : ''
 
+    const maxVar = agentConfig?.max_variation_pct ?? 15
+    const lyStartStr = lyStart.toISOString().slice(0, 10)
+    const lyEndStr   = lyEnd.toISOString().slice(0, 10)
+
     const promptContext = `
 Você é um Revenue Manager sênior especialista em motéis.
-Analise o contexto operacional completo de ${unit.name} (${periodStart}–${periodEnd}, ${durationDays} dias) abaixo — é o MESMO contexto que o Agente RM usa para análises e propostas, incluindo histórico de tabelas importadas e aprendizado de decisões passadas.
+Analise o contexto operacional completo de ${unit.name} abaixo.
+
+PERÍODOS DE REFERÊNCIA (use SEMPRE ao citar % ou variações):
+- Período atual: ${periodStart} a ${periodEnd} (${durationDays} dias)
+- Período anterior (mesma duração): ${prevStartStr} a ${prevEndStr}
+- Mesmo período ano anterior: ${lyStartStr} a ${lyEndStr}
+
+RESTRIÇÕES DO GESTOR (INVIOLÁVEIS):
+- Variação máxima permitida por item de preço: ${maxVar}% (para cima OU para baixo)
+- Estratégia configurada: ${agentConfig?.pricing_strategy ?? 'moderado'}
+- Foco principal: ${agentConfig?.focus_metric ?? 'revpar'}
+Qualquer sugestão que ultrapasse ${maxVar}% é inválida — não importa o quanto o preço esteja fora do mercado.
 
 ---
 ${kpiBlock}
@@ -816,24 +831,25 @@ ${unitStructureBlock}
 ${historicalCtx}
 ---
 
-Config do agente: estratégia ${agentConfig?.pricing_strategy ?? 'moderado'}, foco ${agentConfig?.focus_metric ?? 'revpar'}, variação máx ${agentConfig?.max_variation_pct ?? 15}%
-
 REGRAS PARA O JSON:
-1. "priorityAction": use dados REAIS do contexto (preços, KPIs, concorrentes). NUNCA escreva "R$ xxx" ou placeholders. Pode sugerir criar nova tabela para um dia específico da semana se o padrão de giro/RevPAR justificar (ex: "criar tabela para sexta-feira com Master 3h a R$X, dado giro 1.9 na sexta vs 1.1 na segunda").
-2. "actionType": "price_proposal" | "discount_proposal" | "agent_config" | "none".
-3. "agentPrompt": instrução COMPACTA (máx 280 chars) para o Agente RM executar. Com números reais.
-4. "agentConfigSuggestion": se estratégia/foco atual não é ideal, sugira em 1 frase. Null se adequado.
+1. "headline": inclua o período atual (ex: "01–09/mai").
+2. "keyPoints": SEMPRE termine cada bullet com " (vs período anterior ${prevStartStr}–${prevEndStr})" ou " (vs LY ${lyStartStr}–${lyEndStr})" conforme aplicável.
+3. "priorityAction": use dados REAIS. NUNCA sugira variação > ${maxVar}% — se o preço estiver muito fora do mercado e ${maxVar}% não for suficiente, diga "ajustar em ${maxVar}% agora e reavaliar na próxima revisão". Pode sugerir novo tier de dia específico se padrão horário justificar.
+4. "mainWin" e "mainConcern": sempre com período de referência explícito.
+5. "actionType": "price_proposal" | "discount_proposal" | "agent_config" | "none".
+6. "agentPrompt": instrução COMPACTA (máx 280 chars) para o Agente RM. Inclua números reais. Variação máx ${maxVar}%.
+7. "agentConfigSuggestion": se estratégia/foco não é ideal, sugira em 1 frase. Null se adequado.
 
 Retorne APENAS o JSON:
 {
-  "headline": "Uma frase com dado numérico que captura o tom da semana",
-  "keyPoints": ["insight com número 1", "insight 2", "insight 3"],
-  "mainWin": "Maior vitória do período com dado real",
-  "mainConcern": "Maior preocupação com dado real",
-  "priorityAction": "AÇÃO ESPECÍFICA COM DADOS REAIS — sem placeholders",
+  "headline": "Frase com período e dado numérico",
+  "keyPoints": ["insight com número e período de referência", "insight 2", "insight 3"],
+  "mainWin": "Maior vitória com dado real e período",
+  "mainConcern": "Maior preocupação com dado real e período",
+  "priorityAction": "AÇÃO DENTRO DO LIMITE DE ${maxVar}% — com preços reais",
   "tone": "positive|neutral|warning",
   "actionType": "price_proposal|discount_proposal|agent_config|none",
-  "agentPrompt": "Prompt compacto para o Agente RM",
+  "agentPrompt": "Prompt compacto respeitando limite ${maxVar}%",
   "agentConfigSuggestion": null,
   "aiLeverageComment": "2-3 alavancas concretas com números para atingir a meta"
 }
