@@ -1,4 +1,12 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/database.types'
+
+function getAdmin() {
+  return createAdminClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+}
 
 export interface UnitConfig {
   id: string
@@ -23,7 +31,7 @@ export async function getUnitConfig(slug: string): Promise<UnitConfig | null> {
   const cached = cache.get(slug)
   if (cached && cached.expiresAt > now) return cached.config
 
-  const supabase = await createClient()
+  const supabase = getAdmin()
   const { data, error } = await supabase
     .from('units')
     .select('id, name, slug, automo_env_key, automo_category_ids, period_type')
@@ -50,7 +58,7 @@ export async function getUnitConfig(slug: string): Promise<UnitConfig | null> {
 }
 
 export async function getAllUnitConfigs(): Promise<UnitConfig[]> {
-  const supabase = await createClient()
+  const supabase = getAdmin()
   const { data, error } = await supabase
     .from('units')
     .select('id, name, slug, automo_env_key, automo_category_ids, period_type')
