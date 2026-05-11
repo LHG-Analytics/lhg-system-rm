@@ -477,17 +477,10 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
         // Não bloqueia o cron
       }
 
-      // Bootstrap: popula rm_pricing_lessons a partir do histórico de tabelas importadas.
-      // Roda apenas 1x por unidade (auto-skip quando já há lições). Dispara elasticidade
-      // imediatamente, sem esperar pelos checkpoints de 7/14/28 dias.
+      // Bootstrap: processa pares de tabelas importadas ainda não analisados.
+      // Idempotente — pula pares já processados, só age em transições novas.
       try {
-        const { count: lessonCount } = await admin
-          .from('rm_pricing_lessons')
-          .select('id', { count: 'exact', head: true })
-          .eq('unit_id', cfg.unit_id)
-        if ((lessonCount ?? 0) === 0) {
-          await bootstrapPricingLessons(cfg.unit_id, unitSlug)
-        }
+        await bootstrapPricingLessons(cfg.unit_id, unitSlug)
       } catch {
         // Não bloqueia o cron
       }

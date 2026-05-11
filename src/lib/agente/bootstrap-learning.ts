@@ -53,9 +53,8 @@ export interface BootstrapResult {
 
 /**
  * Popula rm_pricing_lessons com dados históricos de transições de tabelas.
- * Auto-skip se a unidade já tem >= 5 lições vindas de propostas reais (checkpoints).
- * Safe para chamar repetidamente — inserts com conditions.source='bootstrap' são idempotentes
- * via checagem de (unit_id, categoria, periodo, dia_tipo, observed_at) existente.
+ * Idempotente por par: se já existe lição bootstrap para o import_b, o par é pulado.
+ * Seguro para chamar a qualquer momento — só processa pares ainda não processados.
  */
 export async function bootstrapPricingLessons(
   unitId: string,
@@ -65,17 +64,6 @@ export async function bootstrapPricingLessons(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
-
-  // Não faz bootstrap se já há dados confiáveis de checkpoints reais
-  const { count: realLessons } = await admin
-    .from('rm_pricing_lessons')
-    .select('id', { count: 'exact', head: true })
-    .eq('unit_id', unitId)
-    .not('proposal_id', 'is', null)
-
-  if ((realLessons ?? 0) >= 5) {
-    return { transitions: 0, inserted: 0, skipped: 0, elasticityUpdated: 0 }
-  }
 
   // Busca imports de preços com dados parseados, do mais antigo ao mais recente
   const { data: imports } = await admin
@@ -99,6 +87,14 @@ export async function bootstrapPricingLessons(
     const importA = imports[i]
     const importB = imports[i + 1]
     const switchDate = importB.valid_from  // data em que B substituiu A
+
+    // Idempotência: pula par já processado (identifica pelo import_b no conditions JSONB)
+    const { count: existing } = await admin
+      .from('rm_pricing_lessons')
+      .select('id', { count: 'exact', head: true })
+      .eq('unit_id', unitId)
+      .filter('conditions->>import_b', 'eq', importB.id)
+    if ((existing ?? 0) > 0) continue
 
     // Precisa ter passado MIN_DAYS desde a troca para ter dados pós confiáveis
     if (daysBetween(switchDate, today) < MIN_DAYS) { skipped++; continue }

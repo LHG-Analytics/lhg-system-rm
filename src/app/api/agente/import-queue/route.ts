@@ -6,12 +6,14 @@
  * PATCH            — processa o próximo job pendente (chamado pelo frontend via polling)
  */
 import { generateText } from 'ai'
+import { after } from 'next/server'
 import { ANALYSIS_MODEL, analysisOptions, ANALYSIS_MAX_OUTPUT_TOKENS } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
+import { bootstrapPricingLessons } from '@/lib/agente/bootstrap-learning'
 
 
 /**
@@ -310,6 +312,15 @@ export async function PATCH(req: NextRequest) {
       type: 'success',
       link: `/dashboard/${importedPage}?unit=${unitSlug}`,
     })
+
+    // Dispara bootstrap em background após nova tabela de preços confirmada
+    if (jobImportType === 'prices') {
+      after(async () => {
+        try {
+          await bootstrapPricingLessons(unit.id, unitSlug)
+        } catch { /* silencioso */ }
+      })
+    }
 
     return Response.json({ success: true })
   }

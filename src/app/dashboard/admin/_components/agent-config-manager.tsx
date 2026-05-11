@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Settings2, Loader2, Building2, Save, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Settings2, Loader2, Building2, Save, Plus, Trash2, ChevronDown, ChevronUp, BrainCircuit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -107,6 +107,9 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
   const [savingContext, setSavingContext] = useState(false)
   const [savedContext, setSavedContext] = useState(false)
 
+  const [bootstrapping, setBootstrapping] = useState(false)
+  const [bootstrapResult, setBootstrapResult] = useState<string | null>(null)
+
   // Auto-fetch config quando não recebida via props (ex: usado em Sheet no agente)
   useEffect(() => {
     if (config !== null) return
@@ -165,6 +168,33 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
       setSavingContext(false)
     }
   }, [config, sharedContextText])
+
+  const handleBootstrap = useCallback(async () => {
+    if (!unitSlug) return
+    setBootstrapping(true)
+    setBootstrapResult(null)
+    try {
+      const res = await fetch('/api/admin/bootstrap-learning', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unitSlug }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Erro ao processar')
+      const r = data.result
+      if (r.inserted > 0) {
+        setBootstrapResult(`✓ ${r.inserted} lições geradas em ${r.transitions} transições — elasticidade atualizada`)
+      } else if (r.transitions === 0 && r.skipped === 0) {
+        setBootstrapResult('Todas as transições já foram processadas.')
+      } else {
+        setBootstrapResult(`Nenhuma lição nova (${r.skipped} transições sem dados suficientes ainda).`)
+      }
+    } catch (e) {
+      setBootstrapResult(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setBootstrapping(false)
+    }
+  }, [unitSlug])
 
   const handleSave = useCallback(async () => {
     if (!config) return
@@ -539,6 +569,28 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
               </Button>
             </div>
           )}
+
+          {/* Bootstrap de aprendizado histórico */}
+          <div className="rounded-xl border px-4 py-3 space-y-2">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-medium flex items-center gap-1.5">
+                  <BrainCircuit className="size-3.5 text-muted-foreground" />
+                  Aprendizado retroativo
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Analisa as transições entre tabelas de preços importadas e gera lições de pricing para preencher a coluna &quot;Rev. Esperada&quot; nas propostas.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={handleBootstrap} disabled={bootstrapping}>
+                {bootstrapping ? <Loader2 className="size-3.5 animate-spin" /> : <BrainCircuit className="size-3.5" />}
+                {bootstrapping ? 'Processando...' : 'Processar histórico'}
+              </Button>
+            </div>
+            {bootstrapResult && (
+              <p className="text-xs text-muted-foreground border-t pt-2">{bootstrapResult}</p>
+            )}
+          </div>
         </div>
       )}
     </div>
