@@ -1,6 +1,6 @@
 'use client'
 
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, LabelList, ResponsiveContainer } from 'recharts'
 import type { KPISnapshot } from '@/lib/reports/types'
 
 interface Props {
@@ -36,8 +36,8 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
   }))
 
   return (
-    <ResponsiveContainer width="100%" height={200}>
-      <BarChart data={data} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+    <ResponsiveContainer width="100%" height={180}>
+      <BarChart data={data} margin={{ top: 18, right: 4, bottom: 4, left: 4 }}>
         <XAxis dataKey="name" tick={{ fontSize: 12 }} />
         <YAxis tick={{ fontSize: 11 }} width={50} />
         <Tooltip
@@ -51,7 +51,14 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
           }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="Atual" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+        <Bar dataKey="Atual" fill="#3b82f6" radius={[3, 3, 0, 0]}>
+          <LabelList
+            dataKey="Atual"
+            position="top"
+            style={{ fontSize: 10, fill: '#94a3b8' }}
+            formatter={(v: unknown) => `R$${Number(v).toFixed(0)}`}
+          />
+        </Bar>
         {previousWeek && <Bar dataKey="Semana ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
         {sameWeekLastYear && <Bar dataKey="Ano anterior" fill="#64748b" radius={[3, 3, 0, 0]} />}
       </BarChart>
@@ -70,8 +77,8 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
   ]
 
   return (
-    <ResponsiveContainer width="100%" height={130}>
-      <BarChart data={data} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+    <ResponsiveContainer width="100%" height={110}>
+      <BarChart data={data} margin={{ top: 18, right: 4, bottom: 4, left: 4 }}>
         <XAxis dataKey="name" tick={{ fontSize: 11 }} />
         <YAxis tick={{ fontSize: 11 }} width={36} domain={[0, 'auto']} />
         <Tooltip
@@ -79,7 +86,14 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
           formatter={(value: unknown, name: unknown) => [Number(value).toFixed(2), String(name)]}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="Atual" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+        <Bar dataKey="Atual" fill="#3b82f6" radius={[3, 3, 0, 0]}>
+          <LabelList
+            dataKey="Atual"
+            position="top"
+            style={{ fontSize: 10, fill: '#94a3b8' }}
+            formatter={(v: unknown) => Number(v).toFixed(2)}
+          />
+        </Bar>
         {previousWeek && <Bar dataKey="Semana ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
         {sameWeekLastYear && <Bar dataKey="Ano anterior" fill="#64748b" radius={[3, 3, 0, 0]} />}
       </BarChart>

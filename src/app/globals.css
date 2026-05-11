@@ -218,11 +218,11 @@
     min-height: 0 !important;
   }
 
-  /* Recharts ResponsiveContainer: define largura explícita para evitar
-     o problema de 0px quando ResizeObserver não dispara em print */
+  /* Recharts ResponsiveContainer: 100% funciona depois de remover overflow:hidden
+     dos containers pai. Evita 680px fixo > área útil do A4 (~632px com margens). */
   .recharts-responsive-container {
-    width: 680px !important;
-    min-width: 0 !important;
+    width: 100% !important;
+    min-width: 200px !important;
     overflow: visible !important;
   }
 
