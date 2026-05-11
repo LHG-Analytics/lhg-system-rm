@@ -1,18 +1,20 @@
 // Bootstrap de rm_pricing_lessons e rm_price_elasticity a partir do histórico de
 // tabelas de preços importadas — sem depender de checkpoints futuros.
 //
-// Cada vez que uma nova tabela foi importada, tratamos a transição como
-// um "experimento natural": comparamos KPIs dos últimos WINDOW_DAYS antes
-// da troca com os primeiros WINDOW_DAYS depois, e registramos o que
-// aconteceu com cada preço que mudou.
+// Trata cada transição entre tabelas consecutivas como "experimento natural":
+// compara KPIs por CATEGORIA nos 28 dias antes vs 28 dias depois da troca.
+// Usando KPIs por categoria (não totais da unidade), a elasticidade calculada
+// reflete o comportamento real daquele produto — ex: RELAX 3h FDS isolado.
 
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
+import type { SuiteCategoryKPI, DataTableSuiteCategory } from '@/lib/kpis/types'
+import type { CompanyKPIResponse } from '@/lib/kpis/types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { computeAndPersistElasticity } from '@/lib/pricing/elasticity'
 
-const MIN_DAYS = 14   // Mínimo de dias de dados necessários em cada período
+const MIN_DAYS = 14    // Mínimo de dias de dados necessários em cada período
 const WINDOW_DAYS = 28 // Janela de comparação (dias antes e depois da troca)
 
 function isoToDDMMYYYY(iso: string): string {
@@ -44,17 +46,28 @@ function simpleVerdict(variacao_pct: number, delta_revpar_pct: number, delta_gir
   return 'neutral'
 }
 
+// Converte DataTableSuiteCategory[] → Map<categoria, SuiteCategoryKPI>
+function buildCatMap(response: CompanyKPIResponse): Map<string, SuiteCategoryKPI> {
+  const map = new Map<string, SuiteCategoryKPI>()
+  for (const entry of (response.DataTableSuiteCategory ?? []) as DataTableSuiteCategory[]) {
+    for (const [cat, kpi] of Object.entries(entry)) {
+      map.set(cat, kpi)
+    }
+  }
+  return map
+}
+
 export interface BootstrapResult {
-  transitions: number  // pares de tabelas processados com sucesso
-  inserted: number     // linhas inseridas em rm_pricing_lessons
-  skipped: number      // transições sem dados suficientes
+  transitions: number      // pares de tabelas processados com sucesso
+  inserted: number         // linhas inseridas em rm_pricing_lessons
+  skipped: number          // transições sem dados suficientes
   elasticityUpdated: number
 }
 
 /**
  * Popula rm_pricing_lessons com dados históricos de transições de tabelas.
+ * Usa KPIs por categoria (revpar, giro, ocupação, ticket) — não totais da unidade.
  * Idempotente por par: se já existe lição bootstrap para o import_b, o par é pulado.
- * Seguro para chamar a qualquer momento — só processa pares ainda não processados.
  */
 export async function bootstrapPricingLessons(
   unitId: string,
@@ -107,9 +120,9 @@ export async function bootstrapPricingLessons(
     if (daysBetween(importA.valid_from, beforeEnd) < MIN_DAYS) { skipped++; continue }
 
     // Período "depois": WINDOW_DAYS após a troca (limitado a ontem)
-    const afterStart = switchDate
+    const afterStart  = switchDate
     const afterEndRaw = addDaysISO(switchDate, WINDOW_DAYS - 1)
-    const afterEnd = afterEndRaw < addDaysISO(today, -1) ? afterEndRaw : addDaysISO(today, -1)
+    const afterEnd    = afterEndRaw < addDaysISO(today, -1) ? afterEndRaw : addDaysISO(today, -1)
 
     if (daysBetween(afterStart, afterEnd) < MIN_DAYS) { skipped++; continue }
 
@@ -117,7 +130,7 @@ export async function bootstrapPricingLessons(
     const rowsB = (importB.parsed_data as unknown as ParsedPriceRow[]) ?? []
     if (!rowsA.length || !rowsB.length) { skipped++; continue }
 
-    // Busca KPIs de ambos os períodos em paralelo
+    // Busca KPIs de ambos os períodos em paralelo — inclui DataTableSuiteCategory
     const [kpiBefore, kpiAfter] = await Promise.all([
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(beforeStart), isoToDDMMYYYY(beforeEnd)).catch(() => null),
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(afterStart), isoToDDMMYYYY(afterEnd)).catch(() => null),
@@ -125,14 +138,19 @@ export async function bootstrapPricingLessons(
 
     if (!kpiBefore || !kpiAfter) { skipped++; continue }
 
-    const bef = kpiBefore.TotalResult
-    const aft = kpiAfter.TotalResult
-    if (!bef.totalRevpar || !bef.totalGiro) { skipped++; continue }
+    // KPIs por categoria — isolam o comportamento de cada produto
+    const catsBefore = buildCatMap(kpiBefore)
+    const catsAfter  = buildCatMap(kpiAfter)
 
-    const delta_revpar_pct  = deltaPct(bef.totalRevpar, aft.totalRevpar)
-    const delta_giro_pct    = deltaPct(bef.totalGiro, aft.totalGiro)
-    const delta_ocupacao_pp = +((aft.totalOccupancyRate - bef.totalOccupancyRate) / 100 * 100).toFixed(2)
-    const delta_ticket_pct  = deltaPct(bef.totalAllTicketAverage, aft.totalAllTicketAverage)
+    // KPIs da unidade como fallback quando categoria não tem dados suficientes
+    const unitBef = kpiBefore.TotalResult
+    const unitAft = kpiAfter.TotalResult
+    if (!unitBef.totalRevpar || !unitBef.totalGiro) { skipped++; continue }
+
+    const unitDeltaRevpar  = deltaPct(unitBef.totalRevpar, unitAft.totalRevpar)
+    const unitDeltaGiro    = deltaPct(unitBef.totalGiro, unitAft.totalGiro)
+    const unitDeltaOcup    = +((unitAft.totalOccupancyRate - unitBef.totalOccupancyRate) / 100 * 100).toFixed(2)
+    const unitDeltaTicket  = deltaPct(unitBef.totalAllTicketAverage, unitAft.totalAllTicketAverage)
 
     // Mapeia chave → preço da tabela A
     const mapA = new Map<string, number>()
@@ -151,13 +169,32 @@ export async function bootstrapPricingLessons(
         const variacao_pct = deltaPct(precoAnterior, precoNovo)
         if (Math.abs(variacao_pct) < 1) return null
 
+        // Prefere KPIs da categoria específica; fallback para totais da unidade
+        const catB = catsBefore.get(r.categoria)
+        const catA = catsAfter.get(r.categoria)
+        const usedCategoryLevel = !!(catB && catA && catB.revpar > 0)
+
+        const delta_revpar_pct  = usedCategoryLevel
+          ? deltaPct(catB!.revpar, catA!.revpar)
+          : unitDeltaRevpar
+        const delta_giro_pct    = usedCategoryLevel
+          ? deltaPct(catB!.giro, catA!.giro)
+          : unitDeltaGiro
+        const delta_ocupacao_pp = usedCategoryLevel
+          ? +((catA!.occupancyRate - catB!.occupancyRate)).toFixed(2)
+          : unitDeltaOcup
+        const delta_ticket_pct  = usedCategoryLevel
+          ? deltaPct(catB!.totalTicketAverage, catA!.totalTicketAverage)
+          : unitDeltaTicket
+
+        // Elasticidade giro-preço: quanto % o giro mudou para cada 1% de variação de preço
         const implied_elasticity = Math.abs(variacao_pct) >= 1
           ? +(delta_giro_pct / variacao_pct).toFixed(3)
           : null
 
         return {
           unit_id:                unitId,
-          proposal_id:            null,  // bootstrap — sem proposta associada
+          proposal_id:            null,
           checkpoint_days:        WINDOW_DAYS,
           categoria:              r.categoria,
           periodo:                r.periodo,
@@ -170,11 +207,17 @@ export async function bootstrapPricingLessons(
           delta_giro_pct,
           delta_ocupacao_pp,
           delta_ticket_pct,
-          attributed_pricing_pct: null,  // sem decomposição no bootstrap
+          attributed_pricing_pct: null,
           implied_elasticity,
-          conditions:             { source: 'bootstrap', import_a: importA.id, import_b: importB.id, switch_date: switchDate },
-          verdict:                simpleVerdict(variacao_pct, delta_revpar_pct, delta_giro_pct),
-          observed_at:            new Date(switchDate + 'T12:00:00Z').toISOString(),
+          conditions: {
+            source: 'bootstrap',
+            import_a: importA.id,
+            import_b: importB.id,
+            switch_date: switchDate,
+            kpi_level: usedCategoryLevel ? 'category' : 'unit',
+          },
+          verdict: simpleVerdict(variacao_pct, delta_revpar_pct, delta_giro_pct),
+          observed_at: new Date(switchDate + 'T12:00:00Z').toISOString(),
         }
       })
       .filter(Boolean)
