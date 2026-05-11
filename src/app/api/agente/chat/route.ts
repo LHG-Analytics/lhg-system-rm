@@ -22,7 +22,7 @@ import {
 } from '@/lib/agente/context-blocks'
 import { fetchWeatherContext } from '@/lib/agente/weather'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
+import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
 import { queryDemandPattern } from '@/lib/automo/demand-pattern'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
@@ -616,7 +616,7 @@ export async function POST(req: NextRequest) {
         label: z.string().optional().describe('Rótulo descritivo do período, ex: "últimos 7 dias"'),
       }),
       execute: async ({ startDate, endDate, metric = 'giro', label }) => {
-        const pool = getAutomPool(unit.slug)
+        const pool = await getAutomPool(unit.slug)
         if (!pool) return { error: `Conexão Automo não configurada para ${unit.slug}.` }
         const rangeLabel = label ?? `${startDate} a ${endDate}`
         return { startDate, endDate, metric, rangeLabel, unitSlug: unit.slug }
@@ -742,11 +742,11 @@ export async function POST(req: NextRequest) {
         endDate:   z.string().describe('Data final no formato YYYY-MM-DD, ex: "2026-04-07"'),
       }),
       execute: async ({ startDate, endDate }) => {
-        const pool = getAutomPool(unit.slug)
+        const pool = await getAutomPool(unit.slug)
         if (!pool) return `Conexão Automo não configurada para ${unit.slug}.`
 
-        const categoryIds = UNIT_CATEGORY_IDS[unit.slug]
-        if (!categoryIds?.length) return 'IDs de categoria não configurados para esta unidade.'
+        const categoryIds = await getUnitCategoryIds(unit.slug)
+        if (!categoryIds.length) return 'IDs de categoria não configurados para esta unidade.'
 
         const idList = categoryIds.join(',')
         const sql = `
@@ -904,8 +904,8 @@ export async function POST(req: NextRequest) {
         days: z.number().optional().describe('Dias retroativos para análise (padrão: 60)'),
       }),
       execute: async ({ days = 60 }) => {
-        if (!getAutomPool(unit.slug)) return `Conexão Automo não configurada para ${unit.slug}.`
-        if (!UNIT_CATEGORY_IDS[unit.slug]?.length) return 'IDs de categoria não configurados para esta unidade.'
+        if (!await getAutomPool(unit.slug)) return `Conexão Automo não configurada para ${unit.slug}.`
+        if (!(await getUnitCategoryIds(unit.slug)).length) return 'IDs de categoria não configurados para esta unidade.'
         try {
           const pattern = await queryDemandPattern(unit.slug, days)
           if (!pattern) return 'Sem dados de locações para o período informado.'

@@ -1,6 +1,6 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
-import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
+import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
 
 /**
  * HV3 (LHG-163): detecção diária de anomalias via z-score.
@@ -51,10 +51,10 @@ function getAdmin() {
  * janela menor para custo reduzido.
  */
 async function fetchDailyMetrics(unitSlug: string, days = 90): Promise<DailyMetric[]> {
-  const pool = getAutomPool(unitSlug)
+  const pool = await getAutomPool(unitSlug)
   if (!pool) return []
 
-  const catIds = (UNIT_CATEGORY_IDS[unitSlug] ?? []).join(',')
+  const catIds = (await getUnitCategoryIds(unitSlug)).join(',')
   if (!catIds) return []
 
   const today = new Date()

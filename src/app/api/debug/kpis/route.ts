@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
+import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 
 // GET /api/debug/kpis?unit=lush-ipiranga&start=01/03/2026&end=04/04/2026
@@ -9,10 +9,10 @@ export async function GET(request: NextRequest) {
   const start   = params.get('start') ?? '01/03/2026'   // DD/MM/YYYY
   const end     = params.get('end')   ?? '04/04/2026'
 
-  const pool = getAutomPool(slug)
+  const pool = await getAutomPool(slug)
   if (!pool) return NextResponse.json({ error: `Pool indisponível para ${slug}` }, { status: 500 })
 
-  const catIds = (UNIT_CATEGORY_IDS[slug] ?? []).join(',')
+  const catIds = (await getUnitCategoryIds(slug)).join(',')
   if (!catIds) return NextResponse.json({ error: `Nenhum catId para ${slug}` }, { status: 500 })
 
   // Converte DD/MM/YYYY → ISO

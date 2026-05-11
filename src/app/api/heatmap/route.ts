@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
+import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
 import {
   cteBaseSuiteDays,
   cteSuiteDaysTotal,
@@ -313,7 +313,7 @@ export async function GET(req: NextRequest) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
   }
 
-  const pool = getAutomPool(unitSlug)
+  const pool = await getAutomPool(unitSlug)
   if (!pool) {
     return Response.json(
       { error: `Conexão Automo não configurada para ${unitSlug}.` },
@@ -321,8 +321,8 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const allCategoryIds = UNIT_CATEGORY_IDS[unitSlug]
-  if (!allCategoryIds?.length) {
+  const allCategoryIds = await getUnitCategoryIds(unitSlug)
+  if (!allCategoryIds.length) {
     return Response.json({ error: 'IDs de categoria não configurados.' }, { status: 422 })
   }
 

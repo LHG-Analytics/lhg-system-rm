@@ -1,4 +1,4 @@
-import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
+import { getAutomPool, getUnitCategoryIds } from './client'
 
 export type PaceSignal = 'acima' | 'normal' | 'abaixo' | 'muito_abaixo'
 
@@ -58,10 +58,10 @@ function toSignal(ratio: number | null): PaceSignal {
  * para uma sexta à tarde — oportunidade de incentivo de preço".
  */
 export async function getReservationPace(unitSlug: string): Promise<ReservationPaceResult | null> {
-  const pool = getAutomPool(unitSlug)
+  const pool = await getAutomPool(unitSlug)
   if (!pool) return null
 
-  const catIds = (UNIT_CATEGORY_IDS[unitSlug] ?? []).join(',')
+  const catIds = (await getUnitCategoryIds(unitSlug)).join(',')
   if (!catIds) return null
 
   const sql = `

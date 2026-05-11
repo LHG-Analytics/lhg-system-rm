@@ -1,4 +1,4 @@
-import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
+import { getAutomPool, getUnitCategoryIds } from './client'
 
 export interface RealtimeOccupancyRow {
   categoria: string
@@ -32,10 +32,10 @@ interface RawRow {
 export async function getRealtimeOccupancyByCategory(
   unitSlug: string,
 ): Promise<RealtimeOccupancyRow[]> {
-  const pool = getAutomPool(unitSlug)
+  const pool = await getAutomPool(unitSlug)
   if (!pool) return []
 
-  const catIds = (UNIT_CATEGORY_IDS[unitSlug] ?? []).join(',')
+  const catIds = (await getUnitCategoryIds(unitSlug)).join(',')
   if (!catIds) return []
 
   const sql = `

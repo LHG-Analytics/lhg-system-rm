@@ -1,6 +1,6 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
-import { getAutomPool, UNIT_CATEGORY_IDS } from '@/lib/automo/client'
+import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
 
 /**
  * HV5 (LHG-165): sazonalidade aprendida do histórico Automo.
@@ -35,10 +35,10 @@ function getAdmin() {
  * Resultado: 1 row por dia do período com revpar/giro/ocupacao/ticket.
  */
 async function fetchDailyKpis(unitSlug: string): Promise<DayKpi[]> {
-  const pool = getAutomPool(unitSlug)
+  const pool = await getAutomPool(unitSlug)
   if (!pool) return []
 
-  const catIds = (UNIT_CATEGORY_IDS[unitSlug] ?? []).join(',')
+  const catIds = (await getUnitCategoryIds(unitSlug)).join(',')
   if (!catIds) return []
 
   // Trailing year: hoje - 365 dias até ontem (corte 06:00)

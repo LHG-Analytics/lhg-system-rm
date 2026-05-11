@@ -9,7 +9,9 @@ import type {
   DataTableRevparByWeek,
   BillingRentalTypeItem,
 } from '@/lib/kpis/types'
-import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
+import { Pool } from 'pg'
+import { getAutomPool, getUnitCategoryIds, getUnitPeriodType } from './client'
+import { buildPeriodCaseSQL, getValidPeriodsForType } from './period-helpers'
 import {
   cteBaseSuiteDays,
   cteSuiteDaysTotal,
@@ -131,7 +133,7 @@ interface BigNumbersRow {
 }
 
 async function queryBigNumbers(
-  pool: ReturnType<typeof getAutomPool>,
+  pool: Pool,
   catIds: string,
   isoStart: string,
   isoEnd: string,          // exclusive upper bound (D+1 midnight)
@@ -251,7 +253,7 @@ interface SuiteCatRow {
 }
 
 async function queryDataTableSuiteCategory(
-  pool: NonNullable<ReturnType<typeof getAutomPool>>,
+  pool: Pool,
   catIds: string,
   isoStart: string,
   isoEnd: string,
@@ -342,7 +344,7 @@ interface WeekRow {
 }
 
 async function queryWeekTables(
-  pool: NonNullable<ReturnType<typeof getAutomPool>>,
+  pool: Pool,
   catIds: string,
   isoStart: string,
   isoEnd: string,
@@ -468,7 +470,7 @@ interface TotalRevOccRow {
 }
 
 async function queryTotalRevOcc(
-  pool: NonNullable<ReturnType<typeof getAutomPool>>,
+  pool: Pool,
   catIds: string,
   isoStart: string,
   isoEnd: string,
@@ -510,40 +512,9 @@ async function queryTotalRevOcc(
 
 // ─── Period Mix (inline — mesmos params que queryBigNumbers) ─────────────────
 
-const LUSH_TYPE_UNITS_PM = new Set(['lush-ipiranga', 'lush-lapa', 'tout', 'andar-de-cima'])
-
-export const UNIT_VALID_PERIODS_PM: Record<string, string[]> = {
-  'altana':        ['1 hora', '2 horas', '4 horas', '12 horas'],
-  'lush-ipiranga': ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
-  'lush-lapa':     ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
-  'tout':          ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
-  'andar-de-cima': ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
-}
-
-function buildPeriodCaseSQLInline(unitSlug: string): string {
-  if (LUSH_TYPE_UNITS_PM.has(unitSlug)) {
-    return `
-          CASE
-            WHEN dur <= 3.25 THEN '3 horas'
-            WHEN h_in BETWEEN 12 AND 14 AND dur <= 9.0 THEN 'Day Use'
-            WHEN dur <= 6.25 THEN '6 horas'
-            WHEN dur <= 13.5 THEN '12 horas'
-            WHEN h_in BETWEEN 19 AND 21 AND dur < 20.0 THEN 'Pernoite'
-            ELSE 'Diária'
-          END`
-  }
-  return `
-          CASE
-            WHEN dur < 1.5  THEN '1 hora'
-            WHEN dur < 2.5  THEN '2 horas'
-            WHEN dur < 5.0  THEN '4 horas'
-            ELSE '12 horas'
-          END`
-}
-
 async function queryPeriodMixInline(
-  pool: NonNullable<ReturnType<typeof getAutomPool>>,
-  unitSlug: string,
+  pool: Pool,
+  periodType: 'standard' | 'altana',
   catIds: string,
   isoStart: string,
   isoEnd: string,
@@ -551,8 +522,8 @@ async function queryPeriodMixInline(
   statusFilter: string,
   dateCol: string,
 ): Promise<BillingRentalTypeItem[]> {
-  const periodCase  = buildPeriodCaseSQLInline(unitSlug)
-  const validPeriods = UNIT_VALID_PERIODS_PM[unitSlug]
+  const periodCase   = buildPeriodCaseSQL(periodType)
+  const validPeriods = getValidPeriodsForType(periodType)
 
   const sql = `
     WITH ${cteBaseSuiteDays(catIds)},
@@ -642,10 +613,10 @@ export async function fetchCompanyKPIsFromAutomo(
   rentalStatus = 'FINALIZADA', // FINALIZADA | TRANSFERIDA | CANCELADA | ABERTA | TODAS
   dateType = 'checkin',        // checkin | checkout | all
 ): Promise<CompanyKPIResponse> {
-  const pool = getAutomPool(unitSlug)
+  const pool = await getAutomPool(unitSlug)
   if (!pool) throw new Error(`Automo pool indisponível para ${unitSlug}`)
 
-  const catIds = (UNIT_CATEGORY_IDS[unitSlug] ?? []).join(',')
+  const catIds = (await getUnitCategoryIds(unitSlug)).join(',')
   if (!catIds) throw new Error(`Nenhum category ID configurado para ${unitSlug}`)
 
   // Hoje no fuso BRT (DD/MM/YYYY) — distingue período aberto (endDate=hoje) de fechado
@@ -679,6 +650,8 @@ export async function fetchCompanyKPIsFromAutomo(
   const totalDaysInMonth = new Date(nowBR.getFullYear(), nowBR.getMonth() + 1, 0).getDate()
   const remainingDays = totalDaysInMonth - daysElapsed
 
+  const periodType = await getUnitPeriodType(unitSlug)
+
   // Filtros dinâmicos (aplicados a todas as queries de locação)
   const { col: dateCol } = buildDateRangeFilter(dateType)
   const timeFilter       = buildTimeFilter(startHour, endHour, dateCol)
@@ -706,7 +679,7 @@ export async function fetchCompanyKPIsFromAutomo(
     queryTotalRevOcc(pool, catIds, monIsoStart,     monIsoEnd,      daysElapsed || 1,   timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc/month')),
     queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff,              timeFilter, statusFilter, dateCol).catch(tagError('DataTableSuiteCategory')),
     queryWeekTables(pool, catIds, isoStart, isoEnd,                                     timeFilter, statusFilter, dateCol).catch(tagError('WeekTables')),
-    queryPeriodMixInline(pool, unitSlug, catIds, isoStart, isoEnd,                      timeFilter, statusFilter, dateCol),
+    queryPeriodMixInline(pool, periodType, catIds, isoStart, isoEnd,                    timeFilter, statusFilter, dateCol),
   ])
 
   // Previsão de fechamento do mês

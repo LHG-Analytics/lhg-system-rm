@@ -1,4 +1,4 @@
-import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
+import { getAutomPool, getUnitCategoryIds } from './client'
 
 /**
  * Disponibilidade de suítes por categoria, considerando bloqueios ativos.
@@ -28,10 +28,10 @@ interface RawRow {
 }
 
 export async function getSuiteAvailabilityByCategory(unitSlug: string): Promise<SuiteAvailabilityRow[]> {
-  const pool = getAutomPool(unitSlug)
+  const pool = await getAutomPool(unitSlug)
   if (!pool) return []
 
-  const catIds = (UNIT_CATEGORY_IDS[unitSlug] ?? []).join(',')
+  const catIds = (await getUnitCategoryIds(unitSlug)).join(',')
   if (!catIds) return []
 
   const sql = `

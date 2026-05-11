@@ -669,9 +669,9 @@ export type Database = {
       }
       rm_agent_config: {
         Row: {
-          budget_config: Json
+          budget_config: Json | null
           budget_last_sync: string | null
-          budget_prod_serv_tab: string
+          budget_prod_serv_tab: string | null
           budget_sheet_tab: string
           budget_sheet_url: string | null
           budget_yearly: Json
@@ -695,9 +695,9 @@ export type Database = {
           weather_insight_cache: Json | null
         }
         Insert: {
-          budget_config?: Json
+          budget_config?: Json | null
           budget_last_sync?: string | null
-          budget_prod_serv_tab?: string
+          budget_prod_serv_tab?: string | null
           budget_sheet_tab?: string
           budget_sheet_url?: string | null
           budget_yearly?: Json
@@ -721,9 +721,9 @@ export type Database = {
           weather_insight_cache?: Json | null
         }
         Update: {
-          budget_config?: Json
+          budget_config?: Json | null
           budget_last_sync?: string | null
-          budget_prod_serv_tab?: string
+          budget_prod_serv_tab?: string | null
           budget_sheet_tab?: string
           budget_sheet_url?: string | null
           budget_yearly?: Json
@@ -1860,11 +1860,15 @@ export type Database = {
           address: string | null
           api_base_url: string | null
           api_slug: string | null
+          automo_category_ids: number[]
+          automo_env_key: string | null
           city: string | null
           created_at: string
           id: string
           is_active: boolean
+          logo_path: string | null
           name: string
+          period_type: string
           phone: string | null
           slug: string
           state: string | null
@@ -1873,11 +1877,15 @@ export type Database = {
           address?: string | null
           api_base_url?: string | null
           api_slug?: string | null
+          automo_category_ids?: number[]
+          automo_env_key?: string | null
           city?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
+          logo_path?: string | null
           name: string
+          period_type?: string
           phone?: string | null
           slug: string
           state?: string | null
@@ -1886,11 +1894,15 @@ export type Database = {
           address?: string | null
           api_base_url?: string | null
           api_slug?: string | null
+          automo_category_ids?: number[]
+          automo_env_key?: string | null
           city?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
+          logo_path?: string | null
           name?: string
+          period_type?: string
           phone?: string | null
           slug?: string
           state?: string | null

@@ -1,5 +1,6 @@
-import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
+import { getAutomPool, getUnitCategoryIds, getUnitPeriodType } from './client'
 import { ddmmyyyyToIso, addDays, buildDateRangeFilter, buildStatusFilter, buildTimeFilter } from './company-kpis'
+import { buildPeriodCaseSQL, getValidPeriodsForType } from './period-helpers'
 import type { ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
 
 // ─── Labels legíveis por tipo de canal ────────────────────────────────────────
@@ -40,7 +41,7 @@ export async function queryChannelKPIs(
   startDateDDMMYYYY: string,
   endDateDDMMYYYY: string,
 ): Promise<ChannelKPIRow[]> {
-  const pool = getAutomPool(unitSlug)
+  const pool = await getAutomPool(unitSlug)
   if (!pool) return []
 
   // Datas sem corte 06:00 — igual ao BETWEEN por dia do Analytics
@@ -159,48 +160,10 @@ export async function queryChannelKPIs(
   }
 }
 
-// ─── Períodos válidos por unidade ────────────────────────────────────────────
+// ─── Helpers por period_type ─────────────────────────────────────────────────
+// Re-exportados de period-helpers.ts para retrocompat de importadores externos.
+export { buildPeriodCaseSQL, getValidPeriodsForType } from './period-helpers'
 
-export const UNIT_VALID_PERIODS: Record<string, string[]> = {
-  'altana':        ['1 hora', '2 horas', '4 horas', '12 horas'],
-  'lush-ipiranga': ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
-  'lush-lapa':     ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
-  'tout':          ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
-  'andar-de-cima': ['3 horas', '6 horas', '12 horas', 'Day Use', 'Diária', 'Pernoite'],
-}
-
-// Unidades com pacote mínimo de 3h (sem 1h/2h/4h)
-const LUSH_TYPE_UNITS = new Set(['lush-ipiranga', 'lush-lapa', 'tout', 'andar-de-cima'])
-
-/**
- * Gera o CASE SQL de classificação de período conforme os pacotes reais da unidade.
- * Evita que durações <3h sejam classificadas como '1 hora'/'2 horas' em unidades
- * que não vendem esses pacotes, o que causaria descarte silencioso pelo filtro TS.
- */
-function buildPeriodCaseSQL(unitSlug: string): string {
-  if (LUSH_TYPE_UNITS.has(unitSlug)) {
-    // Thresholds com 15 min de tolerância: até 3h15 → 3h, até 6h15 → 6h, até 13h30 → 12h
-    // Day Use e Pernoite são determinados por hora de check-in (fixo por natureza do produto)
-    // Day Use: verificado ANTES de 6h para não engolir chegadas às 12-14h com 5-6h de duração
-    return `
-          CASE
-            WHEN dur <= 3.25 THEN '3 horas'
-            WHEN h_in BETWEEN 12 AND 14 AND dur <= 9.0 THEN 'Day Use'
-            WHEN dur <= 6.25 THEN '6 horas'
-            WHEN dur <= 13.5 THEN '12 horas'
-            WHEN h_in BETWEEN 19 AND 21 AND dur < 20.0 THEN 'Pernoite'
-            ELSE 'Diária'
-          END`
-  }
-  // Altana: pacotes 1h, 2h, 4h, 12h
-  return `
-          CASE
-            WHEN dur < 1.5  THEN '1 hora'
-            WHEN dur < 2.5  THEN '2 horas'
-            WHEN dur < 5.0  THEN '4 horas'
-            ELSE '12 horas'
-          END`
-}
 
 // ─── Mix por período de locação ───────────────────────────────────────────────
 
@@ -217,12 +180,13 @@ export async function queryPeriodMix(
   endHour = 5,
   dateType = 'checkin',
 ): Promise<BillingRentalTypeItem[]> {
-  const pool = getAutomPool(unitSlug)
+  const pool = await getAutomPool(unitSlug)
   if (!pool) return []
 
-  const catIds = UNIT_CATEGORY_IDS[unitSlug]
-  if (!catIds?.length) return []
+  const catIds = await getUnitCategoryIds(unitSlug)
+  if (!catIds.length) return []
 
+  const periodType   = await getUnitPeriodType(unitSlug)
   const isoStart     = ddmmyyyyToIso(startDateDDMMYYYY)
   const isoEnd       = buildIsoEnd(endDateDDMMYYYY)
   const statusFilter = buildStatusFilter(rentalStatus)
@@ -230,7 +194,7 @@ export async function queryPeriodMix(
   const timeFilter   = buildTimeFilter(startHour, endHour, col)
   const idList       = catIds.join(',')
 
-  const periodCase = buildPeriodCaseSQL(unitSlug)
+  const periodCase = buildPeriodCaseSQL(periodType)
 
   const sql = `
     WITH base AS (
@@ -275,7 +239,7 @@ export async function queryPeriodMix(
     ORDER BY value DESC
   `
 
-  const validPeriods = UNIT_VALID_PERIODS[unitSlug]
+  const validPeriods = getValidPeriodsForType(periodType)
 
   try {
     const { rows } = await pool.query<{

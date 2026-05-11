@@ -1,28 +1,9 @@
 import { Pool } from 'pg'
-
-// ─── Mapeamento slug → variável de ambiente ────────────────────────────────
-
-const UNIT_ENV_MAP: Record<string, string | undefined> = {
-  'lush-ipiranga': process.env.DATABASE_URL_LOCAL_IPIRANGA,
-  'lush-lapa':     process.env.DATABASE_URL_LOCAL_LAPA,
-  'tout':          process.env.DATABASE_URL_LOCAL_TOUT,
-  'andar-de-cima': process.env.DATABASE_URL_LOCAL_ANDAR_DE_CIMA,
-  'altana':        process.env.DATABASE_URL_LOCAL_ALTANA,
-}
-
-// IDs de categoria por unidade (para filtrar queries no Automo)
-export const UNIT_CATEGORY_IDS: Record<string, number[]> = {
-  'lush-ipiranga': [10, 11, 12, 15, 16, 17, 18, 19, 24],
-  'lush-lapa':     [7, 8, 9, 10, 11, 12],
-  'tout':          [6, 7, 8, 9, 10, 12],
-  'andar-de-cima': [2, 3, 4, 5, 6, 7, 12],
-  'altana':        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-}
+import { getUnitConfig } from './unit-config'
 
 /**
  * Parseia connection string PostgreSQL com senha contendo '@'.
  * Estratégia: o ÚLTIMO '@' antes do host é o separador userinfo/host.
- * Ex: "postgresql://user:pass@word@host:5432/db"
  */
 function parseConnectionString(url: string): {
   host: string; port: number; user: string; password: string; database: string
@@ -40,7 +21,6 @@ function parseConnectionString(url: string): {
   const user     = decodeURIComponent(userinfo.slice(0, colonIdx))
   const password = decodeURIComponent(userinfo.slice(colonIdx + 1))
 
-  // hostpart pode ser "host:port/db?params" — pega só até '?'
   const hostNoQuery = hostpart.split('?')[0]
   const slashIdx = hostNoQuery.indexOf('/')
   const hostport  = slashIdx >= 0 ? hostNoQuery.slice(0, slashIdx) : hostNoQuery
@@ -56,43 +36,75 @@ function parseConnectionString(url: string): {
 // Cache de pools por slug
 const poolCache = new Map<string, Pool>()
 
-export function getAutomPool(unitSlug: string): Pool | null {
-  const connStr = UNIT_ENV_MAP[unitSlug]
-  if (!connStr) {
-    console.warn(`[automo] Env var não configurada para slug: ${unitSlug}`)
+/**
+ * Retorna (ou cria) o pool de conexões Automo para a unidade.
+ * A env var é DATABASE_URL_LOCAL_{automo_env_key}, lida do banco via unit-config.
+ */
+export async function getAutomPool(unitSlug: string): Promise<Pool | null> {
+  if (poolCache.has(unitSlug)) return poolCache.get(unitSlug)!
+
+  const config = await getUnitConfig(unitSlug)
+  if (!config?.automo_env_key) {
+    console.warn(`[automo] automo_env_key não configurado para: ${unitSlug}`)
     return null
   }
 
-  if (poolCache.has(unitSlug)) return poolCache.get(unitSlug)!
+  const envKey = `DATABASE_URL_LOCAL_${config.automo_env_key}`
+  const connStr = process.env[envKey]
+  if (!connStr) {
+    console.warn(`[automo] Env var ${envKey} não definida para: ${unitSlug}`)
+    return null
+  }
 
-  let config
+  let connConfig
   try {
-    config = parseConnectionString(connStr)
+    connConfig = parseConnectionString(connStr)
   } catch (e) {
     console.error(`[automo] Erro ao parsear connection string para ${unitSlug}:`, e)
     return null
   }
 
-  console.log(`[automo] Criando pool para ${unitSlug} → ${config.host}:${config.port}/${config.database} (user=${config.user})`)
+  console.log(`[automo] Criando pool para ${unitSlug} → ${connConfig.host}:${connConfig.port}/${connConfig.database} (user=${connConfig.user})`)
 
   const pool = new Pool({
-    host:     config.host,
-    port:     config.port,
-    user:     config.user,
-    password: config.password,
-    database: config.database,
+    host:     connConfig.host,
+    port:     connConfig.port,
+    user:     connConfig.user,
+    password: connConfig.password,
+    database: connConfig.database,
     max: 3,
-    idleTimeoutMillis:    30_000,
-    connectionTimeoutMillis: 8_000,
-    // Servidores Automo internos não usam SSL
+    idleTimeoutMillis:       30_000,
+    connectionTimeoutMillis:  8_000,
     ssl: false,
   })
 
-  // Log de erros de conexão em background
   pool.on('error', (err) => {
     console.error(`[automo] Pool error (${unitSlug}):`, err.message)
   })
 
   poolCache.set(unitSlug, pool)
   return pool
+}
+
+/**
+ * Retorna os IDs de categoria Automo para a unidade (lidos do DB via unit-config).
+ */
+export async function getUnitCategoryIds(unitSlug: string): Promise<number[]> {
+  const config = await getUnitConfig(unitSlug)
+  return config?.automo_category_ids ?? []
+}
+
+/**
+ * Retorna o tipo de período da unidade ('standard' | 'altana').
+ */
+export async function getUnitPeriodType(unitSlug: string): Promise<'standard' | 'altana'> {
+  const config = await getUnitConfig(unitSlug)
+  return config?.period_type ?? 'standard'
+}
+
+/**
+ * Invalida o pool cacheado (útil após alterar config de unidade).
+ */
+export function invalidatePool(unitSlug: string) {
+  poolCache.delete(unitSlug)
 }

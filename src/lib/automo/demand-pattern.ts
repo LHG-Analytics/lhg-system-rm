@@ -1,4 +1,4 @@
-import { getAutomPool, UNIT_CATEGORY_IDS } from './client'
+import { getAutomPool, getUnitCategoryIds } from './client'
 
 export interface DemandPatternRow {
   dia_semana: string
@@ -28,11 +28,11 @@ export async function queryDemandPattern(
   unitSlug: string,
   days = 60,
 ): Promise<DemandPatternResult | null> {
-  const pool = getAutomPool(unitSlug)
+  const pool = await getAutomPool(unitSlug)
   if (!pool) return null
 
-  const categoryIds = UNIT_CATEGORY_IDS[unitSlug]
-  if (!categoryIds?.length) return null
+  const categoryIds = await getUnitCategoryIds(unitSlug)
+  if (!categoryIds.length) return null
 
   const idList = categoryIds.join(',')
   const sql = `

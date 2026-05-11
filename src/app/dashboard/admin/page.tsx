@@ -8,8 +8,9 @@ import { GuardrailsManager } from './_components/guardrails-manager'
 import { EventsManager } from './_components/events-manager'
 import { CapacityManager } from './_components/capacity-manager'
 import { AgentConfigManager } from './_components/agent-config-manager'
+import { UnitManager } from './_components/unit-manager'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Users, Bot, Settings2, Shield, CalendarDays, BedDouble } from 'lucide-react'
+import { Users, Bot, Settings2, Shield, CalendarDays, BedDouble, Building2 } from 'lucide-react'
 
 export const metadata = { title: 'Administração — LHG Revenue Manager' }
 
@@ -36,15 +37,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const admin = getAdminClient()
   const { unit: unitSlug, tab, agente_tab } = await searchParams
 
-  const [profilesResult, authUsersResult, unitsResult] = await Promise.allSettled([
+  const [profilesResult, authUsersResult, unitsResult, allUnitsResult] = await Promise.allSettled([
     admin.from('profiles').select('user_id, role, unit_id, created_at').order('created_at', { ascending: false }),
     admin.auth.admin.listUsers({ perPage: 1000 }),
     admin.from('units').select('id, name, slug').eq('is_active', true).order('name'),
+    admin.from('units').select('id, name, slug, city, state, is_active, automo_env_key, automo_category_ids, period_type, logo_path, created_at').order('name'),
   ])
 
   const profiles  = profilesResult.status  === 'fulfilled' ? (profilesResult.value.data  ?? []) : []
   const authUsers = authUsersResult.status === 'fulfilled' ? (authUsersResult.value.data?.users ?? []) : []
   const unitsData = unitsResult.status     === 'fulfilled' ? (unitsResult.value.data ?? []) : []
+  const allUnits  = allUnitsResult.status  === 'fulfilled' ? (allUnitsResult.value.data ?? []) : []
 
   const emailMap    = new Map(authUsers.map((u) => [u.id, u.email        ?? '']))
   const invitedMap  = new Map(authUsers.map((u) => [u.id, u.invited_at   ?? null]))
@@ -125,7 +128,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
   // Aba ativa: se vier de link antigo (guardrails/eventos/capacidade), mapeia para 'agente'
   const legacyAgenteTab: Record<string, string> = { guardrails: 'guardrails', eventos: 'eventos', capacidade: 'capacidade' }
-  const defaultTopTab = (tab === 'usuarios' || tab == null) ? 'usuarios' : 'agente'
+  const defaultTopTab = tab === 'unidades' ? 'unidades' : (tab === 'usuarios' || tab == null) ? 'usuarios' : 'agente'
   const defaultAgenteTab = agente_tab ?? (tab && legacyAgenteTab[tab] ? legacyAgenteTab[tab] : 'config')
 
   const noUnit = <p className="text-sm text-muted-foreground">Nenhuma unidade disponível.</p>
@@ -146,6 +149,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <TabsTrigger value="agente" className="gap-1.5 text-xs">
             <Bot className="size-3.5" />
             Agente RM
+          </TabsTrigger>
+          <TabsTrigger value="unidades" className="gap-1.5 text-xs">
+            <Building2 className="size-3.5" />
+            Unidades
           </TabsTrigger>
         </TabsList>
 
@@ -247,6 +254,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               ) : noUnit}
             </TabsContent>
           </Tabs>
+        </TabsContent>
+        {/* ── Unidades ──────────────────────────────────────────────────── */}
+        <TabsContent value="unidades" className="mt-6">
+          <UnitManager initialUnits={allUnits as any} />
         </TabsContent>
       </Tabs>
     </div>
