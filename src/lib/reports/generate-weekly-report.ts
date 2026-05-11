@@ -9,11 +9,14 @@ import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasona
 import { getElasticityForUnit, buildElasticityBlock } from '@/lib/pricing/elasticity'
 import { computeRevenueForecast, buildForecastBlock } from '@/lib/forecast/revenue-forecast'
 import { ANALYSIS_MODEL } from '@/lib/agente/model'
+// ANALYSIS_MODEL continua sendo usado para fallback — buildSystemPrompt usa a identidade do agente,
+// mas o modelo de geração (custo/latência) continua sendo o ANALYSIS_MODEL (gpt-4.1-mini BYOK)
 import type { BudgetYearly } from '@/lib/budget/google-sheets'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
 import { computeAndPersistGaps, parseAmenitiesBySuite, buildCompetitorGapBlock } from '@/lib/competitors/detect-changes'
 import type { CompetitorGap } from '@/lib/competitors/detect-changes'
-import { buildKPIContext } from '@/lib/agente/system-prompt'
+import { buildSystemPrompt } from '@/lib/agente/system-prompt'
+import type { KPIPeriod, PriceImportForPrompt } from '@/lib/agente/system-prompt'
 import { buildStrategicMemoryBlock } from '@/lib/agente/context-blocks'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
@@ -699,53 +702,56 @@ export async function generateWeeklyReport(
       })),
     }
 
-    // AI: executive summary — reutiliza os mesmos builders do Agente RM
+    // AI: executive summary — usa buildSystemPrompt() do Agente RM como system prompt
+    // Assim o relatório herda TODAS as regras do agente: max_variation_pct, focus_metric,
+    // guardrails, missão, regras inegociáveis — sem IA separada.
 
-    // Bloco KPI completo: categorias, períodos, canais, BigNumbers — mesmo formato do chat
-    const kpiBlock = buildKPIContext(
+    // Monta KPIPeriod com period e company KPIs para buildSystemPrompt
+    const kpiPeriodForPrompt: KPIPeriod = {
+      period: { startDate: periodStart, endDate: periodEnd },
+      company: kpis,
+      bookings: null,
+      channelKPIs: channelKPIs.length > 0 ? channelKPIs : undefined,
+      periodMix: periodMix.length > 0 ? periodMix : undefined,
+    }
+
+    // Monta PriceImportForPrompt com a tabela ativa de preços e descontos.
+    // Cast necessário: canal local é string genérica; sistema espera union restrita ("guia_moteis"|…)
+    const priceImportsForPrompt: PriceImportForPrompt[] = activePriceImport ? [{
+      rows: activePriceRows as unknown as PriceImportForPrompt['rows'],
+      discount_data: (discountRows.length > 0 ? discountRows : null) as PriceImportForPrompt['discount_data'],
+      valid_from: activePriceImport.valid_from,
+      valid_until: null,
+    }] : []
+
+    // Capacidade e estrutura da unidade
+    const unitStructureBlock = buildUnitStructureBlock(suiteAvail, [], [])
+
+    // System prompt do Agente RM completo (identidade + regras + KPIs + preços + estrutura)
+    let agentSystemPrompt = buildSystemPrompt(
       unit.name,
-      { startDate: periodStart, endDate: periodEnd },
-      kpis,
+      kpiPeriodForPrompt,
+      priceImportsForPrompt,
+      undefined,
       null,
-      channelKPIs,
-      periodMix,
+      null,
+      unitStructureBlock,
     )
 
-    // Tabela de preços: semana vs FDS lado a lado (buildKPIContext não inclui preços)
-    const priceTableCtx = (() => {
-      if (activePriceRows.length === 0) return ''
-      const isBalcao = (r: ParsedPriceRow) =>
-        r.canal?.toLowerCase().includes('balcao') || r.canal?.toLowerCase().includes('site')
-      const base = activePriceRows.filter(isBalcao).length > 0
-        ? activePriceRows.filter(isBalcao)
-        : activePriceRows
-      const map = new Map<string, { semana?: number; fds?: number }>()
-      for (const r of base) {
-        const key = `${r.categoria}||${r.periodo}`
-        const entry = map.get(key) ?? {}
-        const dt = (r.dia_tipo ?? '').toLowerCase()
-        if (dt === 'semana') entry.semana = Number(r.preco)
-        else if (dt.includes('fds') || dt.includes('feriado')) entry.fds = Number(r.preco)
-        map.set(key, entry)
-      }
-      const lines = [...map.entries()].slice(0, 12).map(([k, v]) => {
-        const [cat, per] = k.split('||')
-        const sem = v.semana != null ? `R$${v.semana.toFixed(0)}` : '—'
-        const fds = v.fds != null ? `R$${v.fds.toFixed(0)}` : '—'
-        return `- ${cat} ${per}: semana ${sem} | FDS/feriado ${fds}`
-      })
-      return lines.length > 0 ? `\n## Preços atuais (balcão)\n${lines.join('\n')}` : ''
-    })()
+    // Configuração do agente (mesma construção do chat/route.ts)
+    const maxVar = agentConfig?.max_variation_pct ?? 15
+    const pricingStrategy = agentConfig?.pricing_strategy ?? 'moderado'
+    const focusMetric = agentConfig?.focus_metric ?? 'revpar'
+    const FOCUS_LABELS: Record<string, string> = {
+      revpar: 'RevPAR', ocupacao: 'Ocupação', ticket: 'Ticket Médio',
+      trevpar: 'TRevPAR', giro: 'Giro', balanceado: 'Balanceado',
+    }
+    agentSystemPrompt += `\n\n## Configuração do agente RM (${unit.name})
+- **Estratégia de precificação:** ${pricingStrategy}
+- **Variação máxima permitida:** ±${maxVar}%
+- **Foco principal:** ${FOCUS_LABELS[focusMetric] ?? focusMetric}`
 
-    // Descontos vigentes do Guia (não coberto pelos builders do agente de forma compacta)
-    const discountCtx = discountRows.length > 0 ? (() => {
-      const lines = discountRows.slice(0, 8).map(d =>
-        `- ${d.categoria} ${d.periodo} ${d.dia_semana ?? ''}: ${d.valor}% ${d.tipo_desconto ?? ''} ${d.faixa_horaria ? `(${d.faixa_horaria})` : ''}`.trim()
-      )
-      return `\n## Descontos vigentes (Guia)\n${lines.join('\n')}`
-    })() : ''
-
-    // Contexto de concorrentes — mesmo builder do agente
+    // Contexto adicional que o chat também injeta: concorrentes, sazonalidade, padrão de demanda, etc.
     const competitorGapsTyped: CompetitorGap[] = competitorGaps.map(g => ({
       categoria_nossa: g.categoria_nossa ?? '',
       categoria_competitor: (g as { categoria_competitor?: string }).categoria_competitor ?? '',
@@ -762,98 +768,69 @@ export async function generateWeeklyReport(
       is_approximated: g.is_approximated ?? false,
     }))
     const competitorBlock = buildCompetitorGapBlock(competitorGapsTyped)
-
-    // Sazonalidade, elasticidade, forecast — mesmos builders do agente
     const seasonalityBlock = buildSeasonalityBlock(seasonalFactors)
     const elasticityBlock = buildElasticityBlock(elasticity)
     const forecastBlock = buildForecastBlock(
       computeRevenueForecast(kpis, (agentConfig?.budget_yearly as BudgetYearly | null) ?? null)
     )
-
-    // Memória estratégica (propostas aprovadas + resultado)
     const strategicMemoryBlock = buildStrategicMemoryBlock(
       approvedProposals as Parameters<typeof buildStrategicMemoryBlock>[0],
       kpis,
       prevKpis,
     )
-
-    // Lições de pricing + rejeições — fazem fetch próprio, chamados em paralelo
     const [lessonsBlock, rejectionBlock] = await Promise.all([
       buildLessonsBlockForUnit(unit.id, {}).catch(() => ''),
       buildRejectionLessonsBlock(unit.id).catch(() => ''),
     ])
-
-    // Capacidade e estrutura da unidade
-    const unitStructureBlock = buildUnitStructureBlock(suiteAvail, [], [])
-
-    // Padrão de demanda hora × dia — fundamental para calibrar premium FDS/semana e detectar tiers
     const demandPatternCtx = demandPattern
       ? '\n' + buildDemandPatternBlock(demandPattern, unit.name, 60)
       : ''
-
-    // Contexto histórico de tabelas (aprendizado de mudanças passadas)
     const historicalCtx = historicalInsights.length > 0 ? `
 ## Histórico de mudanças de tabela (aprendizado)
 ${historicalInsights.map(h => `- ${h.fromDate}→${h.toDate}: ${h.changesCount} preços (${h.avgChangePct > 0 ? '+' : ''}${h.avgChangePct.toFixed(1)}%) → Δ RevPAR ${h.deltaRevpar !== null ? `${h.deltaRevpar > 0 ? '+' : ''}${h.deltaRevpar.toFixed(1)}%` : '?'}, Δ Giro ${h.deltaGiro !== null ? `${h.deltaGiro > 0 ? '+' : ''}${h.deltaGiro.toFixed(1)}%` : '?'} (${h.verdict})`).join('\n')}` : ''
 
-    const maxVar = agentConfig?.max_variation_pct ?? 15
+    if (competitorBlock) agentSystemPrompt += `\n\n${competitorBlock}`
+    if (seasonalityBlock) agentSystemPrompt += `\n\n${seasonalityBlock}`
+    if (elasticityBlock) agentSystemPrompt += `\n\n${elasticityBlock}`
+    if (forecastBlock) agentSystemPrompt += `\n\n${forecastBlock}`
+    if (strategicMemoryBlock) agentSystemPrompt += `\n\n${strategicMemoryBlock}`
+    if (lessonsBlock) agentSystemPrompt += `\n\n${lessonsBlock}`
+    if (rejectionBlock) agentSystemPrompt += `\n\n${rejectionBlock}`
+    if (demandPatternCtx) agentSystemPrompt += demandPatternCtx
+    if (historicalCtx) agentSystemPrompt += historicalCtx
+
+    // Períodos de referência para a mensagem do usuário
     const lyStartStr = lyStart.toISOString().slice(0, 10)
     const lyEndStr   = lyEnd.toISOString().slice(0, 10)
 
-    const promptContext = `
-Você é um Revenue Manager sênior especialista em motéis.
-Analise o contexto operacional completo de ${unit.name} abaixo.
+    // Mensagem do usuário: pede o JSON do relatório semanal com contexto de períodos
+    const weeklyReportUserMsg = `Elabore o resumo executivo do relatório semanal de ${unit.name} para o período ${periodStart} a ${periodEnd}.
 
-PERÍODOS DE REFERÊNCIA (use SEMPRE ao citar % ou variações):
+PERÍODOS DE REFERÊNCIA (cite SEMPRE ao mencionar variações):
 - Período atual: ${periodStart} a ${periodEnd} (${durationDays} dias)
 - Período anterior (mesma duração): ${prevStartStr} a ${prevEndStr}
 - Mesmo período ano anterior: ${lyStartStr} a ${lyEndStr}
 
-RESTRIÇÕES DO GESTOR (INVIOLÁVEIS):
-- Variação máxima permitida por item de preço: ${maxVar}% (para cima OU para baixo)
-- Estratégia configurada: ${agentConfig?.pricing_strategy ?? 'moderado'}
-- Foco principal: ${agentConfig?.focus_metric ?? 'revpar'}
-Qualquer sugestão que ultrapasse ${maxVar}% é inválida — não importa o quanto o preço esteja fora do mercado.
-
----
-${kpiBlock}
-${priceTableCtx}
-${discountCtx}
-${demandPatternCtx}
-${competitorBlock}
-${seasonalityBlock}
-${elasticityBlock}
-${forecastBlock}
-${strategicMemoryBlock}
-${lessonsBlock}
-${rejectionBlock}
-${unitStructureBlock}
-${historicalCtx}
----
-
-REGRAS PARA O JSON:
-1. "headline": inclua o período atual (ex: "01–09/mai").
-2. "keyPoints": SEMPRE termine cada bullet com " (vs período anterior ${prevStartStr}–${prevEndStr})" ou " (vs LY ${lyStartStr}–${lyEndStr})" conforme aplicável.
-3. "priorityAction": use dados REAIS. NUNCA sugira variação > ${maxVar}% — se o preço estiver muito fora do mercado e ${maxVar}% não for suficiente, diga "ajustar em ${maxVar}% agora e reavaliar na próxima revisão". Pode sugerir novo tier de dia específico se padrão horário justificar.
-4. "mainWin" e "mainConcern": sempre com período de referência explícito.
+REGRAS INVIOLÁVEIS para o JSON:
+1. "headline": inclua o período atual e um dado numérico chave.
+2. "keyPoints": termine cada bullet com o período de referência (ex: "vs ${prevStartStr}–${prevEndStr}" ou "vs LY ${lyStartStr}–${lyEndStr}").
+3. "priorityAction": use dados REAIS. NUNCA sugira variação > ${maxVar}% — se o mercado exigir mais, diga "ajustar em ${maxVar}% agora e reavaliar". Pode propor novo tier de dia se o padrão horário justificar.
+4. "agentPrompt": instrução compacta (máx 280 chars) respeitando variação máx ${maxVar}%.
 5. "actionType": "price_proposal" | "discount_proposal" | "agent_config" | "none".
-6. "agentPrompt": instrução COMPACTA (máx 280 chars) para o Agente RM. Inclua números reais. Variação máx ${maxVar}%.
-7. "agentConfigSuggestion": se estratégia/foco não é ideal, sugira em 1 frase. Null se adequado.
 
-Retorne APENAS o JSON:
+Retorne APENAS o JSON (sem markdown fence, sem texto extra):
 {
-  "headline": "Frase com período e dado numérico",
-  "keyPoints": ["insight com número e período de referência", "insight 2", "insight 3"],
-  "mainWin": "Maior vitória com dado real e período",
-  "mainConcern": "Maior preocupação com dado real e período",
-  "priorityAction": "AÇÃO DENTRO DO LIMITE DE ${maxVar}% — com preços reais",
+  "headline": "string",
+  "keyPoints": ["string", "string", "string"],
+  "mainWin": "string com período de referência",
+  "mainConcern": "string com período de referência",
+  "priorityAction": "string dentro de ${maxVar}%",
   "tone": "positive|neutral|warning",
   "actionType": "price_proposal|discount_proposal|agent_config|none",
-  "agentPrompt": "Prompt compacto respeitando limite ${maxVar}%",
+  "agentPrompt": "string máx 280 chars",
   "agentConfigSuggestion": null,
   "aiLeverageComment": "2-3 alavancas concretas com números para atingir a meta"
-}
-`.trim()
+}`
 
     let executiveSummary: WeeklyReportData['executiveSummary'] = {
       headline: `Semana de ${periodStart} a ${periodEnd}`,
@@ -869,7 +846,8 @@ Retorne APENAS o JSON:
     try {
       const { text } = await generateText({
         model: ANALYSIS_MODEL,
-        prompt: promptContext,
+        system: agentSystemPrompt,
+        messages: [{ role: 'user', content: weeklyReportUserMsg }],
         maxOutputTokens: 900,
       })
       const cleaned = text.replace(/```json|```/g, '').trim()
