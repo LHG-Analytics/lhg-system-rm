@@ -50,9 +50,6 @@ export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props
   const handlePrint = async () => {
     setIsPrinting(true)
 
-    // Serializa o SVG do Recharts diretamente — garante que barCategoryGap,
-    // gradientes e labels ficam idênticos ao que aparece na tela, sem depender
-    // de html2canvas re-renderizar o SVG
     const containers = Array.from(
       document.querySelectorAll<HTMLElement>('.recharts-responsive-container')
     )
@@ -66,38 +63,53 @@ export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props
 
       try {
         const { width, height } = svg.getBoundingClientRect()
+        if (!width || !height) continue
 
         const cloned = svg.cloneNode(true) as SVGElement
         cloned.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
         cloned.setAttribute('width', String(Math.round(width)))
         cloned.setAttribute('height', String(Math.round(height)))
-        // Permite labels acima das barras (y < 0) que o overflow:hidden ocultava
         cloned.style.overflow = 'visible'
 
-        // Fundo escuro para que as labels brancas das barras de comparação sejam visíveis
         const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
         bg.setAttribute('width', '100%')
         bg.setAttribute('height', '100%')
         bg.setAttribute('fill', '#18181b')
         cloned.insertBefore(bg, cloned.firstChild)
 
-        const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-          new XMLSerializer().serializeToString(cloned)
-        )}`
+        // btoa base64 — mais confiável que encodeURIComponent para data URLs de SVG
+        const svgStr = new XMLSerializer().serializeToString(cloned)
+        const b64 = btoa(
+          encodeURIComponent(svgStr).replace(/%([0-9A-F]{2})/g, (_, hex) =>
+            String.fromCharCode(parseInt(hex, 16))
+          )
+        )
+        const dataUrl = `data:image/svg+xml;base64,${b64}`
 
         const img = document.createElement('img')
         img.src = dataUrl
         img.style.cssText = 'width:100%;height:auto;display:block;margin:0'
 
-        // Insere o img como irmão da seção [data-pdf-height] (fora do DOM do Recharts)
-        // e oculta a seção inteira para evitar duplicação de legenda
         section.parentElement?.insertBefore(img, section)
         section.style.display = 'none'
         snapshots.push({ section, img })
       } catch {
-        // falha silenciosa — chart simplesmente não aparece no PDF
+        // falha silenciosa
       }
     }
+
+    // Aguarda TODAS as imagens SVG renderizarem antes de abrir o diálogo de impressão.
+    // Sem isso window.print() abre antes do browser decodificar os data URLs e os
+    // gráficos aparecem em branco.
+    await Promise.all(
+      snapshots.map(({ img }) =>
+        new Promise<void>(resolve => {
+          if (img.complete) { resolve(); return }
+          img.onload = () => resolve()
+          img.onerror = () => resolve()
+        })
+      )
+    )
 
     setIsPrinting(false)
 

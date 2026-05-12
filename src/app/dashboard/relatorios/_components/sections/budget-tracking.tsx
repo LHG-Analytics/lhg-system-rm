@@ -80,8 +80,8 @@ function ProgressRow({ label, value, pct, color, isMeta }: {
         <span className="text-muted-foreground">{label}</span>
         <span className="font-medium">{formatMoney(value)}</span>
       </div>
-      <div className="h-2 bg-muted rounded-full overflow-hidden">
-        <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${pct}%` }} />
+      <div className="h-2 bg-muted rounded-full overflow-hidden print:bg-zinc-300">
+        <div className={cn('h-full rounded-full transition-all print:!bg-zinc-600', color)} style={{ width: `${pct}%` }} />
       </div>
     </div>
   )
