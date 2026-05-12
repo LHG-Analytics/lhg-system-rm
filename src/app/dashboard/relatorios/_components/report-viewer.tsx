@@ -49,44 +49,61 @@ export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props
 
   const handlePrint = async () => {
     setIsPrinting(true)
-    const h2c = (await import('html2canvas')).default
 
-    // Captura a seção inteira [data-pdf-height] (inclui legenda) em vez do container
-    // interno do Recharts — evita desalinhamento para a direita no A4
-    const chartSections = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-pdf-height]')
+    // Serializa o SVG do Recharts diretamente — garante que barCategoryGap,
+    // gradientes e labels ficam idênticos ao que aparece na tela, sem depender
+    // de html2canvas re-renderizar o SVG
+    const containers = Array.from(
+      document.querySelectorAll<HTMLElement>('.recharts-responsive-container')
     )
 
-    const snapshots: { original: HTMLElement; img: HTMLImageElement }[] = []
+    const snapshots: { section: HTMLElement; img: HTMLImageElement }[] = []
 
-    for (const section of chartSections) {
+    for (const container of containers) {
+      const svg = container.querySelector<SVGElement>('svg.recharts-surface')
+      const section = container.closest<HTMLElement>('[data-pdf-height]')
+      if (!svg || !section) continue
+
       try {
-        const canvas = await h2c(section, {
-          backgroundColor: '#18181b',
-          scale: 1,
-          logging: false,
-          useCORS: true,
-        })
-        const img = document.createElement('img')
-        img.src = canvas.toDataURL('image/png')
-        img.style.width = '100%'
-        img.style.height = 'auto'
-        img.style.display = 'block'
-        img.style.margin = '0'
+        const { width, height } = svg.getBoundingClientRect()
 
+        const cloned = svg.cloneNode(true) as SVGElement
+        cloned.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+        cloned.setAttribute('width', String(Math.round(width)))
+        cloned.setAttribute('height', String(Math.round(height)))
+        // Permite labels acima das barras (y < 0) que o overflow:hidden ocultava
+        cloned.style.overflow = 'visible'
+
+        // Fundo escuro para que as labels brancas das barras de comparação sejam visíveis
+        const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+        bg.setAttribute('width', '100%')
+        bg.setAttribute('height', '100%')
+        bg.setAttribute('fill', '#18181b')
+        cloned.insertBefore(bg, cloned.firstChild)
+
+        const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+          new XMLSerializer().serializeToString(cloned)
+        )}`
+
+        const img = document.createElement('img')
+        img.src = dataUrl
+        img.style.cssText = 'width:100%;height:auto;display:block;margin:0'
+
+        // Insere o img como irmão da seção [data-pdf-height] (fora do DOM do Recharts)
+        // e oculta a seção inteira para evitar duplicação de legenda
         section.parentElement?.insertBefore(img, section)
         section.style.display = 'none'
-        snapshots.push({ original: section, img })
+        snapshots.push({ section, img })
       } catch {
-        // se falhar, não impede o print — chart simplesmente não aparece
+        // falha silenciosa — chart simplesmente não aparece no PDF
       }
     }
 
     setIsPrinting(false)
 
     const restore = () => {
-      for (const { original, img } of snapshots) {
-        original.style.display = ''
+      for (const { section, img } of snapshots) {
+        section.style.display = ''
         img.remove()
       }
     }
