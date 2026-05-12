@@ -51,7 +51,7 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
   return (
     <div className="w-full overflow-hidden" data-pdf-height="55">
       <ResponsiveContainer width="100%" height={90}>
-        <BarChart data={data} maxBarSize={18} barCategoryGap="20%" barGap={2} margin={{ top: 6, right: 6, bottom: 2, left: 0 }}>
+        <BarChart data={data} maxBarSize={38} barCategoryGap="15%" barGap={3} margin={{ top: 6, right: 6, bottom: 2, left: 0 }}>
           <XAxis dataKey="name" tick={{ fontSize: 10 }} />
           <YAxis tick={{ fontSize: 9 }} width={36} tickFormatter={v => compactMoney(Number(v), symbol)} />
           <Tooltip
@@ -88,7 +88,7 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
   return (
     <div className="w-full overflow-hidden" data-pdf-height="38">
       <ResponsiveContainer width="100%" height={60}>
-        <BarChart data={data} maxBarSize={24} barCategoryGap="20%" barGap={2} margin={{ top: 6, right: 6, bottom: 2, left: 0 }}>
+        <BarChart data={data} maxBarSize={56} barCategoryGap="30%" barGap={4} margin={{ top: 6, right: 6, bottom: 2, left: 0 }}>
           <XAxis dataKey="name" tick={{ fontSize: 9 }} />
           <YAxis tick={{ fontSize: 9 }} width={28} domain={[0, 'auto']} />
           <Tooltip
