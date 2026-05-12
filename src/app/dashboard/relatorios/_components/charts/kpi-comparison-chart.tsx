@@ -38,22 +38,22 @@ function compactMoney(v: number, symbol: string): string {
   return `${symbol}${v.toFixed(0)}`
 }
 
-// Renderer de label custom: Atual fica acima da barra; comparações ficam dentro no topo
+// Atual: label acima da barra em violeta; comparações: label dentro no topo em branco
 function makeLabelRenderer(isAtual: boolean, fmt: (v: unknown) => string) {
   return (props: any) => {
     const { x = 0, y = 0, width = 0, value } = props
-    if (value == null || value === '' || value === undefined) return null
+    if (value == null || value === '') return null
     const label = fmt(value)
     const cx = x + width / 2
     if (isAtual) {
       return (
-        <text x={cx} y={y - 3} textAnchor="middle" fontSize={7} fill="#818cf8" fontWeight={700}>
+        <text x={cx} y={y - 4} textAnchor="middle" fontSize={9} fill="#818cf8" fontWeight={700}>
           {label}
         </text>
       )
     }
     return (
-      <text x={cx} y={y + 9} textAnchor="middle" fontSize={6} fill="rgba(255,255,255,0.72)" fontWeight={600}>
+      <text x={cx} y={y + 11} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.78)" fontWeight={600}>
         {label}
       </text>
     )
@@ -63,15 +63,15 @@ function makeLabelRenderer(isAtual: boolean, fmt: (v: unknown) => string) {
 function LegendDot({ color, label }: { color: string; label: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-      <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: color, flexShrink: 0 }} />
-      <span style={{ fontSize: 9, color: '#71717a' }}>{label}</span>
+      <div style={{ width: 9, height: 9, borderRadius: 2, backgroundColor: color, flexShrink: 0 }} />
+      <span style={{ fontSize: 10, color: '#71717a' }}>{label}</span>
     </div>
   )
 }
 
 function LegendRow({ hasPrev, hasYear }: { hasPrev: boolean; hasYear: boolean }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 4 }}>
+    <div style={{ display: 'flex', justifyContent: 'center', gap: 18, marginTop: 6 }}>
       <LegendDot color="#818cf8" label="Atual" />
       {hasPrev && <LegendDot color={COLOR_PREV} label="Sem.ant." />}
       {hasYear && <LegendDot color={COLOR_YEAR} label="Ano ant." />}
@@ -92,14 +92,14 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
   const fmtMoney = (v: unknown) => compactMoney(Number(v), symbol)
 
   return (
-    <div className="w-full" data-pdf-height="72">
-      <ResponsiveContainer width="100%" height={148}>
+    <div className="w-full" data-pdf-height="80">
+      <ResponsiveContainer width="100%" height={160}>
         <BarChart
           data={data}
-          barSize={20}
-          barGap={2}
-          barCategoryGap="28%"
-          margin={{ top: 24, right: 8, bottom: 0, left: 0 }}
+          barSize={44}
+          barGap={3}
+          barCategoryGap="10%"
+          margin={{ top: 26, right: 6, bottom: 0, left: 6 }}
         >
           <defs>
             <linearGradient id="kpi-atual-grad" x1="0" y1="0" x2="0" y2="1">
@@ -107,18 +107,13 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
               <stop offset="100%" stopColor="#6366f1" />
             </linearGradient>
           </defs>
+          {/* YAxis oculto — mantém o domain para calcular alturas das barras */}
+          <YAxis hide width={0} />
           <XAxis
             dataKey="name"
-            tick={{ fontSize: 10, fill: '#52525b' }}
+            tick={{ fontSize: 11, fill: '#71717a' }}
             axisLine={false}
             tickLine={false}
-          />
-          <YAxis
-            tick={{ fontSize: 8, fill: '#3f3f46' }}
-            width={34}
-            axisLine={false}
-            tickLine={false}
-            tickFormatter={v => compactMoney(Number(v), symbol)}
           />
           <Tooltip
             {...TOOLTIP_STYLE}
@@ -129,16 +124,16 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
               return [`${symbol} ${v.toFixed(2)}`, n]
             }}
           />
-          <Bar dataKey="Atual" fill="url(#kpi-atual-grad)" radius={[2, 2, 0, 0]}>
+          <Bar dataKey="Atual" fill="url(#kpi-atual-grad)" radius={[3, 3, 0, 0]}>
             <LabelList dataKey="Atual" content={makeLabelRenderer(true, fmtMoney) as any} />
           </Bar>
           {previousWeek && (
-            <Bar dataKey="Sem.ant." fill={COLOR_PREV} radius={[2, 2, 0, 0]}>
+            <Bar dataKey="Sem.ant." fill={COLOR_PREV} radius={[3, 3, 0, 0]}>
               <LabelList dataKey="Sem.ant." content={makeLabelRenderer(false, fmtMoney) as any} />
             </Bar>
           )}
           {sameWeekLastYear && (
-            <Bar dataKey="Ano ant." fill={COLOR_YEAR} radius={[2, 2, 0, 0]}>
+            <Bar dataKey="Ano ant." fill={COLOR_YEAR} radius={[3, 3, 0, 0]}>
               <LabelList dataKey="Ano ant." content={makeLabelRenderer(false, fmtMoney) as any} />
             </Bar>
           )}
@@ -162,14 +157,14 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
   const fmtGiro = (v: unknown) => Number(v).toFixed(2)
 
   return (
-    <div className="w-full" data-pdf-height="45">
-      <ResponsiveContainer width="100%" height={82}>
+    <div className="w-full" data-pdf-height="50">
+      <ResponsiveContainer width="100%" height={90}>
         <BarChart
           data={data}
-          barSize={44}
-          barGap={4}
-          barCategoryGap="12%"
-          margin={{ top: 22, right: 8, bottom: 0, left: 0 }}
+          barSize={60}
+          barGap={5}
+          barCategoryGap="8%"
+          margin={{ top: 24, right: 6, bottom: 0, left: 6 }}
         >
           <defs>
             <linearGradient id="kpi-giro-grad" x1="0" y1="0" x2="0" y2="1">
@@ -177,16 +172,10 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
               <stop offset="100%" stopColor="#6366f1" />
             </linearGradient>
           </defs>
+          <YAxis hide width={0} domain={[0, 'auto']} />
           <XAxis
             dataKey="name"
-            tick={{ fontSize: 9, fill: '#52525b' }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <YAxis
-            tick={{ fontSize: 8, fill: '#3f3f46' }}
-            width={28}
-            domain={[0, 'auto']}
+            tick={{ fontSize: 10, fill: '#71717a' }}
             axisLine={false}
             tickLine={false}
           />
@@ -195,16 +184,16 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
             cursor={{ fill: 'rgba(99,102,241,0.07)' }}
             formatter={(value: unknown, name: unknown) => [Number(value).toFixed(2), String(name)]}
           />
-          <Bar dataKey="Atual" fill="url(#kpi-giro-grad)" radius={[2, 2, 0, 0]}>
+          <Bar dataKey="Atual" fill="url(#kpi-giro-grad)" radius={[3, 3, 0, 0]}>
             <LabelList dataKey="Atual" content={makeLabelRenderer(true, fmtGiro) as any} />
           </Bar>
           {previousWeek && (
-            <Bar dataKey="Sem.ant." fill={COLOR_PREV} radius={[2, 2, 0, 0]}>
+            <Bar dataKey="Sem.ant." fill={COLOR_PREV} radius={[3, 3, 0, 0]}>
               <LabelList dataKey="Sem.ant." content={makeLabelRenderer(false, fmtGiro) as any} />
             </Bar>
           )}
           {sameWeekLastYear && (
-            <Bar dataKey="Ano ant." fill={COLOR_YEAR} radius={[2, 2, 0, 0]}>
+            <Bar dataKey="Ano ant." fill={COLOR_YEAR} radius={[3, 3, 0, 0]}>
               <LabelList dataKey="Ano ant." content={makeLabelRenderer(false, fmtGiro) as any} />
             </Bar>
           )}
