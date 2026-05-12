@@ -20,6 +20,11 @@ const verdictConfig = {
 const PERIOD_ORDER = ['3 horas', '3h', '6 horas', '6h', '12 horas', '12h', 'Day Use', 'Diária', 'Pernoite', 'pernoite']
 const CANAL_PRIORITY = ['balcao_site', 'guia_moteis', 'site_imediato', 'booking']
 
+// "3 horas" → "3hr" · "12h" → "12hr" · "Day Use" → "Day Use" (unchanged)
+function abbrevPeriod(p: string): string {
+  return p.replace(/^(\d+)\s+horas?$/i, '$1hr').replace(/^(\d+)h$/, '$1hr')
+}
+
 function buildPriceMatrix(rows: { categoria: string; periodo: string; diaTipo: string; canal: string; preco: number }[]) {
   // Collect unique periods, sorted by PERIOD_ORDER
   const periodSet = new Set(rows.map(r => r.periodo))
@@ -32,10 +37,10 @@ function buildPriceMatrix(rows: { categoria: string; periodo: string; diaTipo: s
     const hasFds  = rows.some(r => r.periodo === p && r.diaTipo === 'fds_feriado')
     const hasTodos = rows.some(r => r.periodo === p && r.diaTipo === 'todos')
     if (hasTodos && !hasWeek && !hasFds) {
-      cols.push({ periodo: p, diaTipo: 'todos', label: p })
+      cols.push({ periodo: p, diaTipo: 'todos', label: abbrevPeriod(p) })
     } else {
-      if (hasWeek) cols.push({ periodo: p, diaTipo: 'semana', label: `${p} Sem` })
-      if (hasFds)  cols.push({ periodo: p, diaTipo: 'fds_feriado', label: `${p} FDS` })
+      if (hasWeek) cols.push({ periodo: p, diaTipo: 'semana', label: `${abbrevPeriod(p)} Sem` })
+      if (hasFds)  cols.push({ periodo: p, diaTipo: 'fds_feriado', label: `${abbrevPeriod(p)} FDS` })
     }
   }
 

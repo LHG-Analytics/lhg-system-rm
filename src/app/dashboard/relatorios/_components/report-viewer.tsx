@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { FileText, Loader2, Printer } from 'lucide-react'
 import type { WeeklyReportData } from '@/lib/reports/types'
 import { ExecutiveSummary } from './sections/executive-summary'
@@ -44,6 +45,42 @@ const STEPS = [
 ]
 
 export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props) {
+  // Recharts ResponsiveContainer measures the DOM after print CSS is applied and
+  // can end up with width=0. Setting explicit pixel widths in beforeprint fixes it.
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      document.querySelectorAll<HTMLElement>('.recharts-responsive-container').forEach(container => {
+        const width = container.parentElement?.clientWidth ?? 620
+        container.style.width = `${width}px`
+        const wrapper = container.querySelector<HTMLElement>('.recharts-wrapper')
+        if (wrapper) wrapper.style.width = `${width}px`
+        const svg = container.querySelector<SVGElement>('svg.recharts-surface')
+        if (svg) {
+          svg.setAttribute('width', `${width}`)
+          svg.style.width = `${width}px`
+        }
+      })
+    }
+    const handleAfterPrint = () => {
+      document.querySelectorAll<HTMLElement>('.recharts-responsive-container').forEach(container => {
+        container.style.width = ''
+        const wrapper = container.querySelector<HTMLElement>('.recharts-wrapper')
+        if (wrapper) wrapper.style.width = ''
+        const svg = container.querySelector<SVGElement>('svg.recharts-surface')
+        if (svg) {
+          svg.removeAttribute('width')
+          svg.style.width = ''
+        }
+      })
+    }
+    window.addEventListener('beforeprint', handleBeforePrint)
+    window.addEventListener('afterprint', handleAfterPrint)
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint)
+      window.removeEventListener('afterprint', handleAfterPrint)
+    }
+  }, [])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">

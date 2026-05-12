@@ -18,7 +18,7 @@ export function BudgetTracking({ data }: Props) {
   const gapColor = gapPct >= -2 ? 'text-emerald-600' : gapPct >= -8 ? 'text-amber-600' : 'text-destructive'
 
   return (
-    <div className="rounded-xl border bg-card p-5 space-y-4">
+    <div className="rounded-xl border bg-card p-5 space-y-4 print:break-inside-avoid">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="font-medium text-sm">Meta × Previsão × Realizado</h3>
