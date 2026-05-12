@@ -47,13 +47,13 @@ function makeLabelRenderer(isAtual: boolean, fmt: (v: unknown) => string) {
     const cx = x + width / 2
     if (isAtual) {
       return (
-        <text x={cx} y={y - 4} textAnchor="middle" fontSize={9} fill="#818cf8" fontWeight={700}>
+        <text x={cx} y={y - 5} textAnchor="middle" fontSize={11} fill="#818cf8" fontWeight={700}>
           {label}
         </text>
       )
     }
     return (
-      <text x={cx} y={y + 11} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.78)" fontWeight={600}>
+      <text x={cx} y={y + 13} textAnchor="middle" fontSize={10} fill="rgba(255,255,255,0.85)" fontWeight={600}>
         {label}
       </text>
     )
@@ -99,7 +99,7 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
           barSize={44}
           barGap={3}
           barCategoryGap="10%"
-          margin={{ top: 26, right: 6, bottom: 0, left: 6 }}
+          margin={{ top: 30, right: 6, bottom: 0, left: 6 }}
         >
           <defs>
             <linearGradient id="kpi-atual-grad" x1="0" y1="0" x2="0" y2="1">
@@ -164,7 +164,7 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
           barSize={60}
           barGap={5}
           barCategoryGap="8%"
-          margin={{ top: 24, right: 6, bottom: 0, left: 6 }}
+          margin={{ top: 30, right: 6, bottom: 0, left: 6 }}
         >
           <defs>
             <linearGradient id="kpi-giro-grad" x1="0" y1="0" x2="0" y2="1">
