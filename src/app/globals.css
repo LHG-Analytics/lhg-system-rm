@@ -243,6 +243,15 @@
     white-space: nowrap !important;
   }
 
+  /* Tabela de preços: especificidade maior supera td { white-space: normal } */
+  .pricing-table td,
+  .pricing-table th {
+    white-space: nowrap !important;
+    font-size: 0.62rem !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+  }
+
   /* Remove largura mínima forçada em wrappers de tabela */
   .min-w-max,
   .min-w-\[600px\],

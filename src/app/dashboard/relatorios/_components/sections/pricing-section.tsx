@@ -20,11 +20,13 @@ const verdictConfig = {
 const PERIOD_ORDER = ['3 horas', '3h', '6 horas', '6h', '12 horas', '12h', 'Day Use', 'Diária', 'Pernoite', 'pernoite']
 const CANAL_PRIORITY = ['balcao_site', 'guia_moteis', 'site_imediato', 'booking']
 
-// "3 horas" → "3h" · "Pernoite" → "Noite" · outros permanecem
+// "3 horas" → "3h" · "Pernoite" → "Pern." · "Day Use" → "D.Use" · outros permanecem
 function abbrevPeriod(p: string): string {
   return p
     .replace(/^(\d+)\s+horas?$/i, '$1h')
-    .replace(/^pernoite$/i, 'Noite')
+    .replace(/^pernoite$/i, 'Pern.')
+    .replace(/^day use$/i, 'D.Use')
+    .replace(/^diária$/i, 'Diária')
 }
 
 type PriceCol = { periodo: string; diaTipo: string }
@@ -115,11 +117,11 @@ export function PricingSection({ data }: Props) {
                 <span className="ml-2 normal-case font-normal">(canal: balcão/site)</span>
               </p>
               <div className="overflow-x-auto scrollbar-thin">
-                <table className="w-full text-sm">
+                <table className="pricing-table w-full text-[11px]">
                   <thead>
                     {/* Linha 1: nome do período, agrupando Sem + FDS */}
-                    <tr className="text-xs text-muted-foreground">
-                      <th rowSpan={2} className="text-left align-bottom pb-1.5 font-medium pr-4 border-b">Categ.</th>
+                    <tr className="text-muted-foreground">
+                      <th rowSpan={2} className="text-left align-bottom pb-1.5 font-medium pr-3 border-b whitespace-nowrap">Categ.</th>
                       {periodGroups.map(g => (
                         <th
                           key={g.periodo}
@@ -131,12 +133,12 @@ export function PricingSection({ data }: Props) {
                       ))}
                     </tr>
                     {/* Linha 2: Sem / FDS */}
-                    <tr className="text-xs text-muted-foreground border-b">
+                    <tr className="text-muted-foreground border-b">
                       {periodGroups.flatMap(g =>
                         g.cols.map(c => (
                           <th
                             key={`${c.periodo}|${c.diaTipo}`}
-                            className="text-right pb-1 font-medium px-2 whitespace-nowrap"
+                            className="text-right pb-1 font-medium px-1.5 whitespace-nowrap"
                           >
                             {c.diaTipo === 'semana' ? 'Sem' : c.diaTipo === 'fds_feriado' ? 'FDS' : '—'}
                           </th>
@@ -147,12 +149,12 @@ export function PricingSection({ data }: Props) {
                   <tbody>
                     {cats.map(cat => (
                       <tr key={cat} className="border-b last:border-0">
-                        <td className="py-1.5 font-medium pr-4 text-xs">{cat}</td>
+                        <td className="py-1 font-medium pr-3 whitespace-nowrap">{cat}</td>
                         {cols.map(c => {
                           const price = matrix[cat]?.[`${c.periodo}|${c.diaTipo}`]
                           return (
-                            <td key={`${c.periodo}|${c.diaTipo}`} className="text-right px-2 tabular-nums text-muted-foreground">
-                              {price != null ? `${symbol} ${price.toFixed(0)}` : '—'}
+                            <td key={`${c.periodo}|${c.diaTipo}`} className="text-right px-1.5 tabular-nums text-muted-foreground whitespace-nowrap">
+                              {price != null ? `${symbol}${price.toFixed(0)}` : '—'}
                             </td>
                           )
                         })}
