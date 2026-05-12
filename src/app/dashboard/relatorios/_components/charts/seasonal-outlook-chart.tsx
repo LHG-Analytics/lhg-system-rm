@@ -31,12 +31,13 @@ export function SeasonalOutlookChart({ data }: { data: SeasonalFactor[] }) {
   }))
 
   return (
-    <ResponsiveContainer width="100%" height={160}>
+    <ResponsiveContainer width="100%" height={130}>
       <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
         <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={1} />
         <YAxis domain={[0.5, 1.8]} tick={{ fontSize: 11 }} tickFormatter={v => `${v.toFixed(1)}x`} />
         <Tooltip
           {...TOOLTIP_STYLE}
+          cursor={false}
           formatter={(value: unknown) => [`${Number(value).toFixed(2)}x`, 'Fator RevPAR']}
         />
         <ReferenceLine y={1} stroke="#64748b" strokeDasharray="3 3" />

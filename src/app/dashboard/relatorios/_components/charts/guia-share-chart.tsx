@@ -32,6 +32,7 @@ export function GuiaShareChart({ currentPct, prevPct }: Props) {
         <YAxis domain={[0, 30]} tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} />
         <Tooltip
           {...TOOLTIP_STYLE}
+          cursor={false}
           formatter={(value: unknown) => [`${Number(value).toFixed(1)}%`, 'Participação no Guia']}
         />
         <ReferenceLine y={5}  stroke="#ef4444" strokeDasharray="3 3" label={{ value: '5%',  fontSize: 10 }} />

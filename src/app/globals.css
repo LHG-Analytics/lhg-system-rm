@@ -232,6 +232,32 @@
     overflow: visible !important;
   }
 
+  /* Tabelas: previne overflow horizontal no PDF */
+  table {
+    width: 100% !important;
+    table-layout: auto !important;
+    max-width: 100% !important;
+  }
+  td, th {
+    white-space: normal !important;
+    word-break: break-word !important;
+  }
+
+  /* Remove largura mínima forçada em wrappers de tabela */
+  .min-w-max,
+  .min-w-\[600px\],
+  .min-w-\[700px\],
+  .min-w-\[800px\] {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Recharts SVG: mantém proporção dentro da página */
+  .recharts-wrapper,
+  .recharts-surface {
+    max-width: 100% !important;
+  }
+
   /* NÃO usar break-inside: avoid no .rounded-xl — causa grandes espaços em branco
      porque seções inteiras pulam para a próxima página. Apenas elementos menores
      (linhas de tabela, stat cards) devem evitar quebra no meio. */

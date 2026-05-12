@@ -29,6 +29,10 @@ const MONETARY_METRICS = [
   { key: 'ticket' as keyof KPISnapshot, label: 'Ticket' },
 ]
 
+const COLOR_ATUAL = '#6366f1'
+const COLOR_PREV  = '#94a3b8'
+const COLOR_YEAR  = '#64748b'
+
 export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Props) {
   const { symbol, formatMoney } = useCurrency()
 
@@ -40,12 +44,13 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
   }))
 
   return (
-    <ResponsiveContainer width="100%" height={180}>
-      <BarChart data={data} margin={{ top: 18, right: 4, bottom: 4, left: 4 }}>
+    <ResponsiveContainer width="100%" height={155}>
+      <BarChart data={data} margin={{ top: 22, right: 4, bottom: 4, left: 4 }}>
         <XAxis dataKey="name" tick={{ fontSize: 12 }} />
         <YAxis tick={{ fontSize: 11 }} width={50} />
         <Tooltip
           {...TOOLTIP_STYLE}
+          cursor={false}
           formatter={(value: unknown, name: unknown, item: unknown) => {
             const v = Number(value)
             const n = String(name)
@@ -54,17 +59,35 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
             return [isMoney ? `${symbol} ${v.toFixed(2)}` : v.toFixed(2), n]
           }}
         />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="Atual" fill="#3b82f6" radius={[3, 3, 0, 0]}>
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[3, 3, 0, 0]}>
           <LabelList
             dataKey="Atual"
             position="top"
-            style={{ fontSize: 10, fill: '#94a3b8' }}
+            style={{ fontSize: 10, fill: '#818cf8', fontWeight: 600 }}
             formatter={(v: unknown) => formatMoney(Number(v))}
           />
         </Bar>
-        {previousWeek && <Bar dataKey="Semana ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
-        {sameWeekLastYear && <Bar dataKey="Ano anterior" fill="#64748b" radius={[3, 3, 0, 0]} />}
+        {previousWeek && (
+          <Bar dataKey="Semana ant." fill={COLOR_PREV} radius={[3, 3, 0, 0]}>
+            <LabelList
+              dataKey="Semana ant."
+              position="top"
+              style={{ fontSize: 9, fill: '#94a3b8' }}
+              formatter={(v: unknown) => formatMoney(Number(v))}
+            />
+          </Bar>
+        )}
+        {sameWeekLastYear && (
+          <Bar dataKey="Ano anterior" fill={COLOR_YEAR} radius={[3, 3, 0, 0]}>
+            <LabelList
+              dataKey="Ano anterior"
+              position="top"
+              style={{ fontSize: 9, fill: '#64748b' }}
+              formatter={(v: unknown) => formatMoney(Number(v))}
+            />
+          </Bar>
+        )}
       </BarChart>
     </ResponsiveContainer>
   )
@@ -81,25 +104,44 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
   ]
 
   return (
-    <ResponsiveContainer width="100%" height={110}>
-      <BarChart data={data} margin={{ top: 18, right: 4, bottom: 4, left: 4 }}>
+    <ResponsiveContainer width="100%" height={90}>
+      <BarChart data={data} margin={{ top: 22, right: 4, bottom: 4, left: 4 }}>
         <XAxis dataKey="name" tick={{ fontSize: 11 }} />
         <YAxis tick={{ fontSize: 11 }} width={36} domain={[0, 'auto']} />
         <Tooltip
           {...TOOLTIP_STYLE}
+          cursor={false}
           formatter={(value: unknown, name: unknown) => [Number(value).toFixed(2), String(name)]}
         />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="Atual" fill="#3b82f6" radius={[3, 3, 0, 0]}>
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[3, 3, 0, 0]}>
           <LabelList
             dataKey="Atual"
             position="top"
-            style={{ fontSize: 10, fill: '#94a3b8' }}
+            style={{ fontSize: 10, fill: '#818cf8', fontWeight: 600 }}
             formatter={(v: unknown) => Number(v).toFixed(2)}
           />
         </Bar>
-        {previousWeek && <Bar dataKey="Semana ant." fill="#94a3b8" radius={[3, 3, 0, 0]} />}
-        {sameWeekLastYear && <Bar dataKey="Ano anterior" fill="#64748b" radius={[3, 3, 0, 0]} />}
+        {previousWeek && (
+          <Bar dataKey="Semana ant." fill={COLOR_PREV} radius={[3, 3, 0, 0]}>
+            <LabelList
+              dataKey="Semana ant."
+              position="top"
+              style={{ fontSize: 9, fill: '#94a3b8' }}
+              formatter={(v: unknown) => Number(v).toFixed(2)}
+            />
+          </Bar>
+        )}
+        {sameWeekLastYear && (
+          <Bar dataKey="Ano anterior" fill={COLOR_YEAR} radius={[3, 3, 0, 0]}>
+            <LabelList
+              dataKey="Ano anterior"
+              position="top"
+              style={{ fontSize: 9, fill: '#64748b' }}
+              formatter={(v: unknown) => Number(v).toFixed(2)}
+            />
+          </Bar>
+        )}
       </BarChart>
     </ResponsiveContainer>
   )
