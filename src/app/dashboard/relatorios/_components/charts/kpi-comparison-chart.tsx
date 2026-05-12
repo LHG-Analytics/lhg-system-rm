@@ -49,11 +49,11 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
   }))
 
   return (
-    <div className="w-full overflow-hidden" data-pdf-height="85">
-      <ResponsiveContainer width="100%" height={160}>
-        <BarChart data={data} margin={{ top: 26, right: 28, bottom: 4, left: 0 }}>
-          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-          <YAxis tick={{ fontSize: 10 }} width={40} tickFormatter={v => compactMoney(Number(v), symbol)} />
+    <div className="w-full overflow-hidden" data-pdf-height="60">
+      <ResponsiveContainer width="100%" height={110}>
+        <BarChart data={data} barSize={14} margin={{ top: 18, right: 44, bottom: 2, left: 0 }}>
+          <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+          <YAxis tick={{ fontSize: 9 }} width={38} tickFormatter={v => compactMoney(Number(v), symbol)} />
           <Tooltip
             {...TOOLTIP_STYLE}
             cursor={false}
@@ -65,31 +65,31 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
               return [isMoney ? `${symbol} ${v.toFixed(2)}` : v.toFixed(2), n]
             }}
           />
-          <Legend wrapperStyle={{ fontSize: 10 }} />
-          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[3, 3, 0, 0]}>
+          <Legend wrapperStyle={{ fontSize: 9 }} />
+          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[2, 2, 0, 0]}>
             <LabelList
               dataKey="Atual"
               position="top"
-              style={{ fontSize: 9, fill: '#818cf8', fontWeight: 700 }}
+              style={{ fontSize: 8, fill: '#818cf8', fontWeight: 700 }}
               formatter={(v: unknown) => compactMoney(Number(v), symbol)}
             />
           </Bar>
           {previousWeek && (
-            <Bar dataKey="Semana ant." fill={COLOR_PREV} radius={[3, 3, 0, 0]}>
+            <Bar dataKey="Semana ant." fill={COLOR_PREV} radius={[2, 2, 0, 0]}>
               <LabelList
                 dataKey="Semana ant."
                 position="top"
-                style={{ fontSize: 8, fill: '#94a3b8' }}
+                style={{ fontSize: 7, fill: '#94a3b8' }}
                 formatter={(v: unknown) => compactMoney(Number(v), symbol)}
               />
             </Bar>
           )}
           {sameWeekLastYear && (
-            <Bar dataKey="Ano anterior" fill={COLOR_YEAR} radius={[3, 3, 0, 0]}>
+            <Bar dataKey="Ano anterior" fill={COLOR_YEAR} radius={[2, 2, 0, 0]}>
               <LabelList
                 dataKey="Ano anterior"
                 position="top"
-                style={{ fontSize: 8, fill: '#64748b' }}
+                style={{ fontSize: 7, fill: '#64748b' }}
                 formatter={(v: unknown) => compactMoney(Number(v), symbol)}
               />
             </Bar>
@@ -111,41 +111,41 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
   ]
 
   return (
-    <div className="w-full overflow-hidden" data-pdf-height="50">
-      <ResponsiveContainer width="100%" height={90}>
-        <BarChart data={data} margin={{ top: 22, right: 24, bottom: 4, left: 0 }}>
-          <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-          <YAxis tick={{ fontSize: 10 }} width={32} domain={[0, 'auto']} />
+    <div className="w-full overflow-hidden" data-pdf-height="38">
+      <ResponsiveContainer width="100%" height={65}>
+        <BarChart data={data} barSize={20} margin={{ top: 18, right: 44, bottom: 2, left: 0 }}>
+          <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+          <YAxis tick={{ fontSize: 9 }} width={28} domain={[0, 'auto']} />
           <Tooltip
             {...TOOLTIP_STYLE}
             cursor={false}
             formatter={(value: unknown, name: unknown) => [Number(value).toFixed(2), String(name)]}
           />
-          <Legend wrapperStyle={{ fontSize: 10 }} />
-          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[3, 3, 0, 0]}>
+          <Legend wrapperStyle={{ fontSize: 9 }} />
+          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[2, 2, 0, 0]}>
             <LabelList
               dataKey="Atual"
               position="top"
-              style={{ fontSize: 9, fill: '#818cf8', fontWeight: 700 }}
+              style={{ fontSize: 8, fill: '#818cf8', fontWeight: 700 }}
               formatter={(v: unknown) => Number(v).toFixed(2)}
             />
           </Bar>
           {previousWeek && (
-            <Bar dataKey="Semana ant." fill={COLOR_PREV} radius={[3, 3, 0, 0]}>
+            <Bar dataKey="Semana ant." fill={COLOR_PREV} radius={[2, 2, 0, 0]}>
               <LabelList
                 dataKey="Semana ant."
                 position="top"
-                style={{ fontSize: 8, fill: '#94a3b8' }}
+                style={{ fontSize: 7, fill: '#94a3b8' }}
                 formatter={(v: unknown) => Number(v).toFixed(2)}
               />
             </Bar>
           )}
           {sameWeekLastYear && (
-            <Bar dataKey="Ano anterior" fill={COLOR_YEAR} radius={[3, 3, 0, 0]}>
+            <Bar dataKey="Ano anterior" fill={COLOR_YEAR} radius={[2, 2, 0, 0]}>
               <LabelList
                 dataKey="Ano anterior"
                 position="top"
-                style={{ fontSize: 8, fill: '#64748b' }}
+                style={{ fontSize: 7, fill: '#64748b' }}
                 formatter={(v: unknown) => Number(v).toFixed(2)}
               />
             </Bar>

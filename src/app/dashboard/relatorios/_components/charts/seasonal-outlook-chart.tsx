@@ -31,9 +31,9 @@ export function SeasonalOutlookChart({ data }: { data: SeasonalFactor[] }) {
   }))
 
   return (
-    <div className="w-full overflow-hidden" data-pdf-height="75">
-    <ResponsiveContainer width="100%" height={130}>
-      <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 4, left: 0 }}>
+    <div className="w-full overflow-hidden" data-pdf-height="60">
+    <ResponsiveContainer width="100%" height={105}>
+      <AreaChart data={chartData} margin={{ top: 4, right: 8, bottom: 2, left: 0 }}>
         <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={1} />
         <YAxis domain={[0.5, 1.8]} tick={{ fontSize: 11 }} tickFormatter={v => `${v.toFixed(1)}x`} />
         <Tooltip
