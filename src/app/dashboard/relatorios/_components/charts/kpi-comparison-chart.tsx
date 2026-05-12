@@ -1,6 +1,6 @@
 'use client'
 
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, LabelList, ResponsiveContainer } from 'recharts'
 import type { KPISnapshot } from '@/lib/reports/types'
 import { useCurrency } from '@/components/currency-context'
 
@@ -49,9 +49,10 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
   }))
 
   return (
-    <div className="w-full overflow-hidden" data-pdf-height="55">
-      <ResponsiveContainer width="100%" height={90}>
-        <BarChart data={data} maxBarSize={38} barCategoryGap="15%" barGap={3} margin={{ top: 6, right: 6, bottom: 2, left: 0 }}>
+    // Sem overflow-hidden — tooltip precisa flutuar livremente acima do chart
+    <div className="w-full" data-pdf-height="65">
+      <ResponsiveContainer width="100%" height={115}>
+        <BarChart data={data} barSize={14} barGap={2} barCategoryGap="20%" margin={{ top: 22, right: 10, bottom: 2, left: 0 }}>
           <XAxis dataKey="name" tick={{ fontSize: 10 }} />
           <YAxis tick={{ fontSize: 9 }} width={36} tickFormatter={v => compactMoney(Number(v), symbol)} />
           <Tooltip
@@ -66,7 +67,14 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
             }}
           />
           <Legend wrapperStyle={{ fontSize: 9 }} />
-          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[2, 2, 0, 0]} />
+          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[2, 2, 0, 0]}>
+            <LabelList
+              dataKey="Atual"
+              position="top"
+              style={{ fontSize: 8, fill: '#818cf8', fontWeight: 700 }}
+              formatter={(v: unknown) => compactMoney(Number(v), symbol)}
+            />
+          </Bar>
           {previousWeek && <Bar dataKey="Sem.ant." fill={COLOR_PREV} radius={[2, 2, 0, 0]} />}
           {sameWeekLastYear && <Bar dataKey="Ano ant." fill={COLOR_YEAR} radius={[2, 2, 0, 0]} />}
         </BarChart>
@@ -86,9 +94,10 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
   ]
 
   return (
-    <div className="w-full overflow-hidden" data-pdf-height="38">
-      <ResponsiveContainer width="100%" height={60}>
-        <BarChart data={data} maxBarSize={56} barCategoryGap="30%" barGap={4} margin={{ top: 6, right: 6, bottom: 2, left: 0 }}>
+    // Sem overflow-hidden — tooltip precisa flutuar livremente acima do chart
+    <div className="w-full" data-pdf-height="40">
+      <ResponsiveContainer width="100%" height={65}>
+        <BarChart data={data} barSize={28} barGap={3} barCategoryGap="25%" margin={{ top: 20, right: 10, bottom: 2, left: 0 }}>
           <XAxis dataKey="name" tick={{ fontSize: 9 }} />
           <YAxis tick={{ fontSize: 9 }} width={28} domain={[0, 'auto']} />
           <Tooltip
@@ -97,7 +106,14 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
             formatter={(value: unknown, name: unknown) => [Number(value).toFixed(2), String(name)]}
           />
           <Legend wrapperStyle={{ fontSize: 9 }} />
-          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[2, 2, 0, 0]} />
+          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[2, 2, 0, 0]}>
+            <LabelList
+              dataKey="Atual"
+              position="top"
+              style={{ fontSize: 8, fill: '#818cf8', fontWeight: 700 }}
+              formatter={(v: unknown) => Number(v).toFixed(2)}
+            />
+          </Bar>
           {previousWeek && <Bar dataKey="Sem.ant." fill={COLOR_PREV} radius={[2, 2, 0, 0]} />}
           {sameWeekLastYear && <Bar dataKey="Ano ant." fill={COLOR_YEAR} radius={[2, 2, 0, 0]} />}
         </BarChart>

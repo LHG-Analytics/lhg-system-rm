@@ -46,7 +46,7 @@ export function KpisSection({ data }: Props) {
 
       {open && (
         <div className="px-4 pb-5 space-y-4">
-          <div className="overflow-hidden">
+          <div>
             <p className="text-xs text-muted-foreground mb-2">RevPAR · TRevPAR · Ticket Médio ({symbol}/suíte)</p>
             <MonetaryKpiChart
               current={data.current}
@@ -55,7 +55,7 @@ export function KpisSection({ data }: Props) {
             />
           </div>
 
-          <div className="overflow-hidden">
+          <div>
             <p className="text-xs text-muted-foreground mb-1">Giro (locações/suíte/dia) — referência: &lt;1.3 baixo · 1.3–1.6 normal · &gt;1.6 alto</p>
             <GiroKpiChart
               current={data.current}
