@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useState } from 'react'
 import { FileText, Loader2, Printer } from 'lucide-react'
 import type { WeeklyReportData } from '@/lib/reports/types'
 import { ExecutiveSummary } from './sections/executive-summary'
@@ -45,46 +45,47 @@ const STEPS = [
 ]
 
 export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props) {
-  // Recharts SVGs sem viewBox usam dimensões literais de tela e ficam cortados no print.
-  // Adicionamos viewBox antes do print para que o SVG escale proporcionalmente ao container.
-  useEffect(() => {
-    const handleBeforePrint = () => {
-      document.querySelectorAll<HTMLElement>('.recharts-responsive-container').forEach(container => {
-        const wrapper = container.querySelector<HTMLElement>('.recharts-wrapper')
-        const svg = container.querySelector<SVGElement>('svg.recharts-surface')
-        if (svg) {
-          const w = parseInt(svg.getAttribute('width') ?? '0')
-          const h = parseInt(svg.getAttribute('height') ?? '0')
-          if (w > 0 && h > 0 && !svg.getAttribute('viewBox')) {
-            svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
-            svg.setAttribute('data-print-viewbox', '1')
-          }
-          svg.style.width = '100%'
-        }
-        if (wrapper) wrapper.style.width = '100%'
-      })
+  const [isPrinting, setIsPrinting] = useState(false)
+
+  const handlePrint = async () => {
+    setIsPrinting(true)
+    const h2c = (await import('html2canvas')).default
+    const containers = Array.from(
+      document.querySelectorAll<HTMLElement>('.recharts-responsive-container')
+    )
+
+    const snapshots: { container: HTMLElement; img: HTMLImageElement }[] = []
+    for (const container of containers) {
+      try {
+        const canvas = await h2c(container, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          logging: false,
+          useCORS: true,
+        })
+        const img = document.createElement('img')
+        img.src = canvas.toDataURL('image/png')
+        img.style.width = '100%'
+        img.style.display = 'block'
+        container.parentElement?.insertBefore(img, container)
+        container.style.display = 'none'
+        snapshots.push({ container, img })
+      } catch {
+        // se falhar, não impede o print — chart simplesmente não aparece
+      }
     }
-    const handleAfterPrint = () => {
-      document.querySelectorAll<HTMLElement>('.recharts-responsive-container').forEach(container => {
-        const wrapper = container.querySelector<HTMLElement>('.recharts-wrapper')
-        const svg = container.querySelector<SVGElement>('svg.recharts-surface')
-        if (svg) {
-          if (svg.getAttribute('data-print-viewbox')) {
-            svg.removeAttribute('viewBox')
-            svg.removeAttribute('data-print-viewbox')
-          }
-          svg.style.width = ''
-        }
-        if (wrapper) wrapper.style.width = ''
-      })
+
+    setIsPrinting(false)
+
+    const restore = () => {
+      for (const { container, img } of snapshots) {
+        container.style.display = ''
+        img.remove()
+      }
     }
-    window.addEventListener('beforeprint', handleBeforePrint)
-    window.addEventListener('afterprint', handleAfterPrint)
-    return () => {
-      window.removeEventListener('beforeprint', handleBeforePrint)
-      window.removeEventListener('afterprint', handleAfterPrint)
-    }
-  }, [])
+    window.addEventListener('afterprint', restore, { once: true })
+    window.print()
+  }
 
   if (loading) {
     return (
@@ -150,10 +151,11 @@ export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props
           variant="outline"
           size="sm"
           className="gap-2 shrink-0 print:hidden"
-          onClick={() => window.print()}
+          onClick={handlePrint}
+          disabled={isPrinting}
         >
-          <Printer className="w-4 h-4" />
-          Exportar PDF
+          {isPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+          {isPrinting ? 'Preparando…' : 'Exportar PDF'}
         </Button>
       </div>
 

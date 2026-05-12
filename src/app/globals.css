@@ -225,20 +225,7 @@
     min-height: 0 !important;
   }
 
-  /* Recharts: container full-width; viewBox é adicionado via beforeprint handler
-     para que o SVG escale proporcionalmente sem ser cortado */
-  .recharts-responsive-container {
-    width: 100% !important;
-    overflow: visible !important;
-  }
-  .recharts-wrapper {
-    display: block !important;
-    width: 100% !important;
-    overflow: visible !important;
-  }
-  svg.recharts-surface {
-    overflow: visible !important;
-  }
+  /* Gráficos: convertidos para PNG via html2canvas antes do print — sem regras SVG necessárias */
 
   /* Tabelas: previne overflow horizontal no PDF */
   table {
