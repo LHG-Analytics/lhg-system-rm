@@ -177,9 +177,9 @@
     -webkit-print-color-adjust: exact;
   }
 
-  /* Página A4 com margens confortáveis */
+  /* Página A4 — margens compactas para maximizar área útil */
   @page {
-    margin: 1.5cm;
+    margin: 0.8cm 1cm;
     size: A4 portrait;
   }
 
@@ -243,13 +243,22 @@
     white-space: nowrap !important;
   }
 
-  /* Tabela de preços: especificidade maior supera td { white-space: normal } */
+  /* Tabela de preços: font minúsculo + layout fixo para caber no A4 */
+  .pricing-table {
+    table-layout: fixed !important;
+  }
   .pricing-table td,
   .pricing-table th {
     white-space: nowrap !important;
-    font-size: 0.62rem !important;
-    padding-left: 4px !important;
-    padding-right: 4px !important;
+    font-size: 0.5rem !important;
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  .pricing-table td:first-child,
+  .pricing-table th:first-child {
+    width: 10% !important;
   }
 
   /* Remove largura mínima forçada em wrappers de tabela */

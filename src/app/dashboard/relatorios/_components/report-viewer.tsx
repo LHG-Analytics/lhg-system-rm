@@ -59,13 +59,18 @@ export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props
       try {
         const canvas = await h2c(container, {
           backgroundColor: '#ffffff',
-          scale: 2,
+          scale: 1,
           logging: false,
           useCORS: true,
         })
         const img = document.createElement('img')
         img.src = canvas.toDataURL('image/png')
+        // Lê altura definida pelo componente para PDF — evita esticamento no A4
+        const pdfH = container.closest<HTMLElement>('[data-pdf-height]')
+          ?.getAttribute('data-pdf-height')
         img.style.width = '100%'
+        img.style.height = pdfH ? `${pdfH}px` : 'auto'
+        img.style.objectFit = 'fill'
         img.style.display = 'block'
         container.parentElement?.insertBefore(img, container)
         container.style.display = 'none'
@@ -141,7 +146,7 @@ export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props
   const periodLabel = `${format(new Date(report.period_start + 'T12:00:00Z'), "dd 'de' MMMM", { locale: ptBR })} – ${format(new Date(report.period_end + 'T12:00:00Z'), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}`
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-6 space-y-4">
+    <div className="max-w-5xl mx-auto px-6 py-6 space-y-4 print:max-w-none print:px-0 print:py-2">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold">{data.period.unit}</h2>

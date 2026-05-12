@@ -49,7 +49,7 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
   }))
 
   return (
-    <div className="w-full overflow-hidden">
+    <div className="w-full overflow-hidden" data-pdf-height="85">
       <ResponsiveContainer width="100%" height={160}>
         <BarChart data={data} margin={{ top: 24, right: 8, bottom: 4, left: 0 }}>
           <XAxis dataKey="name" tick={{ fontSize: 11 }} />
@@ -111,7 +111,7 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
   ]
 
   return (
-    <div className="w-full overflow-hidden">
+    <div className="w-full overflow-hidden" data-pdf-height="50">
       <ResponsiveContainer width="100%" height={90}>
         <BarChart data={data} margin={{ top: 22, right: 8, bottom: 4, left: 0 }}>
           <XAxis dataKey="name" tick={{ fontSize: 10 }} />

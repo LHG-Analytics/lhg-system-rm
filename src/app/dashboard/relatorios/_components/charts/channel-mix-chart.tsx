@@ -28,7 +28,7 @@ export function ChannelMixChart({ data }: { data: ChannelItem[] }) {
   const sorted = [...data].sort((a, b) => b.representatividade - a.representatividade).slice(0, 5)
 
   return (
-    <div className="w-full overflow-hidden">
+    <div className="w-full overflow-hidden" data-pdf-height="75">
     <ResponsiveContainer width="100%" height={130}>
       <BarChart data={sorted} layout="vertical" margin={{ top: 4, right: 48, bottom: 4, left: 0 }}>
         <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => `${v.toFixed(0)}%`} />
