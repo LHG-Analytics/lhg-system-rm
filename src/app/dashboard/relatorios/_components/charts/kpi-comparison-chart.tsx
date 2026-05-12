@@ -1,6 +1,6 @@
 'use client'
 
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, LabelList, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import type { KPISnapshot } from '@/lib/reports/types'
 import { useCurrency } from '@/components/currency-context'
 
@@ -39,21 +39,21 @@ function compactMoney(v: number, symbol: string): string {
 }
 
 export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Props) {
-  const { symbol, formatMoney } = useCurrency()
+  const { symbol } = useCurrency()
 
   const data = MONETARY_METRICS.map(m => ({
     name: m.label,
     Atual: current[m.key],
-    'Semana ant.': previousWeek ? previousWeek[m.key] : undefined,
-    'Ano anterior': sameWeekLastYear ? sameWeekLastYear[m.key] : undefined,
+    'Sem.ant.': previousWeek ? previousWeek[m.key] : undefined,
+    'Ano ant.': sameWeekLastYear ? sameWeekLastYear[m.key] : undefined,
   }))
 
   return (
-    <div className="w-full overflow-hidden" data-pdf-height="60">
-      <ResponsiveContainer width="100%" height={110}>
-        <BarChart data={data} barSize={9} barCategoryGap="25%" margin={{ top: 18, right: 44, bottom: 2, left: 0 }}>
+    <div className="w-full overflow-hidden" data-pdf-height="55">
+      <ResponsiveContainer width="100%" height={90}>
+        <BarChart data={data} maxBarSize={18} barCategoryGap="20%" barGap={2} margin={{ top: 6, right: 6, bottom: 2, left: 0 }}>
           <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-          <YAxis tick={{ fontSize: 9 }} width={38} tickFormatter={v => compactMoney(Number(v), symbol)} />
+          <YAxis tick={{ fontSize: 9 }} width={36} tickFormatter={v => compactMoney(Number(v), symbol)} />
           <Tooltip
             {...TOOLTIP_STYLE}
             cursor={false}
@@ -66,34 +66,9 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
             }}
           />
           <Legend wrapperStyle={{ fontSize: 9 }} />
-          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[2, 2, 0, 0]}>
-            <LabelList
-              dataKey="Atual"
-              position="top"
-              style={{ fontSize: 8, fill: '#818cf8', fontWeight: 700 }}
-              formatter={(v: unknown) => compactMoney(Number(v), symbol)}
-            />
-          </Bar>
-          {previousWeek && (
-            <Bar dataKey="Semana ant." fill={COLOR_PREV} radius={[2, 2, 0, 0]}>
-              <LabelList
-                dataKey="Semana ant."
-                position="top"
-                style={{ fontSize: 7, fill: '#94a3b8' }}
-                formatter={(v: unknown) => compactMoney(Number(v), symbol)}
-              />
-            </Bar>
-          )}
-          {sameWeekLastYear && (
-            <Bar dataKey="Ano anterior" fill={COLOR_YEAR} radius={[2, 2, 0, 0]}>
-              <LabelList
-                dataKey="Ano anterior"
-                position="top"
-                style={{ fontSize: 7, fill: '#64748b' }}
-                formatter={(v: unknown) => compactMoney(Number(v), symbol)}
-              />
-            </Bar>
-          )}
+          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[2, 2, 0, 0]} />
+          {previousWeek && <Bar dataKey="Sem.ant." fill={COLOR_PREV} radius={[2, 2, 0, 0]} />}
+          {sameWeekLastYear && <Bar dataKey="Ano ant." fill={COLOR_YEAR} radius={[2, 2, 0, 0]} />}
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -103,17 +78,17 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
 export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props) {
   const data = [
     {
-      name: 'Giro (loc/suíte/dia)',
+      name: 'Giro',
       Atual: current.giro,
-      'Semana ant.': previousWeek?.giro ?? undefined,
-      'Ano anterior': sameWeekLastYear?.giro ?? undefined,
+      'Sem.ant.': previousWeek?.giro ?? undefined,
+      'Ano ant.': sameWeekLastYear?.giro ?? undefined,
     },
   ]
 
   return (
     <div className="w-full overflow-hidden" data-pdf-height="38">
-      <ResponsiveContainer width="100%" height={65}>
-        <BarChart data={data} barSize={20} margin={{ top: 18, right: 44, bottom: 2, left: 0 }}>
+      <ResponsiveContainer width="100%" height={60}>
+        <BarChart data={data} maxBarSize={24} barCategoryGap="20%" barGap={2} margin={{ top: 6, right: 6, bottom: 2, left: 0 }}>
           <XAxis dataKey="name" tick={{ fontSize: 9 }} />
           <YAxis tick={{ fontSize: 9 }} width={28} domain={[0, 'auto']} />
           <Tooltip
@@ -122,34 +97,9 @@ export function GiroKpiChart({ current, previousWeek, sameWeekLastYear }: Props)
             formatter={(value: unknown, name: unknown) => [Number(value).toFixed(2), String(name)]}
           />
           <Legend wrapperStyle={{ fontSize: 9 }} />
-          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[2, 2, 0, 0]}>
-            <LabelList
-              dataKey="Atual"
-              position="top"
-              style={{ fontSize: 8, fill: '#818cf8', fontWeight: 700 }}
-              formatter={(v: unknown) => Number(v).toFixed(2)}
-            />
-          </Bar>
-          {previousWeek && (
-            <Bar dataKey="Semana ant." fill={COLOR_PREV} radius={[2, 2, 0, 0]}>
-              <LabelList
-                dataKey="Semana ant."
-                position="top"
-                style={{ fontSize: 7, fill: '#94a3b8' }}
-                formatter={(v: unknown) => Number(v).toFixed(2)}
-              />
-            </Bar>
-          )}
-          {sameWeekLastYear && (
-            <Bar dataKey="Ano anterior" fill={COLOR_YEAR} radius={[2, 2, 0, 0]}>
-              <LabelList
-                dataKey="Ano anterior"
-                position="top"
-                style={{ fontSize: 7, fill: '#64748b' }}
-                formatter={(v: unknown) => Number(v).toFixed(2)}
-              />
-            </Bar>
-          )}
+          <Bar dataKey="Atual" fill={COLOR_ATUAL} radius={[2, 2, 0, 0]} />
+          {previousWeek && <Bar dataKey="Sem.ant." fill={COLOR_PREV} radius={[2, 2, 0, 0]} />}
+          {sameWeekLastYear && <Bar dataKey="Ano ant." fill={COLOR_YEAR} radius={[2, 2, 0, 0]} />}
         </BarChart>
       </ResponsiveContainer>
     </div>
