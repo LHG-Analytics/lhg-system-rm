@@ -20,34 +20,40 @@ const verdictConfig = {
 const PERIOD_ORDER = ['3 horas', '3h', '6 horas', '6h', '12 horas', '12h', 'Day Use', 'Diária', 'Pernoite', 'pernoite']
 const CANAL_PRIORITY = ['balcao_site', 'guia_moteis', 'site_imediato', 'booking']
 
-// "3 horas" → "3hr" · "12h" → "12hr" · "Day Use" → "Day Use" (unchanged)
+// "3 horas" → "3h" · "Pernoite" → "Noite" · outros permanecem
 function abbrevPeriod(p: string): string {
-  return p.replace(/^(\d+)\s+horas?$/i, '$1hr').replace(/^(\d+)h$/, '$1hr')
+  return p
+    .replace(/^(\d+)\s+horas?$/i, '$1h')
+    .replace(/^pernoite$/i, 'Noite')
 }
 
+type PriceCol = { periodo: string; diaTipo: string }
+type PeriodGroup = { periodo: string; label: string; cols: PriceCol[] }
+
 function buildPriceMatrix(rows: { categoria: string; periodo: string; diaTipo: string; canal: string; preco: number }[]) {
-  // Collect unique periods, sorted by PERIOD_ORDER
   const periodSet = new Set(rows.map(r => r.periodo))
   const periods = PERIOD_ORDER.filter(p => periodSet.has(p)).concat([...periodSet].filter(p => !PERIOD_ORDER.includes(p)))
 
-  // Columns: period × diaTipo (semana first, then fds_feriado)
-  const cols: { periodo: string; diaTipo: string; label: string }[] = []
+  const cols: PriceCol[] = []
+  const periodGroups: PeriodGroup[] = []
+
   for (const p of periods) {
-    const hasWeek = rows.some(r => r.periodo === p && r.diaTipo === 'semana')
-    const hasFds  = rows.some(r => r.periodo === p && r.diaTipo === 'fds_feriado')
+    const hasWeek  = rows.some(r => r.periodo === p && r.diaTipo === 'semana')
+    const hasFds   = rows.some(r => r.periodo === p && r.diaTipo === 'fds_feriado')
     const hasTodos = rows.some(r => r.periodo === p && r.diaTipo === 'todos')
+    const groupCols: PriceCol[] = []
     if (hasTodos && !hasWeek && !hasFds) {
-      cols.push({ periodo: p, diaTipo: 'todos', label: abbrevPeriod(p) })
+      groupCols.push({ periodo: p, diaTipo: 'todos' })
     } else {
-      if (hasWeek) cols.push({ periodo: p, diaTipo: 'semana', label: `${abbrevPeriod(p)} Sem` })
-      if (hasFds)  cols.push({ periodo: p, diaTipo: 'fds_feriado', label: `${abbrevPeriod(p)} FDS` })
+      if (hasWeek) groupCols.push({ periodo: p, diaTipo: 'semana' })
+      if (hasFds)  groupCols.push({ periodo: p, diaTipo: 'fds_feriado' })
     }
+    cols.push(...groupCols)
+    periodGroups.push({ periodo: p, label: abbrevPeriod(p), cols: groupCols })
   }
 
-  // Rows: unique categories
   const cats = [...new Set(rows.map(r => r.categoria))].sort()
 
-  // Matrix: cat → col → price
   const matrix: Record<string, Record<string, number | null>> = {}
   for (const cat of cats) {
     matrix[cat] = {}
@@ -67,7 +73,7 @@ function buildPriceMatrix(rows: { categoria: string; periodo: string; diaTipo: s
     }
   }
 
-  return { cols, cats, matrix }
+  return { cols, cats, matrix, periodGroups }
 }
 
 export function PricingSection({ data }: Props) {
@@ -80,7 +86,9 @@ export function PricingSection({ data }: Props) {
   if (!hasContent) return null
 
   const rows = data.activePriceTable?.rows ?? []
-  const { cols, cats, matrix } = rows.length > 0 ? buildPriceMatrix(rows) : { cols: [], cats: [], matrix: {} }
+  const { cols, cats, matrix, periodGroups } = rows.length > 0
+    ? buildPriceMatrix(rows)
+    : { cols: [], cats: [], matrix: {}, periodGroups: [] }
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
@@ -106,26 +114,44 @@ export function PricingSection({ data }: Props) {
                 Preços vigentes desde {data.activePriceTable.validFrom}
                 <span className="ml-2 normal-case font-normal">(canal: balcão/site)</span>
               </p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-max">
+              <div className="overflow-x-auto scrollbar-thin">
+                <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-xs text-muted-foreground border-b">
-                      <th className="text-left pb-1 font-medium pr-4">Categoria</th>
-                      {cols.map(c => (
-                        <th key={`${c.periodo}|${c.diaTipo}`} className="text-right pb-1 font-medium px-2 whitespace-nowrap">
-                          {c.label}
+                    {/* Linha 1: nome do período, agrupando Sem + FDS */}
+                    <tr className="text-xs text-muted-foreground">
+                      <th rowSpan={2} className="text-left align-bottom pb-1.5 font-medium pr-4 border-b">Categ.</th>
+                      {periodGroups.map(g => (
+                        <th
+                          key={g.periodo}
+                          colSpan={g.cols.length}
+                          className="text-center pb-0.5 font-semibold px-1 whitespace-nowrap border-b border-border/40"
+                        >
+                          {g.label}
                         </th>
                       ))}
+                    </tr>
+                    {/* Linha 2: Sem / FDS */}
+                    <tr className="text-xs text-muted-foreground border-b">
+                      {periodGroups.flatMap(g =>
+                        g.cols.map(c => (
+                          <th
+                            key={`${c.periodo}|${c.diaTipo}`}
+                            className="text-right pb-1 font-medium px-2 whitespace-nowrap"
+                          >
+                            {c.diaTipo === 'semana' ? 'Sem' : c.diaTipo === 'fds_feriado' ? 'FDS' : '—'}
+                          </th>
+                        ))
+                      )}
                     </tr>
                   </thead>
                   <tbody>
                     {cats.map(cat => (
                       <tr key={cat} className="border-b last:border-0">
-                        <td className="py-1.5 font-medium pr-4">{cat}</td>
+                        <td className="py-1.5 font-medium pr-4 text-xs">{cat}</td>
                         {cols.map(c => {
                           const price = matrix[cat]?.[`${c.periodo}|${c.diaTipo}`]
                           return (
-                            <td key={`${c.periodo}|${c.diaTipo}`} className="text-right px-2 text-muted-foreground">
+                            <td key={`${c.periodo}|${c.diaTipo}`} className="text-right px-2 tabular-nums text-muted-foreground">
                               {price != null ? `${symbol} ${price.toFixed(0)}` : '—'}
                             </td>
                           )

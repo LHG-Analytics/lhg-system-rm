@@ -45,32 +45,37 @@ const STEPS = [
 ]
 
 export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props) {
-  // Recharts ResponsiveContainer measures the DOM after print CSS is applied and
-  // can end up with width=0. Setting explicit pixel widths in beforeprint fixes it.
+  // Recharts SVGs sem viewBox usam dimensões literais de tela e ficam cortados no print.
+  // Adicionamos viewBox antes do print para que o SVG escale proporcionalmente ao container.
   useEffect(() => {
     const handleBeforePrint = () => {
       document.querySelectorAll<HTMLElement>('.recharts-responsive-container').forEach(container => {
-        const width = container.parentElement?.clientWidth ?? 620
-        container.style.width = `${width}px`
         const wrapper = container.querySelector<HTMLElement>('.recharts-wrapper')
-        if (wrapper) wrapper.style.width = `${width}px`
         const svg = container.querySelector<SVGElement>('svg.recharts-surface')
         if (svg) {
-          svg.setAttribute('width', `${width}`)
-          svg.style.width = `${width}px`
+          const w = parseInt(svg.getAttribute('width') ?? '0')
+          const h = parseInt(svg.getAttribute('height') ?? '0')
+          if (w > 0 && h > 0 && !svg.getAttribute('viewBox')) {
+            svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
+            svg.setAttribute('data-print-viewbox', '1')
+          }
+          svg.style.width = '100%'
         }
+        if (wrapper) wrapper.style.width = '100%'
       })
     }
     const handleAfterPrint = () => {
       document.querySelectorAll<HTMLElement>('.recharts-responsive-container').forEach(container => {
-        container.style.width = ''
         const wrapper = container.querySelector<HTMLElement>('.recharts-wrapper')
-        if (wrapper) wrapper.style.width = ''
         const svg = container.querySelector<SVGElement>('svg.recharts-surface')
         if (svg) {
-          svg.removeAttribute('width')
+          if (svg.getAttribute('data-print-viewbox')) {
+            svg.removeAttribute('viewBox')
+            svg.removeAttribute('data-print-viewbox')
+          }
           svg.style.width = ''
         }
+        if (wrapper) wrapper.style.width = ''
       })
     }
     window.addEventListener('beforeprint', handleBeforePrint)

@@ -24,7 +24,7 @@ const FOCUS_LABELS: Record<string, string> = {
 }
 
 export function AgentConfigSection({ data }: Props) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden">

@@ -225,10 +225,18 @@
     min-height: 0 !important;
   }
 
-  /* Recharts: 100% funciona porque os containers pai agora têm width definido */
+  /* Recharts: container full-width; viewBox é adicionado via beforeprint handler
+     para que o SVG escale proporcionalmente sem ser cortado */
   .recharts-responsive-container {
     width: 100% !important;
-    min-width: 200px !important;
+    overflow: visible !important;
+  }
+  .recharts-wrapper {
+    display: block !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+  svg.recharts-surface {
     overflow: visible !important;
   }
 
@@ -238,9 +246,14 @@
     table-layout: auto !important;
     max-width: 100% !important;
   }
-  td, th {
+  /* Células de dados: permite quebra de linha */
+  td {
     white-space: normal !important;
     word-break: break-word !important;
+  }
+  /* Headers: mantém nowrap (abreviações são suficientemente curtas) */
+  th {
+    white-space: nowrap !important;
   }
 
   /* Remove largura mínima forçada em wrappers de tabela */
@@ -250,12 +263,6 @@
   .min-w-\[800px\] {
     min-width: 0 !important;
     width: 100% !important;
-  }
-
-  /* Recharts SVG: mantém proporção dentro da página */
-  .recharts-wrapper,
-  .recharts-surface {
-    max-width: 100% !important;
   }
 
   /* NÃO usar break-inside: avoid no .rounded-xl — causa grandes espaços em branco
