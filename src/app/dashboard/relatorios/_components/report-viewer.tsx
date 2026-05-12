@@ -50,31 +50,33 @@ export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props
   const handlePrint = async () => {
     setIsPrinting(true)
     const h2c = (await import('html2canvas')).default
-    const containers = Array.from(
-      document.querySelectorAll<HTMLElement>('.recharts-responsive-container')
+
+    // Captura a seção inteira [data-pdf-height] (inclui legenda) em vez do container
+    // interno do Recharts — evita desalinhamento para a direita no A4
+    const chartSections = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-pdf-height]')
     )
 
-    const snapshots: { container: HTMLElement; img: HTMLImageElement }[] = []
-    for (const container of containers) {
+    const snapshots: { original: HTMLElement; img: HTMLImageElement }[] = []
+
+    for (const section of chartSections) {
       try {
-        const canvas = await h2c(container, {
-          backgroundColor: '#ffffff',
+        const canvas = await h2c(section, {
+          backgroundColor: '#18181b',
           scale: 1,
           logging: false,
           useCORS: true,
         })
         const img = document.createElement('img')
         img.src = canvas.toDataURL('image/png')
-        // Lê altura definida pelo componente para PDF — evita esticamento no A4
-        const pdfH = container.closest<HTMLElement>('[data-pdf-height]')
-          ?.getAttribute('data-pdf-height')
         img.style.width = '100%'
-        img.style.height = pdfH ? `${pdfH}px` : 'auto'
-        img.style.objectFit = 'fill'
+        img.style.height = 'auto'
         img.style.display = 'block'
-        container.parentElement?.insertBefore(img, container)
-        container.style.display = 'none'
-        snapshots.push({ container, img })
+        img.style.margin = '0'
+
+        section.parentElement?.insertBefore(img, section)
+        section.style.display = 'none'
+        snapshots.push({ original: section, img })
       } catch {
         // se falhar, não impede o print — chart simplesmente não aparece
       }
@@ -83,8 +85,8 @@ export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props
     setIsPrinting(false)
 
     const restore = () => {
-      for (const { container, img } of snapshots) {
-        container.style.display = ''
+      for (const { original, img } of snapshots) {
+        original.style.display = ''
         img.remove()
       }
     }
