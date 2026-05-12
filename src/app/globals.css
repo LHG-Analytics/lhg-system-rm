@@ -134,6 +134,11 @@
   }
 }
 
+/* Recharts: SVG tem overflow:visible por padrão — clipa para caber no container */
+svg.recharts-surface {
+  overflow: hidden;
+}
+
 @layer utilities {
   /* Scrollbar fino e estilizado — vertical e/ou horizontal */
   .scrollbar-thin {
