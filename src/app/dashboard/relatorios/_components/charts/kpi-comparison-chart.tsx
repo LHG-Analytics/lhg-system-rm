@@ -51,7 +51,7 @@ export function MonetaryKpiChart({ current, previousWeek, sameWeekLastYear }: Pr
   return (
     <div className="w-full overflow-hidden" data-pdf-height="60">
       <ResponsiveContainer width="100%" height={110}>
-        <BarChart data={data} barSize={14} margin={{ top: 18, right: 44, bottom: 2, left: 0 }}>
+        <BarChart data={data} barSize={9} barCategoryGap="25%" margin={{ top: 18, right: 44, bottom: 2, left: 0 }}>
           <XAxis dataKey="name" tick={{ fontSize: 10 }} />
           <YAxis tick={{ fontSize: 9 }} width={38} tickFormatter={v => compactMoney(Number(v), symbol)} />
           <Tooltip
