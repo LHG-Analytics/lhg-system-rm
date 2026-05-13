@@ -9,26 +9,27 @@ export const metadata = {
   title: 'Entrar — LHG Revenue Manager',
 }
 
-// Logos em 6 ordens diferentes — 8 por linha, 48 no total
+// 7 logos: A=lhg-white B=lush C=tout D=altana E=liv F=andar G=lhg-color
+// Cada linha: 8 itens sem adjacente duplicado; último ≠ primeiro (loop sem cola)
 const MARQUEE_IMAGES = [
-  // linha 1
-  '/lhg-logo-white.png', '/lush-logo.png', '/tout-logo.png', '/altana-logo.webp',
-  '/liv-logo.png', '/andar-de-cima-logo.png', '/lhg-logo-color.png', '/lush-logo.png',
-  // linha 2
-  '/tout-logo.png', '/altana-logo.webp', '/lhg-logo-white.png', '/liv-logo.png',
-  '/andar-de-cima-logo.png', '/lhg-logo-color.png', '/lush-logo.png', '/tout-logo.png',
-  // linha 3
-  '/altana-logo.webp', '/lhg-logo-color.png', '/andar-de-cima-logo.png', '/lush-logo.png',
-  '/lhg-logo-white.png', '/tout-logo.png', '/liv-logo.png', '/altana-logo.webp',
-  // linha 4
-  '/liv-logo.png', '/lhg-logo-white.png', '/tout-logo.png', '/lush-logo.png',
-  '/altana-logo.webp', '/andar-de-cima-logo.png', '/lhg-logo-color.png', '/liv-logo.png',
-  // linha 5
-  '/lush-logo.png', '/liv-logo.png', '/lhg-logo-color.png', '/andar-de-cima-logo.png',
-  '/tout-logo.png', '/lhg-logo-white.png', '/altana-logo.webp', '/lush-logo.png',
-  // linha 6
-  '/andar-de-cima-logo.png', '/tout-logo.png', '/lhg-logo-white.png', '/altana-logo.webp',
-  '/lush-logo.png', '/liv-logo.png', '/lhg-logo-color.png', '/andar-de-cima-logo.png',
+  // linha 1: A B C D E F G C  (loop: ...C | A → ok)
+  '/lhg-logo-white.png', '/lush-logo.png',      '/tout-logo.png',        '/altana-logo.webp',
+  '/liv-logo.png',        '/andar-de-cima-logo.png', '/lhg-logo-color.png', '/tout-logo.png',
+  // linha 2: C D E F G A B E  (loop: ...E | C → ok)
+  '/tout-logo.png',       '/altana-logo.webp',   '/liv-logo.png',         '/andar-de-cima-logo.png',
+  '/lhg-logo-color.png',  '/lhg-logo-white.png', '/lush-logo.png',        '/liv-logo.png',
+  // linha 3: F G A B C D E A  (loop: ...A | F → ok)
+  '/andar-de-cima-logo.png', '/lhg-logo-color.png', '/lhg-logo-white.png', '/lush-logo.png',
+  '/tout-logo.png',          '/altana-logo.webp',   '/liv-logo.png',        '/lhg-logo-white.png',
+  // linha 4: B C D E F G A D  (loop: ...D | B → ok)
+  '/lush-logo.png',       '/tout-logo.png',      '/altana-logo.webp',     '/liv-logo.png',
+  '/andar-de-cima-logo.png', '/lhg-logo-color.png', '/lhg-logo-white.png', '/altana-logo.webp',
+  // linha 5: G A B C D E F B  (loop: ...B | G → ok)
+  '/lhg-logo-color.png',  '/lhg-logo-white.png', '/lush-logo.png',        '/tout-logo.png',
+  '/altana-logo.webp',    '/liv-logo.png',        '/andar-de-cima-logo.png', '/lush-logo.png',
+  // linha 6: E F G A B C D G  (loop: ...G | E → ok)
+  '/liv-logo.png',        '/andar-de-cima-logo.png', '/lhg-logo-color.png', '/lhg-logo-white.png',
+  '/lush-logo.png',       '/tout-logo.png',       '/altana-logo.webp',     '/lhg-logo-color.png',
 ]
 
 export default async function LoginPage({
