@@ -41,14 +41,9 @@ export interface HeatmapResponse {
 
 // ─── SQL helpers ──────────────────────────────────────────────────────────────
 
-/** CASE expression que mapeia DOW de um timestamp para nome do dia */
+/** CASE expression que mapeia DOW de um timestamp para nome do dia (hora calendário pura) */
 function dowCase(col: string) {
-  return `CASE EXTRACT(DOW FROM
-      CASE WHEN EXTRACT(HOUR FROM ${col}) < 6
-        THEN ${col} - INTERVAL '1 day'
-        ELSE ${col}
-      END
-    )
+  return `CASE EXTRACT(DOW FROM ${col})
       WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
       WHEN 3 THEN 'Quarta'  WHEN 4 THEN 'Quinta'  WHEN 5 THEN 'Sexta'
       WHEN 6 THEN 'Sabado'
@@ -74,12 +69,7 @@ function giroEventsSelect(
     SELECT
       ca.id  AS category_id,
       ${dowCase(col)} AS day_name,
-      EXTRACT(DOW FROM
-        CASE WHEN EXTRACT(HOUR FROM ${col}) < 6
-          THEN ${col} - INTERVAL '1 day'
-          ELSE ${col}
-        END
-      )::int AS dow,
+      EXTRACT(DOW FROM ${col})::int AS dow,
       EXTRACT(HOUR FROM ${col})::INT AS hour_of_day,
       COUNT(*) AS rentals
     FROM locacaoapartamento la
@@ -136,12 +126,7 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
     occupied_hours AS (
       SELECT
         ${dowCase('h_ts')} AS day_name,
-        EXTRACT(DOW FROM
-          CASE WHEN EXTRACT(HOUR FROM h_ts) < 6
-            THEN h_ts - INTERVAL '1 day'
-            ELSE h_ts
-          END
-        )::int AS dow,
+        EXTRACT(DOW FROM h_ts)::int AS dow,
         EXTRACT(HOUR FROM h_ts)::INT AS hour_of_day,
         COUNT(*) AS suite_hours
       FROM locacaoapartamento la
@@ -178,12 +163,7 @@ function buildRevparQuery(idList: string, startDate: string, endDate: string, st
     revenue_hours AS (
       SELECT
         ${dowCase('la.datainicialdaocupacao')} AS day_name,
-        EXTRACT(DOW FROM
-          CASE WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 6
-            THEN la.datainicialdaocupacao - INTERVAL '1 day'
-            ELSE la.datainicialdaocupacao
-          END
-        )::int AS dow,
+        EXTRACT(DOW FROM la.datainicialdaocupacao)::int AS dow,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
         SUM(CAST(la.valorliquidolocacao AS DECIMAL(15,4))) AS receita
       FROM locacaoapartamento la
@@ -227,12 +207,7 @@ function buildTrevparQuery(idList: string, startDate: string, endDate: string, s
     revenue_hours AS (
       SELECT
         ${dowCase('la.datainicialdaocupacao')} AS day_name,
-        EXTRACT(DOW FROM
-          CASE WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) < 6
-            THEN la.datainicialdaocupacao - INTERVAL '1 day'
-            ELSE la.datainicialdaocupacao
-          END
-        )::int AS dow,
+        EXTRACT(DOW FROM la.datainicialdaocupacao)::int AS dow,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
         SUM(
           COALESCE(CAST(la.valortotalpermanencia   AS DECIMAL(15,4)), 0) +
