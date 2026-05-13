@@ -9,43 +9,26 @@ export const metadata = {
   title: 'Entrar — LHG Revenue Manager',
 }
 
-// Logos repetidas em ordens diferentes para compor as 4 linhas do marquee
+// Logos em 6 ordens diferentes — 8 por linha, 48 no total
 const MARQUEE_IMAGES = [
-  '/lhg-logo-white.png',
-  '/lush-logo.png',
-  '/tout-logo.png',
-  '/altana-logo.webp',
-  '/liv-logo.png',
-  '/andar-de-cima-logo.png',
-  '/lhg-logo-color.png',
-  '/lush-logo.png',
+  // linha 1
+  '/lhg-logo-white.png', '/lush-logo.png', '/tout-logo.png', '/altana-logo.webp',
+  '/liv-logo.png', '/andar-de-cima-logo.png', '/lhg-logo-color.png', '/lush-logo.png',
   // linha 2
-  '/tout-logo.png',
-  '/altana-logo.webp',
-  '/lhg-logo-white.png',
-  '/liv-logo.png',
-  '/andar-de-cima-logo.png',
-  '/lhg-logo-color.png',
-  '/lush-logo.png',
-  '/tout-logo.png',
+  '/tout-logo.png', '/altana-logo.webp', '/lhg-logo-white.png', '/liv-logo.png',
+  '/andar-de-cima-logo.png', '/lhg-logo-color.png', '/lush-logo.png', '/tout-logo.png',
   // linha 3
-  '/altana-logo.webp',
-  '/lhg-logo-color.png',
-  '/andar-de-cima-logo.png',
-  '/lush-logo.png',
-  '/lhg-logo-white.png',
-  '/tout-logo.png',
-  '/liv-logo.png',
-  '/altana-logo.webp',
+  '/altana-logo.webp', '/lhg-logo-color.png', '/andar-de-cima-logo.png', '/lush-logo.png',
+  '/lhg-logo-white.png', '/tout-logo.png', '/liv-logo.png', '/altana-logo.webp',
   // linha 4
-  '/liv-logo.png',
-  '/lhg-logo-white.png',
-  '/tout-logo.png',
-  '/lush-logo.png',
-  '/altana-logo.webp',
-  '/andar-de-cima-logo.png',
-  '/lhg-logo-color.png',
-  '/liv-logo.png',
+  '/liv-logo.png', '/lhg-logo-white.png', '/tout-logo.png', '/lush-logo.png',
+  '/altana-logo.webp', '/andar-de-cima-logo.png', '/lhg-logo-color.png', '/liv-logo.png',
+  // linha 5
+  '/lush-logo.png', '/liv-logo.png', '/lhg-logo-color.png', '/andar-de-cima-logo.png',
+  '/tout-logo.png', '/lhg-logo-white.png', '/altana-logo.webp', '/lush-logo.png',
+  // linha 6
+  '/andar-de-cima-logo.png', '/tout-logo.png', '/lhg-logo-white.png', '/altana-logo.webp',
+  '/lush-logo.png', '/liv-logo.png', '/lhg-logo-color.png', '/andar-de-cima-logo.png',
 ]
 
 export default async function LoginPage({

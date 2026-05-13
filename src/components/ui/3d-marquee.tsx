@@ -9,20 +9,21 @@ interface ThreeDMarqueeProps {
 }
 
 export function ThreeDMarquee({ images, className }: ThreeDMarqueeProps) {
-  const chunkSize = Math.ceil(images.length / 4)
-  const rows: string[][] = Array.from({ length: 4 }, (_, i) =>
+  const ROWS = 6
+  const chunkSize = Math.ceil(images.length / ROWS)
+  const rows: string[][] = Array.from({ length: ROWS }, (_, i) =>
     images.slice(i * chunkSize, (i + 1) * chunkSize)
   )
 
   return (
     <div
       className={cn('h-full w-full overflow-hidden', className)}
-      style={{ perspective: '1200px' }}
+      style={{ perspective: '900px' }}
     >
       <div
-        className="flex h-full flex-col justify-center gap-3 py-4"
+        className="flex h-full flex-col justify-center gap-2"
         style={{
-          transform: 'rotateX(12deg) rotateY(-6deg) rotateZ(3deg) scale(1.15)',
+          transform: 'rotateX(8deg) rotateY(-4deg) rotateZ(2deg) scale(1.9)',
           transformOrigin: 'center center',
         }}
       >
@@ -30,7 +31,7 @@ export function ThreeDMarquee({ images, className }: ThreeDMarqueeProps) {
           <div
             key={i}
             className={cn(
-              'flex shrink-0 gap-3',
+              'flex shrink-0 gap-2',
               i % 2 === 0 ? 'animate-marquee' : 'animate-marquee-reverse'
             )}
           >
