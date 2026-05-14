@@ -70,6 +70,9 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
   const [contextMode,      setContextMode]      = useState<ContextMode>('org')
   const [deleteConfirmId, setDeleteConfirmId]   = useState<string | null>(null)
   const [isDeleting,      setIsDeleting]        = useState(false)
+  const [livePendingCount, setLivePendingCount] = useState(
+    () => initialProposals.filter((p) => p.status === 'pending').length
+  )
 
   // Reseta o chat quando a unidade muda (troca via sidebar)
   const prevUnitIdRef = useRef<string>('')
@@ -94,6 +97,32 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
     document.addEventListener('visibilitychange', handleVisibility)
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [unitId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mantém o badge da aba Propostas atualizado em realtime
+  useEffect(() => {
+    if (!unitId) return
+    const supabase = createClient()
+    const ch = supabase
+      .channel(`pending-proposals-badge:${unitId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'price_proposals', filter: `unit_id=eq.${unitId}` }, (payload) => {
+        if ((payload.new as { status: string }).status === 'pending') {
+          setLivePendingCount((n) => n + 1)
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'price_proposals', filter: `unit_id=eq.${unitId}` }, (payload) => {
+        const prev = payload.old as { status?: string }
+        const next = payload.new as { status: string }
+        if (prev.status === 'pending' && next.status !== 'pending') setLivePendingCount((n) => Math.max(0, n - 1))
+        if (prev.status !== 'pending' && next.status === 'pending') setLivePendingCount((n) => n + 1)
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'price_proposals', filter: `unit_id=eq.${unitId}` }, (payload) => {
+        if ((payload.old as { status?: string }).status === 'pending') {
+          setLivePendingCount((n) => Math.max(0, n - 1))
+        }
+      })
+      .subscribe()
+    return () => { void supabase.removeChannel(ch) }
+  }, [unitId])
 
   // Abre conversa via ?conv= param (notificação in-app)
   const handledConvParam = useRef(false)
@@ -338,7 +367,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
     return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
   }
 
-  const pendingCount = initialProposals.filter((p) => p.status === 'pending').length
+  const pendingCount = livePendingCount
 
   // Determina se a conversa ativa está aguardando resposta
   const currentMsgs = conversations.find((c) => c.id === selectedConvId)?.messages ?? selectedMessages
