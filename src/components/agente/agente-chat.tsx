@@ -27,39 +27,21 @@ export interface ConversationSummary {
 
 // ─── Tool call chip (feedback visual durante execução de ferramentas) ────────
 
-const TOOL_META: Record<string, { loadingText: string; doneText: string }> = {
-  buscar_kpis_periodo: {
-    loadingText: 'Buscando dados do período…',
-    doneText: 'Dados do período carregados',
-  },
-  buscar_dados_automo: {
-    loadingText: 'Consultando ERP…',
-    doneText: 'ERP consultado',
-  },
-  gerar_heatmap: {
-    loadingText: 'Gerando mapa de calor…',
-    doneText: 'Mapa de calor gerado',
-  },
-  salvar_proposta: {
-    loadingText: 'Salvando proposta…',
-    doneText:    '✓ Proposta salva — acesse a aba Propostas para aprovar',
-  },
+const TOOL_META: Record<string, { loadingText: string }> = {
+  buscar_kpis_periodo:   { loadingText: 'Buscando dados do período…' },
+  buscar_dados_automo:   { loadingText: 'Consultando ERP…' },
+  gerar_heatmap:         { loadingText: 'Gerando mapa de calor…' },
+  salvar_proposta:       { loadingText: 'Salvando proposta…' },
 }
 
 function ToolCallChip({ toolName, state }: { toolName: string; state: string }) {
   const meta = TOOL_META[toolName]
   const isLoading = state === 'call' || state === 'partial-call'
+  if (!isLoading) return null
   return (
-    <div className={cn(
-      'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium w-fit',
-      isLoading
-        ? 'bg-primary/10 text-primary'
-        : 'bg-green-500/10 text-green-600 dark:text-green-400'
-    )}>
-      {isLoading
-        ? <Loader2 className="size-3 animate-spin" />
-        : <CheckCircle2 className="size-3" />}
-      <span>{isLoading ? (meta?.loadingText ?? 'Processando…') : (meta?.doneText ?? 'Concluído')}</span>
+    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium w-fit bg-primary/10 text-primary">
+      <Loader2 className="size-3 animate-spin" />
+      <span>{meta?.loadingText ?? 'Processando…'}</span>
     </div>
   )
 }
