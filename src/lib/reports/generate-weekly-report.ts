@@ -868,7 +868,7 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
         tone: parsed.tone ?? 'neutral',
         actionType: parsed.actionType ?? 'none',
         agentPromptLink: agentPromptRaw
-          ? `/dashboard/agente?unit=${unitSlug}&q=${encodeURIComponent(agentPromptRaw)}`
+          ? `/dashboard/agente?unit=${unitSlug}&q=${encodeURIComponent(`[Relatório semanal ${fmtPeriodStart}–${fmtPeriodEnd}] ${agentPromptRaw}`)}`
           : undefined,
         agentConfigSuggestion: parsed.agentConfigSuggestion ?? undefined,
       }
