@@ -12,7 +12,7 @@ import { UnitManager } from './_components/unit-manager'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Users, Bot, Settings2, Shield, CalendarDays, BedDouble, Building2 } from 'lucide-react'
 
-export const metadata = { title: 'Administração — LHG Revenue Manager' }
+export const metadata = { title: 'Administração — RM - LHG Motéis' }
 
 function getAdminClient() {
   return createAdminClient<Database>(

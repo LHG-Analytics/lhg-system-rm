@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: 'LHG Revenue Manager',
-    template: '%s — LHG Revenue Manager',
+    default: 'RM - LHG Motéis',
+    template: '%s — RM - LHG Motéis',
   },
   description: 'Gestão de preços e disponibilidade de suítes',
 }

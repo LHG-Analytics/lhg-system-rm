@@ -6,7 +6,7 @@ import { LoginForm } from './_components/login-form'
 import { ThreeDMarquee } from '@/components/ui/3d-marquee'
 
 export const metadata = {
-  title: 'Entrar — LHG Revenue Manager',
+  title: 'Entrar — RM - LHG Motéis',
 }
 
 // 7 logos: A=lhg-white B=lush C=tout D=altana E=liv F=andar G=lhg-color
