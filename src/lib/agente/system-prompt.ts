@@ -285,6 +285,8 @@ export function buildSystemPrompt(
   weatherContext?: string | null,
   eventsContext?: string | null,
   unitStructureBlock?: string | null,
+  /** Label do período selecionado no dashboard pelo usuário (ex: "Este mês (01/05 → 16/05)") */
+  dashboardSyncLabel?: string | null,
 ): string {
   // ── Montar contexto de KPIs (1 ou N períodos) ─────────────────────────────
   const periods = Array.isArray(kpiData) ? kpiData : [kpiData]
@@ -326,6 +328,9 @@ Faça a análise diretamente com essa abordagem. Após apresentar os resultados,
   const weatherBlock = weatherContext ? `\n\n${weatherContext}` : ''
   const eventsBlock  = eventsContext  ? `\n\n${eventsContext}`  : ''
   const structureBlock = unitStructureBlock ? `\n\n${unitStructureBlock}` : ''
+  const dashboardSyncBlock = dashboardSyncLabel
+    ? `\n\n> 📊 **Período sincronizado com o dashboard:** ${dashboardSyncLabel}. Os KPIs acima refletem exatamente o que o usuário está vendo no dashboard. Declare isso no passo **Raciocínio** em 1 frase. Após a análise, inclua "Analisar período diferente" como opção no \`sugerir_respostas\`.`
+    : ''
 
   return `⚠️ INSTRUÇÕES CRÍTICAS DE COMPORTAMENTO (seguir sempre, sem exceção):
 - Responda EXCLUSIVAMENTE em português brasileiro. NUNCA escreva em inglês, nem parcialmente.
@@ -467,7 +472,7 @@ Após a tabela, inclua:
 ${kpiContext}
 ${priceContext ? `\n${priceContext}` : ''}
 ${discountContext ? `\n${discountContext}` : ''}
-${vigenciaBlock}${structureBlock}${weatherBlock}${eventsBlock}
+${vigenciaBlock}${dashboardSyncBlock}${structureBlock}${weatherBlock}${eventsBlock}
 
 ---
 Se o usuário pedir algo fora do escopo de Revenue Management, redirecione gentilmente para o foco em precificação e receita.`

@@ -244,11 +244,26 @@ function AgenteChatInner({
   const contextModeRef = useRef<ContextMode>(initialContextMode ?? 'org')
 
   // body como função: DefaultChatTransport chama resolve(body) a cada request
-  const getBody = useRef(() => ({
-    unitSlug,
-    convId: convIdRef.current ?? undefined,
-    contextMode: contextModeRef.current,
-  }))
+  const getBody = useRef(() => {
+    // Lê o período do dashboard salvo no localStorage (TTL 4h)
+    let dashboardPeriod: { dateFrom: string; dateTo: string; label: string } | undefined
+    try {
+      const raw = localStorage.getItem('lhg-dashboard-period')
+      if (raw) {
+        const parsed = JSON.parse(raw) as { dateFrom: string; dateTo: string; label: string; timestamp: number }
+        const ageMs = Date.now() - (parsed.timestamp ?? 0)
+        if (ageMs < 4 * 60 * 60 * 1000 && parsed.dateFrom && parsed.dateTo) {
+          dashboardPeriod = { dateFrom: parsed.dateFrom, dateTo: parsed.dateTo, label: parsed.label }
+        }
+      }
+    } catch { /* sem acesso ao localStorage */ }
+    return {
+      unitSlug,
+      convId: convIdRef.current ?? undefined,
+      contextMode: contextModeRef.current,
+      dashboardPeriod,
+    }
+  })
 
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({

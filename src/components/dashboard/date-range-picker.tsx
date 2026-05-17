@@ -97,6 +97,23 @@ export function DateRangePicker() {
     if (!isPending) setPendingFilter(null)
   }, [isPending])
 
+  // Persiste o período atual no localStorage para o Agente RM sincronizar
+  useEffect(() => {
+    if (!localStart || !localEnd) return
+    try {
+      const presetLabel = PRESETS.find((p) => p.value === preset)?.label
+      const label = presetLabel
+        ? presetLabel
+        : `${format(parse(localStart, 'yyyy-MM-dd', new Date()), 'dd/MM')} → ${format(parse(localEnd, 'yyyy-MM-dd', new Date()), 'dd/MM')}`
+      localStorage.setItem('lhg-dashboard-period', JSON.stringify({
+        dateFrom: localStart,
+        dateTo: localEnd,
+        label,
+        timestamp: Date.now(),
+      }))
+    } catch { /* sem acesso ao localStorage */ }
+  }, [localStart, localEnd, preset])
+
   useEffect(() => {
     const p = (searchParams.get('preset') ?? 'this-month') as DatePreset
     const s = searchParams.get('start') ?? ''

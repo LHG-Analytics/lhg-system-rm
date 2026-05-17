@@ -229,11 +229,13 @@ export async function POST(req: NextRequest) {
     // Legado: DD/MM/YYYY (cron/revisoes e outras rotas)
     startDate?: string
     endDate?: string
+    /** Período selecionado pelo usuário no dashboard — YYYY-MM-DD + label legível */
+    dashboardPeriod?: { dateFrom: string; dateTo: string; label: string }
     /** Modo de contexto: 'org' inclui contexto compartilhado, eventos e regras da unidade;
      *  'personal' usa apenas KPIs e tabela de preços — sem memória coletiva */
     contextMode?: 'org' | 'personal'
   }
-  const { messages, unitSlug, convId, startDate, endDate, contextMode = 'org' } = body
+  const { messages, unitSlug, convId, startDate, endDate, dashboardPeriod, contextMode = 'org' } = body
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response('messages inválido', { status: 400 })
@@ -293,7 +295,58 @@ export async function POST(req: NextRequest) {
   const nowBRT = new Date(Date.now() - 3 * 60 * 60 * 1000) // UTC-3
   const todayIso = nowBRT.toISOString().slice(0, 10)
 
-  if (startDate && endDate) {
+  // Label de sincronização com o dashboard (usado no buildSystemPrompt)
+  let dashboardSyncLabel: string | null = null
+
+  if (dashboardPeriod?.dateFrom && dashboardPeriod?.dateTo && !startDate && !endDate) {
+    // ── Modo sincronizado com dashboard: período selecionado pelo usuário ──────
+    const [priceImpsResult, discountImpResult] = await Promise.allSettled([
+      admin
+        .from('price_imports')
+        .select('id, parsed_data, discount_data, valid_from, valid_until')
+        .eq('unit_id', unit.id)
+        .filter('import_type', 'eq', 'prices')
+        .order('valid_from', { ascending: false })
+        .limit(2),
+      admin
+        .from('price_imports')
+        .select('id, discount_data, valid_from, valid_until')
+        .eq('unit_id', unit.id)
+        .filter('import_type', 'eq', 'discounts')
+        .lte('valid_from', todayIso)
+        .or(`valid_until.is.null,valid_until.gte.${todayIso}`)
+        .order('valid_from', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
+    const priceImps = priceImpsResult.status === 'fulfilled' ? (priceImpsResult.value.data ?? []) : []
+    const discountImp = discountImpResult.status === 'fulfilled' ? discountImpResult.value.data : null
+    rawImports = priceImps
+
+    const apiFrom = isoToApi(dashboardPeriod.dateFrom)
+    const apiTo   = isoToApi(dashboardPeriod.dateTo)
+    const [companyResult, channelResult] = await Promise.allSettled([
+      fetchCompanyKPIsFromAutomo(unit.slug, apiFrom, apiTo),
+      queryChannelKPIs(unit.slug, apiFrom, apiTo),
+    ])
+    const company = companyResult.status === 'fulfilled' ? companyResult.value : null
+    kpiPeriods = [{
+      period: { startDate: apiFrom, endDate: apiTo },
+      company,
+      bookings: null,
+      channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
+      periodMix: company?.BillingRentalType,
+    }]
+
+    if (discountImp?.discount_data && rawImports.length > 0) {
+      const mainImport = rawImports[rawImports.length - 1]
+      if (!mainImport.discount_data) {
+        mainImport.discount_data = discountImp.discount_data
+      }
+    }
+
+    dashboardSyncLabel = dashboardPeriod.label
+  } else if (startDate && endDate) {
     // ── Modo legado: DD/MM/YYYY (cron/revisoes) ────────────────────────────────
     const [companyResult, importsResult, channelResult] = await Promise.allSettled([
       fetchCompanyKPIsFromAutomo(unit.slug, startDate, endDate),
@@ -571,6 +624,7 @@ export async function POST(req: NextRequest) {
       unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext,
       null,
       unitStructureBlock || null,
+      dashboardSyncLabel,
     ) +
     `\n\n${agentConfigBlock}` +
     (contextMode === 'org' ? pricingRulesBlock : '') +
