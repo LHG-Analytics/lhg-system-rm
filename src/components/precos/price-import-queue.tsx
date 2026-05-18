@@ -22,6 +22,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { cn } from '@/lib/utils'
+import { useCurrency } from '@/components/currency-context'
 
 // ─── DatePicker ───────────────────────────────────────────────────────────────
 
@@ -131,6 +132,7 @@ const STATUS_LABEL = {
 // ─── PriceImportQueue: upload + polling (sem histórico) ───────────────────────
 
 export function PriceImportQueue({ unitSlug, unitName, importType = 'prices' }: PriceImportQueueProps) {
+  const { formatMoney, symbol } = useCurrency()
   const today = new Date().toISOString().slice(0, 10)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -387,7 +389,7 @@ export function PriceImportQueue({ unitSlug, unitName, importType = 'prices' }: 
                             <th className="px-2 py-1 text-left font-medium">Categoria</th>
                             <th className="px-2 py-1 text-left font-medium">Período</th>
                             <th className="px-2 py-1 text-left font-medium">Dia</th>
-                            <th className="px-2 py-1 text-right font-medium">R$</th>
+                            <th className="px-2 py-1 text-right font-medium">{symbol}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -397,7 +399,7 @@ export function PriceImportQueue({ unitSlug, unitName, importType = 'prices' }: 
                               <td className="px-2 py-1">{r.categoria}</td>
                               <td className="px-2 py-1">{r.periodo}</td>
                               <td className="px-2 py-1 text-muted-foreground">{r.dia_tipo}</td>
-                              <td className="px-2 py-1 text-right font-medium">{Number(r.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                              <td className="px-2 py-1 text-right font-medium">{formatMoney(Number(r.preco))}</td>
                             </tr>
                           ))}
                         </tbody>

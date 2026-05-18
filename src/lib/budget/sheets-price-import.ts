@@ -136,29 +136,51 @@ function valuesToText(values: (string | number)[][]): string {
 
 // ─── AI parsing ───────────────────────────────────────────────────────────────
 
-// Liv-specific prompt — knows the two-name-column structure and column names to skip.
+// Liv-specific prompt — precisely describes the 3-column structure, day labels, and period layout.
 const LIV_PRICE_PROMPT = `Você receberá o conteúdo de uma planilha de tabela de preços do motel LIV exportada como texto separado por tabulações.
 
-Estrutura da planilha:
-- DUAS colunas de nomes: a primeira tem o nome interno, a segunda tem o nome COMERCIAL
-  (ex: Hidro Promo, Vip, Diamond, Hidro Sexy, Hidro e Sauna, Lounge, Lounge Hidro, Lounge Spa, Lounge Spa 50 Sombras, Lounge Acqua)
-  USE SEMPRE o nome da segunda coluna (nome comercial) como "categoria".
-- Seções de canal separadas por cabeçalhos:
-  "RESERVA IMEDIATA" → canal: "balcao_site"
-  "RESERVAS ANTECIPADAS" → canal: "site_programada"
-- Períodos estão nos cabeçalhos das colunas (ex: 3H, 6H, 12H, PERNOITE)
-- Tipos de dia: "Semana" e "FDS/Feriado" (ou variações)
-- IGNORE completamente as colunas: Giro Implícito, Diferença percentual, Período Excedente, Ocupante Adicional
-- Os preços são valores numéricos em dólar (USD) — inclua apenas o número
+═══ ESTRUTURA DE COLUNAS ═══
+A planilha tem 3 colunas de identificação, da esquerda para a direita:
+  Col 1: Label de grupo (ex: "Suítes Liv") — IGNORE
+  Col 2: Nome COMERCIAL da categoria — USE ESTE como "categoria"
+  Col 3: Nome interno (ex: "Antiga Hidro", "Semi Nova") — IGNORE
 
-Retorne SOMENTE JSON minificado:
-{"rows":[{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"3 horas","dia_tipo":"semana","preco":25},...], "canais_encontrados":["balcao_site","site_programada"]}
+CATEGORIAS VÁLIDAS (apenas estas 10 — nenhuma outra deve aparecer no JSON):
+Hidro Promo, Vip, Diamond, Hidro Sexy, Hidro e Sauna, Lounge, Lounge Hidro, Lounge Spa, Lounge Spa 50 Sombras, Lounge Acqua
 
-Valores válidos para os campos:
+═══ SEÇÕES DE CANAL ═══
+A planilha tem duas seções grandes separadas por cabeçalhos:
+  "RESERVA IMEDIATA" (ou "Reserva Imediata") → canal: "balcao_site"
+  "RESERVAS ANTECIPADAS" (ou "Reservas Antecipadas") → canal: "site_programada"
+
+═══ SEÇÕES DE DIA DA SEMANA ═══
+Dentro de cada seção de canal há duas colunas de dia:
+  "DOMINGO A QUINTA" (Domingo - Jueves) → dia_tipo: "semana"
+  "SEXTA, SÁBADO" (Viernes & Sábado) → dia_tipo: "fds_feriado"
+IMPORTANTE: domingo pertence ao grupo "semana", não ao fds_feriado.
+
+═══ PERÍODOS POR SEÇÃO ═══
+Seção RESERVA IMEDIATA (balcao_site):
+  - Dia semana: "6 horas" e "12 horas"
+  - Dia fds_feriado: "4 horas" e "12 horas"
+  IGNORE as colunas: "Período Excedente (1h)", "Ocupante Adicional"
+
+Seção RESERVAS ANTECIPADAS (site_programada):
+  - Períodos: "day use", "diária", "pernoite" (ou variações do nome em espanhol/inglês — use o nome em português minúsculo)
+  IGNORE colunas sem período reconhecido
+
+═══ MOEDA ═══
+Todos os preços são em USD (dólar). Retorne APENAS o valor numérico, SEM símbolo ($, R$, USD).
+
+═══ SAÍDA ═══
+Retorne SOMENTE JSON minificado, sem texto antes ou depois:
+{"rows":[{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"6 horas","dia_tipo":"semana","preco":29},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"12 horas","dia_tipo":"semana","preco":35},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"4 horas","dia_tipo":"fds_feriado","preco":32},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"12 horas","dia_tipo":"fds_feriado","preco":45},...], "canais_encontrados":["balcao_site","site_programada"]}
+
+Valores válidos:
 - canal: "balcao_site" | "site_programada"
-- periodo: nome em português minúsculo (ex: "3 horas", "6 horas", "12 horas", "pernoite")
-- dia_tipo: "semana" | "fds_feriado" | "todos"
-- preco: número (sem símbolo de moeda)
+- periodo: português minúsculo ("6 horas", "12 horas", "4 horas", "day use", "diária", "pernoite")
+- dia_tipo: "semana" | "fds_feriado"
+- preco: número (ex: 29, não "$29")
 
 Planilha:
 `
