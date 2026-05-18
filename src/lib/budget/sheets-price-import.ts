@@ -136,8 +136,27 @@ function valuesToText(values: (string | number)[][]): string {
 
 // ─── AI parsing ───────────────────────────────────────────────────────────────
 
-// Liv-specific prompt — precisely describes the 3-column structure, day labels, and period layout.
-const LIV_PRICE_PROMPT = `Você receberá o conteúdo de uma planilha de tabela de preços do motel LIV exportada como texto separado por tabulações.
+// Detects all "N horas" period headers present in the raw tab text (code-level, reliable).
+// Matches "3 horas", "6 horas", "12 horas" but NOT "Giro Implicito 6hs" or "Período Excedente (1h)".
+function detectHourPeriods(tabText: string): string[] {
+  const matches = new Set<string>()
+  const re = /\b(\d{1,2})\s+horas?\b/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(tabText)) !== null) {
+    const n = parseInt(m[1])
+    if (n >= 1 && n <= 24) matches.add(`${n} horas`)
+  }
+  return Array.from(matches).sort((a, b) => parseInt(a) - parseInt(b))
+}
+
+// Liv-specific prompt — injects code-detected periods so the model cannot skip them.
+function buildLivPrompt(tabText: string): string {
+  const hourPeriods = detectHourPeriods(tabText)
+  const periodsLine = hourPeriods.length > 0
+    ? hourPeriods.join(', ')
+    : '6 horas, 12 horas'  // fallback for very old tables
+
+  return `Você receberá o conteúdo de uma planilha de tabela de preços do motel LIV exportada como texto separado por tabulações.
 
 ═══ ESTRUTURA DE COLUNAS ═══
 A planilha tem 3 colunas de identificação, da esquerda para a direita:
@@ -159,33 +178,34 @@ Dentro de cada seção de canal há duas colunas de dia:
   "SEXTA, SÁBADO" (Viernes & Sábado) → dia_tipo: "fds_feriado"
 IMPORTANTE: domingo pertence ao grupo "semana", não ao fds_feriado.
 
-═══ PERÍODOS POR SEÇÃO ═══
+═══ PERÍODOS DESTA PLANILHA ═══
+Períodos detectados automaticamente nesta planilha: ${periodsLine}
+
 Seção RESERVA IMEDIATA (balcao_site):
-  - Os períodos são os cabeçalhos das colunas de preço presentes na planilha.
-  - Versões possíveis: "3 horas", "4 horas", "6 horas", "12 horas" — a tabela pode ter qualquer combinação.
-  - Extraia TODOS os períodos com valor numérico presentes (não omita nenhum).
-  - IGNORE obrigatoriamente as colunas: "Giro Implícito" (ou "Giro Implicito"), "Período Excedente (1h)", "Ocupante Adicional".
+  OBRIGATÓRIO: extraia TODOS os períodos listados acima (${periodsLine}) para CADA grupo de dia.
+  NÃO omita nenhum período. NÃO invente períodos que não estejam na lista acima.
+  IGNORE as colunas: "Giro Implícito" (qualquer variação), "Período Excedente (1h)", "Ocupante Adicional".
 
 Seção RESERVAS ANTECIPADAS (site_programada):
-  - Períodos: "day use", "diária", "pernoite" (ou variações do nome em espanhol/inglês — use o nome em português minúsculo).
-  - IGNORE colunas sem período reconhecido.
+  Períodos: "day use", "diária", "pernoite" (ou variações do nome em espanhol/inglês — use o nome em português minúsculo).
+  IGNORE colunas sem período reconhecido.
 
 ═══ MOEDA ═══
 Todos os preços são em USD (dólar). Retorne APENAS o valor numérico, SEM símbolo ($, R$, USD).
 
 ═══ SAÍDA ═══
-Retorne SOMENTE JSON minificado, sem texto antes ou depois.
-Exemplo (com 3 períodos em semana — adapte ao que estiver na planilha):
+Retorne SOMENTE JSON minificado, sem texto antes ou depois:
 {"rows":[{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"3 horas","dia_tipo":"semana","preco":22},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"6 horas","dia_tipo":"semana","preco":29},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"12 horas","dia_tipo":"semana","preco":35},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"3 horas","dia_tipo":"fds_feriado","preco":26},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"6 horas","dia_tipo":"fds_feriado","preco":32},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"12 horas","dia_tipo":"fds_feriado","preco":45},...], "canais_encontrados":["balcao_site","site_programada"]}
 
 Valores válidos:
 - canal: "balcao_site" | "site_programada"
-- periodo: português minúsculo com "horas" por extenso (ex: "3 horas", "4 horas", "6 horas", "12 horas", "day use", "diária", "pernoite")
+- periodo: português minúsculo com "horas" por extenso (ex: "3 horas", "6 horas", "12 horas", "day use", "diária", "pernoite")
 - dia_tipo: "semana" | "fds_feriado"
 - preco: número (ex: 29, não "$29")
 
 Planilha:
 `
+}
 
 function extractPriceJSON(text: string): { rows: ParsedPriceRow[]; canais_encontrados: string[] } | null {
   const clean = text.trim()
@@ -210,7 +230,7 @@ async function parseTabWithAI(
 ): Promise<{ rows: ParsedPriceRow[]; canais_encontrados: string[] }> {
   // Prompt selection: Liv has a known structure; other units fall back to the generic queue prompt
   const prompt = unitSlug === 'liv'
-    ? `${LIV_PRICE_PROMPT}${tabText.slice(0, 20000)}`
+    ? `${buildLivPrompt(tabText)}${tabText.slice(0, 20000)}`
     : buildGenericSheetPrompt(tabText)
 
   const { text } = await generateText({
