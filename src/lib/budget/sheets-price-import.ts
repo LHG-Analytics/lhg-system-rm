@@ -161,24 +161,26 @@ IMPORTANTE: domingo pertence ao grupo "semana", não ao fds_feriado.
 
 ═══ PERÍODOS POR SEÇÃO ═══
 Seção RESERVA IMEDIATA (balcao_site):
-  - Dia semana: "6 horas" e "12 horas"
-  - Dia fds_feriado: "4 horas" e "12 horas"
-  IGNORE as colunas: "Período Excedente (1h)", "Ocupante Adicional"
+  - Os períodos são os cabeçalhos das colunas de preço presentes na planilha.
+  - Versões possíveis: "3 horas", "4 horas", "6 horas", "12 horas" — a tabela pode ter qualquer combinação.
+  - Extraia TODOS os períodos com valor numérico presentes (não omita nenhum).
+  - IGNORE obrigatoriamente as colunas: "Giro Implícito" (ou "Giro Implicito"), "Período Excedente (1h)", "Ocupante Adicional".
 
 Seção RESERVAS ANTECIPADAS (site_programada):
-  - Períodos: "day use", "diária", "pernoite" (ou variações do nome em espanhol/inglês — use o nome em português minúsculo)
-  IGNORE colunas sem período reconhecido
+  - Períodos: "day use", "diária", "pernoite" (ou variações do nome em espanhol/inglês — use o nome em português minúsculo).
+  - IGNORE colunas sem período reconhecido.
 
 ═══ MOEDA ═══
 Todos os preços são em USD (dólar). Retorne APENAS o valor numérico, SEM símbolo ($, R$, USD).
 
 ═══ SAÍDA ═══
-Retorne SOMENTE JSON minificado, sem texto antes ou depois:
-{"rows":[{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"6 horas","dia_tipo":"semana","preco":29},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"12 horas","dia_tipo":"semana","preco":35},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"4 horas","dia_tipo":"fds_feriado","preco":32},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"12 horas","dia_tipo":"fds_feriado","preco":45},...], "canais_encontrados":["balcao_site","site_programada"]}
+Retorne SOMENTE JSON minificado, sem texto antes ou depois.
+Exemplo (com 3 períodos em semana — adapte ao que estiver na planilha):
+{"rows":[{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"3 horas","dia_tipo":"semana","preco":22},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"6 horas","dia_tipo":"semana","preco":29},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"12 horas","dia_tipo":"semana","preco":35},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"3 horas","dia_tipo":"fds_feriado","preco":26},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"6 horas","dia_tipo":"fds_feriado","preco":32},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"12 horas","dia_tipo":"fds_feriado","preco":45},...], "canais_encontrados":["balcao_site","site_programada"]}
 
 Valores válidos:
 - canal: "balcao_site" | "site_programada"
-- periodo: português minúsculo ("6 horas", "12 horas", "4 horas", "day use", "diária", "pernoite")
+- periodo: português minúsculo com "horas" por extenso (ex: "3 horas", "4 horas", "6 horas", "12 horas", "day use", "diária", "pernoite")
 - dia_tipo: "semana" | "fds_feriado"
 - preco: número (ex: 29, não "$29")
 
