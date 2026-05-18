@@ -133,8 +133,9 @@ export async function PATCH(req: NextRequest) {
     unit_goals?: UnitGoals | null
     budget_sheet_url?: string | null
     budget_config?: BudgetConfig | null
+    price_sheet_url?: string | null
   }
-  const { unit_id, competitor_urls, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, ...rest } = body
+  const { unit_id, competitor_urls, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, price_sheet_url, ...rest } = body
   if (!unit_id) return new Response('unit_id obrigatório', { status: 400 })
 
   type DbUpdate = import('@/types/database.types').Database['public']['Tables']['rm_agent_config']['Update']
@@ -149,11 +150,17 @@ export async function PATCH(req: NextRequest) {
     ...(budget_config      !== undefined ? { budget_config:      budget_config      as unknown as DbUpdate['budget_config']      } : {}),
   }
 
+  // price_sheet_url is not yet in generated types — use runtime spread
+  const finalFields = {
+    ...fields,
+    ...(price_sheet_url !== undefined ? { price_sheet_url } : {}),
+  }
+
   const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, budget_last_sync'
   const admin = getAdminClient()
   const { data, error: err } = await admin
     .from('rm_agent_config')
-    .update(fields)
+    .update(finalFields as unknown as DbUpdate)
     .eq('unit_id', unit_id)
     .select(SELECT_FIELDS)
     .single()

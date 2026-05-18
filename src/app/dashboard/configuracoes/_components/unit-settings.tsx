@@ -22,11 +22,14 @@ interface UnitConfig {
   budget_sheet_url: string
   budget_config: BudgetConfig
   budget_last_sync: string | null
+  price_sheet_url: string
+  price_sheet_last_sync: string | null
 }
 
 interface UnitSettingsProps {
   units: { id: string; name: string; slug: string; city: string | null }[]
-  agentConfigs: { unit_id: string; city: string; timezone: string; budget_sheet_url: string | null; budget_config: unknown; budget_last_sync: string | null }[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  agentConfigs: any[]
   activeUnitSlug: string
 }
 
@@ -59,12 +62,14 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
   const configForUnit = (unitId: string): UnitConfig => {
     const existing = agentConfigs.find((c) => c.unit_id === unitId)
     return {
-      unit_id:          unitId,
-      city:             existing?.city ?? 'Sao Paulo,BR',
-      timezone:         existing?.timezone ?? 'America/Sao_Paulo',
-      budget_sheet_url: existing?.budget_sheet_url ?? '',
-      budget_config:    resolveBudgetConfig(existing?.budget_config),
-      budget_last_sync: existing?.budget_last_sync ?? null,
+      unit_id:               unitId,
+      city:                  existing?.city ?? 'Sao Paulo,BR',
+      timezone:              existing?.timezone ?? 'America/Sao_Paulo',
+      budget_sheet_url:      existing?.budget_sheet_url ?? '',
+      budget_config:         resolveBudgetConfig(existing?.budget_config),
+      budget_last_sync:      existing?.budget_last_sync ?? null,
+      price_sheet_url:       existing?.price_sheet_url ?? '',
+      price_sheet_last_sync: existing?.price_sheet_last_sync ?? null,
     }
   }
 
@@ -83,6 +88,10 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
     month: number; year: number; months_synced: number; isFallback: boolean
   } | null>(null)
   const [syncError, setSyncError]   = useState<string | null>(null)
+
+  const [priceSyncing, setPriceSyncing]     = useState(false)
+  const [priceSyncResult, setPriceSyncResult] = useState<{ tabsImported: number } | null>(null)
+  const [priceSyncError, setPriceSyncError] = useState<string | null>(null)
 
   const current = activeUnit ? configs[activeUnit.id] : null
 
@@ -112,6 +121,7 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
           timezone:         current.timezone,
           budget_sheet_url: current.budget_sheet_url || null,
           budget_config:    current.budget_config,
+          price_sheet_url:  current.price_sheet_url || null,
         }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
@@ -155,6 +165,28 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
       setSyncError(err instanceof Error ? err.message : 'Erro ao sincronizar')
     } finally {
       setSyncing(false)
+    }
+  }
+
+  async function handlePriceSync() {
+    if (!activeUnit || !current?.price_sheet_url) return
+    setPriceSyncing(true)
+    setPriceSyncError(null)
+    setPriceSyncResult(null)
+    try {
+      const res = await fetch('/api/agente/sheets-price-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unitSlug: selectedSlug }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Erro ao sincronizar')
+      setPriceSyncResult({ tabsImported: data.tabsImported })
+      updateCurrent({ price_sheet_last_sync: new Date().toISOString() })
+    } catch (err) {
+      setPriceSyncError(err instanceof Error ? err.message : 'Erro ao sincronizar')
+    } finally {
+      setPriceSyncing(false)
     }
   }
 
@@ -354,6 +386,74 @@ export function UnitSettings({ units, agentConfigs, activeUnitSlug }: UnitSettin
               Compartilhe a planilha com o e-mail da conta de serviço em{' '}
               <span className="font-mono bg-muted px-1 rounded">GOOGLE_SERVICE_ACCOUNT_JSON</span>.
               Colunas C–N = jan–dez em todas as abas.
+            </p>
+          </div>
+
+          <Separator />
+
+          {/* ─── Planilha de preços ─── */}
+          <div className="flex items-center gap-2">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-blue-500/10">
+              <FileSpreadsheet className="size-3.5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold">Tabelas de preços — Google Sheets</p>
+              <p className="text-[11px] text-muted-foreground">
+                Cada aba com data (ex: 01092024 ou 27/02/26) vira uma tabela de preços para revisão.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs">URL da planilha de preços</Label>
+              <Input
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                value={current.price_sheet_url}
+                onChange={(e) => updateCurrent({ price_sheet_url: e.target.value })}
+                disabled={saving}
+                className="h-9 text-sm font-mono text-[11px]"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-xs text-muted-foreground">
+                {current.price_sheet_last_sync && !priceSyncResult && (
+                  <span>Último sync: {formatSyncDate(current.price_sheet_last_sync)}</span>
+                )}
+                {priceSyncResult && (
+                  <span className="text-emerald-600 flex items-center gap-1">
+                    <CheckCircle2 className="size-3" />
+                    {priceSyncResult.tabsImported} {priceSyncResult.tabsImported === 1 ? 'aba importada' : 'abas importadas'} — confirme em Preços
+                  </span>
+                )}
+                {priceSyncError && (
+                  <span className="text-destructive flex items-center gap-1">
+                    <AlertCircle className="size-3" />
+                    {priceSyncError}
+                  </span>
+                )}
+              </div>
+              {current.price_sheet_url && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handlePriceSync}
+                  disabled={priceSyncing || saving}
+                >
+                  {priceSyncing
+                    ? <Loader2 className="size-3.5 animate-spin" />
+                    : <RefreshCw className="size-3.5" />}
+                  Sincronizar preços
+                </Button>
+              )}
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">
+              Abas com nomes de campanha (ex: &quot;San Valentin&quot;) são ignoradas automaticamente.
+              Abas de data são detectadas pelos formatos DDMMAAAA ou DD/MM/AA.
             </p>
           </div>
 
