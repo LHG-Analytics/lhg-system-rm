@@ -71,6 +71,9 @@ export default async function LoginPage({
               priority
               style={{ height: 'auto' }}
             />
+            <p className="text-base font-semibold text-neutral-200 tracking-tight">
+              LHG Revenue Manager
+            </p>
             <p className="text-sm text-neutral-400">
               Gestão de preços e disponibilidade
             </p>
@@ -92,6 +95,18 @@ export default async function LoginPage({
               <LoginForm />
             </CardContent>
           </Card>
+
+          <p className="text-center text-xs text-neutral-500">
+            Ao entrar, você concorda com os nossos{' '}
+            <a href="/legal?doc=termos" className="underline underline-offset-2 hover:text-neutral-300 transition-colors">
+              Termos de Uso
+            </a>
+            {' '}e{' '}
+            <a href="/legal?doc=privacidade" className="underline underline-offset-2 hover:text-neutral-300 transition-colors">
+              Política de Privacidade
+            </a>
+            .
+          </p>
         </div>
       </div>
     </div>
