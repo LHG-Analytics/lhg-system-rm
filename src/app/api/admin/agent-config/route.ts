@@ -74,7 +74,7 @@ async function requireSuperAdmin() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Não autorizado', status: 401 as const, supabase: null }
   const { data: profile } = await supabase.from('profiles').select('role').eq('user_id', user.id).single()
-  if (profile?.role !== 'super_admin') return { error: 'Acesso negado', status: 403 as const, supabase: null }
+  if (!['super_admin', 'admin'].includes(profile?.role ?? '')) return { error: 'Acesso negado', status: 403 as const, supabase: null }
   return { error: null, status: 200 as const, supabase }
 }
 

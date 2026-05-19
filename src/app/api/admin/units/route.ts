@@ -45,7 +45,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const profile = await requireAdmin()
   if (!profile) return Response.json({ error: 'Sem permissão' }, { status: 403 })
-  if (profile.role !== 'super_admin') return Response.json({ error: 'Apenas super_admin pode criar unidades' }, { status: 403 })
+  if (!['super_admin', 'admin'].includes(profile?.role ?? '')) return Response.json({ error: 'Apenas super_admin pode criar unidades' }, { status: 403 })
 
   const body = await req.json()
   const { name, slug, city, state, automo_env_key, automo_category_ids, period_type, logo_path } = body
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const profile = await requireAdmin()
   if (!profile) return Response.json({ error: 'Sem permissão' }, { status: 403 })
-  if (profile.role !== 'super_admin') return Response.json({ error: 'Apenas super_admin pode editar unidades' }, { status: 403 })
+  if (!['super_admin', 'admin'].includes(profile?.role ?? '')) return Response.json({ error: 'Apenas super_admin pode editar unidades' }, { status: 403 })
 
   const body = await req.json()
   const { id, ...updates } = body

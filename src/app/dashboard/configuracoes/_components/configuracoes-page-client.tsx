@@ -49,7 +49,7 @@ export function ConfiguracoesPageClient({
               <Building2 className="size-3.5" /> Unidade
             </TabsTrigger>
           )}
-          {isSuperAdmin && (
+          {isAdmin && (
             <TabsTrigger value="integracoes" className="gap-1.5 text-xs">
               <Plug className="size-3.5" /> Integrações
             </TabsTrigger>
@@ -74,7 +74,7 @@ export function ConfiguracoesPageClient({
           </TabsContent>
         )}
 
-        {isSuperAdmin && (
+        {isAdmin && (
           <TabsContent value="integracoes" className="mt-4">
             <IntegrationsSettings />
           </TabsContent>

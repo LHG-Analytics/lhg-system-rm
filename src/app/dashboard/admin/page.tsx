@@ -32,7 +32,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     .eq('user_id', user.id)
     .single()
 
-  if (profile?.role !== 'super_admin') redirect('/dashboard')
+  if (!['super_admin', 'admin'].includes(profile?.role ?? '')) redirect('/dashboard')
 
   const admin = getAdminClient()
   const { unit: unitSlug, tab, agente_tab } = await searchParams

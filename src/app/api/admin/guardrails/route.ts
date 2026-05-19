@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
 
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
 
-  if (profile.role !== 'super_admin' && profile.unit_id !== unit.id) {
+  if (!['super_admin', 'admin'].includes(profile?.role ?? '') && profile.unit_id !== unit.id) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
   }
 
