@@ -255,7 +255,9 @@ export async function POST(req: NextRequest) {
     unit = data
 
     // Verificar se o usuário tem acesso a essa unidade
-    if (unit && profile.role !== 'super_admin' && profile.unit_id !== unit.id) {
+    // Admin/super_admin com unit_id=null têm acesso global
+    const hasGlobalAccess = ['super_admin', 'admin'].includes(profile.role ?? '') && !profile.unit_id
+    if (unit && !hasGlobalAccess && profile.unit_id !== unit.id) {
       return new Response('Sem acesso a essa unidade', { status: 403 })
     }
   }
@@ -269,7 +271,7 @@ export async function POST(req: NextRequest) {
     unit = data
   }
 
-  if (!unit && profile.role === 'super_admin') {
+  if (!unit && ['super_admin', 'admin'].includes(profile.role ?? '') && !profile.unit_id) {
     const { data } = await admin
       .from('units')
       .select('id, name, slug')

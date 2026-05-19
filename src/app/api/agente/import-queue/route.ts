@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
   const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
 
-  if (auth.profile!.role !== 'super_admin' && auth.profile!.unit_id !== unit.id) {
+  if (!(['super_admin', 'admin'].includes(auth.profile!.role ?? '') && !auth.profile!.unit_id) && auth.profile!.unit_id !== unit.id) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
   }
 
@@ -566,7 +566,7 @@ export async function DELETE(req: NextRequest) {
 
   if (!job) return new Response('Job não encontrado', { status: 404 })
 
-  if (auth.profile!.role !== 'super_admin' && auth.profile!.unit_id !== job.unit_id) {
+  if (!(['super_admin', 'admin'].includes(auth.profile!.role ?? '') && !auth.profile!.unit_id) && auth.profile!.unit_id !== job.unit_id) {
     return new Response('Sem acesso', { status: 403 })
   }
 

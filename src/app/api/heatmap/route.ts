@@ -284,7 +284,8 @@ export async function GET(req: NextRequest) {
     .single()
 
   if (!profile) return new Response('Perfil não encontrado', { status: 403 })
-  if (profile.role !== 'super_admin' && profile.unit_id !== unit.id) {
+  const hasGlobalAccess = ['super_admin', 'admin'].includes(profile.role ?? '') && !profile.unit_id
+  if (!hasGlobalAccess && profile.unit_id !== unit.id) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
   }
 
