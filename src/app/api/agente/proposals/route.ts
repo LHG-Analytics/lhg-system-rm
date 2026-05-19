@@ -761,29 +761,31 @@ ${precoAtualBlock}
 
 ---
 
-TAREFA: Com base nos dados acima, gere uma proposta de ajuste de preços.
+TAREFA: Com base nos dados acima, preencha a proposta de ajuste de preços para CADA linha listada abaixo.
 
 Critérios:
 - Analise giro, ocupação e RevPAR por categoria e dia da semana nas tabelas semanais
 ${hasPrevious ? '- Compare o desempenho do período atual com o anterior: se KPIs melhoraram após mudança de tabela, a direção estava certa; se pioraram, corrija\n' : ''}${memoryBlock ? '- Use a memória estratégica para calibrar a nova proposta: se as mudanças anteriores melhoraram os KPIs, intensifique a direção; se pioraram, recue ou teste outro caminho\n' : ''}- Variação máxima: ±${maxVar}% por item (configurado pelo gestor — não exceder)
 - Priorize itens com maior impacto no RevPAR (alto giro + RevPAR baixo = oportunidade de aumento)
 ${activeDiscounts.length > 0 ? '- Para guia_moteis: os preços propostos devem ser os valores BASE (o desconto é aplicado automaticamente)\n' : ''}
-COBERTURA TOTAL OBRIGATÓRIA: a proposta DEVE incluir uma linha para CADA combinação categoria × periodo × dia_tipo presente no mapa de preços — sem exceção. Para CADA linha, mesmo que o preço não mude: preco_proposto = preco_atual, variacao_pct = 0.0, e a justificativa DEVE explicar em 1 frase POR QUE este item foi mantido (ex: "giro estável e sem pressão de concorrência neste período", "ocupação abaixo do benchmark mas redução de preço não é indicada com TMO alto"). NUNCA omita um período ou dia_tipo que existe no mapa de preços. Omita APENAS combinações que literalmente não existem no mapa acima.
+LISTA COMPLETA DE LINHAS — você DEVE gerar exatamente ${activeRows.length} rows no JSON, uma para cada entrada abaixo (canal|categoria|periodo|dia_tipo→preco_atual):
+${activeRows.map((r) => `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}→${r.preco.toFixed(2)}`).join('\n')}
 
-IMPORTANTE: Use os valores do "Mapa de preços atuais" acima como preco_atual. Não invente valores.
+Para cada linha: decida preco_proposto (pode ser igual ao atual se não houver ajuste) e escreva a justificativa em 1 frase.
+Se mantiver o preço: preco_proposto = preco_atual, variacao_pct = 0.0, justificativa explica POR QUE foi mantido.
+
+IMPORTANTE: Use os valores do "Mapa de preços atuais" como preco_atual. Não invente valores.
 
 Retorne SOMENTE este JSON minificado (sem nenhum texto antes ou depois):
-{"context":"análise em 2-3 frases","rows":[{"canal":"balcao_site","categoria":"NOME DA CATEGORIA","periodo":"${activeRows[0]?.periodo ?? '3 horas'}","dia_tipo":"semana","preco_atual":100.00,"preco_proposto":95.00,"variacao_pct":-5.0,"justificativa":"razão em 1 frase"}]}
+{"context":"análise em 2-3 frases","rows":[{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"3 horas","dia_tipo":"semana","preco_atual":29.00,"preco_proposto":28.00,"variacao_pct":-3.4,"justificativa":"..."},{"canal":"balcao_site","categoria":"Hidro Promo","periodo":"6 horas","dia_tipo":"semana","preco_atual":32.00,"preco_proposto":32.00,"variacao_pct":0.0,"justificativa":"..."},{"canal":"site_programada","categoria":"Hidro Promo","periodo":"day use","dia_tipo":"semana","preco_atual":32.00,"preco_proposto":32.00,"variacao_pct":0.0,"justificativa":"..."},...todos os ${activeRows.length} itens]}
 
 Valores válidos:
 - canal: balcao_site | site_programada | guia_moteis
-- periodo: DEVE ser EXATAMENTE um dos valores abaixo (copie literalmente do mapa de preços, nunca use "Todos" nem abreviações):
-  ${[...new Set(activeRows.map((r) => r.periodo))].join(' | ')}
+- periodo: copie EXATAMENTE do mapa de preços: ${[...new Set(activeRows.map((r) => r.periodo))].join(' | ')}
 - dia_tipo: semana | fds_feriado | todos
 - variacao_pct = ((preco_proposto - preco_atual) / preco_atual * 100) arredondado 1 decimal
 
-CRÍTICO: Gere UMA linha por combinação canal × categoria × periodo × dia_tipo. Nunca agrupe períodos diferentes em uma única linha. Use os valores de preco_atual do mapa acima.
-A cobertura total já foi instruída acima — NUNCA omita uma combinação que existe no mapa. JSON minificado, sem indentação.`
+JSON minificado, sem indentação, sem texto antes ou depois.`
 
   // Suprimir warning de variável não usada (precoAtualMap disponível para validação futura)
   void precoAtualMap
@@ -808,6 +810,39 @@ A cobertura total já foi instruída acima — NUNCA omita uma combinação que 
       { error: 'O modelo não retornou JSON válido. Tente novamente.', preview: text.slice(0, 800) },
       { status: 422 }
     )
+  }
+
+  // ─── Safety net: adiciona linhas omitidas pelo modelo com preço mantido ─
+  {
+    const modelKeys = new Set(
+      parsed.rows.map(
+        (r: { canal: string; categoria: string; periodo: string; dia_tipo: string }) =>
+          `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`
+      )
+    )
+    for (const src of activeRows) {
+      const key = `${src.canal}|${src.categoria}|${src.periodo}|${src.dia_tipo}`
+      if (!modelKeys.has(key)) {
+        parsed.rows.push({
+          canal: src.canal,
+          categoria: src.categoria,
+          periodo: src.periodo,
+          dia_tipo: src.dia_tipo,
+          preco: src.preco,
+          preco_atual: src.preco,
+          preco_proposto: src.preco,
+          variacao_pct: 0,
+          justificativa: 'Não analisado pelo modelo — preço mantido para revisão manual.',
+          was_clamped: false,
+          clamp_info: undefined,
+          expected_revenue_change_pct: null,
+        })
+      }
+    }
+    const omitted = activeRows.length - modelKeys.size
+    if (omitted > 0) {
+      console.warn(`[proposals] Safety net: ${omitted} linhas omitidas pelo modelo foram adicionadas com preço mantido.`)
+    }
   }
 
   // ─── Clamp server-side pelos guardrails (safety net) ────────────────────
