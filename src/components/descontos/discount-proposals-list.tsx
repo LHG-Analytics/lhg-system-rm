@@ -154,6 +154,7 @@ function ProposalCard({
           </div>
           <p className="text-xs text-muted-foreground">
             {format(parseISO(proposal.created_at), "dd 'de' MMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}
+            {proposal.creator_name && <> · por <span className="font-medium">{proposal.creator_name}</span></>}
             {proposal.reviewed_at && ` · revisada ${format(parseISO(proposal.reviewed_at), "dd/MM", { locale: ptBR })}`}
           </p>
           {!expanded && (

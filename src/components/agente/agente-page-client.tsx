@@ -32,6 +32,7 @@ interface AgenteChatPageProps {
   units?: { id: string; slug: string; name: string }[]
   displayName?: string | null
   timezone?: string | null
+  userId?: string
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ function isAwaitingResponse(msgs: UIMessage[]): boolean {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function AgenteChatPage({ activeUnit, initialProposals, userRole, units = [], displayName, timezone }: AgenteChatPageProps) {
+export function AgenteChatPage({ activeUnit, initialProposals, userRole, units = [], displayName, timezone, userId }: AgenteChatPageProps) {
   const searchParams = useSearchParams()
   const router   = useRouter()
   const unitId   = activeUnit?.id   ?? ''
@@ -157,10 +158,12 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
 
   async function loadConversations() {
     const supabase = createClient()
-    const { data } = await supabase
+    let q = supabase
       .from('rm_conversations')
       .select('id, title, updated_at, messages, context_mode')
       .eq('unit_id', unitId)
+    if (userId) q = q.eq('user_id', userId)
+    const { data } = await q
       .order('updated_at', { ascending: false })
       .limit(30)
     const loaded = (data ?? []).map((c) => ({

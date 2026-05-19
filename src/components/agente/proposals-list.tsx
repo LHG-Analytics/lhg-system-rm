@@ -577,6 +577,11 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                       <span className="text-xs text-muted-foreground">
                         {formatDate(proposal.created_at)}
                       </span>
+                      {proposal.creator_name && (
+                        <span className="text-xs text-muted-foreground">
+                          · por <span className="font-medium">{proposal.creator_name}</span>
+                        </span>
+                      )}
                       <span className="text-xs text-muted-foreground">
                         · {(() => {
                           const altered = proposal.rows.filter((r) => Math.abs(r.variacao_pct) > 0.5).length

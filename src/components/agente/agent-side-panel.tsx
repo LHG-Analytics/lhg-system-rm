@@ -22,7 +22,7 @@ function storageKey(unitId: string) {
   return `lhg-panel-conv-${unitId}`
 }
 
-function AgentSidePanelInner({ units }: AgentSidePanelProps) {
+function AgentSidePanelInner({ units, userRole }: AgentSidePanelProps) {
   const pathname     = usePathname()
   const searchParams = useSearchParams()
 
@@ -30,9 +30,18 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
   const [chatKey,          setChatKey]          = useState(0)
   const [selectedConvId,   setSelectedConvId]   = useState<string | null>(null)
   const [selectedMessages, setSelectedMessages] = useState<UIMessage[] | undefined>()
+  const [currentUserId,    setCurrentUserId]    = useState<string | null>(null)
 
   const unitSlug   = searchParams.get('unit') ?? units[0]?.slug ?? ''
   const activeUnit = units.find((u) => u.slug === unitSlug) ?? units[0]
+
+  // Carrega o userId atual uma única vez
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) setCurrentUserId(data.user.id)
+    })
+  }, [])
 
   // Persiste o convId no localStorage para sobreviver a remounts por Suspense
   useEffect(() => {
@@ -41,31 +50,34 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
   }, [selectedConvId, activeUnit?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Carrega uma conversa específica por ID
-  const loadConversationById = useCallback(async (unitId: string, convId: string) => {
+  const loadConversationById = useCallback(async (unitId: string, convId: string, userId: string | null) => {
     const supabase = createClient()
-    const { data } = await supabase
+    let q = supabase
       .from('rm_conversations')
       .select('id, messages')
       .eq('unit_id', unitId)
       .eq('id', convId)
-      .maybeSingle()
+    if (userId) q = q.eq('user_id', userId)
+    const { data } = await q.maybeSingle()
 
     if (data) {
       setSelectedConvId(data.id)
       setSelectedMessages((data.messages as unknown as UIMessage[]) ?? [])
     } else {
       // convId salvo não existe mais — cai no fallback de última conversa
-      loadLastConversation(unitId) // eslint-disable-line
+      loadLastConversation(unitId, userId) // eslint-disable-line
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Carrega a última conversa da unidade
-  const loadLastConversation = useCallback(async (unitId: string) => {
+  // Carrega a última conversa do usuário na unidade
+  const loadLastConversation = useCallback(async (unitId: string, userId: string | null) => {
     const supabase = createClient()
-    const { data } = await supabase
+    let q = supabase
       .from('rm_conversations')
       .select('id, messages')
       .eq('unit_id', unitId)
+    if (userId) q = q.eq('user_id', userId)
+    const { data } = await q
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -104,14 +116,69 @@ function AgentSidePanelInner({ units }: AgentSidePanelProps) {
     try {
       const savedConvId = localStorage.getItem(storageKey(activeUnit.id))
       if (savedConvId) {
-        loadConversationById(activeUnit.id, savedConvId)
+        loadConversationById(activeUnit.id, savedConvId, currentUserId)
         return
       }
     } catch {}
 
     // Sem localStorage — carrega a última conversa do banco
-    loadLastConversation(activeUnit.id)
-  }, [isOpen, activeUnit?.id, chatKey, loadConversationById, loadLastConversation]) // eslint-disable-line react-hooks/exhaustive-deps
+    loadLastConversation(activeUnit.id, currentUserId)
+  }, [isOpen, activeUnit?.id, chatKey, currentUserId, loadConversationById, loadLastConversation]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Realtime recovery: escuta updates na conversa ativa quando aguardando ──
+  const isAwaitingResp =
+    !!selectedConvId &&
+    !!selectedMessages?.length &&
+    selectedMessages[selectedMessages.length - 1].role === 'user'
+
+  useEffect(() => {
+    if (!isAwaitingResp || !selectedConvId) return
+
+    const supabase = createClient()
+
+    // Fresh fetch imediato — cobre race condition onde onFinish já salvou antes da subscription
+    supabase
+      .from('rm_conversations')
+      .select('messages')
+      .eq('id', selectedConvId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data) return
+        const msgs = (data.messages as unknown as UIMessage[]) ?? []
+        if (msgs.length > 0 && msgs[msgs.length - 1].role !== 'user') {
+          setSelectedMessages(msgs)
+          setChatKey((k) => k + 1)
+        }
+      })
+
+    const channel = supabase
+      .channel(`panel-conv-recovery-${selectedConvId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'rm_conversations',
+        filter: `id=eq.${selectedConvId}`,
+      }, (payload) => {
+        const newMsgs = (payload.new.messages as unknown as UIMessage[]) ?? []
+        if (newMsgs.length > 0 && newMsgs[newMsgs.length - 1].role !== 'user') {
+          setSelectedMessages(newMsgs)
+          setChatKey((k) => k + 1)
+        }
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [isAwaitingResp, selectedConvId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // visibilitychange: recarrega a conversa ao voltar para a aba
+  useEffect(() => {
+    if (!selectedConvId || !activeUnit) return
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadConversationById(activeUnit.id, selectedConvId, currentUserId)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [selectedConvId, activeUnit?.id, currentUserId, loadConversationById]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resetar ao trocar de unidade
   const prevSlugRef = useRef(unitSlug)

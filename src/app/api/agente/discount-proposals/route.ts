@@ -28,14 +28,16 @@ export interface DiscountProposalRow {
 }
 
 export interface DiscountProposal {
-  id:          string
-  unit_id:     string
-  status:      'pending' | 'approved' | 'rejected'
-  context:     string | null
-  rows:        DiscountProposalRow[]
-  created_at:  string
-  reviewed_at: string | null
-  conv_id:     string | null
+  id:           string
+  unit_id:      string
+  created_by:   string | null
+  creator_name: string | null
+  status:       'pending' | 'approved' | 'rejected'
+  context:      string | null
+  rows:         DiscountProposalRow[]
+  created_at:   string
+  reviewed_at:  string | null
+  conv_id:      string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -90,7 +92,20 @@ export async function GET(req: NextRequest) {
     .limit(20)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ proposals: data ?? [] })
+
+  // Enriquece com nome do criador
+  const creatorIds = [...new Set((data ?? []).map((p) => (p as { created_by?: string | null }).created_by).filter((id): id is string => !!id))]
+  const { data: profs } = creatorIds.length
+    ? await admin.from('profiles').select('user_id, display_name').in('user_id', creatorIds)
+    : { data: [] }
+  const profileMap = new Map((profs ?? []).map((p) => [p.user_id, p.display_name]))
+
+  const enriched = (data ?? []).map((p) => {
+    const cb = (p as { created_by?: string | null }).created_by ?? null
+    return { ...p, created_by: cb, creator_name: (cb ? profileMap.get(cb) : null) ?? null }
+  })
+
+  return NextResponse.json({ proposals: enriched })
 }
 
 // ─── POST: gera proposta de desconto via IA ───────────────────────────────────
@@ -335,10 +350,11 @@ Inclua APENAS as linhas com alteração de desconto (variacao_pts ≠ 0). Para c
   const { data: saved, error: saveError } = await admin
     .from('discount_proposals')
     .insert({
-      unit_id: unit.id,
-      context: parsed.context,
-      rows:    parsed.rows as unknown as Database['public']['Tables']['discount_proposals']['Insert']['rows'],
-      status:  'pending',
+      unit_id:    unit.id,
+      created_by: user.id,
+      context:    parsed.context,
+      rows:       parsed.rows as unknown as Database['public']['Tables']['discount_proposals']['Insert']['rows'],
+      status:     'pending',
     })
     .select('id')
     .single()

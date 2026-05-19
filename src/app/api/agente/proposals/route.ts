@@ -56,6 +56,7 @@ export interface PriceProposal {
   id: string
   unit_id: string
   created_by: string
+  creator_name: string | null
   context: string | null
   rows: ProposedPriceRow[]
   status: 'pending' | 'approved' | 'rejected'
@@ -224,7 +225,7 @@ export async function GET(req: NextRequest) {
 
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
 
-  const { data: proposals, error } = await supabase
+  const { data: proposals, error } = await admin
     .from('price_proposals')
     .select('*')
     .eq('unit_id', unit.id)
@@ -233,7 +234,18 @@ export async function GET(req: NextRequest) {
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
-  return Response.json(proposals as unknown as PriceProposal[])
+  // Enriquece com nome do criador
+  const creatorIds = [...new Set((proposals ?? []).map((p) => p.created_by).filter(Boolean))]
+  const { data: profiles } = creatorIds.length
+    ? await admin.from('profiles').select('user_id, display_name').in('user_id', creatorIds)
+    : { data: [] }
+  const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p.display_name]))
+
+  const enriched = (proposals ?? []).map((p) => {
+    return { ...p, creator_name: profileMap.get(p.created_by) ?? null }
+  })
+
+  return Response.json(enriched as unknown as PriceProposal[])
 }
 
 // ─── POST: gera nova proposta via IA com análise comparativa ─────────────────

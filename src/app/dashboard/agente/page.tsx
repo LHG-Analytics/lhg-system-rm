@@ -98,6 +98,7 @@ export default async function AgentePage({ searchParams }: AgentePageProps) {
         units={allUnits}
         displayName={displayName}
         timezone={timezone}
+        userId={user.id}
       />
     </Suspense>
   )
