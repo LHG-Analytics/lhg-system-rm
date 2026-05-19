@@ -102,6 +102,10 @@ function AgentSidePanelInner({ units, userRole }: AgentSidePanelProps) {
     if (chatKey > 0) {
       if (loadedForRef.current === key) return
       loadedForRef.current = key
+      // Se selectedConvIdRef ainda aponta para uma conversa, este chatKey++ veio do
+      // Realtime recovery (não de handleNewConversation). O chat já remontou com as
+      // mensagens corretas — não resetar o estado.
+      if (selectedConvIdRef.current) return
       setSelectedConvId(null)
       setSelectedMessages(undefined)
       try { localStorage.removeItem(storageKey(activeUnit.id)) } catch {}
