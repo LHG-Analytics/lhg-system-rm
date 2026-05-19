@@ -286,7 +286,7 @@ export async function POST(req: NextRequest) {
   // ─── Buscar todas as tabelas de preços ──────────────────────────────────
   const { data: allImports } = await admin
     .from('price_imports')
-    .select('id, parsed_data, discount_data, valid_from, valid_until')
+    .select('id, parsed_data, discount_data, valid_from, valid_until, import_type')
     .eq('unit_id', unit.id)
     .order('valid_from', { ascending: false })
 
@@ -305,9 +305,12 @@ export async function POST(req: NextRequest) {
       : new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const todayStr = todayOp.toISOString().slice(0, 10)
 
-  // Filtra apenas imports de preços (parsed_data com linhas) para evitar capturar imports de desconto
+  // Filtra apenas imports de preços com import_type != 'discounts' E com parsed_data preenchido
+  // (import_type com DEFAULT 'prices' cobre registros legados sem a coluna explícita)
   const priceOnlyImports = allImports?.filter(
-    (i) => (i.parsed_data as unknown as ParsedPriceRow[])?.length > 0
+    (i) =>
+      (i as unknown as { import_type?: string }).import_type !== 'discounts' &&
+      (i.parsed_data as unknown as ParsedPriceRow[])?.length > 0
   ) ?? []
 
   const activeImport = priceOnlyImports.find(
@@ -438,6 +441,14 @@ export async function POST(req: NextRequest) {
 
   // Mapa de preços atuais (tabela ativa) para o modelo não precisar inferir
   const activeRows = (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? []
+  const distinctPeriods = [...new Set(activeRows.map((r) => r.periodo))]
+  if (distinctPeriods.length <= 1) {
+    console.warn(
+      `[proposals] Tabela ativa para ${unit.slug} tem apenas ${distinctPeriods.length} período(s) distinto(s):`,
+      distinctPeriods,
+      `— import id: ${activeImport.id}, valid_from: ${activeImport.valid_from}`
+    )
+  }
   const precoAtualMap = Object.fromEntries(
     activeRows.map((r) => [`${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`, r.preco])
   )
