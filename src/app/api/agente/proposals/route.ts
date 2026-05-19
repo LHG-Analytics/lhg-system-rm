@@ -768,11 +768,22 @@ Critérios:
 ${hasPrevious ? '- Compare o desempenho do período atual com o anterior: se KPIs melhoraram após mudança de tabela, a direção estava certa; se pioraram, corrija\n' : ''}${memoryBlock ? '- Use a memória estratégica para calibrar a nova proposta: se as mudanças anteriores melhoraram os KPIs, intensifique a direção; se pioraram, recue ou teste outro caminho\n' : ''}- Variação máxima: ±${maxVar}% por item (configurado pelo gestor — não exceder)
 - Priorize itens com maior impacto no RevPAR (alto giro + RevPAR baixo = oportunidade de aumento)
 ${activeDiscounts.length > 0 ? '- Para guia_moteis: os preços propostos devem ser os valores BASE (o desconto é aplicado automaticamente)\n' : ''}
+ANTI-PADRÃO PROIBIDO — variações uniformes:
+Aplicar o mesmo percentual (ex: -5% em tudo na semana, +5% em tudo no FDS) é análise superficial e INVÁLIDA.
+Cada combinação categoria×período×dia_tipo deve ter variacao_pct PRÓPRIA baseada nos dados reais daquela célula.
+Exemplos de proposta CORRETA:
+- Categoria com giro 1.2 e ocupação 22%: -4% a -5% na semana
+- Categoria com giro 2.8 e ocupação 42%: +2% a +3% na semana
+- Período pouco usado (Day Use, Diária) com giro <0.5: 0% — não mexer sem dados suficientes
+- FDS de categoria premium com RevPAR baixo vs semana: +3% a +8%
+- Manter preço (variacao_pct=0) é preferível a aplicar % genérico sem justificativa real
+
 LISTA COMPLETA DE LINHAS — você DEVE gerar exatamente ${activeRows.length} rows no JSON, uma para cada entrada abaixo (canal|categoria|periodo|dia_tipo→preco_atual):
 ${activeRows.map((r) => `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}→${r.preco.toFixed(2)}`).join('\n')}
 
-Para cada linha: decida preco_proposto (pode ser igual ao atual se não houver ajuste) e escreva a justificativa em 1 frase.
+Para cada linha: decida preco_proposto baseado nos dados específicos daquela categoria/período/dia e escreva a justificativa em 1 frase com dados concretos (ex: "Giro 1.2 abaixo da referência 2.1 — redução para estimular volume").
 Se mantiver o preço: preco_proposto = preco_atual, variacao_pct = 0.0, justificativa explica POR QUE foi mantido.
+ESPERADO: a maioria das linhas terá variações DIFERENTES entre si. Linhas com variacao_pct idêntico em categorias distintas indicam falta de análise.
 
 IMPORTANTE: Use os valores do "Mapa de preços atuais" como preco_atual. Não invente valores.
 

@@ -821,7 +821,7 @@ REGRAS INVIOLÁVEIS para o JSON:
 1. "headline": inclua o período atual em DD/MM e um dado numérico chave.
 2. "keyPoints": termine cada bullet com o período de referência. Use "vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})" ou "vs ano anterior (${fmtLyStart}–${fmtLyEnd})". NUNCA use siglas como "LY" ou "yoy".
 3. "priorityAction": use dados REAIS. NUNCA sugira variação > ${maxVar}% — se o mercado exigir mais, diga "ajustar em ${maxVar}% agora e reavaliar". Pode propor novo tier de dia se o padrão horário justificar.
-4. "agentPrompt": instrução compacta (máx 280 chars) respeitando variação máx ${maxVar}%.
+4. "agentPrompt": instrução cirúrgica (máx 280 chars) que NÃO mencione percentual fixo — cite categorias específicas, padrão de dia (semana vs FDS) e objetivo de KPI. Exemplos: "Analise RevPAR por categoria e reduza seletivamente semana para categorias com giro <2 e eleve FDS premium 3-5%." NÃO escreva "ajuste de até X%" — isso faz o agente aplicar o mesmo % em tudo.
 5. "actionType": "price_proposal" | "discount_proposal" | "agent_config" | "none".
 
 Retorne APENAS o JSON (sem markdown fence, sem texto extra):
