@@ -104,17 +104,42 @@ function ThinkingBubble() {
 
 // ─── Bubble "aguardando resposta" (conversa retomada sem resposta) ────────────
 
-function AwaitingBubble() {
+function AwaitingBubble({ onUnlock }: { onUnlock?: () => Promise<void> }) {
+  const [showUnlock, setShowUnlock] = useState(false)
+  const [unlocking, setUnlocking] = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => setShowUnlock(true), 30_000)
+    return () => clearTimeout(t)
+  }, [])
+
+  async function handleUnlock() {
+    if (!onUnlock) return
+    setUnlocking(true)
+    try { await onUnlock() } finally { setUnlocking(false) }
+  }
+
   return (
     <div className="flex gap-3 justify-start">
       <div className="shrink-0 rounded-full bg-primary/10 p-1.5 h-7 w-7 flex items-center justify-center">
         <Bot className="size-4 text-primary" />
       </div>
-      <div className="bg-muted/60 rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center gap-2 border border-dashed border-muted-foreground/20">
-        <Clock className="size-3.5 text-muted-foreground/50 shrink-0" />
-        <span className="text-xs text-muted-foreground/70">
-          Preparando resposta… você será notificado quando estiver pronta.
-        </span>
+      <div className="bg-muted/60 rounded-2xl rounded-bl-sm px-4 py-2.5 flex flex-col gap-2 border border-dashed border-muted-foreground/20">
+        <div className="flex items-center gap-2">
+          <Clock className="size-3.5 text-muted-foreground/50 shrink-0" />
+          <span className="text-xs text-muted-foreground/70">
+            Preparando resposta… você será notificado quando estiver pronta.
+          </span>
+        </div>
+        {showUnlock && onUnlock && (
+          <button
+            onClick={handleUnlock}
+            disabled={unlocking}
+            className="self-start text-xs text-primary/70 hover:text-primary underline underline-offset-2 disabled:opacity-50"
+          >
+            {unlocking ? 'Desbloqueando…' : 'Parece travado? Desbloquear conversa'}
+          </button>
+        )}
       </div>
     </div>
   )
@@ -695,7 +720,31 @@ function AgenteChatInner({
         )}
 
         {/* Indicador: aguardando resposta do servidor (conversa retomada) */}
-        {awaitingOnly && <AwaitingBubble />}
+        {awaitingOnly && (
+          <AwaitingBubble
+            onUnlock={conversationId ? async () => {
+              const supabase = createClient()
+              const { data } = await supabase
+                .from('rm_conversations')
+                .select('messages')
+                .eq('id', conversationId)
+                .single()
+              const existing = (data?.messages ?? []) as unknown as UIMessage[]
+              if (existing[existing.length - 1]?.role === 'assistant') return
+              const closing: UIMessage = {
+                id: Math.random().toString(36).slice(2, 12),
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'Análise concluída em background. Acesse a aba **Propostas** para revisar, ou envie uma nova mensagem.' }],
+              }
+              const updated = [...existing, closing]
+              await supabase
+                .from('rm_conversations')
+                .update({ messages: JSON.parse(JSON.stringify(updated)) })
+                .eq('id', conversationId)
+              onMessagesUpdate?.(conversationId, updated)
+            } : undefined}
+          />
+        )}
 
         {isStreaming && (() => {
           const last = messages[messages.length - 1]
