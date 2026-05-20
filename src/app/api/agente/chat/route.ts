@@ -714,10 +714,13 @@ export async function POST(req: NextRequest) {
         'NUNCA inclua "Gerar proposta de descontos" no sugerir_respostas — já foi avaliado proativamente.',
       inputSchema: z.object({
         context: z.string().describe(
-          'Resumo da lógica geral da proposta. OBRIGATÓRIO incluir: (1) "X alterações de Y combinações analisadas"; ' +
-          '(2) para cada canal da tabela vigente, uma linha explicando o que foi feito — ex: "balcao_site: ajustes no FDS ' +
-          'onde giro > 2.8; site_programada: mantido porque preços idênticos ao balcão; guia_moteis: mantido porque ' +
-          'margem efetiva já está abaixo de 30%". Se um canal foi omitido das alterações, explicite o motivo.'
+          'Resumo da lógica geral da proposta. OBRIGATÓRIO incluir: ' +
+          '(1) "X alterações de Y combinações analisadas"; ' +
+          '(2) critério de seleção por canal: quais canais foram alterados e por quê os demais foram mantidos; ' +
+          '(3) critério por categoria: quais categorias foram priorizadas (ex: "Lounge e Lounge-Hidro: FDS com giro > 2.5 — ajuste"; ' +
+          '"Hidro Promo: semana com giro baixo — redução para estimular volume"; "demais categorias semana: RevPAR e giro dentro do esperado, mantido"); ' +
+          '(4) critério por período: se apenas alguns períodos (3h, 6h, 12h) foram alterados, explique o critério (ex: "12h mantido em todas as categorias pois ocupação já é alta"). ' +
+          'Não liste cada linha — descreva os CRITÉRIOS que determinaram o que foi alterado e o que foi mantido.'
         ),
         rows: z.array(z.object({
           canal:          z.enum(['balcao_site', 'site_programada', 'guia_moteis']),
