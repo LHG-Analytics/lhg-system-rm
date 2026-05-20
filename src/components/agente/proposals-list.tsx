@@ -637,7 +637,7 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
 
                     {proposal.context && (
                       <p className="mt-2 text-sm text-muted-foreground">
-                        <ExpandableText text={proposal.context} maxLength={160} />
+                        <ExpandableText text={proposal.context} maxLength={360} />
                       </p>
                     )}
 

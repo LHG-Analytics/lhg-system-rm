@@ -713,7 +713,12 @@ export async function POST(req: NextRequest) {
         '(2) depois chame sugerir_respostas. ZERO texto entre as tool calls. ' +
         'NUNCA inclua "Gerar proposta de descontos" no sugerir_respostas — já foi avaliado proativamente.',
       inputSchema: z.object({
-        context: z.string().describe('Resumo em 2–3 frases da lógica geral da proposta. OBRIGATÓRIO: inclua "X alterações de Y combinações analisadas — Z mantidas porque [motivo]".'),
+        context: z.string().describe(
+          'Resumo da lógica geral da proposta. OBRIGATÓRIO incluir: (1) "X alterações de Y combinações analisadas"; ' +
+          '(2) para cada canal da tabela vigente, uma linha explicando o que foi feito — ex: "balcao_site: ajustes no FDS ' +
+          'onde giro > 2.8; site_programada: mantido porque preços idênticos ao balcão; guia_moteis: mantido porque ' +
+          'margem efetiva já está abaixo de 30%". Se um canal foi omitido das alterações, explicite o motivo.'
+        ),
         rows: z.array(z.object({
           canal:          z.enum(['balcao_site', 'site_programada', 'guia_moteis']),
           categoria:      z.string(),
@@ -723,7 +728,7 @@ export async function POST(req: NextRequest) {
           preco_proposto: z.number(),
           variacao_pct:   z.number(),
           justificativa:  z.string(),
-        })).describe('Linhas alteradas (preco_proposto ≠ preco_atual). Itens mantidos NÃO precisam entrar aqui — o motivo vai no campo context.'),
+        })).describe('Linhas alteradas (preco_proposto ≠ preco_atual) de TODOS os canais relevantes. Itens mantidos NÃO entram aqui — o motivo por canal vai no campo context.'),
       }),
       execute: async ({ context, rows }) => {
         const { data, error } = await supabase
