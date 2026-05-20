@@ -1,6 +1,6 @@
 import { streamText, convertToModelMessages, tool, stepCountIs } from 'ai'
 import { z } from 'zod'
-import { PRIMARY_MODEL, gatewayOptions, STRATEGY_MAX_OUTPUT_TOKENS, STRATEGY_MAX_STEPS } from '@/lib/agente/model'
+import { gatewayOptions, STRATEGY_MAX_OUTPUT_TOKENS, STRATEGY_MAX_STEPS, createChatModel, DEFAULT_CHAT_MODEL_ID } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { trailingYear } from '@/lib/kpis/period'
@@ -234,8 +234,10 @@ export async function POST(req: NextRequest) {
     /** Modo de contexto: 'org' inclui contexto compartilhado, eventos e regras da unidade;
      *  'personal' usa apenas KPIs e tabela de preços — sem memória coletiva */
     contextMode?: 'org' | 'personal'
+    /** ID do modelo selecionado pelo usuário no seletor do chat */
+    modelId?: string
   }
-  const { messages, unitSlug, convId, startDate, endDate, dashboardPeriod, contextMode = 'org' } = body
+  const { messages, unitSlug, convId, startDate, endDate, dashboardPeriod, contextMode = 'org', modelId } = body
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response('messages inválido', { status: 400 })
@@ -1043,7 +1045,7 @@ export async function POST(req: NextRequest) {
 
   // 8. Stream via AI Gateway com tools
   const result = streamText({
-    model: PRIMARY_MODEL,
+    model: createChatModel(modelId ?? DEFAULT_CHAT_MODEL_ID),
     system: systemPrompt,
     messages: await convertToModelMessages(messages as Parameters<typeof convertToModelMessages>[0]),
     tools: agentTools,

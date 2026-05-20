@@ -5,7 +5,8 @@ import { DefaultChatTransport, isToolUIPart, getToolName } from 'ai'
 import type { UIMessage } from 'ai'
 import { useSearchParams } from 'next/navigation'
 import { useRef, useEffect, useState } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, CheckCircle2, Clock, ChevronRight, Globe, Lock } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, CheckCircle2, Clock, ChevronRight, Globe, Lock, ChevronDown } from 'lucide-react'
+import { CHAT_MODEL_OPTIONS, DEFAULT_CHAT_MODEL_ID, type ChatModelOption } from '@/lib/agente/model'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
@@ -197,6 +198,75 @@ function ContextModeToggle({ value, onChange }: { value: ContextMode; onChange: 
   )
 }
 
+// ─── Seletor de modelo ────────────────────────────────────────────────────────
+
+const TIER_COLORS: Record<ChatModelOption['tier'], string> = {
+  fast:      'bg-muted text-muted-foreground',
+  balanced:  'bg-blue-500/10 text-blue-500',
+  reasoning: 'bg-violet-500/10 text-violet-500',
+  powerful:  'bg-amber-500/10 text-amber-500',
+  max:       'bg-rose-500/10 text-rose-500',
+}
+
+const LOCAL_STORAGE_MODEL_KEY = 'lhg-chat-model'
+
+function readStoredModelId(): string {
+  try { return localStorage.getItem(LOCAL_STORAGE_MODEL_KEY) ?? DEFAULT_CHAT_MODEL_ID } catch { return DEFAULT_CHAT_MODEL_ID }
+}
+
+function ModelSelector({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const current = CHAT_MODEL_OPTIONS.find((m) => m.id === value) ?? CHAT_MODEL_OPTIONS[1]
+
+  function select(id: string) {
+    onChange(id)
+    setOpen(false)
+    try { localStorage.setItem(LOCAL_STORAGE_MODEL_KEY, id) } catch {}
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background hover:bg-accent transition-colors text-xs font-medium"
+      >
+        <span className={cn('size-1.5 rounded-full', TIER_COLORS[current.tier].split(' ')[0].replace('bg-', 'bg-').replace('/10', ''))}
+          style={{ background: 'currentColor' }}
+        />
+        <span>{current.label}</span>
+        <ChevronDown className={cn('size-3 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute bottom-full mb-1.5 left-0 z-20 w-56 rounded-xl border bg-popover shadow-lg overflow-hidden">
+            {CHAT_MODEL_OPTIONS.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => select(m.id)}
+                className={cn(
+                  'w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-accent transition-colors',
+                  m.id === value && 'bg-accent'
+                )}
+              >
+                <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0', TIER_COLORS[m.tier])}>
+                  {m.tier === 'fast' ? 'Rápido' : m.tier === 'balanced' ? 'Padrão' : m.tier === 'reasoning' ? 'Raciocínio' : m.tier === 'powerful' ? 'Potente' : 'Máximo'}
+                </span>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-medium">{m.label}</span>
+                  <span className="text-[10px] text-muted-foreground">{m.description}</span>
+                </div>
+                {m.id === value && <CheckCircle2 className="size-3.5 text-primary ml-auto shrink-0" />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─── Saudação personalizada ───────────────────────────────────────────────────
 
 function computeGreeting(displayName?: string | null, timezone?: string | null): string {
@@ -243,6 +313,11 @@ function AgenteChatInner({
   // Locked após primeiro envio — o mode é imutável por conversa
   const contextModeRef = useRef<ContextMode>(initialContextMode ?? 'org')
 
+  // Modelo selecionado — persiste em localStorage, mutável a qualquer momento
+  const [modelId, setModelId] = useState<string>(readStoredModelId)
+  const modelIdRef = useRef(modelId)
+  useEffect(() => { modelIdRef.current = modelId }, [modelId])
+
   // body como função: DefaultChatTransport chama resolve(body) a cada request
   const getBody = useRef(() => {
     // Lê o período do dashboard salvo no localStorage (TTL 4h)
@@ -261,6 +336,7 @@ function AgenteChatInner({
       unitSlug,
       convId: convIdRef.current ?? undefined,
       contextMode: contextModeRef.current,
+      modelId: modelIdRef.current,
       dashboardPeriod,
     }
   })
@@ -641,26 +717,32 @@ function AgenteChatInner({
       </div>
 
       {/* Input */}
-      <div className="border-t p-3 flex gap-2 items-end">
-        <Textarea
-          ref={textareaRef}
-          placeholder={awaitingOnly ? 'Aguardando resposta do agente…' : 'Pergunte ao agente RM…'}
-          className="min-h-[44px] max-h-32 resize-none text-sm"
-          rows={1}
-          onKeyDown={handleKeyDown}
-          disabled={isStreaming || awaitingOnly}
-        />
-        <Button
-          size="icon"
-          onClick={() => submit()}
-          disabled={isStreaming || awaitingOnly}
-          className="shrink-0 h-[44px] w-[44px]"
-        >
-          {isStreaming
-            ? <Loader2 className="size-4 animate-spin" />
-            : <Send className="size-4" />
-          }
-        </Button>
+      <div className="border-t px-3 pt-2 pb-3 flex flex-col gap-1.5">
+        <div className="flex gap-2 items-end">
+          <Textarea
+            ref={textareaRef}
+            placeholder={awaitingOnly ? 'Aguardando resposta do agente…' : 'Pergunte ao agente RM…'}
+            className="min-h-[44px] max-h-32 resize-none text-sm"
+            rows={1}
+            onKeyDown={handleKeyDown}
+            disabled={isStreaming || awaitingOnly}
+          />
+          <Button
+            size="icon"
+            onClick={() => submit()}
+            disabled={isStreaming || awaitingOnly}
+            className="shrink-0 h-[44px] w-[44px]"
+          >
+            {isStreaming
+              ? <Loader2 className="size-4 animate-spin" />
+              : <Send className="size-4" />
+            }
+          </Button>
+        </div>
+        {/* Seletor de modelo — sempre visível abaixo do input */}
+        <div className="flex items-center justify-end">
+          <ModelSelector value={modelId} onChange={setModelId} />
+        </div>
       </div>
     </>
   )

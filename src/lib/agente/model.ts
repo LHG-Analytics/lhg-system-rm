@@ -4,6 +4,56 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 })
 
+// ─── Opções de modelo para o chat do agente ────────────────────────────────────
+
+export interface ChatModelOption {
+  id: string
+  label: string
+  description: string
+  tier: 'fast' | 'balanced' | 'powerful' | 'reasoning' | 'max'
+}
+
+export const CHAT_MODEL_OPTIONS: ChatModelOption[] = [
+  {
+    id: 'openai/gpt-4.1-mini',
+    label: 'GPT-4.1 Mini',
+    description: 'Rápido e econômico',
+    tier: 'fast',
+  },
+  {
+    id: 'openai/gpt-4.1',
+    label: 'GPT-4.1',
+    description: 'Raciocínio aprimorado',
+    tier: 'balanced',
+  },
+  {
+    id: 'openai/o4-mini',
+    label: 'O4 Mini',
+    description: 'Raciocínio avançado',
+    tier: 'reasoning',
+  },
+  {
+    id: 'anthropic/claude-sonnet-4.6',
+    label: 'Claude Sonnet',
+    description: 'Análise estratégica profunda',
+    tier: 'powerful',
+  },
+  {
+    id: 'anthropic/claude-opus-4.7',
+    label: 'Claude Opus',
+    description: 'Máxima capacidade',
+    tier: 'max',
+  },
+]
+
+export const DEFAULT_CHAT_MODEL_ID = 'openai/gpt-4.1'
+
+/** Cria uma instância de modelo a partir de um ID da lista CHAT_MODEL_OPTIONS */
+export function createChatModel(modelId: string) {
+  const valid = CHAT_MODEL_OPTIONS.some((m) => m.id === modelId)
+  return openrouter(valid ? modelId : DEFAULT_CHAT_MODEL_ID)
+}
+
 /**
  * STRATEGY_MODEL — chat do agente, cron de revisões.
  * BYOK via chave OpenAI no OpenRouter; alterar modelo aqui atualiza os limites automaticamente.
