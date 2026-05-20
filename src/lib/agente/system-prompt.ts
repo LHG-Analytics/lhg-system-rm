@@ -46,11 +46,11 @@ function buildGiroWeekTable(data: DataTableGiroByWeek[]): string {
   return `**Giro por categoria × dia da semana**\n${header}\n${sep}\n${dataRows.join('\n')}\n${totalRow}`
 }
 
-function buildRevparWeekTable(data: DataTableRevparByWeek[]): string {
+function buildRevparWeekTable(data: DataTableRevparByWeek[], fmtMoney?: (n: number, decimals?: number) => string): string {
   if (!data?.length) return ''
   const rows = data.map((item) => { const [cat, days] = Object.entries(item)[0]; return { cat, days } })
   const dayCols = DAY_ORDER_PT.filter((d) => d in rows[0].days)
-  const fmtCur = (v: number) => fmt(v, 'currency')
+  const fmtCur = fmtMoney ?? ((v: number) => fmt(v, 'currency'))
   const header = `| Categoria | ${dayCols.map((d) => DAY_ABBR[d]).join(' | ')} |`
   const sep    = `|-----------|${dayCols.map(() => '------').join('|')}|`
   const dataRows = rows.map(({ cat, days }) =>
@@ -70,9 +70,11 @@ function buildKPIContext(
   bookings: BookingsKPIResponse | null,
   channelKPIs?: ChannelKPIRow[],
   periodMix?: BillingRentalTypeItem[],
+  fmtMoney?: (n: number, decimals?: number) => string,
 ): string {
   if (!company) return `Dados de KPI indisponíveis para ${unitName} no momento.`
 
+  const fmtC = fmtMoney ?? ((n: number) => fmt(n, 'currency'))
   const r = company.TotalResult
   const bn = company.BigNumbers[0]
   const cur = bn?.currentDate
@@ -87,7 +89,7 @@ function buildKPIContext(
     ? `| Categoria | Locações | RevPAR | TRevPAR | Ocupação | Giro | Ticket | TMO |
 |-----------|----------|--------|---------|----------|------|--------|-----|
 ${suiteRows.map((s) =>
-  `| ${s.cat} | ${fmt(s.totalRentalsApartments)} | ${fmt(s.revpar, 'currency')} | ${fmt(s.trevpar, 'currency')} | ${fmt(s.occupancyRate, 'percent')} | ${s.giro.toFixed(2)} | ${fmt(s.totalTicketAverage, 'currency')} | ${formatTime(s.averageOccupationTime)} |`
+  `| ${s.cat} | ${fmt(s.totalRentalsApartments)} | ${fmtC(s.revpar)} | ${fmtC(s.trevpar)} | ${fmt(s.occupancyRate, 'percent')} | ${s.giro.toFixed(2)} | ${fmtC(s.totalTicketAverage)} | ${formatTime(s.averageOccupationTime)} |`
 ).join('\n')}`
     : '  Dados não disponíveis'
 
@@ -101,7 +103,7 @@ ${suiteRows.map((s) =>
     ? `| Período | Locações | Receita | Ticket Médio | % |
 |---------|----------|---------|--------------|---|
 ${periodMixRows.map((p) =>
-  `| ${p.rentalType} | ${fmt(p.locacoes ?? 0)} | ${fmt(p.value, 'currency')} | ${fmt(p.ticket ?? 0, 'currency')} | ${p.percent.toFixed(1)}% |`
+  `| ${p.rentalType} | ${fmt(p.locacoes ?? 0)} | ${fmtC(p.value)} | ${fmtC(p.ticket ?? 0)} | ${p.percent.toFixed(1)}% |`
 ).join('\n')}`
     : '  Dados não disponíveis'
 
@@ -116,10 +118,10 @@ ${periodMixRows.map((p) =>
   const bigNumbers = cur && prev
     ? `| Métrica | Período atual | Mesmo período ano anterior | Δ a/a | Previsão fechamento do mês |
 |---------|--------------|---------------------------|-------|---------------------------|
-| Faturamento | ${fmt(cur.totalAllValue, 'currency')} | ${fmt(prev.totalAllValuePreviousData, 'currency')} | ${delta(cur.totalAllValue, prev.totalAllValuePreviousData)} | ${forecast ? fmt(forecast.totalAllValueForecast, 'currency') : '—'} |
+| Faturamento | ${fmtC(cur.totalAllValue)} | ${fmtC(prev.totalAllValuePreviousData)} | ${delta(cur.totalAllValue, prev.totalAllValuePreviousData)} | ${forecast ? fmtC(forecast.totalAllValueForecast) : '—'} |
 | Locações | ${fmt(cur.totalAllRentalsApartments)} | ${fmt(prev.totalAllRentalsApartmentsPreviousData)} | ${delta(cur.totalAllRentalsApartments, prev.totalAllRentalsApartmentsPreviousData)} | ${forecast ? fmt(forecast.totalAllRentalsApartmentsForecast) : '—'} |
-| Ticket Médio | ${fmt(cur.totalAllTicketAverage, 'currency')} | ${fmt(prev.totalAllTicketAveragePreviousData, 'currency')} | ${delta(cur.totalAllTicketAverage, prev.totalAllTicketAveragePreviousData)} | ${forecast ? fmt(forecast.totalAllTicketAverageForecast, 'currency') : '—'} |
-| TRevPAR | ${fmt(cur.totalAllTrevpar, 'currency')} | ${fmt(prev.totalAllTrevparPreviousData, 'currency')} | ${delta(cur.totalAllTrevpar, prev.totalAllTrevparPreviousData)} | ${forecast ? fmt(forecast.totalAllTrevparForecast, 'currency') : '—'} |
+| Ticket Médio | ${fmtC(cur.totalAllTicketAverage)} | ${fmtC(prev.totalAllTicketAveragePreviousData)} | ${delta(cur.totalAllTicketAverage, prev.totalAllTicketAveragePreviousData)} | ${forecast ? fmtC(forecast.totalAllTicketAverageForecast) : '—'} |
+| TRevPAR | ${fmtC(cur.totalAllTrevpar)} | ${fmtC(prev.totalAllTrevparPreviousData)} | ${delta(cur.totalAllTrevpar, prev.totalAllTrevparPreviousData)} | ${forecast ? fmtC(forecast.totalAllTrevparForecast) : '—'} |
 | Giro | ${cur.totalAllGiro.toFixed(2)} | ${prev.totalAllGiroPreviousData.toFixed(2)} | ${delta(cur.totalAllGiro, prev.totalAllGiroPreviousData)} | ${forecast ? forecast.totalAllGiroForecast.toFixed(2) : '—'} |
 | TMO | ${formatTime(cur.totalAverageOccupationTime)} | ${formatTime(prev.totalAverageOccupationTimePreviousData)} | — | ${forecast ? formatTime(forecast.totalAverageOccupationTimeForecast) : '—'} |`
     : '  Não disponível'
@@ -130,15 +132,15 @@ ${periodMixRows.map((p) =>
         const b = bookings.BigNumbers[0].currentDate
         return [
           `  • Total reservas: ${fmt(b.totalAllBookings)}`,
-          `  • Faturamento: ${fmt(b.totalAllValue, 'currency')}`,
-          `  • Ticket médio: ${fmt(b.totalAllTicketAverage, 'currency')}`,
+          `  • Faturamento: ${fmtC(b.totalAllValue)}`,
+          `  • Ticket médio: ${fmtC(b.totalAllTicketAverage)}`,
           `  • Representatividade: ${b.totalAllRepresentativeness.toFixed(1)}% do total`,
         ].join('\n')
       })()
     : '  Dados não disponíveis'
 
   // ── Tabelas semanais por categoria ─────────────────────────────────────────
-  const revparWeek = buildRevparWeekTable(company.DataTableRevparByWeek ?? [])
+  const revparWeek = buildRevparWeekTable(company.DataTableRevparByWeek ?? [], fmtMoney)
   const giroWeek   = buildGiroWeekTable(company.DataTableGiroByWeek ?? [])
 
   const weeklySection = [revparWeek, giroWeek]
@@ -146,13 +148,12 @@ ${periodMixRows.map((p) =>
     .join('\n\n')
 
   // ── Desempenho por canal de reserva ────────────────────────────────────────
-  const fmtCur = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
   const channelSection = channelKPIs?.length
     ? `\n\n### Desempenho por canal de reserva
 | Canal | Reservas | Receita | Ticket Médio | % do Total |
 |-------|----------|---------|--------------|------------|
 ${channelKPIs.map((c) =>
-  `| ${c.label} | ${fmt(c.reservas)} | ${fmtCur(c.receita)} | ${fmtCur(c.ticket)} | ${c.representatividade.toFixed(1)}% |`
+  `| ${c.label} | ${fmt(c.reservas)} | ${fmtC(c.receita)} | ${fmtC(c.ticket)} | ${c.representatividade.toFixed(1)}% |`
 ).join('\n')}`
     : ''
 
@@ -161,13 +162,13 @@ Período: ${period.startDate} a ${period.endDate}
 
 ### KPIs gerais
 - Taxa de Ocupação: **${fmt(r.totalOccupancyRate, 'percent')}**
-- RevPAR: **${fmt(r.totalRevpar, 'currency')}**
-- TRevPAR: **${fmt(r.totalTrevpar, 'currency')}**
-- Ticket Médio: **${fmt(r.totalAllTicketAverage, 'currency')}**
+- RevPAR: **${fmtC(r.totalRevpar)}**
+- TRevPAR: **${fmtC(r.totalTrevpar)}**
+- Ticket Médio: **${fmtC(r.totalAllTicketAverage)}**
 - Giro: **${r.totalGiro.toFixed(2)}**
 - TMO: **${formatTime(r.totalAverageOccupationTime)}**
 - Total Locações: ${fmt(r.totalAllRentalsApartments)}
-- Faturamento Total: ${fmt(r.totalAllValue, 'currency')}
+- Faturamento Total: ${fmtC(r.totalAllValue)}
 
 ### Comparativo: período atual × ano anterior × previsão de fechamento do mês
 ${bigNumbers}
@@ -218,7 +219,11 @@ export interface VigenciaInfo {
   is_asymmetric: boolean
 }
 
-function buildSinglePriceTable(rows: ParsedPriceRow[], validFrom: string, validUntil: string | null): string {
+function buildSinglePriceTable(rows: ParsedPriceRow[], validFrom: string, validUntil: string | null, fmtMoney?: (n: number, decimals?: number) => string): string {
+  const fmtPrice = fmtMoney
+    ? (v: number) => fmtMoney(v, 2)
+    : (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`
+
   const byCanal = new Map<string, ParsedPriceRow[]>()
   for (const row of rows) {
     const list = byCanal.get(row.canal) ?? []
@@ -231,7 +236,7 @@ function buildSinglePriceTable(rows: ParsedPriceRow[], validFrom: string, validU
     const label = CANAL_LABELS[canal] ?? canal
     const lines = canalRows.map(
       (r) =>
-        `  | ${r.categoria} | ${r.periodo} | ${r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | R$ ${r.preco.toFixed(2).replace('.', ',')} |`
+        `  | ${r.categoria} | ${r.periodo} | ${r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | ${fmtPrice(r.preco)} |`
     )
     sections.push(`**${label}**\n  | Categoria | Período | Dia | Preço |\n  |-----------|---------|-----|-------|\n${lines.join('\n')}`)
   }
@@ -240,12 +245,16 @@ function buildSinglePriceTable(rows: ParsedPriceRow[], validFrom: string, validU
   return `#### Tabela vigente ${vigencia}\n${sections.join('\n\n')}`
 }
 
-function buildDiscountContext(imports: PriceImportForPrompt[]): string {
+function buildDiscountContext(imports: PriceImportForPrompt[], fmtMoney?: (n: number, decimals?: number) => string): string {
   const discounts = imports.flatMap((i) => i.discount_data ?? [])
   if (!discounts.length) return ''
 
+  const fmtPrice = fmtMoney
+    ? (v: number) => fmtMoney(v, 2)
+    : (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`
+
   const lines = discounts.map((d) =>
-    `  | ${d.categoria} | ${d.periodo} | ${d.dia_semana ?? d.dia_tipo ?? '—'} | ${d.faixa_horaria ?? '—'} | ${d.tipo_desconto === 'percentual' ? `${d.valor}%` : `R$ ${d.valor.toFixed(2).replace('.', ',')}`}${d.condicao ? ` (${d.condicao})` : ''} |`
+    `  | ${d.categoria} | ${d.periodo} | ${d.dia_semana ?? d.dia_tipo ?? '—'} | ${d.faixa_horaria ?? '—'} | ${d.tipo_desconto === 'percentual' ? `${d.valor}%` : fmtPrice(d.valor)}${d.condicao ? ` (${d.condicao})` : ''} |`
   )
   return `### Política de descontos — Guia de Motéis
 > ⚠️ Estes descontos aplicam-se **exclusivamente ao canal \`guia_moteis\`**. Os preços cadastrados na tabela de preços para \`guia_moteis\` são os preços BASE (antes do desconto). O Guia de Motéis aplica o desconto automaticamente ao exibir para o cliente.
@@ -256,18 +265,18 @@ function buildDiscountContext(imports: PriceImportForPrompt[]): string {
 ${lines.join('\n')}`
 }
 
-function buildPriceTablesContext(imports: PriceImportForPrompt[]): string {
+function buildPriceTablesContext(imports: PriceImportForPrompt[], fmtMoney?: (n: number, decimals?: number) => string): string {
   const valid = imports.filter((i) => i.rows.length > 0)
   if (!valid.length) return ''
 
   if (valid.length === 1) {
     const imp = valid[0]
     const vigencia = `${imp.valid_from}${imp.valid_until ? ` → ${imp.valid_until}` : ' → atualmente'}`
-    return `### Tabela de preços (${vigencia})\n${buildSinglePriceTable(imp.rows, imp.valid_from, imp.valid_until).replace(/^####.*\n/, '')}`
+    return `### Tabela de preços (${vigencia})\n${buildSinglePriceTable(imp.rows, imp.valid_from, imp.valid_until, fmtMoney).replace(/^####.*\n/, '')}`
   }
 
   // Múltiplas tabelas — renderizar todas para comparação
-  const blocks = valid.map((imp) => buildSinglePriceTable(imp.rows, imp.valid_from, imp.valid_until))
+  const blocks = valid.map((imp) => buildSinglePriceTable(imp.rows, imp.valid_from, imp.valid_until, fmtMoney))
   return `### Histórico de tabelas de preços (${valid.length} versões — use para comparação e análise de evolução)\n\n${blocks.join('\n\n---\n\n')}`
 }
 
@@ -287,26 +296,28 @@ export function buildSystemPrompt(
   unitStructureBlock?: string | null,
   /** Label do período selecionado no dashboard pelo usuário (ex: "Este mês (01/05 → 16/05)") */
   dashboardSyncLabel?: string | null,
+  /** Formatador monetário da unidade — use makeCurrencyFormatter(unitSlug).formatMoney */
+  fmtMoney?: (n: number, decimals?: number) => string,
 ): string {
   // ── Montar contexto de KPIs (1 ou N períodos) ─────────────────────────────
   const periods = Array.isArray(kpiData) ? kpiData : [kpiData]
 
   let kpiContext: string
   if (periods.length === 1) {
-    kpiContext = buildKPIContext(unitName, periods[0].period, periods[0].company, periods[0].bookings, periods[0].channelKPIs, periods[0].periodMix)
+    kpiContext = buildKPIContext(unitName, periods[0].period, periods[0].company, periods[0].bookings, periods[0].channelKPIs, periods[0].periodMix, fmtMoney)
   } else {
     // Modo comparativo: cada período tem seu bloco com label
     const blocks = periods.map((p, i) => {
       const label = p.label ?? `Período ${String.fromCharCode(65 + i)}`
-      const ctx = buildKPIContext(unitName, p.period, p.company, p.bookings, p.channelKPIs, p.periodMix)
+      const ctx = buildKPIContext(unitName, p.period, p.company, p.bookings, p.channelKPIs, p.periodMix, fmtMoney)
       // Substitui o "## Dados operacionais — {nome}" pelo label do período
       return ctx.replace(/^## Dados operacionais[^\n]*\n/, `### ${label}\n`)
     })
     kpiContext = `## Dados operacionais comparativos — ${unitName}\n\n${blocks.join('\n\n---\n\n')}`
   }
 
-  const priceContext = buildPriceTablesContext(priceImports)
-  const discountContext = buildDiscountContext(priceImports)
+  const priceContext = buildPriceTablesContext(priceImports, fmtMoney)
+  const discountContext = buildDiscountContext(priceImports, fmtMoney)
 
   // Bloco de vigência (sempre exibido quando há duas tabelas)
   let vigenciaBlock = ''

@@ -413,7 +413,7 @@ export async function computeAndPersistGaps(
           const score = jaccardSimilarity(ourDistinctive, getDistinctiveAmenities(agg.amenities))
           if (score > bestScore) { bestScore = score; bestCat = compCatLower }
         }
-        if (bestScore >= 0.25 && bestCat) { matchMap.set(ourCat, bestCat); continue }
+        if (bestScore >= 0.5 && bestCat) { matchMap.set(ourCat, bestCat); continue }
       }
 
       // 3) Proximidade de preço global (mediana de TODOS os períodos da categoria)

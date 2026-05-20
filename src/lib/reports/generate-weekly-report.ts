@@ -18,6 +18,7 @@ import type { CompetitorGap } from '@/lib/competitors/detect-changes'
 import { buildSystemPrompt } from '@/lib/agente/system-prompt'
 import type { KPIPeriod, PriceImportForPrompt } from '@/lib/agente/system-prompt'
 import { buildStrategicMemoryBlock } from '@/lib/agente/context-blocks'
+import { makeCurrencyFormatter } from '@/lib/utils/currency'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
@@ -773,10 +774,12 @@ export async function generateWeeklyReport(
     const forecastBlock = buildForecastBlock(
       computeRevenueForecast(kpis, (agentConfig?.budget_yearly as BudgetYearly | null) ?? null)
     )
+    const { formatMoney: fmtMoney } = makeCurrencyFormatter(unitSlug)
     const strategicMemoryBlock = buildStrategicMemoryBlock(
       approvedProposals as Parameters<typeof buildStrategicMemoryBlock>[0],
       kpis,
       prevKpis,
+      fmtMoney,
     )
     const [lessonsBlock, rejectionBlock] = await Promise.all([
       buildLessonsBlockForUnit(unit.id, {}).catch(() => ''),

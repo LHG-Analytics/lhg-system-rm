@@ -27,6 +27,7 @@ import { queryDemandPattern } from '@/lib/automo/demand-pattern'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 import type { PriceImportForPrompt, KPIPeriod, VigenciaInfo } from '@/lib/agente/system-prompt'
+import { makeCurrencyFormatter } from '@/lib/utils/currency'
 
 function getAdminClient() {
   return createAdminClient<Database>(
@@ -66,8 +67,9 @@ function buildGoalsBlock(
   goals: UnitGoals | null,
   kpiPeriods: { company: import('@/lib/kpis/types').CompanyKPIResponse | null }[],
   budgetYearly?: BudgetYearly | null,
+  fmtMoney?: (n: number, decimals?: number) => string,
 ): string {
-  const fmtBRL = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(n)
+  const fmtBRL = fmtMoney ?? ((n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(n))
   const fmtNum = (n: number, dec = 2) => n.toFixed(dec)
 
   const LABELS: Record<string, string> = {
@@ -287,6 +289,8 @@ export async function POST(req: NextRequest) {
   if (!unit) {
     return new Response('Nenhuma unidade disponível', { status: 400 })
   }
+
+  const { formatMoney: fmtMoney } = makeCurrencyFormatter(unit.slug)
 
   // 5. Resolver imports e KPIs
   type RawImport = { id: string; parsed_data: unknown; discount_data: unknown; valid_from: string; valid_until: string | null }
@@ -583,7 +587,7 @@ export async function POST(req: NextRequest) {
 
   // 7. Montar system prompt completo
   // contextMode='personal' omite contexto coletivo da org (shared_context, eventos, regras de threshold)
-  const goalsBlock = buildGoalsBlock(unitGoals, kpiPeriods, budgetYearly)
+  const goalsBlock = buildGoalsBlock(unitGoals, kpiPeriods, budgetYearly, fmtMoney)
 
   // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
   const capacityRows = capacityResult.status === 'fulfilled' ? (capacityResult.value.data ?? []) : []
@@ -629,6 +633,7 @@ export async function POST(req: NextRequest) {
       null,
       unitStructureBlock || null,
       dashboardSyncLabel,
+      fmtMoney,
     ) +
     `\n\n${agentConfigBlock}` +
     (contextMode === 'org' ? pricingRulesBlock : '') +
@@ -896,7 +901,7 @@ export async function POST(req: NextRequest) {
         const rejLessons   = rejBlock.status === 'fulfilled' ? rejBlock.value : ''
         const kpiAfter  = kpiPeriods[0]?.company ?? null
         const kpiBefore = kpiPeriods[1]?.company ?? null
-        const memory = buildStrategicMemoryBlock(approvedRows, kpiAfter, kpiBefore)
+        const memory = buildStrategicMemoryBlock(approvedRows, kpiAfter, kpiBefore, fmtMoney)
         const parts = [memory, rejLessons].filter(Boolean)
         return parts.length ? parts.join('\n\n') : 'Nenhum histórico de propostas aprovadas encontrado para esta unidade.'
       },

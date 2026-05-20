@@ -26,6 +26,7 @@ import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { getRealtimeOccupancyByCategory } from '@/lib/automo/realtime-occupancy'
 import { getReservationPace, buildPaceBlock } from '@/lib/automo/reservation-pace'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
+import { makeCurrencyFormatter } from '@/lib/utils/currency'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -90,14 +91,15 @@ function buildStrategicMemoryBlock(
   history: PriceProposal[],
   kpiAfter: CompanyKPIResponse | null,
   kpiBefore: CompanyKPIResponse | null,
+  fmtMoney?: (n: number, decimals?: number) => string,
 ): string {
   const relevant = history.filter((p) =>
-    (p.rows as ProposedPriceRow[])?.some((r) => Math.abs(r.variacao_pct) >= 1)
+    (p.rows as ProposedPriceRow[])?.some((r) => Math.abs(r.variacao_pct) >= 0.1)
   )
   if (!relevant.length) return ''
 
   function fmtBRL(n: number) {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
+    return fmtMoney ? fmtMoney(n) : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
   }
   function delta(a: number, b: number) {
     if (!b) return '—'
@@ -161,11 +163,12 @@ function buildStrategicMemoryBlock(
     const date = p.reviewed_at
       ? new Date(p.reviewed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
       : '?'
-    const changed = ((p.rows as ProposedPriceRow[]) ?? []).filter((r) => Math.abs(r.variacao_pct) >= 1)
+    const changed = ((p.rows as ProposedPriceRow[]) ?? []).filter((r) => Math.abs(r.variacao_pct) >= 0.1)
+    const fmtP = fmtMoney ? (v: number) => fmtMoney(v, 2) : (v: number) => `R$ ${v.toFixed(2)}`
     const tableLines = changed.map((r) =>
       `| ${r.categoria} | ${r.periodo} | ${CANAL_LABELS[r.canal] ?? r.canal} | ` +
       `${r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | ` +
-      `R$ ${r.preco_atual.toFixed(2)} | R$ ${r.preco_proposto.toFixed(2)} | ` +
+      `${fmtP(r.preco_atual)} | ${fmtP(r.preco_proposto)} | ` +
       `${r.variacao_pct > 0 ? '+' : ''}${r.variacao_pct.toFixed(1)}% |`
     ).join('\n')
     const rank = idx === 0 ? 'mais recente' : `${idx + 1}ª mais recente`
@@ -282,6 +285,8 @@ export async function POST(req: NextRequest) {
   if (!(['super_admin', 'admin'].includes(profile.role ?? '') && !profile.unit_id) && profile.unit_id !== unit.id) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
   }
+
+  const { formatMoney: fmtMoney } = makeCurrencyFormatter(unit.slug)
 
   // ─── Buscar todas as tabelas de preços ──────────────────────────────────
   const { data: allImports } = await admin
@@ -411,12 +416,12 @@ export async function POST(req: NextRequest) {
 
   // ─── Montar prompt focado (sem system prompt do chat) ───────────────────
   const hasPrevious = kpiData.length > 1
-  const memoryBlock = buildStrategicMemoryBlock(approvedHistory, kpiActive, kpiPrevious)
+  const memoryBlock = buildStrategicMemoryBlock(approvedHistory, kpiActive, kpiPrevious, fmtMoney)
 
   const kpiBlocks = kpiData.map((kpi, i) => {
     const label = kpi.label ?? 'Período'
     // Injeta channelKPIs apenas no período mais recente (índice 0 = ativo)
-    const ctx = buildKPIContext(unit.name, kpi.period, kpi.company, kpi.bookings, i === 0 ? channelKPIs : undefined)
+    const ctx = buildKPIContext(unit.name, kpi.period, kpi.company, kpi.bookings, i === 0 ? channelKPIs : undefined, undefined, fmtMoney)
     return `### ${label}\n${ctx.replace(/^## Dados operacionais[^\n]*\n/, '')}`
   }).join('\n\n---\n\n')
 
@@ -431,8 +436,9 @@ export async function POST(req: NextRequest) {
     }
     const sections = [...byCanal.entries()].map(([canal, rows]) => {
       const label = CANAL_LABELS[canal] ?? canal
+      const fmtPrc = fmtMoney ? (v: number) => fmtMoney(v, 2) : (v: number) => `R$ ${v.toFixed(2)}`
       const lines = rows.map((r) =>
-        `  | ${r.categoria} | ${r.periodo} | ${r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | R$ ${r.preco.toFixed(2)} |`
+        `  | ${r.categoria} | ${r.periodo} | ${r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | ${fmtPrc(r.preco)} |`
       )
       return `**${label}**\n  | Categoria | Período | Dia | Preço |\n  |-----------|---------|-----|-------|\n${lines.join('\n')}`
     })
@@ -452,8 +458,9 @@ export async function POST(req: NextRequest) {
   const precoAtualMap = Object.fromEntries(
     activeRows.map((r) => [`${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`, r.preco])
   )
+  const _fmtPAB = fmtMoney ? (v: number) => fmtMoney(v, 2) : (v: number) => `R$ ${v.toFixed(2)}`
   const precoAtualBlock = activeRows.map((r) =>
-    `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo} = R$ ${r.preco.toFixed(2)}`
+    `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo} = ${_fmtPAB(r.preco)}`
   ).join('\n')
 
   // ─── Buscar guardrails + config do agente + snapshots de concorrentes ───
@@ -594,7 +601,7 @@ export async function POST(req: NextRequest) {
     if (!goals.length) return ''
     const t = kpiData[0]?.company?.TotalResult
     const bn = kpiData[0]?.company?.BigNumbers?.[0]
-    const fmtBRL = (n: number) => `R$ ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(n)}`
+    const _fmtGoal = fmtMoney ?? ((n: number) => `R$ ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(n)}`)
     const LABELS: Record<string, string> = {
       revpar: 'RevPAR', trevpar: 'TRevPAR', ocupacao: 'Ocupação',
       receita_mensal: 'Receita Mensal (proj.)', giro: 'Giro', ticket: 'Ticket Médio',
@@ -612,7 +619,7 @@ export async function POST(req: NextRequest) {
     function fmtMeta(key: string, v: number) {
       if (key === 'ocupacao') return `${v.toFixed(1)}%`
       if (key === 'giro') return v.toFixed(2)
-      return fmtBRL(v)
+      return _fmtGoal(v)
     }
     const rows = goals.map(([key, meta]) => {
       const atual = getCurrent(key)
@@ -645,10 +652,10 @@ Ao gerar a proposta, **priorize as métricas marcadas com ⚠️** e calcule o i
           const d = yearData[String(m)]
           if (!d || d.receita == null) continue
           const label = `${MONTHS_PT[m - 1]}/${String(curYear).slice(2)}`
-          const ticket = d.ticket != null ? fmtBRL(d.ticket) : '—'
+          const ticket = d.ticket != null ? _fmtGoal(d.ticket) : '—'
           const giro   = d.giro   != null ? d.giro.toFixed(2) : '—'
-          const revpar = d.revpar != null ? fmtBRL(d.revpar)  : '—'
-          upRows.push(`| ${label} | ${fmtBRL(d.receita)} | ${ticket} | ${giro} | ${revpar} |`)
+          const revpar = d.revpar != null ? _fmtGoal(d.revpar)  : '—'
+          upRows.push(`| ${label} | ${_fmtGoal(d.receita)} | ${ticket} | ${giro} | ${revpar} |`)
         }
         if (upRows.length) {
           block += `\n\n## Orçamento — Próximos meses (referência de sazonalidade)
@@ -676,8 +683,9 @@ ${(competitorSnapshotsData as unknown as Array<{ competitor_name: string; mapped
   const prices = (snap.mapped_prices as MappedPrice[]) ?? []
   if (!prices.length) return `**${snap.competitor_name}**: sem preços extraídos`
   const date = new Date(snap.scraped_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  const _fmtComp = fmtMoney ? (v: number) => fmtMoney(v, 2) : (v: number) => `R$ ${v.toFixed(2)}`
   const lines = prices.map((p) =>
-    `  | ${p.categoria_concorrente} | ${p.periodo} | ${p.dia_tipo ?? 'todos'} | R$ ${p.preco.toFixed(2)} |`
+    `  | ${p.categoria_concorrente} | ${p.periodo} | ${p.dia_tipo ?? 'todos'} | ${_fmtComp(p.preco)} |`
   ).join('\n')
   let amenitiesBlock = ''
   try {
@@ -853,6 +861,8 @@ JSON minificado, sem indentação, sem texto antes ou depois.`
     const omitted = activeRows.length - modelKeys.size
     if (omitted > 0) {
       console.warn(`[proposals] Safety net: ${omitted} linhas omitidas pelo modelo foram adicionadas com preço mantido.`)
+      const warning = `⚠️ Atenção: ${omitted} linha(s) não analisada(s) pelo modelo — preços mantidos automaticamente. Revise antes de aprovar.`
+      parsed.context = parsed.context ? `${warning}\n\n${parsed.context}` : warning
     }
   }
 

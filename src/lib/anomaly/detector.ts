@@ -217,7 +217,7 @@ export async function persistAnomalies(
   const throttleCutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
   const { data: existing } = await admin
     .from('rm_anomalies')
-    .select('metric, scope, status, detected_at')
+    .select('metric, scope, status, detected_at, z_score')
     .eq('unit_id', unitId)
     .gte('detected_at', throttleCutoff)
 
@@ -238,8 +238,12 @@ export async function persistAnomalies(
       && row.status === 'open'
     )
     if (existingMatch) {
-      throttled++
-      continue
+      // Permite re-insert se o z_score piorou significativamente (>0.5) — anomalia escalou
+      const worsened = Math.abs(an.z_score) > Math.abs(existingMatch.z_score) + 0.5
+      if (!worsened) {
+        throttled++
+        continue
+      }
     }
 
     const { data: inserted_row } = await admin

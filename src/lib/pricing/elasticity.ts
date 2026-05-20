@@ -207,7 +207,7 @@ export async function getElasticityForUnit(unitId: string): Promise<ElasticityRe
 
 export function buildElasticityBlock(rows: ElasticityResult[]): string {
   const usable = rows.filter((r) => r.elasticity != null && r.confidence !== 'insufficient')
-  if (!usable.length) return ''
+  if (!usable.length) return 'Elasticidade-preço ainda não calculada — mantenha variações ≤15% até acumular dados (recomendado: 3+ ciclos de propostas aprovadas).'
 
   const DIA_LABEL: Record<string, string> = { semana: 'Semana', fds_feriado: 'FDS/Fer.', todos: 'Todos' }
   const CONF_LABEL: Record<string, string> = { high: '✅ Alta', medium: '⚠️ Média', low: '🔸 Baixa' }

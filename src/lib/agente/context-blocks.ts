@@ -58,10 +58,13 @@ const DIA_GUARDRAIL_LABEL: Record<string, string> = {
   fds_feriado: 'FDS/Feriado',
 }
 
-export function buildGuardrailsBlock(rows: GuardrailRow[] | null | undefined): string {
+export function buildGuardrailsBlock(rows: GuardrailRow[] | null | undefined, fmtMoney?: (n: number, decimals?: number) => string): string {
   if (!rows || !rows.length) return ''
+  const fmtPrice = fmtMoney
+    ? (v: number) => fmtMoney(v, 2)
+    : (v: number) => `R$ ${v.toFixed(2)}`
   const lines = rows.map((g) =>
-    `| ${g.categoria} | ${g.periodo} | ${DIA_GUARDRAIL_LABEL[g.dia_tipo ?? 'todos'] ?? 'Todos'} | R$ ${g.preco_minimo.toFixed(2)} | R$ ${g.preco_maximo.toFixed(2)} |`
+    `| ${g.categoria} | ${g.periodo} | ${DIA_GUARDRAIL_LABEL[g.dia_tipo ?? 'todos'] ?? 'Todos'} | ${fmtPrice(g.preco_minimo)} | ${fmtPrice(g.preco_maximo)} |`
   ).join('\n')
   return `## Guardrails de preço configurados pelo gestor
 
@@ -106,14 +109,15 @@ export function buildStrategicMemoryBlock(
   history: ProposalLite[],
   kpiAfter: CompanyKPIResponse | null,
   kpiBefore: CompanyKPIResponse | null,
+  fmtMoney?: (n: number, decimals?: number) => string,
 ): string {
   const relevant = history.filter((p) =>
-    Array.isArray(p.rows) && (p.rows as ProposedRowLite[]).some((r) => Math.abs(r.variacao_pct) >= 1)
+    Array.isArray(p.rows) && (p.rows as ProposedRowLite[]).some((r) => Math.abs(r.variacao_pct) >= 0.1)
   )
   if (!relevant.length) return ''
 
   function fmtBRL(n: number) {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
+    return fmtMoney ? fmtMoney(n) : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
   }
   function delta(a: number, b: number) {
     if (!b) return '—'
@@ -172,11 +176,12 @@ export function buildStrategicMemoryBlock(
     const date = p.reviewed_at
       ? new Date(p.reviewed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
       : '?'
-    const changed = ((p.rows as ProposedRowLite[]) ?? []).filter((r) => Math.abs(r.variacao_pct) >= 1)
+    const changed = ((p.rows as ProposedRowLite[]) ?? []).filter((r) => Math.abs(r.variacao_pct) >= 0.1)
+    const fmtP = fmtMoney ? (v: number) => fmtMoney(v, 2) : (v: number) => `R$ ${v.toFixed(2)}`
     const tableLines = changed.map((r) =>
       `| ${r.categoria} | ${r.periodo} | ${CANAL_LABELS_MEM[r.canal] ?? r.canal} | ` +
       `${r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | ` +
-      `R$ ${r.preco_atual.toFixed(2)} | R$ ${r.preco_proposto.toFixed(2)} | ` +
+      `${fmtP(r.preco_atual)} | ${fmtP(r.preco_proposto)} | ` +
       `${r.variacao_pct > 0 ? '+' : ''}${r.variacao_pct.toFixed(1)}% |`
     ).join('\n')
     const rank = idx === 0 ? 'mais recente' : `${idx + 1}ª mais recente`
