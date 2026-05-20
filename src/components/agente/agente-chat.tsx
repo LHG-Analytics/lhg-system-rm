@@ -382,6 +382,7 @@ function AgenteChatInner({
     }
     if (status === 'ready' || status === 'error') {
       isSubmittingRef.current = false
+      setLocalPending(false)
     }
     prevStatusRef.current = status
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -449,6 +450,8 @@ function AgenteChatInner({
   const prevMessageCountRef = useRef(0)
   const isSubmittingRef = useRef(false)
   const autoSubmitDoneRef = useRef(false)
+  // Ativa imediatamente ao enviar — cobre o gap antes de sendMessage() ser chamado
+  const [localPending, setLocalPending] = useState(false)
 
   function scrollToBottom() {
     const el = scrollAreaRef.current
@@ -518,6 +521,7 @@ function AgenteChatInner({
     const text = overrideText ?? textareaRef.current?.value.trim()
     if (!text || isStreaming || isSubmittingRef.current) return
     isSubmittingRef.current = true
+    setLocalPending(true) // feedback imediato — antes de qualquer async
 
     if (!convIdRef.current && unitId) {
       const supabase = createClient()
@@ -746,7 +750,7 @@ function AgenteChatInner({
           />
         )}
 
-        {isStreaming && (() => {
+        {(localPending || isStreaming) && (() => {
           const last = messages[messages.length - 1]
           if (!last || last.role === 'user') return true
           const hasContent = last.parts.some(

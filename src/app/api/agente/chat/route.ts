@@ -713,7 +713,7 @@ export async function POST(req: NextRequest) {
         '(2) depois chame sugerir_respostas. ZERO texto entre as tool calls. ' +
         'NUNCA inclua "Gerar proposta de descontos" no sugerir_respostas — já foi avaliado proativamente.',
       inputSchema: z.object({
-        context: z.string().describe('Resumo em 2–3 frases da lógica geral da proposta'),
+        context: z.string().describe('Resumo em 2–3 frases da lógica geral da proposta. OBRIGATÓRIO: inclua "X alterações de Y combinações analisadas — Z mantidas porque [motivo]".'),
         rows: z.array(z.object({
           canal:          z.enum(['balcao_site', 'site_programada', 'guia_moteis']),
           categoria:      z.string(),
@@ -723,7 +723,7 @@ export async function POST(req: NextRequest) {
           preco_proposto: z.number(),
           variacao_pct:   z.number(),
           justificativa:  z.string(),
-        })).describe('Linhas da proposta exatamente como apresentadas na tabela'),
+        })).describe('Linhas alteradas (preco_proposto ≠ preco_atual). Itens mantidos NÃO precisam entrar aqui — o motivo vai no campo context.'),
       }),
       execute: async ({ context, rows }) => {
         const { data, error } = await supabase
