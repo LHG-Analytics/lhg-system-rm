@@ -1072,19 +1072,21 @@ export async function POST(req: NextRequest) {
     // desconectou (SSE fechado). No Vercel, a função continua executando até
     // concluir ou atingir o timeout. Quando convId está presente e o cliente
     // desconectou, salvamos as mensagens e criamos notificação in-app.
-    onFinish: async ({ text, toolCalls }) => {
+    onFinish: async ({ steps }) => {
       // Só age se o cliente desconectou E há uma conversa para salvar
       if (!req.signal.aborted) return
       if (!convId || typeof convId !== 'string') return
 
-      // Se não há texto nem tool calls, não há nada a salvar
-      const hasToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0
-      if (!text && !hasToolCalls) return
+      // Reconstrói o texto completo da análise usando TODOS os steps.
+      // Em modo multi-step (análise → tool call → confirmação), `text` (último step)
+      // perde a análise do step 1. `steps` contém texto e tool calls de cada etapa.
+      const fullText = (steps ?? [])
+        .map(s => s.text ?? '')
+        .filter(Boolean)
+        .join('\n\n')
+        .trim()
 
-      // Quando o agente terminou com uma tool (ex: salvar_proposta) mas não gerou
-      // texto final (porque o cliente saiu durante o streaming), usa mensagem de
-      // fechamento para desbloquear o AwaitingBubble na próxima abertura.
-      const finalText = text || 'Análise concluída. Acesse a aba **Propostas** para ver o resultado.'
+      if (!fullText) return
 
       try {
         // Busca mensagens existentes (inclui a mensagem do usuário salva no submit)
@@ -1102,7 +1104,7 @@ export async function POST(req: NextRequest) {
         const assistantMsg = {
           id: Math.random().toString(36).slice(2, 12),
           role: 'assistant',
-          parts: [{ type: 'text', text: finalText }],
+          parts: [{ type: 'text', text: fullText }],
         }
 
         await admin
