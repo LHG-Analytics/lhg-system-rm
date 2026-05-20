@@ -1110,6 +1110,23 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Armadilha:** `Recharts LabelList formatter` não é componente React — capturar `formatMoney` da closure do componente pai
   - **Para adicionar nova moeda:** adicionar entrada em `UNIT_CURRENCY` em `src/lib/utils/currency.ts`
 
+- **LHG-190:** feat(agente): KPIs por categoria×período + taxa de cancelamento no contexto de precificação ✅ 2026-05-20
+  - GAPs 1 (RevPAR/Giro por categoria×período), 2 (TMO por período), 4 (Yield/hora = Ticket ÷ TMO) implementados em `src/lib/automo/category-period-kpis.ts`
+  - `CategoryPeriodKPIRow`: `categoria`, `periodo`, `locacoes`, `revpar`, `giro`, `ticket`, `tmo_horas`, `yield_hora`, `ocupacao`
+  - SQL usa `buildPeriodCaseSQL(periodType)` + `cteBaseSuiteDays` + `cteSuiteDaysByCategory` — denominador correto de suítes-dia disponíveis
+  - `buildCategoryPeriodBlock` formata tabela markdown agrupada por categoria para o system prompt
+  - GAP 5 (taxa de cancelamento por canal) adicionado em `channel-kpis.ts`: `queryCancellationByChannel` + `buildCancellationBlock`
+  - SQL de cancelamentos conta TODAS as reservas (sem filtro de status) para calcular `canceladas / total × 100`; bloco omitido quando taxa = 0
+  - Injetado em `chat/route.ts` e `proposals/route.ts` em paralelo com os demais KPIs — zero latência extra
+  - **Armadilha:** `queryCancellationByChannel` usa `reserva` (sem corte 06:00) — consistente com outras queries de reserva
+
+- **fix(agente): desbloquear conversa presa no AwaitingBubble** ✅ 2026-05-20
+  - Root cause: `onFinish` no route só salvava mensagem quando `text` era não-vazio; quando agente terminava com tool call (`salvar_proposta`) sem texto final, `text = ''` → mensagem nunca salva → conversa ficava permanentemente em "Preparando resposta..."
+  - Fix 1 (server) `chat/route.ts`: `onFinish` agora verifica `text || hasToolCalls`; quando há tool calls mas `text` vazio, salva mensagem de fechamento fallback `'Análise concluída. Acesse a aba **Propostas** para ver o resultado.'`; guard `lastRole === 'assistant'` evita duplicação
+  - Fix 2 (UI) `agente-chat.tsx`: `AwaitingBubble` mostra botão "Desbloquear conversa" após 30 segundos; ao clicar, busca mensagens atuais do Supabase, adiciona mensagem de fechamento e atualiza `rm_conversations` diretamente via `createClient()`
+  - Serialização: `JSON.parse(JSON.stringify(updated))` necessário para compatibilidade com tipo `Json` do Supabase; cast `as unknown as UIMessage[]` para leitura
+  - **Armadilha:** `onFinish` recebe `{ text, toolCalls }` — `toolCalls` pode ser array vazio ou array com itens; checar `toolCalls.length > 0` além de `text`
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
