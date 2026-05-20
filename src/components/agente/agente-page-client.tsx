@@ -550,7 +550,8 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
           </Sheet>
         )}
 
-        <TabsContent value="chat" className="flex flex-col flex-1 min-h-0 mt-0">
+        {/* forceMount em todas as abas externas — troca de aba é instântanea (sem refetch) */}
+        <TabsContent value="chat" forceMount className="flex flex-col flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
           <AgenteChat
             key={chatKey}
             unitSlug={unitSlug}
@@ -570,14 +571,13 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
           />
         </TabsContent>
 
-        <TabsContent value="propostas" className="mt-0 overflow-y-auto p-4">
+        <TabsContent value="propostas" forceMount className="mt-0 flex-1 overflow-y-auto p-4 data-[state=inactive]:hidden">
           <Tabs defaultValue="precificacao">
             <TabsList className="mb-4">
               <TabsTrigger value="precificacao">Precificação</TabsTrigger>
               <TabsTrigger value="descontos-guia">Descontos Guia de Motéis</TabsTrigger>
             </TabsList>
 
-            {/* forceMount mantém os componentes montados — troca de sub-aba é instantânea */}
             <TabsContent value="precificacao" className="mt-0 data-[state=inactive]:hidden" forceMount>
               <ProposalsList
                 unitSlug={activeUnit?.slug ?? ''}
@@ -599,7 +599,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
           </Tabs>
         </TabsContent>
 
-        <TabsContent value="agendamentos" className="mt-0 overflow-y-auto p-4">
+        <TabsContent value="agendamentos" forceMount className="mt-0 flex-1 overflow-y-auto p-4 data-[state=inactive]:hidden">
           <ScheduledReviewsList
             unitSlug={unitSlug}
             unitId={unitId}
@@ -608,7 +608,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
           />
         </TabsContent>
 
-        <TabsContent value="performance" className="mt-0 overflow-y-auto p-4">
+        <TabsContent value="performance" forceMount className="mt-0 flex-1 overflow-y-auto p-4 data-[state=inactive]:hidden">
           <PerformanceDashboard unitSlug={unitSlug} />
         </TabsContent>
       </Tabs>
