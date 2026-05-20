@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
-import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
+import { queryChannelKPIs, queryCancellationByChannel, buildCancellationBlock } from '@/lib/automo/channel-kpis'
 import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
@@ -24,6 +24,7 @@ import { fetchWeatherContext } from '@/lib/agente/weather'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
 import { queryDemandPattern } from '@/lib/automo/demand-pattern'
+import { queryCategoryPeriodKPIs, buildCategoryPeriodBlock } from '@/lib/automo/category-period-kpis'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 import type { PriceImportForPrompt, KPIPeriod, VigenciaInfo } from '@/lib/agente/system-prompt'
@@ -592,11 +593,17 @@ export async function POST(req: NextRequest) {
   // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
   const capacityRows = capacityResult.status === 'fulfilled' ? (capacityResult.value.data ?? []) : []
   const channelCostRows = channelCostsResult.status === 'fulfilled' ? (channelCostsResult.value.data ?? []) : []
-  const [availabilityRows, realtimeOccupancy, reservationPace, weatherContext] = await Promise.all([
+  const [availabilityRows, realtimeOccupancy, reservationPace, weatherContext, categoryPeriodKPIs, cancellationRates] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
     getReservationPace(unit.slug).catch(() => null),
     fetchWeatherContext(city).catch(() => null),
+    kpiPeriods[0]?.period
+      ? queryCategoryPeriodKPIs(unit.slug, kpiPeriods[0].period.startDate, kpiPeriods[0].period.endDate).catch(() => [])
+      : Promise.resolve([]),
+    kpiPeriods[0]?.period
+      ? queryCancellationByChannel(unit.slug, kpiPeriods[0].period.startDate, kpiPeriods[0].period.endDate).catch(() => [])
+      : Promise.resolve([]),
   ])
 
   // Guardrails sempre no prompt estático — safety-critical para o agente
@@ -641,6 +648,8 @@ export async function POST(req: NextRequest) {
     goalsBlock +
     (forecastBlock ? `\n\n${forecastBlock}` : '') +
     (paceBlock ? `\n\n${paceBlock}` : '') +
+    (categoryPeriodKPIs?.length ? `\n\n${buildCategoryPeriodBlock(categoryPeriodKPIs, fmtMoney ?? undefined)}` : '') +
+    (cancellationRates?.length ? `\n\n${buildCancellationBlock(cancellationRates)}` : '') +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
     (guardrailsTextBlock ? `\n\n${guardrailsTextBlock}` : '')
 

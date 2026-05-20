@@ -274,3 +274,112 @@ export async function queryPeriodMix(
     return []
   }
 }
+
+// ─── Taxa de cancelamento por canal (GAP 5) ───────────────────────────────────
+
+export interface CancellationRateRow {
+  canal:      string
+  label:      string
+  total:      number
+  canceladas: number
+  taxa_pct:   number
+}
+
+/**
+ * Taxa de cancelamento por canal no período, usando `dataatendimento` como eixo.
+ * "Cancelamento" = reserva com `cancelada IS NOT NULL` dentro de 7 dias do início.
+ * Retorna array vazio em caso de erro.
+ */
+export async function queryCancellationByChannel(
+  unitSlug: string,
+  startDateDDMMYYYY: string,
+  endDateDDMMYYYY: string,
+): Promise<CancellationRateRow[]> {
+  const pool = await getAutomPool(unitSlug)
+  if (!pool) return []
+
+  const startDate = ddmmyyyyToIso(startDateDDMMYYYY).slice(0, 10)
+  const endDate   = addDays(ddmmyyyyToIso(endDateDDMMYYYY), 1).slice(0, 10)
+
+  const sql = `
+    WITH canal_todos AS (
+      SELECT
+        r.id,
+        r.cancelada,
+        r.datainicio,
+        CASE
+          WHEN r.id_tipoorigemreserva IN (1, 6) THEN 'INTERNAL'
+          WHEN r.id_tipoorigemreserva = 7        THEN 'BOOKING'
+          WHEN r.id_tipoorigemreserva = 8        THEN 'EXPEDIA'
+          WHEN r.id_tipoorigemreserva = 3
+            AND COALESCE(r.reserva_programada_guia, false) = true  THEN 'GUIA_SCHEDULED'
+          WHEN r.id_tipoorigemreserva = 3        THEN 'GUIA_GO'
+          WHEN r.id_tipoorigemreserva = 4 AND (
+              (r.periodocontratado = '06:00' AND EXTRACT(HOUR FROM r.datainicio) = 13)
+           OR (r.periodocontratado = '16:00' AND EXTRACT(HOUR FROM r.datainicio) = 20)
+           OR (r.periodocontratado = '21:00' AND EXTRACT(HOUR FROM r.datainicio) = 15)
+           OR (r.periodocontratado IS NULL
+               AND EXTRACT(HOUR FROM r.datainicio) IN (12, 13, 15, 18, 20)
+               AND EXTRACT(MINUTE FROM r.datainicio) = 0)
+          ) THEN 'WEBSITE_SCHEDULED'
+          WHEN r.id_tipoorigemreserva = 4 THEN 'WEBSITE_IMMEDIATE'
+          ELSE NULL
+        END AS canal
+      FROM reserva r
+      WHERE r.id_tipoorigemreserva IN (1, 3, 4, 6, 7, 8)
+        AND r.dataatendimento >= $1 AND r.dataatendimento < $2
+    )
+    SELECT
+      canal,
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (
+        WHERE cancelada IS NOT NULL
+          AND cancelada::date <= (datainicio::date + 7)
+      )::int AS canceladas
+    FROM canal_todos
+    WHERE canal IS NOT NULL
+    GROUP BY canal
+    ORDER BY canceladas DESC
+  `
+
+  try {
+    const { rows } = await pool.query<{
+      canal:      string
+      total:      number
+      canceladas: number
+    }>(sql, [startDate, endDate])
+
+    return rows.map((r) => ({
+      canal:      r.canal,
+      label:      CANAL_LABELS[r.canal] ?? r.canal,
+      total:      Number(r.total)      || 0,
+      canceladas: Number(r.canceladas) || 0,
+      taxa_pct:   r.total > 0 ? +((Number(r.canceladas) / Number(r.total)) * 100).toFixed(1) : 0,
+    }))
+  } catch (err) {
+    console.error('[CancellationRate] Query falhou:', err instanceof Error ? err.message : err)
+    return []
+  }
+}
+
+/**
+ * Formata as taxas de cancelamento como bloco markdown para o agente.
+ * Omitido quando todos os canais têm taxa 0 (não há cancelamentos no período).
+ */
+export function buildCancellationBlock(rows: CancellationRateRow[]): string {
+  const withCancellations = rows.filter((r) => r.canceladas > 0)
+  if (!withCancellations.length) return ''
+
+  const lines = [
+    '## Taxa de Cancelamento por Canal',
+    '',
+    '| Canal | Total Reservas | Canceladas | Taxa % |',
+    '|-------|---------------|------------|--------|',
+    ...withCancellations.map(
+      (r) => `| ${r.label} | ${r.total} | ${r.canceladas} | ${r.taxa_pct.toFixed(1)}% |`
+    ),
+    '',
+    '> Cancelamento = reserva cancelada dentro de 7 dias do início.',
+  ]
+  return lines.join('\n')
+}
