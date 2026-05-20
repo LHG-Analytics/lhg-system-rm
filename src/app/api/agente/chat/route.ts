@@ -544,7 +544,7 @@ export async function POST(req: NextRequest) {
   const suiteAmenities = (agentConfigData?.suite_amenities ?? {}) as Record<string, string[]>
   const focusMetric = agentConfigData?.focus_metric ?? 'balanceado'
   const pricingStrategy = agentConfigData?.pricing_strategy ?? 'moderado'
-  const maxVariationPct = agentConfigData?.max_variation_pct ?? 30
+  const maxVariationPct = agentConfigData?.max_variation_pct ?? 20
   const sharedContext = (agentConfigData as { shared_context?: string | null } | null)?.shared_context ?? null
   const pricingThresholds = (agentConfigData as { pricing_thresholds?: PricingThresholds | null } | null)?.pricing_thresholds ?? null
   const unitGoals      = (agentConfigData as { unit_goals?: Record<string, number | null> | null } | null)?.unit_goals ?? null
