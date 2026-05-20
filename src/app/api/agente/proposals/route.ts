@@ -25,6 +25,7 @@ import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { getRealtimeOccupancyByCategory } from '@/lib/automo/realtime-occupancy'
 import { getReservationPace, buildPaceBlock } from '@/lib/automo/reservation-pace'
+import { queryDemandPattern, buildDemandPatternBlock } from '@/lib/automo/demand-pattern'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
 import { makeCurrencyFormatter } from '@/lib/utils/currency'
 
@@ -509,7 +510,7 @@ export async function POST(req: NextRequest) {
     dias_tipo:  [...new Set(activeRows.map((r) => r.dia_tipo))],
     canais:     [...new Set(activeRows.map((r) => r.canal))],
   }
-  const [availabilityRows, realtimeOccupancy, reservationPace, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps, elasticityRows] = await Promise.all([
+  const [availabilityRows, realtimeOccupancy, reservationPace, rejectionLessonsBlock, pricingLessonsBlock, seasonalFactors, competitorGaps, elasticityRows, demandPattern] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
     getReservationPace(unit.slug).catch(() => null),
@@ -518,6 +519,7 @@ export async function POST(req: NextRequest) {
     getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
     getRecentGaps(unit.id).catch(() => []),
     getElasticityForUnit(unit.id).catch(() => []),
+    queryDemandPattern(unit.slug, 60).catch(() => null),
   ])
   const elasticityBlock = buildElasticityBlock(elasticityRows)
   // Mapa de lookup: "categoria|periodo|dia_tipo" → elasticidade (apenas com confiança high/medium)
@@ -758,7 +760,7 @@ ${activeDiscounts.map((d) => {
 ${kpiBlocks}
 ${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
-${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${forecastBlock ? `\n${forecastBlock}\n` : ''}${buildPaceBlock(reservationPace) ? `\n${buildPaceBlock(reservationPace)}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${seasonalityBlock ? `\n${seasonalityBlock}\n` : ''}${competitorGapBlock ? `\n${competitorGapBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${elasticityBlock ? `\n${elasticityBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
+${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${forecastBlock ? `\n${forecastBlock}\n` : ''}${buildPaceBlock(reservationPace) ? `\n${buildPaceBlock(reservationPace)}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${seasonalityBlock ? `\n${seasonalityBlock}\n` : ''}${demandPattern ? `\n${buildDemandPatternBlock(demandPattern, unit.name, 60)}\n` : ''}${competitorGapBlock ? `\n${competitorGapBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${elasticityBlock ? `\n${elasticityBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
 
 ${priceBlocks}
