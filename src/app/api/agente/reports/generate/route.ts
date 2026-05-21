@@ -19,10 +19,11 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { unitSlug, dateFrom, dateTo } = body as {
+  const { unitSlug, dateFrom, dateTo, delayMs } = body as {
     unitSlug: string
     dateFrom: string  // YYYY-MM-DD
     dateTo: string    // YYYY-MM-DD
+    delayMs?: number  // stagger para evitar rate limit quando vários relatórios gerados juntos
   }
 
   if (!unitSlug || !dateFrom || !dateTo) {
@@ -55,8 +56,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error?.message ?? 'Insert failed' }, { status: 500 })
   }
 
-  // Fire-and-forget generation (survives client disconnect)
-  after(generateWeeklyReport(unitSlug, dateFrom, dateTo))
+  // Fire-and-forget — delay opcional para escalonar chamadas paralelas ao OpenRouter
+  after(async () => {
+    if (delayMs && delayMs > 0) await new Promise(r => setTimeout(r, delayMs))
+    await generateWeeklyReport(unitSlug, dateFrom, dateTo)
+  })
 
   return NextResponse.json({ id: reportRow.id, status: 'generating' })
 }

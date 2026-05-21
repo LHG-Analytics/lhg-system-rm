@@ -50,6 +50,8 @@ export function ReportGenerateButton({ unitSlug, onGenerated }: Props) {
     for (let i = n; i >= 1; i--) {
       const monday = startOfWeek(subWeeks(new Date(), i), { weekStartsOn: 1 })
       const sunday = endOfWeek(subWeeks(new Date(), i), { weekStartsOn: 1 })
+      // Escalonar 6s entre cada geração para evitar chamadas simultâneas ao OpenRouter
+      const delayMs = (n - i) * 6000
       try {
         const res = await fetch('/api/agente/reports/generate', {
           method: 'POST',
@@ -58,6 +60,7 @@ export function ReportGenerateButton({ unitSlug, onGenerated }: Props) {
             unitSlug,
             dateFrom: format(monday, 'yyyy-MM-dd'),
             dateTo: format(sunday, 'yyyy-MM-dd'),
+            delayMs,
           }),
         })
         const data = await res.json()

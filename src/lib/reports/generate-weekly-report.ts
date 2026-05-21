@@ -865,39 +865,47 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
     }
     let aiLeverageComment = ''
 
-    try {
-      const { text } = await generateText({
-        model: ANALYSIS_MODEL,
-        system: agentSystemPrompt,
-        messages: [{ role: 'user', content: weeklyReportUserMsg }],
-        maxOutputTokens: 4000,
-      })
-      // Modelos de raciocínio (o4-mini, o3) podem emitir <think>...</think> antes do JSON
-      const stripped = text
-        .replace(/<think>[\s\S]*?<\/think>/gi, '')
-        .replace(/```json|```/g, '')
-        .trim()
-      // Extrai o objeto JSON mesmo que haja texto em volta
-      const jsonMatch = stripped.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) throw new Error(`No JSON found. Raw: ${text.slice(0, 200)}`)
-      const parsed = JSON.parse(jsonMatch[0])
-      const agentPromptRaw: string | null = parsed.agentPrompt ?? null
-      executiveSummary = {
-        headline: parsed.headline ?? executiveSummary.headline,
-        keyPoints: parsed.keyPoints ?? executiveSummary.keyPoints,
-        mainWin: parsed.mainWin ?? '',
-        mainConcern: parsed.mainConcern ?? '',
-        priorityAction: parsed.priorityAction ?? '',
-        tone: parsed.tone ?? 'neutral',
-        actionType: parsed.actionType ?? 'none',
-        agentPromptLink: agentPromptRaw
-          ? `/dashboard/agente?unit=${unitSlug}&q=${encodeURIComponent(`[Relatório semanal ${fmtPeriodStart}–${fmtPeriodEnd}] ${agentPromptRaw}`)}`
-          : undefined,
-        agentConfigSuggestion: parsed.agentConfigSuggestion ?? undefined,
+    // Retry com backoff para lidar com rate limiting quando vários relatórios são gerados em paralelo
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 6000 * attempt))
+      try {
+        const { text } = await generateText({
+          model: ANALYSIS_MODEL,
+          system: agentSystemPrompt,
+          messages: [{ role: 'user', content: weeklyReportUserMsg }],
+          maxOutputTokens: 4000,
+        })
+        const stripped = text
+          .replace(/<think>[\s\S]*?<\/think>/gi, '')
+          .replace(/```json|```/g, '')
+          .trim()
+        const jsonMatch = stripped.match(/\{[\s\S]*\}/)
+        if (!jsonMatch) throw new Error(`No JSON found. Raw: ${text.slice(0, 200)}`)
+        const parsed = JSON.parse(jsonMatch[0])
+        const agentPromptRaw: string | null = parsed.agentPrompt ?? null
+        executiveSummary = {
+          headline: parsed.headline ?? executiveSummary.headline,
+          keyPoints: parsed.keyPoints ?? executiveSummary.keyPoints,
+          mainWin: parsed.mainWin ?? '',
+          mainConcern: parsed.mainConcern ?? '',
+          priorityAction: parsed.priorityAction ?? '',
+          tone: parsed.tone ?? 'neutral',
+          actionType: parsed.actionType ?? 'none',
+          agentPromptLink: agentPromptRaw
+            ? `/dashboard/agente?unit=${unitSlug}&q=${encodeURIComponent(`[Relatório semanal ${fmtPeriodStart}–${fmtPeriodEnd}] ${agentPromptRaw}`)}`
+            : undefined,
+          agentConfigSuggestion: parsed.agentConfigSuggestion ?? undefined,
+        }
+        aiLeverageComment = parsed.aiLeverageComment ?? ''
+        break // sucesso — sai do loop
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        if (attempt < 2) {
+          console.warn(`[generateWeeklyReport] AI summary attempt ${attempt + 1} failed, retrying: ${msg}`)
+        } else {
+          console.error(`[generateWeeklyReport] AI summary all attempts failed: ${msg}`)
+        }
       }
-      aiLeverageComment = parsed.aiLeverageComment ?? ''
-    } catch (e) {
-      console.error('[generateWeeklyReport] AI summary error:', e instanceof Error ? e.message : String(e))
     }
 
     budgetTracking.aiLeverageComment = aiLeverageComment
