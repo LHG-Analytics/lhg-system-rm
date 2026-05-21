@@ -471,7 +471,7 @@ export async function POST(req: NextRequest) {
           periodMix: lyCompany?.BillingRentalType,
         },
         {
-          label: `Período atual — ${isoToApi(effectiveFrom)} a ${isoToApi(todayIso)} (${daysCurrent} dias)`,
+          label: `Período atual — ${isoToApi(effectiveFrom)} a ${isoToApi(todayIso)} (${daysCurrent} dias${daysCurrent < 7 ? ' — dados preliminares, aguardar dia 7 para análise conclusiva' : ''})`,
           period: { startDate: isoToApi(effectiveFrom), endDate: isoToApi(todayIso) },
           company: currentCompany,
           bookings: null,
