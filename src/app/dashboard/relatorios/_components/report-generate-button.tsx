@@ -50,8 +50,8 @@ export function ReportGenerateButton({ unitSlug, onGenerated }: Props) {
     for (let i = n; i >= 1; i--) {
       const monday = startOfWeek(subWeeks(new Date(), i), { weekStartsOn: 1 })
       const sunday = endOfWeek(subWeeks(new Date(), i), { weekStartsOn: 1 })
-      // Escalonar 6s por posição — mais recente (i=1) tem delay 0 e aparece primeiro na sidebar
-      const delayMs = (i - 1) * 6000
+      // Escalonar 2s por posição — mais recente (i=1) tem delay 0 e aparece primeiro na sidebar
+      const delayMs = (i - 1) * 2000
       try {
         const res = await fetch('/api/agente/reports/generate', {
           method: 'POST',

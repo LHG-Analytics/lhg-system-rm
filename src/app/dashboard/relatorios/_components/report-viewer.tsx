@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FileText, Loader2, Printer } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { WeeklyReportData } from '@/lib/reports/types'
 import { ExecutiveSummary } from './sections/executive-summary'
 import { EvolutionBanner } from './sections/evolution-banner'
@@ -37,12 +38,81 @@ interface Props {
 }
 
 const STEPS = [
-  'Coletando KPIs da semana…',
-  'Analisando concorrentes…',
-  'Calculando elasticidades…',
-  'Verificando sazonalidade…',
-  'Escrevendo resumo executivo…',
+  'Coletando KPIs e histórico da semana',
+  'Comparando com períodos anteriores',
+  'Analisando preços dos concorrentes',
+  'Calculando elasticidades e sazonalidade',
+  'Avaliando anomalias e oportunidades',
+  'Escrevendo resumo executivo com o GPT-5 Mini',
 ]
+
+function GeneratingState() {
+  const [stepIdx, setStepIdx] = useState(0)
+  const [charIdx, setCharIdx] = useState(0)
+  const [fading, setFading] = useState(false)
+
+  useEffect(() => {
+    if (fading) return
+    const text = STEPS[stepIdx]
+    if (charIdx < text.length) {
+      const t = setTimeout(() => setCharIdx(c => c + 1), 28)
+      return () => clearTimeout(t)
+    }
+    const t = setTimeout(() => {
+      setFading(true)
+      setTimeout(() => {
+        setStepIdx(i => (i + 1) % STEPS.length)
+        setCharIdx(0)
+        setFading(false)
+      }, 450)
+    }, 1600)
+    return () => clearTimeout(t)
+  }, [charIdx, stepIdx, fading])
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-10 p-8 select-none">
+      {/* Anéis animados */}
+      <div className="relative w-20 h-20 flex items-center justify-center">
+        <div className="absolute inset-0 rounded-full border border-primary/10 animate-ping [animation-duration:2.4s]" />
+        <div className="absolute inset-[6px] rounded-full border border-primary/20 animate-ping [animation-duration:2.4s] [animation-delay:0.4s]" />
+        <div className="absolute inset-[12px] rounded-full border border-primary/30 animate-ping [animation-duration:2.4s] [animation-delay:0.8s]" />
+        <div className="absolute inset-[18px] rounded-full border-2 border-primary/60 animate-spin [animation-duration:4s]" />
+        <FileText className="w-5 h-5 text-primary relative z-10" />
+      </div>
+
+      {/* Texto typewriter */}
+      <div className="text-center space-y-2 min-h-[3rem] flex flex-col items-center justify-center">
+        <p className="text-xs text-muted-foreground/60 uppercase tracking-widest font-medium">
+          Gerando relatório
+        </p>
+        <p className={cn(
+          'text-sm text-muted-foreground max-w-[260px] transition-opacity duration-300',
+          fading ? 'opacity-0' : 'opacity-100'
+        )}>
+          {STEPS[stepIdx].slice(0, charIdx)}
+          <span className={cn('inline-block w-[2px] h-[0.85em] bg-muted-foreground/70 ml-0.5 align-middle', fading ? 'opacity-0' : 'animate-pulse')} />
+        </p>
+      </div>
+
+      {/* Dots de progresso */}
+      <div className="flex gap-2">
+        {STEPS.map((_, i) => (
+          <div
+            key={i}
+            className={cn(
+              'rounded-full transition-all duration-500',
+              i === stepIdx
+                ? 'w-4 h-1.5 bg-primary'
+                : i < stepIdx
+                  ? 'w-1.5 h-1.5 bg-primary/40'
+                  : 'w-1.5 h-1.5 bg-muted'
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props) {
   const [isPrinting, setIsPrinting] = useState(false)
@@ -147,19 +217,7 @@ export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props
   }
 
   if (report.status === 'generating') {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-6 p-8">
-        <Loader2 className="w-10 h-10 animate-spin text-primary" />
-        <div className="space-y-2 text-center">
-          <p className="font-medium">Gerando relatório…</p>
-          <div className="space-y-1">
-            {STEPS.map((s, i) => (
-              <p key={i} className="text-sm text-muted-foreground">{s}</p>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
+    return <GeneratingState />
   }
 
   if (report.status === 'failed') {
