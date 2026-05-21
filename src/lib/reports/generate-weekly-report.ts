@@ -789,10 +789,32 @@ ${historicalInsights.map(h => `- ${h.fromDate}→${h.toDate}: ${h.changesCount} 
         }).join('\n')
       : null
 
+    // KPIs por categoria — essencial para recomendações específicas por tipo de suíte
+    const catData = kpis?.DataTableSuiteCategory ?? []
+    const catBlock = catData.length > 0
+      ? `## KPIs por categoria (${fmtPeriodStart}–${fmtPeriodEnd})\n` + catData.map(entry => {
+          const [cat, d] = Object.entries(entry)[0] as [string, import('@/lib/kpis/types').SuiteCategoryKPI]
+          return `- ${cat}: RevPAR ${fmtMoney(d.revpar)} | Giro ${d.giro.toFixed(2)} | Ocupação ${d.occupancyRate.toFixed(1)}% | Ticket ${fmtMoney(d.totalTicketAverage)} | Locações ${d.totalRentalsApartments}`
+        }).join('\n')
+      : null
+
+    // Mix por canal
+    const chanBlock = channelKPIs.length > 0
+      ? `## Mix por canal\n` + channelKPIs.map(c => `- ${c.label}: ${c.reservas} res | ${fmtMoney(c.receita)} | ${c.representatividade.toFixed(1)}% da receita`).join('\n')
+      : null
+
+    // Mix por período (3h/6h/12h/etc.)
+    const perBlock = periodMix.length > 0
+      ? `## Mix por período\n` + periodMix.map(p => `- ${p.rentalType}: ${p.locacoes} loc | ${fmtMoney(p.value)} | ${p.percent.toFixed(1)}%`).join('\n')
+      : null
+
     const reportContextBlocks = [
       kpiLine(currentSnapshot, `KPIs ${fmtPeriodStart}–${fmtPeriodEnd}`),
       prevSnapshot ? kpiLine(prevSnapshot, `Semana anterior ${fmtPrevStart}–${fmtPrevEnd}`) : null,
       lySnapshot ? kpiLine(lySnapshot, `Mesmo período do ano anterior ${fmtLyStart}–${fmtLyEnd}`) : null,
+      catBlock,
+      chanBlock,
+      perBlock,
       unitStructureBlock || null,
       priceTableBlock,
       agentConfig?.shared_context ? `## Contexto estratégico\n${agentConfig.shared_context}` : null,
