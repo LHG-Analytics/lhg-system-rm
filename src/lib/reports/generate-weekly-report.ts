@@ -870,10 +870,17 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
         model: ANALYSIS_MODEL,
         system: agentSystemPrompt,
         messages: [{ role: 'user', content: weeklyReportUserMsg }],
-        maxOutputTokens: 2000,
+        maxOutputTokens: 4000,
       })
-      const cleaned = text.replace(/```json|```/g, '').trim()
-      const parsed = JSON.parse(cleaned)
+      // Modelos de raciocínio (o4-mini, o3) podem emitir <think>...</think> antes do JSON
+      const stripped = text
+        .replace(/<think>[\s\S]*?<\/think>/gi, '')
+        .replace(/```json|```/g, '')
+        .trim()
+      // Extrai o objeto JSON mesmo que haja texto em volta
+      const jsonMatch = stripped.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) throw new Error(`No JSON found. Raw: ${text.slice(0, 200)}`)
+      const parsed = JSON.parse(jsonMatch[0])
       const agentPromptRaw: string | null = parsed.agentPrompt ?? null
       executiveSummary = {
         headline: parsed.headline ?? executiveSummary.headline,
