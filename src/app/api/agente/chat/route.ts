@@ -445,20 +445,25 @@ export async function POST(req: NextRequest) {
       const importB = priceImps[0]  // atual
       const importA = priceImps[1]  // anterior
 
-      // Período A: valid_from do anterior → dia antes do valid_from do atual
-      const endA = importB.valid_from
-        ? (() => {
-            const d = new Date(importB.valid_from)
-            d.setDate(d.getDate() - 1)
-            return d.toISOString().slice(0, 10)
-          })()
-        : todayIso
-      // Período B: valid_from do atual → hoje
-      const startB = importB.valid_from
+      // Limite de 28 dias por período — garante janelas comparáveis e control de sazonalidade
+      const MAX_DAYS = 28
 
-      const apiFromA  = isoToApi(importA.valid_from)
-      const apiEndA   = isoToApi(endA)
-      const apiStartB = isoToApi(startB)
+      // Período B: últimos min(diasSinceB, MAX_DAYS) dias com a tabela atual
+      const startB = importB.valid_from
+      const daysActiveB = daysBetween(startB, todayIso)
+      const cappedStartB = daysActiveB > MAX_DAYS
+        ? (() => { const d = new Date(todayIso); d.setDate(d.getDate() - MAX_DAYS); return d.toISOString().slice(0, 10) })()
+        : startB
+
+      // Período A: 28 dias imediatamente antes do início efetivo de B
+      const dayBeforeB = (() => { const d = new Date(cappedStartB); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10) })()
+      const cappedStartA = (() => { const d = new Date(dayBeforeB); d.setDate(d.getDate() - (MAX_DAYS - 1)); return d.toISOString().slice(0, 10) })()
+      // Não vai antes do valid_from do importA
+      const effectiveStartA = maxDate(cappedStartA, importA.valid_from)
+
+      const apiFromA  = isoToApi(effectiveStartA)
+      const apiEndA   = isoToApi(dayBeforeB)
+      const apiStartB = isoToApi(cappedStartB)
       const apiToB    = isoToApi(todayIso)
 
       const [cA, cB, channelB] = await Promise.allSettled([
@@ -469,8 +474,8 @@ export async function POST(req: NextRequest) {
 
       rawImports = [importA, importB]
 
-      const daysA = daysBetween(importA.valid_from, endA)
-      const daysB = daysBetween(startB, todayIso)
+      const daysA = daysBetween(effectiveStartA, dayBeforeB)
+      const daysB = daysBetween(cappedStartB, todayIso)
       const compA = cA.status === 'fulfilled' ? cA.value : null
       const compB = cB.status === 'fulfilled' ? cB.value : null
 
