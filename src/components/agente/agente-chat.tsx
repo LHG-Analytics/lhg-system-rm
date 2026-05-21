@@ -61,41 +61,42 @@ const THINKING_PHRASES = [
 
 function ThinkingBubble() {
   const [idx, setIdx] = useState(0)
-  const [visible, setVisible] = useState(true)
+  const [charIdx, setCharIdx] = useState(0)
+  const [fading, setFading] = useState(false)
 
   useEffect(() => {
-    const cycle = setInterval(() => {
-      setVisible(false)
+    if (fading) return
+    const text = THINKING_PHRASES[idx]
+    if (charIdx < text.length) {
+      const t = setTimeout(() => setCharIdx((c) => c + 1), 22)
+      return () => clearTimeout(t)
+    }
+    const t = setTimeout(() => {
+      setFading(true)
       setTimeout(() => {
         setIdx((i) => (i + 1) % THINKING_PHRASES.length)
-        setVisible(true)
-      }, 350)
-    }, 3500)
-    return () => clearInterval(cycle)
-  }, [])
+        setCharIdx(0)
+        setFading(false)
+      }, 400)
+    }, 1400)
+    return () => clearTimeout(t)
+  }, [charIdx, idx, fading])
 
   return (
     <div className="flex gap-3 justify-start">
       <div className="shrink-0 rounded-full bg-primary/10 p-1.5 h-7 w-7 flex items-center justify-center">
         <Bot className="size-4 text-primary" />
       </div>
-      <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center gap-2 min-w-[180px]">
-        <span
-          className={cn(
-            'text-xs text-muted-foreground transition-opacity duration-300',
-            visible ? 'opacity-100' : 'opacity-0'
-          )}
-        >
-          {THINKING_PHRASES[idx]}
-        </span>
-        <span className="flex gap-[3px] items-center shrink-0 mt-px">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="block size-[3px] rounded-full bg-muted-foreground/50 animate-bounce"
-              style={{ animationDelay: `${i * 0.18}s`, animationDuration: '1.1s' }}
-            />
-          ))}
+      <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center min-w-[200px]">
+        <span className={cn(
+          'text-xs text-muted-foreground transition-opacity duration-300',
+          fading ? 'opacity-0' : 'opacity-100'
+        )}>
+          {THINKING_PHRASES[idx].slice(0, charIdx)}
+          <span className={cn(
+            'inline-block w-[2px] h-[0.8em] bg-muted-foreground/60 ml-0.5 align-middle',
+            fading ? 'opacity-0' : 'animate-pulse'
+          )} />
         </span>
       </div>
     </div>
