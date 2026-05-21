@@ -225,12 +225,20 @@ function ContextModeToggle({ value, onChange }: { value: ContextMode; onChange: 
 
 // ─── Seletor de modelo ────────────────────────────────────────────────────────
 
-const TIER_COLORS: Record<ChatModelOption['tier'], string> = {
-  fast:      'bg-muted text-muted-foreground',
-  balanced:  'bg-blue-500/10 text-blue-500',
-  reasoning: 'bg-violet-500/10 text-violet-500',
-  powerful:  'bg-amber-500/10 text-amber-500',
-  max:       'bg-rose-500/10 text-rose-500',
+const TIER_META: Record<ChatModelOption['tier'], { label: string; dot: string; badge: string }> = {
+  fast:      { label: 'Rápido',     dot: 'bg-slate-400',   badge: 'bg-slate-400/10 text-slate-400' },
+  balanced:  { label: 'Padrão',     dot: 'bg-blue-500',    badge: 'bg-blue-500/10 text-blue-500' },
+  reasoning: { label: 'Raciocínio', dot: 'bg-violet-500',  badge: 'bg-violet-500/10 text-violet-500' },
+  powerful:  { label: 'Potente',    dot: 'bg-amber-500',   badge: 'bg-amber-500/10 text-amber-500' },
+  max:       { label: 'Máximo',     dot: 'bg-rose-500',    badge: 'bg-rose-500/10 text-rose-500' },
+}
+
+const TIER_ACCENT: Record<ChatModelOption['tier'], string> = {
+  fast:      'border-l-slate-400/40',
+  balanced:  'border-l-blue-500/40',
+  reasoning: 'border-l-violet-500/40',
+  powerful:  'border-l-amber-500/40',
+  max:       'border-l-rose-500/40',
 }
 
 const LOCAL_STORAGE_MODEL_KEY = 'lhg-chat-model'
@@ -242,6 +250,7 @@ function readStoredModelId(): string {
 function ModelSelector({ value, onChange }: { value: string; onChange: (id: string) => void }) {
   const [open, setOpen] = useState(false)
   const current = CHAT_MODEL_OPTIONS.find((m) => m.id === value) ?? CHAT_MODEL_OPTIONS[1]
+  const meta = TIER_META[current.tier]
 
   function select(id: string) {
     onChange(id)
@@ -251,40 +260,57 @@ function ModelSelector({ value, onChange }: { value: string; onChange: (id: stri
 
   return (
     <div className="relative">
+      {/* Trigger */}
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background hover:bg-accent transition-colors text-xs font-medium"
       >
-        <span className={cn('size-1.5 rounded-full', TIER_COLORS[current.tier].split(' ')[0].replace('bg-', 'bg-').replace('/10', ''))}
-          style={{ background: 'currentColor' }}
-        />
-        <span>{current.label}</span>
-        <ChevronDown className={cn('size-3 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        <span className={cn('size-1.5 rounded-full shrink-0', meta.dot)} />
+        <span className="max-w-[80px] truncate sm:max-w-none">{current.label}</span>
+        <ChevronDown className={cn('size-3 text-muted-foreground transition-transform duration-200 shrink-0', open && 'rotate-180')} />
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full mb-1.5 left-0 z-20 w-56 rounded-xl border bg-popover shadow-lg overflow-hidden">
-            {CHAT_MODEL_OPTIONS.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => select(m.id)}
-                className={cn(
-                  'w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-accent transition-colors',
-                  m.id === value && 'bg-accent'
-                )}
-              >
-                <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0', TIER_COLORS[m.tier])}>
-                  {m.tier === 'fast' ? 'Rápido' : m.tier === 'balanced' ? 'Padrão' : m.tier === 'reasoning' ? 'Raciocínio' : m.tier === 'powerful' ? 'Potente' : 'Máximo'}
-                </span>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-medium">{m.label}</span>
-                  <span className="text-[10px] text-muted-foreground">{m.description}</span>
-                </div>
-                {m.id === value && <CheckCircle2 className="size-3.5 text-primary ml-auto shrink-0" />}
-              </button>
-            ))}
+          {/* Dropdown: right-aligned, min-width 280px, max 92vw para mobile */}
+          <div className="absolute bottom-full mb-2 right-0 z-20 w-72 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-border/60 bg-popover shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="px-3 pt-2.5 pb-1.5 border-b border-border/40">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Modelo de IA</p>
+            </div>
+
+            {/* Options */}
+            <div className="p-1">
+              {CHAT_MODEL_OPTIONS.map((m) => {
+                const t = TIER_META[m.tier]
+                const isActive = m.id === value
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => select(m.id)}
+                    className={cn(
+                      'w-full flex items-center gap-3 pl-2 pr-3 py-2.5 rounded-xl text-left transition-colors border-l-2',
+                      'hover:bg-accent/60',
+                      isActive ? cn('bg-accent/80', TIER_ACCENT[m.tier]) : 'border-l-transparent',
+                    )}
+                  >
+                    {/* Tier badge */}
+                    <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0 min-w-[62px] text-center', t.badge)}>
+                      {t.label}
+                    </span>
+
+                    {/* Name + description */}
+                    <div className="flex flex-col flex-1 min-w-0">
+                      <span className="text-xs font-semibold leading-tight">{m.label}</span>
+                      <span className="text-[11px] text-muted-foreground leading-tight mt-0.5">{m.description}</span>
+                    </div>
+
+                    {isActive && <CheckCircle2 className="size-3.5 text-primary shrink-0" />}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </>
       )}
