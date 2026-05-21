@@ -73,7 +73,7 @@ export const STRATEGY_MAX_STEPS = 8
  * ANALYSIS_MODEL — geração de propostas, import CSV, análise de concorrentes, relatórios.
  * Requer mais tokens de saída para cobrir cobertura total de linhas (cat × período × dia_tipo).
  */
-export const ANALYSIS_MODEL = openrouter('openai/gpt-4.1-mini')
+export const ANALYSIS_MODEL = openrouter('openai/o4-mini')
 export const analysisOptions = {}
 /** Tokens de saída para geração de propostas completas (~72 linhas com justificativas). */
 export const ANALYSIS_MAX_OUTPUT_TOKENS = 10000
