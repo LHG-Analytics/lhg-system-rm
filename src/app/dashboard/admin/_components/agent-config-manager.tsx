@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Settings2, Loader2, Building2, Save, Plus, Trash2, ChevronDown, ChevronUp, BrainCircuit } from 'lucide-react'
+import { Settings2, Loader2, Building2, Save, Plus, Trash2, ChevronDown, ChevronUp, BrainCircuit, Sparkles, CheckCircle2, History } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -571,25 +571,36 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
           )}
 
           {/* Bootstrap de aprendizado histórico */}
-          <div className="rounded-xl border px-4 py-3 space-y-2">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-medium flex items-center gap-1.5">
-                  <BrainCircuit className="size-3.5 text-muted-foreground" />
-                  Aprendizado retroativo
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Analisa as transições entre tabelas de preços importadas e gera lições de pricing para preencher a coluna &quot;Rev. Esperada&quot; nas propostas.
-                </p>
+          <div className="rounded-xl border bg-muted/20 overflow-hidden">
+            <div className="flex items-start gap-3 px-4 pt-4 pb-3">
+              <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                <History className="size-4 text-primary" />
               </div>
-              <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={handleBootstrap} disabled={bootstrapping}>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium leading-tight">Aprendizado retroativo</p>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                  Varre o histórico de tabelas de preços importadas e aprende com cada mudança — qual impacto teve no RevPAR e no giro. Isso preenche a coluna <span className="font-medium text-foreground">Receita Esperada</span> nas propostas antes mesmo de você aprovar qualquer uma.
+                </p>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Sparkles className="size-3 text-amber-500" /> Gera lições de pricing automaticamente
+                  </span>
+                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <CheckCircle2 className="size-3 text-emerald-500" /> Idempotente — seguro rodar múltiplas vezes
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t bg-background/60">
+              {bootstrapResult
+                ? <p className="text-xs text-muted-foreground flex-1">{bootstrapResult}</p>
+                : <p className="text-xs text-muted-foreground/60 flex-1">Execute uma vez após importar as primeiras tabelas de preços.</p>
+              }
+              <Button size="sm" variant={bootstrapResult ? 'outline' : 'default'} className="gap-1.5 shrink-0" onClick={handleBootstrap} disabled={bootstrapping}>
                 {bootstrapping ? <Loader2 className="size-3.5 animate-spin" /> : <BrainCircuit className="size-3.5" />}
                 {bootstrapping ? 'Processando...' : 'Processar histórico'}
               </Button>
             </div>
-            {bootstrapResult && (
-              <p className="text-xs text-muted-foreground border-t pt-2">{bootstrapResult}</p>
-            )}
           </div>
         </div>
       )}

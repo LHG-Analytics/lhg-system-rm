@@ -14,6 +14,8 @@ import { getReservationPace, buildPaceBlock } from '@/lib/automo/reservation-pac
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
+import { getElasticityForUnit, buildElasticityBlock } from '@/lib/pricing/elasticity'
+import { buildWeatherCorrelationBlock } from '@/lib/agente/weather-insight'
 import { getRecentGaps, buildCompetitorGapBlock } from '@/lib/competitors/detect-changes'
 import { computeRevenueForecast, buildForecastBlock } from '@/lib/forecast/revenue-forecast'
 import {
@@ -1022,9 +1024,10 @@ export async function POST(req: NextRequest) {
     buscar_sazonalidade_e_eventos: tool({
       description:
         'Busca fatores de sazonalidade dos próximos 30 dias, lições de pricing de experimentos passados, ' +
+        'elasticidade-preço calculada por categoria/período, correlação histórica clima×demanda, ' +
         'e o calendário de eventualidades da unidade (feriados, eventos, obras). ' +
-        'Use antes de gerar propostas para datas futuras, quando o usuário perguntar sobre feriados ou sazonalidade, ' +
-        'ou ao planejar precificação de fim de semana/feriado específico.',
+        'Use antes de gerar propostas para datas futuras, quando o usuário perguntar sobre feriados, sazonalidade, ' +
+        'impacto do clima na demanda, ou ao planejar precificação de fim de semana/feriado específico.',
       inputSchema: z.object({}),
       execute: async () => {
         const scenario = priceImports[0]?.rows?.length
@@ -1034,7 +1037,7 @@ export async function POST(req: NextRequest) {
               dias_tipo:  [...new Set(priceImports[0].rows.map((r) => r.dia_tipo))],
             }
           : {}
-        const [seasonFactors, lessonsBlock, eventsResult] = await Promise.all([
+        const [seasonFactors, lessonsBlock, eventsResult, elasticityRows, weatherCorrelation] = await Promise.all([
           getUpcomingSeasonalFactors(unit.id, 30).catch(() => []),
           buildLessonsBlockForUnit(unit.id, scenario).catch(() => ''),
           admin
@@ -1043,8 +1046,11 @@ export async function POST(req: NextRequest) {
             .eq('unit_id', unit.id)
             .order('event_date', { ascending: false })
             .limit(30),
+          getElasticityForUnit(unit.id).catch(() => []),
+          buildWeatherCorrelationBlock(unit.id).catch(() => ''),
         ])
         const seasonBlock = buildSeasonalityBlock(seasonFactors)
+        const elasticityBlock = buildElasticityBlock(elasticityRows)
         const evRows = eventsResult.data ?? []
         const evBlock = evRows.length
           ? `## Calendário de Eventualidades — ${unit.name}\n` +
@@ -1059,7 +1065,7 @@ export async function POST(req: NextRequest) {
               return `${icon} **${e.title}** (${dateStr})${e.impact_description ? `: ${e.impact_description}` : ''}`
             }).join('\n')
           : ''
-        const parts = [seasonBlock, lessonsBlock, evBlock].filter(Boolean)
+        const parts = [seasonBlock, elasticityBlock, weatherCorrelation, lessonsBlock, evBlock].filter(Boolean)
         return parts.length ? parts.join('\n\n') : 'Sem dados de sazonalidade e eventos para esta unidade.'
       },
     }),

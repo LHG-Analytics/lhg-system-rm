@@ -808,24 +808,19 @@ ${historicalInsights.map(h => `- ${h.fromDate}→${h.toDate}: ${h.changesCount} 
       ? `## Mix por período\n` + periodMix.map(p => `- ${p.rentalType}: ${p.locacoes} loc | ${fmtMoney(p.value)} | ${p.percent.toFixed(1)}%`).join('\n')
       : null
 
-    const reportContextBlocks = [
+    // Contexto compacto para a IA: apenas o essencial para o resumo executivo.
+    // Blocos longos (tabela de preços, lessons detalhadas, memória estratégica) ficam nas
+    // seções do relatório mas NÃO são enviados ao modelo — reduz latência e evita falhas.
+    const summaryContextBlocks = [
       kpiLine(currentSnapshot, `KPIs ${fmtPeriodStart}–${fmtPeriodEnd}`),
       prevSnapshot ? kpiLine(prevSnapshot, `Semana anterior ${fmtPrevStart}–${fmtPrevEnd}`) : null,
       lySnapshot ? kpiLine(lySnapshot, `Mesmo período do ano anterior ${fmtLyStart}–${fmtLyEnd}`) : null,
       catBlock,
       chanBlock,
       perBlock,
-      unitStructureBlock || null,
-      priceTableBlock,
-      agentConfig?.shared_context ? `## Contexto estratégico\n${agentConfig.shared_context}` : null,
       competitorBlock || null,
       seasonalityBlock || null,
-      elasticityBlock || null,
       forecastBlock || null,
-      strategicMemoryBlock || null,
-      lessonsBlock || null,
-      rejectionBlock || null,
-      demandPatternCtx || null,
       historicalCtx || null,
     ].filter(Boolean).join('\n\n')
 
@@ -863,27 +858,43 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
   "aiLeverageComment": "2-3 alavancas concretas com números para atingir a meta"
 }`
 
+    // Fallback data-driven: usa KPIs reais quando a IA falha — nunca "Dados coletados com sucesso"
+    const fallbackRevparDelta = prevSnapshot ? deltaPct(currentSnapshot.revpar, prevSnapshot.revpar) : null
+    const fallbackKeyPoints = [
+      currentSnapshot.revpar > 0
+        ? `RevPAR ${fmtMoney(currentSnapshot.revpar)}${fallbackRevparDelta !== null ? ` (${fallbackRevparDelta >= 0 ? '+' : ''}${fallbackRevparDelta.toFixed(1)}% vs semana anterior ${fmtPrevStart}–${fmtPrevEnd})` : ''}`
+        : 'Sem dados de RevPAR para o período',
+      currentSnapshot.giro > 0
+        ? `Giro ${currentSnapshot.giro.toFixed(2)} loc/suíte${prevSnapshot ? ` vs ${prevSnapshot.giro.toFixed(2)} na semana anterior` : ''}`
+        : null,
+      currentSnapshot.receita > 0
+        ? `Receita ${fmtMoney(currentSnapshot.receita)}, ${currentSnapshot.locacoes} locações`
+        : null,
+    ].filter(Boolean) as string[]
+
     let executiveSummary: WeeklyReportData['executiveSummary'] = {
-      headline: `Semana de ${periodStart} a ${periodEnd}`,
-      keyPoints: ['Dados coletados com sucesso'],
-      mainWin: '',
-      mainConcern: '',
+      headline: `${fmtPeriodStart}–${fmtPeriodEnd}: RevPAR ${fmtMoney(currentSnapshot.revpar)}`,
+      keyPoints: fallbackKeyPoints.length > 0 ? fallbackKeyPoints : ['Dados do período coletados'],
+      mainWin: prevSnapshot && fallbackRevparDelta !== null && fallbackRevparDelta > 0
+        ? `RevPAR subiu ${fallbackRevparDelta.toFixed(1)}% vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})`
+        : '',
+      mainConcern: prevSnapshot && fallbackRevparDelta !== null && fallbackRevparDelta < -3
+        ? `RevPAR recuou ${Math.abs(fallbackRevparDelta).toFixed(1)}% vs semana anterior — avaliar ajuste de preços`
+        : '',
       priorityAction: '',
-      tone: 'neutral',
+      tone: fallbackRevparDelta !== null && fallbackRevparDelta > 2 ? 'positive' : fallbackRevparDelta !== null && fallbackRevparDelta < -3 ? 'warning' : 'neutral',
       actionType: 'none',
     }
     let aiLeverageComment = ''
 
-    // Retry com backoff para lidar com rate limiting quando vários relatórios são gerados em paralelo
-    // Máximo 2 tentativas para não exceder o timeout do Vercel Hobby (60s) com delayMs alto
-    for (let attempt = 0; attempt < 2; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 8000))
+    // 1 tentativa — contexto compacto torna desnecessário retry lento (era 2×8s = +16s)
+    for (let attempt = 0; attempt < 1; attempt++) {
       try {
         const { text } = await generateText({
           model: ANALYSIS_MODEL,
           system: reportSystemPrompt,
-          messages: [{ role: 'user', content: reportContextBlocks ? `${reportContextBlocks}\n\n---\n\n${weeklyReportUserMsg}` : weeklyReportUserMsg }],
-          maxOutputTokens: 4000,
+          messages: [{ role: 'user', content: summaryContextBlocks ? `${summaryContextBlocks}\n\n---\n\n${weeklyReportUserMsg}` : weeklyReportUserMsg }],
+          maxOutputTokens: 800,
         })
         const stripped = text
           .replace(/<think>[\s\S]*?<\/think>/gi, '')
@@ -907,14 +918,9 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
           agentConfigSuggestion: parsed.agentConfigSuggestion ?? undefined,
         }
         aiLeverageComment = parsed.aiLeverageComment ?? ''
-        break // sucesso — sai do loop
+        break
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e)
-        if (attempt < 1) {
-          console.warn(`[generateWeeklyReport] AI summary attempt ${attempt + 1} failed, retrying: ${msg}`)
-        } else {
-          console.error(`[generateWeeklyReport] AI summary all attempts failed: ${msg}`)
-        }
+        console.error(`[generateWeeklyReport] AI summary failed (fallback ativo): ${e instanceof Error ? e.message : String(e)}`)
       }
     }
 

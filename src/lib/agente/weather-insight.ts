@@ -155,6 +155,15 @@ export async function getWeatherInsight(
 }
 
 /**
+ * Retorna correlação clima × demanda observada historicamente nesta unidade.
+ * Ex: "chuva: giro médio 1.12, ocupação 28.4% (18 dias)"
+ * Retorna string vazia se < 7 observações registradas.
+ */
+export async function buildWeatherCorrelationBlock(unitId: string): Promise<string> {
+  return buildCorrelationContext(unitId)
+}
+
+/**
  * Registra a observação do dia (chamado pelo cron diário).
  * unit_id + slug + city + weather + KPIs de ontem.
  */
