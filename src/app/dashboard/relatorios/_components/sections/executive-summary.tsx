@@ -63,22 +63,19 @@ export function ExecutiveSummary({ data, aiSummary }: Props) {
             </div>
           </div>
 
-          {/* Botão de deep link para o Agente RM — sempre presente */}
-          {data.agentPromptLink && (
+          {/* Botão de deep link para o Agente RM — só quando a IA identificou uma ação específica */}
+          {data.agentPromptLink && data.actionType !== 'none' && (
             <Link
               href={data.agentPromptLink}
               className={cn(
                 'flex items-center gap-2 w-fit px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                data.actionType !== 'none'
-                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                  : 'border border-border bg-background hover:bg-muted text-foreground'
+                'bg-primary text-primary-foreground hover:bg-primary/90'
               )}
             >
               <BotMessageSquare className="w-4 h-4 shrink-0" />
               {data.actionType === 'price_proposal' && 'Gerar proposta de preços no Agente RM →'}
               {data.actionType === 'discount_proposal' && 'Gerar proposta de descontos no Agente RM →'}
               {data.actionType === 'agent_config' && 'Ajustar estratégia no Agente RM →'}
-              {data.actionType === 'none' && 'Analisar período no Agente RM →'}
             </Link>
           )}
 
