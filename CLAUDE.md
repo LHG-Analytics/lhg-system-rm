@@ -1127,6 +1127,30 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - Serialização: `JSON.parse(JSON.stringify(updated))` necessário para compatibilidade com tipo `Json` do Supabase; cast `as unknown as UIMessage[]` para leitura
   - **Armadilha:** `onFinish` recebe `{ text, toolCalls }` — `toolCalls` pode ser array vazio ou array com itens; checar `toolCalls.length > 0` além de `text`
 
+- **fix(agente): análise completa preservada em background** ✅ 2026-05-21
+  - Root cause: AI SDK `text` em `onFinish` = texto da ÚLTIMA step apenas; análise longa (step 1) + fechamento (step 2) → só o fechamento era salvo
+  - Fix: `onFinish` usa `steps[]` para reconstruir texto completo: `steps.map(s => s.text).filter(Boolean).join('\n\n')`
+  - **Armadilha:** `text` de `onFinish` ≠ texto total da conversa — sempre usar `steps[]` para background save
+
+- **fix(agente): ThinkingBubble aparece imediatamente ao pressionar Enter** ✅ 2026-05-21
+  - Root cause: `isStreaming` ficava `false` durante criação async da conversa → gap visual de 1–2s sem feedback
+  - Fix: `localPending` state setado imediatamente em `submit()` antes de qualquer await; limpo via `useEffect` observando `status === 'ready' | 'error'`
+  - ThinkingBubble renderiza com `localPending || isStreaming`
+
+- **fix(agente): aba Propostas não remonta ao trocar — troca instantânea** ✅ 2026-05-21
+  - Root cause: Radix Tabs desmonta `TabsContent` inativo por padrão → `ProposalsList` re-fetchava a cada clique
+  - Fix: `forceMount` + `data-[state=inactive]:hidden` em TODAS as 4 abas externas do agente (chat/propostas/agendamentos/performance)
+
+- **fix(agente): contexto da proposta com critérios por canal+categoria+período** ✅ 2026-05-21
+  - Schema `salvar_proposta.context` atualizado: obrigatório incluir (1) "X alterações de Y combinações analisadas"; (2) critério por canal; (3) critério por categoria; (4) critério por período
+  - Campo `rows` descrevido como "linhas alteradas (preco_proposto ≠ preco_atual) de TODOS os canais relevantes — itens mantidos NÃO entram aqui, motivo vai no context"
+  - `maxLength` do contexto no card de proposta: 160 → 360 caracteres
+
+- **fix(agente): redesign do seletor de modelo — sem truncagem, responsivo** ✅ 2026-05-21
+  - Root cause: dropdown `w-56 left-0` cortava nomes de modelos; trigger sem `max-w` truncava em mobile
+  - Novo design: `w-72 max-w-[calc(100vw-1.5rem)] right-0`; `TIER_META` + `TIER_ACCENT` para cor por tier; item com `border-l-2` + badge fixo `min-w-[62px]` + 2 linhas (nome bold + descrição)
+  - Trigger: `max-w-[80px] truncate sm:max-w-none` — mostra tier badge em mobile, nome completo em desktop
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
