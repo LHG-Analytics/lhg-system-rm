@@ -11,8 +11,10 @@ interface Props {
 
 export function BudgetTracking({ data }: Props) {
   const { formatMoney: fmt } = useCurrency()
-  const progressPct = data.meta > 0 ? Math.min((data.realizado / data.meta) * 100, 100) : 0
-  const projecaoPct = data.meta > 0 ? Math.min((data.projecao / data.meta) * 100, 100) : 0
+  // Quando sem meta, escala em relação à projeção (projeção = 100%)
+  const ref = data.meta > 0 ? data.meta : data.projecao
+  const progressPct = ref > 0 ? Math.min((data.realizado / ref) * 100, 100) : 100
+  const projecaoPct = data.meta > 0 ? Math.min((data.projecao / ref) * 100, 100) : 100
   const gapPct = data.meta > 0 ? ((data.projecao - data.meta) / data.meta) * 100 : 0
 
   const gapColor = gapPct >= -2 ? 'text-emerald-600' : gapPct >= -8 ? 'text-amber-600' : 'text-destructive'
