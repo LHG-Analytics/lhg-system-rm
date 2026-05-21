@@ -395,103 +395,67 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
     .select('unit_id, city, budget_sheet_url, units(slug)')
     .not('city', 'is', null)
 
+  // Manutenção por unidade em paralelo — era sequencial e causava timeout
+  // com 5+ unidades (5×10s = 50s) antes de chegar no bloco de segunda-feira
   const eventsRefreshed: string[] = []
-  for (const cfg of allConfigs ?? []) {
-    const city     = (cfg.city as string).split(',')[0].trim()
-    const unitSlug = (cfg.units as { slug: string } | null)?.slug ?? ''
+  const now = new Date()
+  const isSunday      = now.getUTCDay() === 0
+  const isFirstOfMonth = now.getUTCDate() === 1
 
-    try {
-      await refreshEventsForUnit(cfg.unit_id, city)
-      eventsRefreshed.push(cfg.unit_id)
-    } catch {
-      // Não bloqueia o cron
-    }
+  await Promise.allSettled(
+    (allConfigs ?? []).map(async (cfg) => {
+      const city     = (cfg.city as string).split(',')[0].trim()
+      const unitSlug = (cfg.units as { slug: string } | null)?.slug ?? ''
 
-    if (unitSlug) {
       try {
-        await recordWeatherObservation({
-          unitId:   cfg.unit_id,
-          unitSlug,
-          city,
-          fetchKPIs: async (slug, date) => {
-            const { fetchCompanyKPIsFromAutomo } = await import('@/lib/automo/company-kpis')
-            return fetchCompanyKPIsFromAutomo(slug, date, date).catch(() => null)
-          },
-        })
-      } catch {
-        // Não bloqueia o cron
-      }
+        await refreshEventsForUnit(cfg.unit_id, city)
+        eventsRefreshed.push(cfg.unit_id)
+      } catch { /* não bloqueia */ }
 
-      // HV5: recompute de sazonalidade 1x por semana (domingo). Hobby tier
-      // só permite 2 cron slots — consolidamos no cron de revisões diário.
-      const now = new Date()
-      const isSunday = now.getUTCDay() === 0
-      if (isSunday) {
-        try {
-          await recomputeSeasonality(cfg.unit_id, unitSlug)
-        } catch {
-          // Não bloqueia o cron
-        }
-      }
+      if (!unitSlug) return
 
-      // ST1: recompute de elasticidade-preço 1x por mês (dia 1). Usa rm_pricing_lessons
-      // acumulados pelos checkpoints para calcular regressão log-log por categoria/período/dia.
-      const isFirstOfMonth = now.getUTCDate() === 1
-      if (isFirstOfMonth) {
-        try {
-          await computeAndPersistElasticity(cfg.unit_id)
-        } catch {
-          // Não bloqueia o cron
-        }
-      }
+      await Promise.allSettled([
+        // Observação clima × demanda (daily)
+        recordWeatherObservation({
+          unitId: cfg.unit_id, unitSlug, city,
+          fetchKPIs: async (slug, date) =>
+            fetchCompanyKPIsFromAutomo(slug, date, date).catch(() => null),
+        }),
 
-      // Budget: sync diário de metas a partir da planilha de orçamento (Google Sheets)
-      if (cfg.budget_sheet_url) {
-        try {
-          await syncBudgetForUnit(cfg.unit_id)
-        } catch {
-          // Não bloqueia o cron — planilha pode estar temporariamente inacessível
-        }
-      }
+        // Budget sync (daily, quando configurado)
+        cfg.budget_sheet_url ? syncBudgetForUnit(cfg.unit_id) : Promise.resolve(),
 
-      // HV3: detecção de anomalias diária. Notifica primeiro super_admin
-      // ou admin da unidade. Throttle interno garante 1x/semana por scope.
-      try {
-        const { data: notifyTarget } = await admin
-          .from('profiles')
-          .select('user_id')
-          .or(`unit_id.eq.${cfg.unit_id},unit_id.is.null`)
-          .in('role', ['super_admin', 'admin'])
-          .limit(1)
-          .maybeSingle()
-        await runAnomalyDetection(cfg.unit_id, unitSlug, notifyTarget?.user_id ?? null)
-      } catch {
-        // Não bloqueia o cron
-      }
+        // Concorrentes Guia GM (daily, gratuito)
+        updateGuiaCompetitorsForUnit(cfg.unit_id),
 
-      // Concorrentes: atualiza snapshots de modo 'guia' diariamente.
-      // Gratuito e instantâneo — sem Apify, sem tokens de IA.
-      try {
-        await updateGuiaCompetitorsForUnit(cfg.unit_id)
-      } catch {
-        // Não bloqueia o cron
-      }
+        // Anomaly detection (daily)
+        (async () => {
+          const { data: notifyTarget } = await admin
+            .from('profiles')
+            .select('user_id')
+            .or(`unit_id.eq.${cfg.unit_id},unit_id.is.null`)
+            .in('role', ['super_admin', 'admin'])
+            .limit(1)
+            .maybeSingle()
+          await runAnomalyDetection(cfg.unit_id, unitSlug, notifyTarget?.user_id ?? null)
+        })(),
 
-      // Bootstrap: processa pares de tabelas importadas ainda não analisados.
-      // Idempotente — pula pares já processados, só age em transições novas.
-      try {
-        await bootstrapPricingLessons(cfg.unit_id, unitSlug)
-      } catch {
-        // Não bloqueia o cron
-      }
-    }
-  }
+        // Bootstrap (daily, idempotente)
+        bootstrapPricingLessons(cfg.unit_id, unitSlug),
+
+        // Sazonalidade (semanal — domingo)
+        isSunday ? recomputeSeasonality(cfg.unit_id, unitSlug) : Promise.resolve(),
+
+        // Elasticidade (mensal — dia 1)
+        isFirstOfMonth ? computeAndPersistElasticity(cfg.unit_id) : Promise.resolve(),
+      ])
+    })
+  )
 
   // Geração de relatórios semanais — toda segunda-feira UTC
-  const cronNow = new Date()
-  if (cronNow.getUTCDay() === 1) {
-    const lastSunday = new Date(cronNow)
-    lastSunday.setUTCDate(cronNow.getUTCDate() - 1)
+  if (now.getUTCDay() === 1) {
+    const lastSunday = new Date(now)
+    lastSunday.setUTCDate(now.getUTCDate() - 1)
     const lastMonday = new Date(lastSunday)
     lastMonday.setUTCDate(lastSunday.getUTCDate() - 6)
 
@@ -505,9 +469,14 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
       .map(c => (c.units as { slug: string } | null)?.slug)
       .filter(Boolean) as string[]
 
-    await Promise.allSettled(
+    console.log(`[run-reviews] Segunda-feira — gerando relatórios para: ${reportSlugs.join(', ')} (${periodStart} → ${periodEnd})`)
+
+    const reportResults = await Promise.allSettled(
       reportSlugs.map(slug => generateWeeklyReport(slug, periodStart, periodEnd))
     )
+    const reportDone   = reportResults.filter(r => r.status === 'fulfilled').length
+    const reportFailed = reportResults.filter(r => r.status === 'rejected').length
+    console.log(`[run-reviews] Relatórios: ${reportDone} gerados, ${reportFailed} falhou`)
   }
 
   return {
