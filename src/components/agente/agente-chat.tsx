@@ -178,6 +178,41 @@ function ProposalGeneratingSteps() {
   )
 }
 
+// ─── Typewriter para mensagens em streaming ───────────────────────────────────
+
+function useStreamingTypewriter(targetText: string, active: boolean) {
+  const [shown, setShown] = useState(active ? '' : targetText)
+
+  useEffect(() => {
+    if (!active) {
+      setShown(targetText)
+      return
+    }
+    if (shown.length >= targetText.length) return
+    const behind = targetText.length - shown.length
+    const chars = behind > 100 ? 4 : behind > 40 ? 2 : 1
+    const delay = behind > 80 ? 6 : 14
+    const t = setTimeout(() => {
+      setShown(targetText.slice(0, shown.length + chars))
+    }, delay)
+    return () => clearTimeout(t)
+  }, [shown, targetText, active])
+
+  return shown
+}
+
+function StreamingMessageText({ text, isStreaming }: { text: string; isStreaming: boolean }) {
+  const displayed = useStreamingTypewriter(text, isStreaming)
+  return (
+    <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 text-sm">
+      <MessageResponse>{displayed}</MessageResponse>
+      {isStreaming && (
+        <span className="inline-block w-[2px] h-[0.85em] bg-muted-foreground/60 ml-0.5 align-middle animate-pulse" />
+      )}
+    </div>
+  )
+}
+
 // ─── Toggle de modo de contexto ───────────────────────────────────────────────
 
 function ContextModeToggle({ value, onChange }: { value: ContextMode; onChange: (m: ContextMode) => void }) {
@@ -714,11 +749,14 @@ function AgenteChatInner({
                     .filter((p) => p.type === 'text')
                     .map((p) => (p as { type: 'text'; text: string }).text)
                     .join('')
-                  return text ? (
-                    <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 text-sm">
-                      <MessageResponse>{text}</MessageResponse>
-                    </div>
-                  ) : null
+                  if (!text) return null
+                  const isLastMsg = msg.id === lastAssistantMsg?.id
+                  return (
+                    <StreamingMessageText
+                      text={text}
+                      isStreaming={isStreaming && isLastMsg}
+                    />
+                  )
                 })()}
               </div>
             )}
