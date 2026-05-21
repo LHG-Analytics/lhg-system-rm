@@ -897,7 +897,13 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
       }
       aiLeverageComment = parsed.aiLeverageComment ?? ''
     } catch (e) {
-      console.error('[generateWeeklyReport] AI summary error:', e)
+      const errMsg = e instanceof Error ? e.message : String(e)
+      console.error('[generateWeeklyReport] AI summary error:', errMsg)
+      // Expõe o erro no keyPoints para diagnóstico visual — remover após debug
+      executiveSummary = {
+        ...executiveSummary,
+        keyPoints: [`Erro ao gerar análise de IA: ${errMsg.slice(0, 300)}`],
+      }
     }
 
     budgetTracking.aiLeverageComment = aiLeverageComment
