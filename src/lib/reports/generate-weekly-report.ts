@@ -126,6 +126,16 @@ export async function generateWeeklyReport(
   eventsEnd.setUTCDate(eventsEnd.getUTCDate() + 14)
   const eventsEndStr = eventsEnd.toISOString().slice(0, 10)
 
+  // Budget tracking reference dates — MTD ends today if same month, else at period end
+  const nowUtc = new Date()
+  const periodEndForBudget = new Date(periodEnd + 'T12:00:00Z')
+  const budgetMonthYear = periodEndForBudget.getUTCFullYear()
+  const budgetMonthNum = periodEndForBudget.getUTCMonth() + 1
+  const firstOfBudgetMonthDDMM = `01/${String(budgetMonthNum).padStart(2, '0')}/${budgetMonthYear}`
+  const todayIsSameMonth = nowUtc.getUTCFullYear() === budgetMonthYear && (nowUtc.getUTCMonth() + 1) === budgetMonthNum
+  const mtdEndDate = todayIsSameMonth ? nowUtc : periodEndForBudget
+  const mtdEndDDMM = isoToDDMMYYYY(mtdEndDate.toISOString().slice(0, 10))
+
   try {
     const [
       kpisResult,
@@ -146,6 +156,7 @@ export async function generateWeeklyReport(
       suiteAvailResult,
       prevReportResult,
       demandPatternResult,
+      mtdKpisResult,
     ] = await Promise.allSettled([
       fetchCompanyKPIsFromAutomo(unitSlug, startDDMM, endDDMM),
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(prevStartStr), isoToDDMMYYYY(prevEndStr)),
@@ -218,6 +229,7 @@ export async function generateWeeklyReport(
         .order('period_start', { ascending: false })
         .limit(1),
       queryDemandPattern(unitSlug, 60),
+      fetchCompanyKPIsFromAutomo(unitSlug, firstOfBudgetMonthDDMM, mtdEndDDMM),
     ])
 
     const guardrailsResult = await admin
@@ -307,15 +319,16 @@ export async function generateWeeklyReport(
       anomaliesResolvedCount: resolvedAnomalies,
     }
 
-    // budgetTracking
-    const periodEndDate = new Date(periodEnd + 'T12:00:00Z')
-    const monthYear = periodEndDate.getUTCFullYear()
-    const monthNum = periodEndDate.getUTCMonth() + 1
+    // budgetTracking — usa MTD (do dia 1 até hoje ou até periodEnd se mês diferente)
+    const mtdKpis = mtdKpisResult.status === 'fulfilled' ? mtdKpisResult.value : null
+    const mtdSnapshot = mtdKpis ? kpiSnapshotFromResponse(mtdKpis) : currentSnapshot
+    const monthYear = budgetMonthYear
+    const monthNum = budgetMonthNum
     const monthDaysTotal = getDaysInMonth(monthYear, monthNum)
     const firstOfMonth = new Date(Date.UTC(monthYear, monthNum - 1, 1))
-    const daysDiff = Math.floor((periodEndDate.getTime() - firstOfMonth.getTime()) / 86400000) + 1
-    const monthDaysElapsed = Math.min(daysDiff, monthDaysTotal)
-    const realizado = currentSnapshot.receita
+    const daysDiff = Math.floor((mtdEndDate.getTime() - firstOfMonth.getTime()) / 86400000) + 1
+    const monthDaysElapsed = Math.min(Math.max(daysDiff, 1), monthDaysTotal)
+    const realizado = mtdSnapshot.receita
     const paceDiarioAtual = monthDaysElapsed > 0 ? realizado / monthDaysElapsed : 0
     const budgetYearly = (agentConfig?.budget_yearly ?? {}) as unknown as BudgetYearly
     const monthBudget = budgetYearly?.[String(monthYear)]?.[String(monthNum)]
@@ -857,7 +870,7 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
         model: ANALYSIS_MODEL,
         system: agentSystemPrompt,
         messages: [{ role: 'user', content: weeklyReportUserMsg }],
-        maxOutputTokens: 900,
+        maxOutputTokens: 2000,
       })
       const cleaned = text.replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(cleaned)

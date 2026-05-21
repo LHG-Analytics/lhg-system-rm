@@ -50,9 +50,13 @@ export function BudgetTracking({ data }: Props) {
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Ritmo necessário</p>
-          <p className={cn('font-medium', data.paceDiarioNecessario > data.paceDiarioAtual ? 'text-amber-600' : 'text-emerald-600')}>
-            {fmt(data.paceDiarioNecessario)}/dia
-          </p>
+          {data.meta > 0 ? (
+            <p className={cn('font-medium', data.paceDiarioNecessario > data.paceDiarioAtual ? 'text-amber-600' : 'text-emerald-600')}>
+              {fmt(data.paceDiarioNecessario)}/dia
+            </p>
+          ) : (
+            <p className="font-medium text-muted-foreground">Sem meta</p>
+          )}
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Dias restantes</p>
