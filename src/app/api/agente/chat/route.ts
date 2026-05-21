@@ -10,7 +10,7 @@ import { buildSystemPrompt, buildKPIContext } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { getRealtimeOccupancyByCategory } from '@/lib/automo/realtime-occupancy'
-import { getReservationPace, buildPaceBlock } from '@/lib/automo/reservation-pace'
+import { getReservationPace, buildPaceBlock, getWeeklyPickup, buildPickupBlock } from '@/lib/automo/reservation-pace'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
@@ -25,7 +25,7 @@ import {
 import { fetchWeatherContext } from '@/lib/agente/weather'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
-import { queryDemandPattern } from '@/lib/automo/demand-pattern'
+import { queryDemandPattern, buildDemandPatternBlock } from '@/lib/automo/demand-pattern'
 import { queryCategoryPeriodKPIs, buildCategoryPeriodBlock } from '@/lib/automo/category-period-kpis'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
@@ -578,7 +578,7 @@ export async function POST(req: NextRequest) {
   // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
   const capacityRows = capacityResult.status === 'fulfilled' ? (capacityResult.value.data ?? []) : []
   const channelCostRows = channelCostsResult.status === 'fulfilled' ? (channelCostsResult.value.data ?? []) : []
-  const [availabilityRows, realtimeOccupancy, reservationPace, weatherContext, categoryPeriodKPIs, cancellationRates] = await Promise.all([
+  const [availabilityRows, realtimeOccupancy, reservationPace, weatherContext, categoryPeriodKPIs, cancellationRates, demandPattern, weeklyPickup] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
     getReservationPace(unit.slug).catch(() => null),
@@ -589,6 +589,8 @@ export async function POST(req: NextRequest) {
     kpiPeriods[0]?.period
       ? queryCancellationByChannel(unit.slug, kpiPeriods[0].period.startDate, kpiPeriods[0].period.endDate).catch(() => [])
       : Promise.resolve([]),
+    queryDemandPattern(unit.slug, 90).catch(() => null),
+    getWeeklyPickup(unit.slug).catch(() => null),
   ])
 
   // Guardrails sempre no prompt estático — safety-critical para o agente
@@ -635,6 +637,8 @@ export async function POST(req: NextRequest) {
     (paceBlock ? `\n\n${paceBlock}` : '') +
     (categoryPeriodKPIs?.length ? `\n\n${buildCategoryPeriodBlock(categoryPeriodKPIs, fmtMoney ?? undefined)}` : '') +
     (cancellationRates?.length ? `\n\n${buildCancellationBlock(cancellationRates)}` : '') +
+    (demandPattern ? `\n\n${buildDemandPatternBlock(demandPattern, unit.name, 90)}` : '') +
+    (weeklyPickup ? `\n\n${buildPickupBlock(weeklyPickup)}` : '') +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
     (guardrailsTextBlock ? `\n\n${guardrailsTextBlock}` : '')
 

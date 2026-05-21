@@ -246,6 +246,133 @@ export async function getReservationPace(unitSlug: string): Promise<ReservationP
   }
 }
 
+// ── Forward pickup: reservas confirmadas para os próximos 7 dias ─────────────
+
+export interface WeeklyPickupRow {
+  date: string        // DD/MM/YYYY
+  dow_label: string   // "Seg", "Ter", etc.
+  confirmed: number
+  historical_avg: number
+  signal: 'alto' | 'normal' | 'baixo'
+}
+
+export interface WeeklyPickupResult {
+  rows: WeeklyPickupRow[]
+}
+
+const DOW_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+
+function pickupSignal(confirmed: number, avg: number): 'alto' | 'normal' | 'baixo' {
+  if (avg === 0) return confirmed > 0 ? 'alto' : 'normal'
+  const ratio = confirmed / avg
+  if (ratio >= 1.2) return 'alto'
+  if (ratio <= 0.7) return 'baixo'
+  return 'normal'
+}
+
+/**
+ * Retorna reservas confirmadas para os próximos 7 dias vs média histórica
+ * por dia da semana (últimas 8 semanas). Não usa catIds — pool é por empresa.
+ */
+export async function getWeeklyPickup(unitSlug: string): Promise<WeeklyPickupResult | null> {
+  const pool = await getAutomPool(unitSlug)
+  if (!pool) return null
+
+  const sql = `
+    WITH upcoming AS (
+      SELECT gs::date AS check_in_date
+      FROM generate_series(
+        CURRENT_DATE + 1,
+        CURRENT_DATE + 7,
+        '1 day'::interval
+      ) AS gs
+    ),
+    confirmed AS (
+      SELECT r.dataatendimento::date AS check_in_date, COUNT(*) AS reservas
+      FROM reserva r
+      WHERE r.dataatendimento::date BETWEEN CURRENT_DATE + 1 AND CURRENT_DATE + 7
+        AND r.cancelada IS NULL
+      GROUP BY 1
+    ),
+    hist_by_day AS (
+      SELECT
+        EXTRACT(DOW FROM r.dataatendimento)::int AS dow,
+        r.dataatendimento::date AS dia,
+        COUNT(*) AS reservas_do_dia
+      FROM reserva r
+      WHERE r.dataatendimento::date BETWEEN CURRENT_DATE - 56 AND CURRENT_DATE - 1
+        AND r.cancelada IS NULL
+      GROUP BY 1, 2
+    ),
+    hist_avg AS (
+      SELECT dow, ROUND(AVG(reservas_do_dia), 1) AS media
+      FROM hist_by_day
+      GROUP BY dow
+    )
+    SELECT
+      u.check_in_date,
+      EXTRACT(DOW FROM u.check_in_date)::int AS dow,
+      COALESCE(c.reservas, 0)::int AS confirmed,
+      COALESCE(h.media, 0)::numeric AS historical_avg
+    FROM upcoming u
+    LEFT JOIN confirmed c ON c.check_in_date = u.check_in_date
+    LEFT JOIN hist_avg   h ON h.dow = EXTRACT(DOW FROM u.check_in_date)::int
+    ORDER BY u.check_in_date
+  `
+
+  try {
+    const { rows } = await pool.query<{
+      check_in_date: Date; dow: string; confirmed: string; historical_avg: string
+    }>(sql)
+
+    return {
+      rows: rows.map((r) => {
+        const dow = Number(r.dow)
+        const confirmed = Number(r.confirmed)
+        const historical_avg = Number(r.historical_avg)
+        const d = new Date(r.check_in_date)
+        const dd = String(d.getUTCDate()).padStart(2, '0')
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+        return {
+          date: `${dd}/${mm}`,
+          dow_label: DOW_SHORT[dow] ?? '?',
+          confirmed,
+          historical_avg,
+          signal: pickupSignal(confirmed, historical_avg),
+        }
+      }),
+    }
+  } catch (e) {
+    console.error('[weekly-pickup]', e)
+    return null
+  }
+}
+
+export function buildPickupBlock(pickup: WeeklyPickupResult | null): string {
+  if (!pickup?.rows.length) return ''
+
+  const SIGNAL_ICON: Record<string, string> = {
+    alto:   '🟢',
+    normal: '⚪',
+    baixo:  '🔴',
+  }
+
+  const lines = [
+    '## Antecipação de reservas — próximos 7 dias',
+    'Reservas já confirmadas no sistema vs média histórica do mesmo dia da semana (últimas 8 semanas).',
+    '',
+    '| Data | Dia | Confirmadas | Média histórica | Sinal |',
+    '|------|-----|-------------|-----------------|-------|',
+    ...pickup.rows.map((r) =>
+      `| ${r.date} | ${r.dow_label} | ${r.confirmed} | ${r.historical_avg} | ${SIGNAL_ICON[r.signal]} ${r.signal} |`
+    ),
+    '',
+    '> Em motéis, a maioria das reservas é feita no mesmo dia — baixa antecipação é normal. Use como sinal de tendência, não como previsão definitiva.',
+  ]
+
+  return lines.join('\n')
+}
+
 const DIAS_PT = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
 
 const SIGNAL_LABELS: Record<PaceSignal, string> = {
