@@ -181,13 +181,14 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao processar')
-      const r = data.result
+      // A API retorna o resultado diretamente (não aninhado em data.result)
+      const r: { inserted: number; transitions: number; skipped: number; elasticityUpdated: number } = data
       if (r.inserted > 0) {
         setBootstrapResult(`✓ ${r.inserted} lições geradas em ${r.transitions} transições — elasticidade atualizada`)
       } else if (r.transitions === 0 && r.skipped === 0) {
-        setBootstrapResult('Todas as transições já foram processadas.')
+        setBootstrapResult('Todas as transições já foram processadas. Execute após importar novas tabelas.')
       } else {
-        setBootstrapResult(`Nenhuma lição nova (${r.skipped} transições sem dados suficientes ainda).`)
+        setBootstrapResult(`Nenhuma lição nova — ${r.skipped} transição(ões) sem dados suficientes ainda (min. 14 dias).`)
       }
     } catch (e) {
       setBootstrapResult(e instanceof Error ? e.message : 'Erro desconhecido')
