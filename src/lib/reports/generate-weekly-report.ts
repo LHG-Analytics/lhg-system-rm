@@ -15,8 +15,6 @@ import type { BudgetYearly } from '@/lib/budget/google-sheets'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
 import { computeAndPersistGaps, parseAmenitiesBySuite, buildCompetitorGapBlock } from '@/lib/competitors/detect-changes'
 import type { CompetitorGap } from '@/lib/competitors/detect-changes'
-import { buildSystemPrompt } from '@/lib/agente/system-prompt'
-import type { KPIPeriod, PriceImportForPrompt } from '@/lib/agente/system-prompt'
 import { buildStrategicMemoryBlock } from '@/lib/agente/context-blocks'
 import { makeCurrencyFormatter } from '@/lib/utils/currency'
 import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
@@ -716,43 +714,9 @@ export async function generateWeeklyReport(
       })),
     }
 
-    // AI: executive summary — usa buildSystemPrompt() do Agente RM como system prompt
-    // Assim o relatório herda TODAS as regras do agente: max_variation_pct, focus_metric,
-    // guardrails, missão, regras inegociáveis — sem IA separada.
-
-    // Monta KPIPeriod com period e company KPIs para buildSystemPrompt
-    const kpiPeriodForPrompt: KPIPeriod = {
-      period: { startDate: periodStart, endDate: periodEnd },
-      company: kpis,
-      bookings: null,
-      channelKPIs: channelKPIs.length > 0 ? channelKPIs : undefined,
-      periodMix: periodMix.length > 0 ? periodMix : undefined,
-    }
-
-    // Monta PriceImportForPrompt com a tabela ativa de preços e descontos.
-    // Cast necessário: canal local é string genérica; sistema espera union restrita ("guia_moteis"|…)
-    const priceImportsForPrompt: PriceImportForPrompt[] = activePriceImport ? [{
-      rows: activePriceRows as unknown as PriceImportForPrompt['rows'],
-      discount_data: (discountRows.length > 0 ? discountRows : null) as PriceImportForPrompt['discount_data'],
-      valid_from: activePriceImport.valid_from,
-      valid_until: null,
-    }] : []
-
-    // Capacidade e estrutura da unidade
-    const unitStructureBlock = buildUnitStructureBlock(suiteAvail, [], [])
-
-    // System prompt do Agente RM completo (identidade + regras + KPIs + preços + estrutura)
-    let agentSystemPrompt = buildSystemPrompt(
-      unit.name,
-      kpiPeriodForPrompt,
-      priceImportsForPrompt,
-      undefined,
-      null,
-      null,
-      unitStructureBlock,
-    )
-
-    // Configuração do agente (mesma construção do chat/route.ts)
+    // AI: executive summary — prompt focado em JSON puro.
+    // NÃO usa buildSystemPrompt (chat agent): as instruções de tools/proposals do agente
+    // conflitam com o pedido de JSON estrito e fazem o modelo retornar resposta errada.
     const maxVar = agentConfig?.max_variation_pct ?? 15
     const pricingStrategy = agentConfig?.pricing_strategy ?? 'moderado'
     const focusMetric = agentConfig?.focus_metric ?? 'revpar'
@@ -760,12 +724,11 @@ export async function generateWeeklyReport(
       revpar: 'RevPAR', ocupacao: 'Ocupação', ticket: 'Ticket Médio',
       trevpar: 'TRevPAR', giro: 'Giro', balanceado: 'Balanceado',
     }
-    agentSystemPrompt += `\n\n## Configuração do agente RM (${unit.name})
-- **Estratégia de precificação:** ${pricingStrategy}
-- **Variação máxima permitida:** ±${maxVar}%
-- **Foco principal:** ${FOCUS_LABELS[focusMetric] ?? focusMetric}`
 
-    // Contexto adicional que o chat também injeta: concorrentes, sazonalidade, padrão de demanda, etc.
+    const { formatMoney: fmtMoney } = makeCurrencyFormatter(unitSlug)
+    const unitStructureBlock = buildUnitStructureBlock(suiteAvail, [], [])
+
+    // Contexto analítico
     const competitorGapsTyped: CompetitorGap[] = competitorGaps.map(g => ({
       categoria_nossa: g.categoria_nossa ?? '',
       categoria_competitor: (g as { categoria_competitor?: string }).categoria_competitor ?? '',
@@ -787,7 +750,6 @@ export async function generateWeeklyReport(
     const forecastBlock = buildForecastBlock(
       computeRevenueForecast(kpis, (agentConfig?.budget_yearly as BudgetYearly | null) ?? null)
     )
-    const { formatMoney: fmtMoney } = makeCurrencyFormatter(unitSlug)
     const strategicMemoryBlock = buildStrategicMemoryBlock(
       approvedProposals as Parameters<typeof buildStrategicMemoryBlock>[0],
       kpis,
@@ -799,23 +761,12 @@ export async function generateWeeklyReport(
       buildRejectionLessonsBlock(unit.id).catch(() => ''),
     ])
     const demandPatternCtx = demandPattern
-      ? '\n' + buildDemandPatternBlock(demandPattern, unit.name, 60)
+      ? buildDemandPatternBlock(demandPattern, unit.name, 60)
       : ''
-    const historicalCtx = historicalInsights.length > 0 ? `
-## Histórico de mudanças de tabela (aprendizado)
+    const historicalCtx = historicalInsights.length > 0 ? `## Histórico de mudanças de tabela (aprendizado)
 ${historicalInsights.map(h => `- ${h.fromDate}→${h.toDate}: ${h.changesCount} preços (${h.avgChangePct > 0 ? '+' : ''}${h.avgChangePct.toFixed(1)}%) → Δ RevPAR ${h.deltaRevpar !== null ? `${h.deltaRevpar > 0 ? '+' : ''}${h.deltaRevpar.toFixed(1)}%` : '?'}, Δ Giro ${h.deltaGiro !== null ? `${h.deltaGiro > 0 ? '+' : ''}${h.deltaGiro.toFixed(1)}%` : '?'} (${h.verdict})`).join('\n')}` : ''
 
-    if (competitorBlock) agentSystemPrompt += `\n\n${competitorBlock}`
-    if (seasonalityBlock) agentSystemPrompt += `\n\n${seasonalityBlock}`
-    if (elasticityBlock) agentSystemPrompt += `\n\n${elasticityBlock}`
-    if (forecastBlock) agentSystemPrompt += `\n\n${forecastBlock}`
-    if (strategicMemoryBlock) agentSystemPrompt += `\n\n${strategicMemoryBlock}`
-    if (lessonsBlock) agentSystemPrompt += `\n\n${lessonsBlock}`
-    if (rejectionBlock) agentSystemPrompt += `\n\n${rejectionBlock}`
-    if (demandPatternCtx) agentSystemPrompt += demandPatternCtx
-    if (historicalCtx) agentSystemPrompt += historicalCtx
-
-    // Períodos de referência para a mensagem do usuário — formato DD/MM/AAAA
+    // Períodos de referência — necessários tanto para o contexto quanto para a mensagem
     const lyStartStr = lyStart.toISOString().slice(0, 10)
     const lyEndStr   = lyEnd.toISOString().slice(0, 10)
     const fmtPeriodStart  = isoToDDMMYYYY(periodStart)
@@ -824,6 +775,42 @@ ${historicalInsights.map(h => `- ${h.fromDate}→${h.toDate}: ${h.changesCount} 
     const fmtPrevEnd      = isoToDDMMYYYY(prevEndStr)
     const fmtLyStart      = isoToDDMMYYYY(lyStartStr)
     const fmtLyEnd        = isoToDDMMYYYY(lyEndStr)
+
+    // KPIs resumidos — injetados diretamente na mensagem do usuário
+    const kpiLine = (s: KPISnapshot, label: string) =>
+      `## ${label}\n- RevPAR: ${fmtMoney(s.revpar)} | TRevPAR: ${fmtMoney(s.trevpar)} | Giro: ${s.giro.toFixed(2)} | Ocupação: ${(s.ocupacao * 100).toFixed(1)}%\n- Ticket: ${fmtMoney(s.ticket)} | Receita: ${fmtMoney(s.receita)} | Locações: ${s.locacoes} | TMO: ${s.tmo.toFixed(1)}h`
+
+    // Tabela de preços ativa — compacta por categoria
+    const priceTableBlock = activePriceRows.length > 0
+      ? `## Tabela de preços ativa (vigência: ${activePriceImport?.valid_from ?? ''})\n` +
+        [...new Set(activePriceRows.map(r => r.categoria))].map(cat => {
+          const rows = activePriceRows.filter(r => r.categoria === cat)
+          return `### ${cat}\n` + rows.map(r => `- ${r.periodo} | ${r.dia_tipo} | ${r.canal}: ${fmtMoney(r.preco)}`).join('\n')
+        }).join('\n')
+      : null
+
+    const reportContextBlocks = [
+      kpiLine(currentSnapshot, `KPIs ${fmtPeriodStart}–${fmtPeriodEnd}`),
+      prevSnapshot ? kpiLine(prevSnapshot, `Semana anterior ${fmtPrevStart}–${fmtPrevEnd}`) : null,
+      lySnapshot ? kpiLine(lySnapshot, `Mesmo período do ano anterior ${fmtLyStart}–${fmtLyEnd}`) : null,
+      unitStructureBlock || null,
+      priceTableBlock,
+      agentConfig?.shared_context ? `## Contexto estratégico\n${agentConfig.shared_context}` : null,
+      competitorBlock || null,
+      seasonalityBlock || null,
+      elasticityBlock || null,
+      forecastBlock || null,
+      strategicMemoryBlock || null,
+      lessonsBlock || null,
+      rejectionBlock || null,
+      demandPatternCtx || null,
+      historicalCtx || null,
+    ].filter(Boolean).join('\n\n')
+
+    // System prompt minimalista: identidade de analista RM + config da unidade.
+    // NÃO inclui tools/proposals do chat agent — esses conflitam com JSON-only output.
+    // Todo o contexto analítico vai em reportContextBlocks (injetado na mensagem do usuário).
+    const reportSystemPrompt = `Você é o analista de Revenue Management de ${unit.name}.\nEstratégia: ${pricingStrategy} | Foco: ${FOCUS_LABELS[focusMetric] ?? focusMetric} | Variação máx: ±${maxVar}%\nRESPONDA APENAS COM JSON VÁLIDO — sem texto extra, sem markdown fence.`
 
     // Mensagem do usuário: pede o JSON do relatório semanal com contexto de períodos
     const weeklyReportUserMsg = `Elabore o resumo executivo do relatório semanal de ${unit.name} para o período ${fmtPeriodStart} a ${fmtPeriodEnd}.
@@ -872,8 +859,8 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
       try {
         const { text } = await generateText({
           model: ANALYSIS_MODEL,
-          system: agentSystemPrompt,
-          messages: [{ role: 'user', content: weeklyReportUserMsg }],
+          system: reportSystemPrompt,
+          messages: [{ role: 'user', content: reportContextBlocks ? `${reportContextBlocks}\n\n---\n\n${weeklyReportUserMsg}` : weeklyReportUserMsg }],
           maxOutputTokens: 4000,
         })
         const stripped = text
