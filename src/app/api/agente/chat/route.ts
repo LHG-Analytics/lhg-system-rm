@@ -405,7 +405,7 @@ export async function POST(req: NextRequest) {
     const discountImp = discountImpResult.status === 'fulfilled' ? discountImpResult.value.data : null
 
     if (priceImps.length === 0) {
-      // Sem tabela importada — usa trailing year
+      // Sem tabela importada — usa trailing year (fallback)
       const kpiParams = trailingYear()
       const [companyResult, channelResult] = await Promise.allSettled([
         fetchCompanyKPIsFromAutomo(unit.slug, kpiParams.startDate, kpiParams.endDate),
@@ -419,89 +419,67 @@ export async function POST(req: NextRequest) {
         channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
         periodMix: tyCompany?.BillingRentalType,
       }]
-    } else if (priceImps.length === 1) {
-      // Uma tabela: período padrão = mês atual (1º → hoje), alinhado com o dashboard
-      const imp = priceImps[0]
-      rawImports = [imp]
-      const monthStart = todayIso.slice(0, 7) + '-01' // YYYY-MM-01
-      // Se a tabela foi importada após o início do mês, usa o valid_from como limite inferior
-      const effectiveFrom = maxDate(imp.valid_from, monthStart)
-      const apiFrom = isoToApi(effectiveFrom)
-      const apiTo   = isoToApi(todayIso)
-      const [companyResult, channelResult] = await Promise.allSettled([
-        fetchCompanyKPIsFromAutomo(unit.slug, apiFrom, apiTo),
-        queryChannelKPIs(unit.slug, apiFrom, apiTo),
-      ])
-      const oneTableCompany = companyResult.status === 'fulfilled' ? companyResult.value : null
-      kpiPeriods = [{
-        period: { startDate: apiFrom, endDate: apiTo },
-        company: oneTableCompany,
-        bookings: null,
-        channelKPIs: channelResult.status === 'fulfilled' ? channelResult.value : undefined,
-        periodMix: oneTableCompany?.BillingRentalType,
-      }]
     } else {
-      // Duas tabelas: importA = anterior, importB = atual (mais recente)
-      const importB = priceImps[0]  // atual
-      const importA = priceImps[1]  // anterior
+      // Modo padrão: MTD atual vs mesmo MTD do ano anterior (YoY real)
+      // Período atual = max(valid_from da tabela ativa, 1º do mês) → hoje
+      const activeTable = priceImps[0]
+      const monthStart = todayIso.slice(0, 7) + '-01'
+      const effectiveFrom = maxDate(activeTable.valid_from, monthStart)
 
-      // Limite de 28 dias por período — garante janelas comparáveis e control de sazonalidade
-      const MAX_DAYS = 28
+      // Mesmo período no ano anterior (mantém os mesmos dias do mês)
+      const yearN = parseInt(todayIso.slice(0, 4), 10)
+      const lyFrom = `${yearN - 1}${effectiveFrom.slice(4)}`  // ex: 2025-05-01
+      const lyTo   = `${yearN - 1}${todayIso.slice(4)}`        // ex: 2025-05-21
 
-      // Período B: últimos min(diasSinceB, MAX_DAYS) dias com a tabela atual
-      const startB = importB.valid_from
-      const daysActiveB = daysBetween(startB, todayIso)
-      const cappedStartB = daysActiveB > MAX_DAYS
-        ? (() => { const d = new Date(todayIso); d.setDate(d.getDate() - MAX_DAYS); return d.toISOString().slice(0, 10) })()
-        : startB
-
-      // Período A: 28 dias imediatamente antes do início efetivo de B
-      const dayBeforeB = (() => { const d = new Date(cappedStartB); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10) })()
-      const cappedStartA = (() => { const d = new Date(dayBeforeB); d.setDate(d.getDate() - (MAX_DAYS - 1)); return d.toISOString().slice(0, 10) })()
-      // Não vai antes do valid_from do importA
-      const effectiveStartA = maxDate(cappedStartA, importA.valid_from)
-
-      const apiFromA  = isoToApi(effectiveStartA)
-      const apiEndA   = isoToApi(dayBeforeB)
-      const apiStartB = isoToApi(cappedStartB)
-      const apiToB    = isoToApi(todayIso)
-
-      const [cA, cB, channelB] = await Promise.allSettled([
-        fetchCompanyKPIsFromAutomo(unit.slug, apiFromA, apiEndA),
-        fetchCompanyKPIsFromAutomo(unit.slug, apiStartB, apiToB),
-        queryChannelKPIs(unit.slug, apiStartB, apiToB),
+      // Busca tabela ativa no mesmo período do ano passado — em paralelo com KPIs
+      const [lyTableResult, cCurrent, cLY, channelCurrent, channelLY] = await Promise.allSettled([
+        admin
+          .from('price_imports')
+          .select('id, parsed_data, discount_data, valid_from, valid_until')
+          .eq('unit_id', unit.id)
+          .eq('import_type', 'prices')
+          .lte('valid_from', lyTo)
+          .or(`valid_until.is.null,valid_until.gte.${lyFrom}`)
+          .order('valid_from', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        fetchCompanyKPIsFromAutomo(unit.slug, isoToApi(effectiveFrom), isoToApi(todayIso)),
+        fetchCompanyKPIsFromAutomo(unit.slug, isoToApi(lyFrom), isoToApi(lyTo)),
+        queryChannelKPIs(unit.slug, isoToApi(effectiveFrom), isoToApi(todayIso)),
+        queryChannelKPIs(unit.slug, isoToApi(lyFrom), isoToApi(lyTo)),
       ])
 
-      rawImports = [importA, importB]
+      const lyTable = lyTableResult.status === 'fulfilled' ? lyTableResult.value.data : null
+      const currentCompany  = cCurrent.status === 'fulfilled' ? cCurrent.value : null
+      const lyCompany = cLY.status === 'fulfilled' ? cLY.value : null
 
-      const daysA = daysBetween(effectiveStartA, dayBeforeB)
-      const daysB = daysBetween(cappedStartB, todayIso)
-      const compA = cA.status === 'fulfilled' ? cA.value : null
-      const compB = cB.status === 'fulfilled' ? cB.value : null
+      // rawImports: [tabela LY (se existir e diferente), tabela atual]
+      rawImports = lyTable && lyTable.id !== activeTable.id
+        ? [lyTable, activeTable]
+        : [activeTable]
+
+      const daysCurrent = daysBetween(effectiveFrom, todayIso)
+      const daysLY      = daysBetween(lyFrom, lyTo)
 
       kpiPeriods = [
         {
-          label: `Tabela anterior — ${apiFromA} a ${apiEndA} (${daysA} dias)`,
-          period: { startDate: apiFromA, endDate: apiEndA },
-          company: compA,
+          label: `Ano anterior — ${isoToApi(lyFrom)} a ${isoToApi(lyTo)} (${daysLY} dias)`,
+          period: { startDate: isoToApi(lyFrom), endDate: isoToApi(lyTo) },
+          company: lyCompany,
           bookings: null,
-          periodMix: compA?.BillingRentalType,
+          channelKPIs: channelLY.status === 'fulfilled' ? channelLY.value : undefined,
+          periodMix: lyCompany?.BillingRentalType,
         },
         {
-          label: `Tabela atual — ${apiStartB} a ${apiToB} (${daysB} dias)`,
-          period: { startDate: apiStartB, endDate: apiToB },
-          company: compB,
+          label: `Período atual — ${isoToApi(effectiveFrom)} a ${isoToApi(todayIso)} (${daysCurrent} dias)`,
+          period: { startDate: isoToApi(effectiveFrom), endDate: isoToApi(todayIso) },
+          company: currentCompany,
           bookings: null,
-          channelKPIs: channelB.status === 'fulfilled' ? channelB.value : undefined,
-          periodMix: compB?.BillingRentalType,
+          channelKPIs: channelCurrent.status === 'fulfilled' ? channelCurrent.value : undefined,
+          periodMix: currentCompany?.BillingRentalType,
         },
       ]
-
-      vigenciaInfo = {
-        importA: { valid_from: apiFromA, valid_until: importA.valid_until ? isoToApi(importA.valid_until) : null, analysis_days: daysA },
-        importB: { valid_from: apiStartB, valid_until: importB.valid_until ? isoToApi(importB.valid_until) : null, analysis_days: daysB },
-        is_asymmetric: Math.abs(daysA - daysB) > 7,
-      }
+      // vigenciaInfo = undefined — comparação YoY não precisa de prompt "como comparar"
     }
 
     // Injeta descontos no import mais recente se disponível
