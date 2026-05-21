@@ -841,8 +841,8 @@ REGRAS INVIOLÁVEIS para o JSON:
 1. "headline": inclua o período atual em DD/MM e um dado numérico chave.
 2. "keyPoints": termine cada bullet com o período de referência. Use "vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})" ou "vs ano anterior (${fmtLyStart}–${fmtLyEnd})". NUNCA use siglas como "LY" ou "yoy".
 3. "priorityAction": use dados REAIS. NUNCA sugira variação > ${maxVar}% — se o mercado exigir mais, diga "ajustar em ${maxVar}% agora e reavaliar". Pode propor novo tier de dia se o padrão horário justificar.
-4. "agentPrompt": instrução cirúrgica (máx 280 chars) que NÃO mencione percentual fixo — cite categorias específicas, padrão de dia (semana vs FDS) e objetivo de KPI. Exemplos: "Analise RevPAR por categoria e reduza seletivamente semana para categorias com giro <2 e eleve FDS premium 3-5%." NÃO escreva "ajuste de até X%" — isso faz o agente aplicar o mesmo % em tudo.
-5. "actionType": "price_proposal" | "discount_proposal" | "agent_config" | "none".
+4. "agentPrompt": instrução cirúrgica (máx 280 chars) que NÃO mencione percentual fixo — cite categorias específicas, padrão de dia (semana vs FDS) e objetivo de KPI. Exemplos: "Analise RevPAR por categoria e reduza seletivamente semana para categorias com giro <2 e eleve FDS premium 3-5%." NÃO escreva "ajuste de até X%" — isso faz o agente aplicar o mesmo % em tudo. SEMPRE preencha este campo — nunca deixe null.
+5. "actionType": "price_proposal" | "discount_proposal" | "agent_config" | "none". Use "none" SOMENTE se os KPIs estão dentro da meta E sem variação relevante — na prática quase sempre há uma ação útil.
 
 Retorne APENAS o JSON (sem markdown fence, sem texto extra):
 {
@@ -872,6 +872,9 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
         : null,
     ].filter(Boolean) as string[]
 
+    // Link genérico sempre presente — garante que todo relatório tem caminho para o agente
+    const genericAgentLink = `/dashboard/agente?unit=${unitSlug}&q=${encodeURIComponent(`[Relatório ${fmtPeriodStart}–${fmtPeriodEnd}] Analise os KPIs desta semana, compare com a semana anterior e sugira a ação de maior impacto para o próximo período.`)}`
+
     let executiveSummary: WeeklyReportData['executiveSummary'] = {
       headline: `${fmtPeriodStart}–${fmtPeriodEnd}: RevPAR ${fmtMoney(currentSnapshot.revpar)}`,
       keyPoints: fallbackKeyPoints.length > 0 ? fallbackKeyPoints : ['Dados do período coletados'],
@@ -884,6 +887,7 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
       priorityAction: '',
       tone: fallbackRevparDelta !== null && fallbackRevparDelta > 2 ? 'positive' : fallbackRevparDelta !== null && fallbackRevparDelta < -3 ? 'warning' : 'neutral',
       actionType: 'none',
+      agentPromptLink: genericAgentLink,
     }
     let aiLeverageComment = ''
 
@@ -904,6 +908,9 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
         if (!jsonMatch) throw new Error(`No JSON found. Raw: ${text.slice(0, 200)}`)
         const parsed = JSON.parse(jsonMatch[0])
         const agentPromptRaw: string | null = parsed.agentPrompt ?? null
+        const specificLink = agentPromptRaw
+          ? `/dashboard/agente?unit=${unitSlug}&q=${encodeURIComponent(`[Relatório semanal ${fmtPeriodStart}–${fmtPeriodEnd}] ${agentPromptRaw}`)}`
+          : null
         executiveSummary = {
           headline: parsed.headline ?? executiveSummary.headline,
           keyPoints: parsed.keyPoints ?? executiveSummary.keyPoints,
@@ -912,9 +919,8 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
           priorityAction: parsed.priorityAction ?? '',
           tone: parsed.tone ?? 'neutral',
           actionType: parsed.actionType ?? 'none',
-          agentPromptLink: agentPromptRaw
-            ? `/dashboard/agente?unit=${unitSlug}&q=${encodeURIComponent(`[Relatório semanal ${fmtPeriodStart}–${fmtPeriodEnd}] ${agentPromptRaw}`)}`
-            : undefined,
+          // Específico quando a IA gerou agentPrompt; genérico como garantia mínima
+          agentPromptLink: specificLink ?? genericAgentLink,
           agentConfigSuggestion: parsed.agentConfigSuggestion ?? undefined,
         }
         aiLeverageComment = parsed.aiLeverageComment ?? ''
