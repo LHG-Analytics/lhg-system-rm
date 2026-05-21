@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+export const runtime = 'edge'
+
 // ─── GET: lista guardrails da unidade ─────────────────────────────────────────
 
 export async function GET(req: NextRequest) {

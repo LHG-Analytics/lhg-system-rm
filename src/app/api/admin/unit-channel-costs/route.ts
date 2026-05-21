@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+export const runtime = 'edge'
+
 const CANAIS_VALIDOS = ['balcao_site', 'site_programada', 'guia_moteis', 'booking', 'expedia', 'outros'] as const
 
 // ─── POST: cria/atualiza channel cost (upsert por unit+canal) ────────────────

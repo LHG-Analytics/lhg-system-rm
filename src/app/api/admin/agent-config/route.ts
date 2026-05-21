@@ -4,6 +4,8 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import type { BudgetConfig } from '@/lib/budget/google-sheets'
 
+export const runtime = 'edge'
+
 export interface CompetitorUrlEntry {
   url: string
   label?: string

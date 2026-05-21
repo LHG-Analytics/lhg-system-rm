@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 
+export const runtime = 'edge'
+
 export interface ScheduledReview {
   id: string
   unit_id: string

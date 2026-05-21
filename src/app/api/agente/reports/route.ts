@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 
+export const runtime = 'edge'
+
 function adminClient() {
   return createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+export const runtime = 'edge'
+
 // GET: lista anomalias da unidade (últimos 14 dias) — todos podem ler
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
