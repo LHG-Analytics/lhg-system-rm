@@ -181,15 +181,26 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao processar')
-      // A API retorna o resultado diretamente (não aninhado em data.result)
-      const r: { inserted: number; transitions: number; skipped: number; elasticityUpdated: number } = data
-      if (r.inserted > 0) {
-        setBootstrapResult(`✓ ${r.inserted} lições geradas em ${r.transitions} transições — elasticidade atualizada`)
-      } else if (r.transitions === 0 && r.skipped === 0) {
-        setBootstrapResult('Todas as transições já foram processadas. Execute após importar novas tabelas.')
-      } else {
-        setBootstrapResult(`Nenhuma lição nova — ${r.skipped} transição(ões) sem dados suficientes ainda (min. 14 dias).`)
+      type TransitionDetail = { switchDate: string; status: string; reason?: string; inserted?: number }
+      const r: { inserted: number; transitions: number; skipped: number; elasticityUpdated: number; details: TransitionDetail[] } = data
+      const alreadyDone = r.details.filter(d => d.status === 'already_done').length
+      const processed   = r.details.filter(d => d.status === 'processed')
+      const skippedList = r.details.filter(d => d.status === 'skipped')
+      const parts: string[] = []
+      if (processed.length > 0) {
+        parts.push(`✓ ${r.inserted} lições em ${processed.length} transição(ões)${r.elasticityUpdated > 0 ? ' — elasticidade atualizada' : ''}`)
       }
+      if (alreadyDone > 0) {
+        parts.push(`${alreadyDone} já processada(s)`)
+      }
+      if (skippedList.length > 0) {
+        const reasons = [...new Set(skippedList.map(d => d.reason).filter(Boolean))]
+        parts.push(`${skippedList.length} pulada(s): ${reasons.join('; ')}`)
+      }
+      if (parts.length === 0) {
+        parts.push('Nenhuma transição encontrada — importe ao menos 2 tabelas de preços.')
+      }
+      setBootstrapResult(parts.join(' · '))
     } catch (e) {
       setBootstrapResult(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {

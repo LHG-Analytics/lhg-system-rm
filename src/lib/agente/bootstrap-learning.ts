@@ -14,8 +14,9 @@ import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { computeAndPersistElasticity } from '@/lib/pricing/elasticity'
 
-const MIN_DAYS = 14    // Mínimo de dias de dados necessários em cada período
-const WINDOW_DAYS = 28 // Janela de comparação (dias antes e depois da troca)
+const MIN_DAYS_BEFORE = 14 // Mínimo de dias de vigência da tabela A antes da troca
+const MIN_DAYS_AFTER  = 7  // Mínimo de dias após a troca (usa valid_from, não data de import)
+const WINDOW_DAYS = 28     // Janela ideal de comparação (dias antes e depois)
 
 function isoToDDMMYYYY(iso: string): string {
   const [y, m, d] = iso.split('-')
@@ -57,11 +58,19 @@ function buildCatMap(response: CompanyKPIResponse): Map<string, SuiteCategoryKPI
   return map
 }
 
+export interface BootstrapTransitionDetail {
+  switchDate: string   // valid_from da tabela nova (data de vigência, não de import)
+  status: 'processed' | 'skipped' | 'already_done'
+  reason?: string      // motivo do skip
+  inserted?: number    // linhas inseridas nesta transição
+}
+
 export interface BootstrapResult {
   transitions: number      // pares de tabelas processados com sucesso
   inserted: number         // linhas inseridas em rm_pricing_lessons
   skipped: number          // transições sem dados suficientes
   elasticityUpdated: number
+  details: BootstrapTransitionDetail[]
 }
 
 /**
@@ -88,18 +97,20 @@ export async function bootstrapPricingLessons(
     .order('valid_from', { ascending: true })
 
   if (!imports || imports.length < 2) {
-    return { transitions: 0, inserted: 0, skipped: 0, elasticityUpdated: 0 }
+    return { transitions: 0, inserted: 0, skipped: 0, elasticityUpdated: 0, details: [] }
   }
 
   const today = new Date().toISOString().slice(0, 10)
   let inserted = 0
   let skipped = 0
   let transitions = 0
+  const details: BootstrapTransitionDetail[] = []
 
   for (let i = 0; i < imports.length - 1; i++) {
     const importA = imports[i]
     const importB = imports[i + 1]
-    const switchDate = importB.valid_from  // data em que B substituiu A
+    // Usa valid_from (data de vigência) como data da troca — NÃO a data de importação
+    const switchDate = importB.valid_from
 
     // Idempotência: pula par já processado (identifica pelo import_b no conditions JSONB)
     const { count: existing } = await admin
@@ -107,28 +118,41 @@ export async function bootstrapPricingLessons(
       .select('id', { count: 'exact', head: true })
       .eq('unit_id', unitId)
       .filter('conditions->>import_b', 'eq', importB.id)
-    if ((existing ?? 0) > 0) continue
+    if ((existing ?? 0) > 0) {
+      details.push({ switchDate, status: 'already_done' })
+      continue
+    }
 
-    // Precisa ter passado MIN_DAYS desde a troca para ter dados pós confiáveis
-    if (daysBetween(switchDate, today) < MIN_DAYS) { skipped++; continue }
-
-    // Período "antes": últimos WINDOW_DAYS dentro da vigência de A
+    // Período "antes": últimos WINDOW_DAYS dentro da vigência de A (janela antes da troca)
     const beforeEnd   = addDaysISO(switchDate, -1)
     const beforeStart = addDaysISO(beforeEnd, -(WINDOW_DAYS - 1))
 
-    // A deve ter pelo menos MIN_DAYS de história antes da troca
-    if (daysBetween(importA.valid_from, beforeEnd) < MIN_DAYS) { skipped++; continue }
+    // A deve ter pelo menos MIN_DAYS_BEFORE de história antes da troca
+    if (daysBetween(importA.valid_from, beforeEnd) < MIN_DAYS_BEFORE) {
+      skipped++
+      details.push({ switchDate, status: 'skipped', reason: `tabela anterior vigente por apenas ${daysBetween(importA.valid_from, beforeEnd)} dias (mín. ${MIN_DAYS_BEFORE})` })
+      continue
+    }
 
-    // Período "depois": WINDOW_DAYS após a troca (limitado a ontem)
+    // Período "depois": WINDOW_DAYS após a troca, limitado a ontem
     const afterStart  = switchDate
     const afterEndRaw = addDaysISO(switchDate, WINDOW_DAYS - 1)
     const afterEnd    = afterEndRaw < addDaysISO(today, -1) ? afterEndRaw : addDaysISO(today, -1)
 
-    if (daysBetween(afterStart, afterEnd) < MIN_DAYS) { skipped++; continue }
+    // Precisa de pelo menos MIN_DAYS_AFTER de dados após a troca (usa valid_from, não import date)
+    if (daysBetween(afterStart, afterEnd) < MIN_DAYS_AFTER) {
+      skipped++
+      details.push({ switchDate, status: 'skipped', reason: `apenas ${daysBetween(afterStart, afterEnd)} dias de dados após a vigência (mín. ${MIN_DAYS_AFTER})` })
+      continue
+    }
 
     const rowsA = (importA.parsed_data as unknown as ParsedPriceRow[]) ?? []
     const rowsB = (importB.parsed_data as unknown as ParsedPriceRow[]) ?? []
-    if (!rowsA.length || !rowsB.length) { skipped++; continue }
+    if (!rowsA.length || !rowsB.length) {
+      skipped++
+      details.push({ switchDate, status: 'skipped', reason: 'tabela sem preços parseados' })
+      continue
+    }
 
     // Busca KPIs de ambos os períodos em paralelo — inclui DataTableSuiteCategory
     const [kpiBefore, kpiAfter] = await Promise.all([
@@ -136,7 +160,11 @@ export async function bootstrapPricingLessons(
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(afterStart), isoToDDMMYYYY(afterEnd)).catch(() => null),
     ])
 
-    if (!kpiBefore || !kpiAfter) { skipped++; continue }
+    if (!kpiBefore || !kpiAfter) {
+      skipped++
+      details.push({ switchDate, status: 'skipped', reason: 'falha ao buscar KPIs do ERP' })
+      continue
+    }
 
     // KPIs por categoria — isolam o comportamento de cada produto
     const catsBefore = buildCatMap(kpiBefore)
@@ -145,7 +173,11 @@ export async function bootstrapPricingLessons(
     // KPIs da unidade como fallback quando categoria não tem dados suficientes
     const unitBef = kpiBefore.TotalResult
     const unitAft = kpiAfter.TotalResult
-    if (!unitBef.totalRevpar || !unitBef.totalGiro) { skipped++; continue }
+    if (!unitBef.totalRevpar || !unitBef.totalGiro) {
+      skipped++
+      details.push({ switchDate, status: 'skipped', reason: 'RevPAR ou Giro zero no período anterior — sem movimento no ERP' })
+      continue
+    }
 
     const unitDeltaRevpar  = deltaPct(unitBef.totalRevpar, unitAft.totalRevpar)
     const unitDeltaGiro    = deltaPct(unitBef.totalGiro, unitAft.totalGiro)
@@ -222,7 +254,11 @@ export async function bootstrapPricingLessons(
       })
       .filter(Boolean)
 
-    if (!inserts.length) { skipped++; continue }
+    if (!inserts.length) {
+      skipped++
+      details.push({ switchDate, status: 'skipped', reason: 'nenhum preço alterado entre as duas tabelas' })
+      continue
+    }
 
     const { error } = await admin.from('rm_pricing_lessons').insert(
       inserts as Database['public']['Tables']['rm_pricing_lessons']['Insert'][],
@@ -230,6 +266,10 @@ export async function bootstrapPricingLessons(
     if (!error) {
       inserted += inserts.length
       transitions++
+      details.push({ switchDate, status: 'processed', inserted: inserts.length })
+    } else {
+      skipped++
+      details.push({ switchDate, status: 'skipped', reason: 'erro ao salvar no banco' })
     }
   }
 
@@ -238,5 +278,5 @@ export async function bootstrapPricingLessons(
     elasticityUpdated = await computeAndPersistElasticity(unitId).catch(() => 0)
   }
 
-  return { transitions, inserted, skipped, elasticityUpdated }
+  return { transitions, inserted, skipped, elasticityUpdated, details }
 }
