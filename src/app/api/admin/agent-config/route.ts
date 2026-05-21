@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
+// import type only — google-sheets usa node:crypto, incompatível com Edge Runtime
 import type { BudgetConfig } from '@/lib/budget/google-sheets'
 
 export const runtime = 'edge'

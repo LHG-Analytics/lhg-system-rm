@@ -13,7 +13,7 @@ export function BudgetTracking({ data }: Props) {
   const { formatMoney: fmt } = useCurrency()
   // Quando sem meta, escala em relação à projeção (projeção = 100%)
   const ref = data.meta > 0 ? data.meta : data.projecao
-  const progressPct = ref > 0 ? Math.min((data.realizado / ref) * 100, 100) : 100
+  const progressPct = ref > 0 ? Math.min((data.realizado / ref) * 100, 100) : 0
   const projecaoPct = data.meta > 0 ? Math.min((data.projecao / ref) * 100, 100) : 100
   const gapPct = data.meta > 0 ? ((data.projecao - data.meta) / data.meta) * 100 : 0
 

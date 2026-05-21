@@ -866,8 +866,9 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
     let aiLeverageComment = ''
 
     // Retry com backoff para lidar com rate limiting quando vários relatórios são gerados em paralelo
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 6000 * attempt))
+    // Máximo 2 tentativas para não exceder o timeout do Vercel Hobby (60s) com delayMs alto
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 8000))
       try {
         const { text } = await generateText({
           model: ANALYSIS_MODEL,
@@ -900,7 +901,7 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
         break // sucesso — sai do loop
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        if (attempt < 2) {
+        if (attempt < 1) {
           console.warn(`[generateWeeklyReport] AI summary attempt ${attempt + 1} failed, retrying: ${msg}`)
         } else {
           console.error(`[generateWeeklyReport] AI summary all attempts failed: ${msg}`)
