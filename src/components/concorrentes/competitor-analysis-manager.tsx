@@ -189,7 +189,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
   const analyzeUrl = useCallback(async (
     competitorName: string,
     entry: CompetitorUrlEntry,
-    mode: 'cheerio' | 'playwright' | 'guia',
+    mode: 'cheerio' | 'playwright' | 'guia' | 'manual',
   ) => {
     const url = entry.url.trim()
     if (!url) return
@@ -375,6 +375,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                               )}
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
+                              {c.mode !== 'manual' && (
                               <Button
                                 size="sm" variant="outline" className="h-6 gap-1 text-[11px] px-2"
                                 onClick={() => analyzeUrl(c.name, entry, c.mode ?? 'cheerio')}
@@ -389,6 +390,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                                   : snap ? 'Reanalisar' : 'Analisar'
                                 }
                               </Button>
+                              )}
                               <Button
                                 size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
                                 onClick={() => handleRemoveUrl(c.name, entry.url)}

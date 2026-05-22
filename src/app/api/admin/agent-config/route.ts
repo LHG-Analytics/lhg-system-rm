@@ -16,7 +16,7 @@ export interface CompetitorUrl {
   name: string
   /** Múltiplas URLs para o mesmo concorrente (cada categoria pode ter URL própria) */
   urls: CompetitorUrlEntry[]
-  mode?: 'cheerio' | 'playwright' | 'guia'
+  mode?: 'cheerio' | 'playwright' | 'guia' | 'manual'
   /** @deprecated Use urls[] */
   url?: string
 }
