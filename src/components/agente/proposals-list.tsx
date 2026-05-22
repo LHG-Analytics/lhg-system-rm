@@ -121,7 +121,6 @@ function ExpandableText({ text, maxLength = 120 }: { text: string; maxLength?: n
 export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, selectedProposalId, canManage = true }: ProposalsListProps) {
   const supabase = useMemo(() => createClient(), [])
   const [proposals, setProposals] = useState<PriceProposal[]>(initialProposals)
-  const [generating, setGenerating] = useState(false)
   const [reviewing, setReviewing] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
@@ -262,30 +261,6 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
       return next
     })
   }
-
-  const handleGenerate = useCallback(async () => {
-    setGenerating(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/agente/proposals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unitSlug }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        const msg = data.error ?? 'Erro ao gerar proposta'
-        const preview = data.preview ? `\n\nResposta do modelo: "${data.preview}"` : ''
-        throw new Error(msg + preview)
-      }
-      setProposals((prev) => [data as PriceProposal, ...prev])
-      setExpanded((prev) => new Set([...prev, (data as PriceProposal).id]))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro desconhecido')
-    } finally {
-      setGenerating(false)
-    }
-  }, [unitSlug])
 
   const handleReview = useCallback(async (
     id: string,
@@ -510,14 +485,6 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
           })()}
         </div>
 
-        {canManage && (
-          <Button onClick={handleGenerate} disabled={generating} className="gap-2 shrink-0">
-            {generating
-              ? <><Loader2 className="size-4 animate-spin" />Analisando…</>
-              : <><Sparkles className="size-4" />Gerar Nova Proposta</>
-            }
-          </Button>
-        )}
       </div>
 
       {error && (
@@ -532,7 +499,7 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
           <Sparkles className="size-8 text-muted-foreground/40" />
           <p className="font-medium">Nenhuma proposta ainda</p>
           <p className="text-sm text-muted-foreground max-w-sm">
-            Clique em &quot;Gerar Nova Proposta&quot; para que o agente analise os KPIs e sugira ajustes de preço.
+            Inicie uma conversa no Chat e peça ao agente para gerar uma proposta de preços.
           </p>
         </div>
       ) : filteredProposals.length === 0 ? (
