@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Globe, Plus, Trash2, RefreshCw, CheckCircle2,
-  AlertCircle, Zap, Link2, Loader2, Building2, Sparkles, Tag,
+  AlertCircle, Zap, Link2, Loader2, Building2, Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -19,6 +19,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { AgentConfig, CompetitorUrl, CompetitorUrlEntry } from '@/app/api/admin/agent-config/route'
 import type { CompetitorSnapshot } from '@/app/api/agente/competitor-analysis/route'
+import { CategoryMappingDialog } from './category-mapping-dialog'
 
 interface Unit {
   id: string
@@ -290,14 +291,27 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
             </Select>
           </div>
         )}
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
-            <Globe className="size-4 text-primary" />
-            Análise de concorrentes — {unitName}
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Cada concorrente pode ter múltiplas URLs. A análise extrai preços via IA e roda em segundo plano.
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+              <Globe className="size-4 text-primary" />
+              Análise de concorrentes — {unitName}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Cada concorrente pode ter múltiplas URLs. A análise extrai preços via IA e roda em segundo plano.
+            </p>
+          </div>
+          <CategoryMappingDialog
+            config={config}
+            snapshots={snapshots}
+            unitSlug={unitSlug}
+            onSaved={() => {
+              fetch(`/api/admin/agent-config?unitSlug=${unitSlug}`)
+                .then((r) => r.ok ? r.json() : null)
+                .then((data) => data && setConfig(data as AgentConfig))
+                .catch(() => {})
+            }}
+          />
         </div>
       </div>
 

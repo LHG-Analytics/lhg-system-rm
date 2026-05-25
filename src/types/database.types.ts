@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -194,6 +194,7 @@ export type Database = {
           context: string | null
           conv_id: string | null
           created_at: string
+          created_by: string | null
           id: string
           rejected_items: Json | null
           rejection_reason_text: string | null
@@ -207,6 +208,7 @@ export type Database = {
           context?: string | null
           conv_id?: string | null
           created_at?: string
+          created_by?: string | null
           id?: string
           rejected_items?: Json | null
           rejection_reason_text?: string | null
@@ -220,6 +222,7 @@ export type Database = {
           context?: string | null
           conv_id?: string | null
           created_at?: string
+          created_by?: string | null
           id?: string
           rejected_items?: Json | null
           rejection_reason_text?: string | null
@@ -676,6 +679,7 @@ export type Database = {
           budget_sheet_url: string | null
           budget_yearly: Json
           city: string
+          competitor_category_map: Json
           competitor_urls: Json
           created_at: string
           events_cache: Json | null
@@ -684,6 +688,8 @@ export type Database = {
           is_active: boolean
           max_variation_pct: number
           postal_code: string | null
+          price_sheet_last_sync: string | null
+          price_sheet_url: string | null
           pricing_strategy: string
           pricing_thresholds: Json | null
           shared_context: string | null
@@ -702,6 +708,7 @@ export type Database = {
           budget_sheet_url?: string | null
           budget_yearly?: Json
           city?: string
+          competitor_category_map?: Json
           competitor_urls?: Json
           created_at?: string
           events_cache?: Json | null
@@ -710,6 +717,8 @@ export type Database = {
           is_active?: boolean
           max_variation_pct?: number
           postal_code?: string | null
+          price_sheet_last_sync?: string | null
+          price_sheet_url?: string | null
           pricing_strategy?: string
           pricing_thresholds?: Json | null
           shared_context?: string | null
@@ -728,6 +737,7 @@ export type Database = {
           budget_sheet_url?: string | null
           budget_yearly?: Json
           city?: string
+          competitor_category_map?: Json
           competitor_urls?: Json
           created_at?: string
           events_cache?: Json | null
@@ -736,6 +746,8 @@ export type Database = {
           is_active?: boolean
           max_variation_pct?: number
           postal_code?: string | null
+          price_sheet_last_sync?: string | null
+          price_sheet_url?: string | null
           pricing_strategy?: string
           pricing_thresholds?: Json | null
           shared_context?: string | null
@@ -2080,3 +2092,4 @@ export const Constants = {
     },
   },
 } as const
+

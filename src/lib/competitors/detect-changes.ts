@@ -290,13 +290,22 @@ export async function computeAndPersistGaps(
     if (!existing || r.canal === 'balcao_site') ourDeduped.set(key, r)
   }
 
-  // Comodidades das nossas suítes (para match semântico)
+  // Comodidades das nossas suítes (para match semântico) + mapeamento manual
   const { data: agentCfg } = await admin
     .from('rm_agent_config')
-    .select('suite_amenities')
+    .select('suite_amenities, competitor_category_map')
     .eq('unit_id', unitId)
     .maybeSingle()
   const ourAmenities = (agentCfg?.suite_amenities as Record<string, string[]> | null) ?? {}
+
+  // Fase 0: mapeamento manual (competitor_name → competitor_cat_lower → nossa_cat)
+  type CatMapEntry = { competitor_name: string; competitor_cat: string; nossa_cat: string }
+  const rawManualMap = (agentCfg?.competitor_category_map as CatMapEntry[] | null) ?? []
+  const manualOverrides = new Map<string, Map<string, string>>()
+  for (const e of rawManualMap) {
+    if (!manualOverrides.has(e.competitor_name)) manualOverrides.set(e.competitor_name, new Map())
+    manualOverrides.get(e.competitor_name)!.set(e.competitor_cat.toLowerCase(), e.nossa_cat)
+  }
 
   // Snapshots de concorrentes dentro da janela (status done)
   const cutoff = new Date(Date.now() - cutoffDays * 24 * 3600 * 1000).toISOString()
@@ -397,7 +406,20 @@ export async function computeAndPersistGaps(
     const matchMap = new Map<string, string>()
     categoryMatches.set(competitorName, matchMap)
 
+    // 0) Mapeamento manual — prioridade máxima
+    const manualMap = manualOverrides.get(competitorName)
+    if (manualMap) {
+      for (const [compCatLower, nossaCat] of manualMap) {
+        if (catAgg.has(compCatLower)) {
+          matchMap.set(nossaCat, compCatLower)
+        }
+      }
+    }
+
     for (const ourCat of ourCatsPer.keys()) {
+      // Skip: já mapeado manualmente
+      if (matchMap.has(ourCat)) continue
+
       // 1) Nome exato
       if (catAgg.has(ourCat.toLowerCase())) {
         matchMap.set(ourCat, ourCat.toLowerCase())

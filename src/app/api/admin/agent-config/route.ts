@@ -38,6 +38,12 @@ export interface UnitGoals {
   ticket?: number | null
 }
 
+export interface CategoryMapEntry {
+  competitor_name: string
+  competitor_cat:  string  // nome exato da categoria do concorrente
+  nossa_cat:       string  // nome exato da nossa categoria
+}
+
 export interface AgentConfig {
   id: string
   unit_id: string
@@ -63,6 +69,8 @@ export interface AgentConfig {
   budget_config: BudgetConfig | null
   /** Timestamp do último sync bem-sucedido com a planilha */
   budget_last_sync: string | null
+  /** Mapeamento manual de categorias do concorrente → nossas categorias */
+  competitor_category_map: CategoryMapEntry[]
 }
 
 function getAdminClient() {
@@ -94,7 +102,7 @@ export async function GET(req: NextRequest) {
   const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
 
-  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, budget_last_sync'
+  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, budget_last_sync, competitor_category_map'
 
   const { data, error: err } = await admin
     .from('rm_agent_config')
@@ -137,29 +145,31 @@ export async function PATCH(req: NextRequest) {
     budget_sheet_url?: string | null
     budget_config?: BudgetConfig | null
     price_sheet_url?: string | null
+    competitor_category_map?: CategoryMapEntry[]
   }
-  const { unit_id, competitor_urls, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, price_sheet_url, ...rest } = body
+  const { unit_id, competitor_urls, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, price_sheet_url, competitor_category_map, ...rest } = body
   if (!unit_id) return new Response('unit_id obrigatório', { status: 400 })
 
   type DbUpdate = import('@/types/database.types').Database['public']['Tables']['rm_agent_config']['Update']
   const fields: DbUpdate = {
     ...rest,
-    ...(competitor_urls    !== undefined ? { competitor_urls:    competitor_urls    as unknown as DbUpdate['competitor_urls']    } : {}),
-    ...(suite_amenities    !== undefined ? { suite_amenities:    suite_amenities    as unknown as DbUpdate['suite_amenities']    } : {}),
-    ...(shared_context     !== undefined ? { shared_context                                                                     } : {}),
-    ...(pricing_thresholds !== undefined ? { pricing_thresholds: pricing_thresholds as unknown as DbUpdate['pricing_thresholds'] } : {}),
-    ...(unit_goals         !== undefined ? { unit_goals:         unit_goals         as unknown as DbUpdate['unit_goals']         } : {}),
-    ...(budget_sheet_url   !== undefined ? { budget_sheet_url                                                                   } : {}),
-    ...(budget_config      !== undefined ? { budget_config:      budget_config      as unknown as DbUpdate['budget_config']      } : {}),
+    ...(competitor_urls         !== undefined ? { competitor_urls:         competitor_urls         as unknown as DbUpdate['competitor_urls']         } : {}),
+    ...(suite_amenities         !== undefined ? { suite_amenities:         suite_amenities         as unknown as DbUpdate['suite_amenities']         } : {}),
+    ...(shared_context          !== undefined ? { shared_context                                                                                     } : {}),
+    ...(pricing_thresholds      !== undefined ? { pricing_thresholds:      pricing_thresholds      as unknown as DbUpdate['pricing_thresholds']      } : {}),
+    ...(unit_goals              !== undefined ? { unit_goals:              unit_goals              as unknown as DbUpdate['unit_goals']              } : {}),
+    ...(budget_sheet_url        !== undefined ? { budget_sheet_url                                                                                   } : {}),
+    ...(budget_config           !== undefined ? { budget_config:           budget_config           as unknown as DbUpdate['budget_config']           } : {}),
   }
 
-  // price_sheet_url is not yet in generated types — use runtime spread
+  // Fields not yet in generated types — use runtime spread
   const finalFields = {
     ...fields,
-    ...(price_sheet_url !== undefined ? { price_sheet_url } : {}),
+    ...(price_sheet_url         !== undefined ? { price_sheet_url         } : {}),
+    ...(competitor_category_map !== undefined ? { competitor_category_map } : {}),
   }
 
-  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, budget_last_sync'
+  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, budget_last_sync, competitor_category_map'
   const admin = getAdminClient()
   const { data, error: err } = await admin
     .from('rm_agent_config')
