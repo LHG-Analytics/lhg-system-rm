@@ -57,7 +57,7 @@ function toSignal(ratio: number | null): PaceSignal {
  * Permite ao agente RM detectar: "estamos 35% abaixo do ritmo normal
  * para uma sexta à tarde — oportunidade de incentivo de preço".
  */
-export async function getReservationPace(unitSlug: string): Promise<ReservationPaceResult | null> {
+export async function getReservationPace(unitSlug: string, timezone = 'America/Sao_Paulo'): Promise<ReservationPaceResult | null> {
   const pool = await getAutomPool(unitSlug)
   if (!pool) return null
 
@@ -67,7 +67,7 @@ export async function getReservationPace(unitSlug: string): Promise<ReservationP
   const sql = `
     WITH
     brt_now AS (
-      SELECT (NOW() AT TIME ZONE 'America/Sao_Paulo') AS ts
+      SELECT (NOW() AT TIME ZONE '${timezone}') AS ts
     ),
     -- Início do dia operacional (06:00 BRT) — se hora < 6, usa ontem 06h
     op_start AS (
@@ -225,8 +225,8 @@ export async function getReservationPace(unitSlug: string): Promise<ReservationP
       ? Math.min(paceRatio, paceRatio2h)
       : (paceRatio ?? paceRatio2h)
 
-    // Hora e dia BRT para contexto
-    const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+    // Hora e dia local para contexto
+    const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: timezone }))
 
     return {
       hoje_total:        hojeTotal,

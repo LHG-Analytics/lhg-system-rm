@@ -510,7 +510,7 @@ export async function POST(req: NextRequest) {
   ] = await Promise.allSettled([
     admin
       .from('rm_agent_config')
-      .select('city, suite_amenities, focus_metric, pricing_strategy, max_variation_pct, shared_context, pricing_thresholds, unit_goals, budget_yearly')
+      .select('city, timezone, suite_amenities, focus_metric, pricing_strategy, max_variation_pct, shared_context, pricing_thresholds, unit_goals, budget_yearly')
       .eq('unit_id', unit.id)
       .maybeSingle(),
     admin
@@ -531,6 +531,7 @@ export async function POST(req: NextRequest) {
 
   const agentConfigData = agentConfigResult.status === 'fulfilled' ? agentConfigResult.value.data : null
   const city = agentConfigData?.city ?? 'Campinas,BR'
+  const unitTimezone = agentConfigData?.timezone ?? 'America/Sao_Paulo'
   const suiteAmenities = (agentConfigData?.suite_amenities ?? {}) as Record<string, string[]>
   const focusMetric = agentConfigData?.focus_metric ?? 'balanceado'
   const pricingStrategy = agentConfigData?.pricing_strategy ?? 'moderado'
@@ -581,7 +582,7 @@ export async function POST(req: NextRequest) {
   const [availabilityRows, realtimeOccupancy, reservationPace, weatherContext, categoryPeriodKPIs, cancellationRates, demandPattern, weeklyPickup] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
-    getReservationPace(unit.slug).catch(() => null),
+    getReservationPace(unit.slug, unitTimezone).catch(() => null),
     fetchWeatherContext(city).catch(() => null),
     kpiPeriods[0]?.period
       ? queryCategoryPeriodKPIs(unit.slug, kpiPeriods[0].period.startDate, kpiPeriods[0].period.endDate).catch(() => [])
