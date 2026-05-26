@@ -48,18 +48,35 @@ export function CategoryMappingDialog({
     setOpen(next)
   }
 
+  // Normaliza para deduplicação: remove acentos + lowercase
+  // "Suíte 50 Tons" e "Suite 50 Tons" → mesma chave "suite 50 tons"
+  function normKey(s: string) {
+    return s.trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  }
+
   // Categorias únicas por concorrente extraídas dos snapshots
+  // Usa Map<normalizedKey, canonicalName> para deduplicar variações de acento/maiúsculas
   const competitorCategories = useMemo(() => {
-    const map = new Map<string, Set<string>>()
+    const map = new Map<string, Map<string, string>>() // competitorName → Map<normKey, displayName>
     for (const snap of snapshots) {
       if (!snap.mapped_prices?.length) continue
-      const cats = map.get(snap.competitor_name) ?? new Set<string>()
+      const cats = map.get(snap.competitor_name) ?? new Map<string, string>()
       for (const p of snap.mapped_prices as unknown as MappedPrice[]) {
-        if (p.categoria_concorrente) cats.add(p.categoria_concorrente)
+        const cat = p.categoria_concorrente?.trim()
+        if (!cat) continue
+        const key = normKey(cat)
+        // Prefere a forma com acento correto (ex: "Suíte") sobre a sem acento ("Suite")
+        const existing = cats.get(key)
+        if (!existing || cat.length > existing.length) cats.set(key, cat)
       }
       map.set(snap.competitor_name, cats)
     }
-    return map
+    // Converte para Map<competitorName, string[]> (lista de nomes canônicos ordenada)
+    const result = new Map<string, string[]>()
+    for (const [name, catMap] of map) {
+      result.set(name, [...catMap.values()].sort())
+    }
+    return result
   }, [snapshots])
 
   // Nossas categorias — de suite_amenities ou fallback via mapped_prices.categoria_nossa
@@ -136,7 +153,7 @@ export function CategoryMappingDialog({
               {[...competitorCategories.entries()].map(([competitorName, cats]) => (
                 <div key={competitorName} className="flex flex-col gap-1.5">
                   <p className="text-xs font-semibold text-foreground border-b pb-1.5">{competitorName}</p>
-                  {[...cats].sort().map((competitorCat) => {
+                  {cats.map((competitorCat) => {
                     const entry = localMap.find(
                       (e) => e.competitor_name === competitorName && e.competitor_cat === competitorCat
                     )

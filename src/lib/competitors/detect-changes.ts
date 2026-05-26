@@ -298,13 +298,19 @@ export async function computeAndPersistGaps(
     .maybeSingle()
   const ourAmenities = (agentCfg?.suite_amenities as Record<string, string[]> | null) ?? {}
 
-  // Fase 0: mapeamento manual (competitor_name → competitor_cat_lower → nossa_cat)
+  // Normaliza para match insensível a acentos: "Suíte 50 Tons" === "Suite 50 Tons"
+  function normCatKey(s: string): string {
+    return s.trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  }
+
+  // Fase 0: mapeamento manual (competitor_name → norm(competitor_cat) → nossa_cat)
   type CatMapEntry = { competitor_name: string; competitor_cat: string; nossa_cat: string }
   const rawManualMap = (agentCfg?.competitor_category_map as CatMapEntry[] | null) ?? []
   const manualOverrides = new Map<string, Map<string, string>>()
   for (const e of rawManualMap) {
     if (!manualOverrides.has(e.competitor_name)) manualOverrides.set(e.competitor_name, new Map())
-    manualOverrides.get(e.competitor_name)!.set(e.competitor_cat.toLowerCase(), e.nossa_cat)
+    // Chave normalizada: remove acentos para tolerar variações de grafia entre scrapes
+    manualOverrides.get(e.competitor_name)!.set(normCatKey(e.competitor_cat), e.nossa_cat)
   }
 
   // Snapshots de concorrentes dentro da janela (status done)
@@ -407,11 +413,17 @@ export async function computeAndPersistGaps(
     categoryMatches.set(competitorName, matchMap)
 
     // 0) Mapeamento manual — prioridade máxima
+    // catAgg usa lowercase puro; manualOverrides usa normCatKey (sem acentos)
+    // → procura no catAgg qual chave normaliza para o mesmo valor
     const manualMap = manualOverrides.get(competitorName)
     if (manualMap) {
-      for (const [compCatLower, nossaCat] of manualMap) {
-        if (catAgg.has(compCatLower)) {
-          matchMap.set(nossaCat, compCatLower)
+      for (const [normManual, nossaCat] of manualMap) {
+        // Acha a chave real do catAgg que corresponde ao mapeamento manual
+        for (const catAggKey of catAgg.keys()) {
+          if (normCatKey(catAggKey) === normManual) {
+            matchMap.set(nossaCat, catAggKey)
+            break
+          }
         }
       }
     }
