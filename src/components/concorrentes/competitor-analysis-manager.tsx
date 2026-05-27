@@ -765,17 +765,17 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
 
                         {/* Linha 1: Período + Preço + Delete */}
                         <div className="flex items-end gap-2">
-                          <div className="flex flex-col gap-0.5 w-[90px] shrink-0">
+                          <div className="flex flex-col gap-0.5 flex-1 min-w-[90px]">
                             <span className="text-[10px] text-muted-foreground font-medium">Período</span>
                             <Input
-                              placeholder="3h, 6h..."
+                              placeholder="3h, 6h, pernoite..."
                               value={entry.periodo}
                               onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'periodo', e.target.value)}
                               list="period-suggestions"
                               className="h-7 text-xs"
                             />
                           </div>
-                          <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                          <div className="flex flex-col gap-0.5 flex-1 min-w-[80px]">
                             <span className="text-[10px] text-muted-foreground font-medium">Preço</span>
                             <div className="flex items-center gap-1">
                               <span className="text-xs text-muted-foreground shrink-0">R$</span>
@@ -786,7 +786,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                                 placeholder="0,00"
                                 value={entry.preco}
                                 onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'preco', e.target.value)}
-                                className="h-7 text-xs"
+                                className="h-7 text-xs w-full"
                               />
                             </div>
                           </div>
