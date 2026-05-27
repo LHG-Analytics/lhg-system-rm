@@ -837,14 +837,16 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                               type="time"
                               value={entry.hora_inicio}
                               onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'hora_inicio', e.target.value)}
-                              className="h-6 w-[90px] text-xs border border-input rounded-md px-2 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                              onClick={(e) => { try { (e.currentTarget as HTMLInputElement).showPicker() } catch { /* navegador sem suporte */ } }}
+                              className="h-6 w-[90px] text-xs border border-input rounded-md px-2 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
                             />
                             <span className="text-[10px] text-muted-foreground">–</span>
                             <input
                               type="time"
                               value={entry.hora_fim}
                               onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'hora_fim', e.target.value)}
-                              className="h-6 w-[90px] text-xs border border-input rounded-md px-2 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                              onClick={(e) => { try { (e.currentTarget as HTMLInputElement).showPicker() } catch { /* navegador sem suporte */ } }}
+                              className="h-6 w-[90px] text-xs border border-input rounded-md px-2 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
                             />
                             <span className="text-[10px] text-muted-foreground/50 italic">opcional</span>
                           </div>
