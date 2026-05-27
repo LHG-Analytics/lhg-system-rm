@@ -33,11 +33,17 @@ interface MappedPrice {
   dia_tipo: 'semana' | 'fds_feriado' | 'todos'
   preco: number
   categoria_nossa?: string | null
+  // Campos extras preservados no JSONB para entradas manuais
+  dias?: string[]       // dias individuais selecionados, ex: ['seg','ter']
+  hora_inicio?: string  // 'HH:MM' ou ''
+  hora_fim?: string     // 'HH:MM' ou ''
 }
 
 interface ManualPriceEntry {
   periodo: string
-  dia_tipo: 'semana' | 'fds_feriado' | 'todos'
+  dias: string[]       // seleção individual de dias; [] = todos os dias
+  hora_inicio: string  // 'HH:MM' ou '' (sem restrição)
+  hora_fim: string     // 'HH:MM' ou ''
   preco: string
 }
 interface ManualSuite {
@@ -46,17 +52,38 @@ interface ManualSuite {
 }
 
 function makeEmptyEntry(): ManualPriceEntry {
-  return { periodo: '3h', dia_tipo: 'todos', preco: '' }
+  return { periodo: '3h', dias: [], hora_inicio: '', hora_fim: '', preco: '' }
 }
 function makeEmptySuite(): ManualSuite {
   return { name: '', entries: [makeEmptyEntry()] }
 }
 
-const DIA_TIPO_OPTIONS = [
-  { value: 'todos',       label: 'Todos os dias' },
-  { value: 'semana',      label: 'Dom–Qui (semana)' },
-  { value: 'fds_feriado', label: 'Sex–Sáb (FDS)' },
+const DAYS_OF_WEEK = [
+  { key: 'dom', label: 'Dom' },
+  { key: 'seg', label: 'Seg' },
+  { key: 'ter', label: 'Ter' },
+  { key: 'qua', label: 'Qua' },
+  { key: 'qui', label: 'Qui' },
+  { key: 'sex', label: 'Sex' },
+  { key: 'sab', label: 'Sáb' },
 ] as const
+
+/** Mapeia dias individuais → dia_tipo legado para gap computation */
+function computeDiaTipo(dias: string[]): 'semana' | 'fds_feriado' | 'todos' {
+  if (!dias.length) return 'todos'
+  const fdsSet = new Set(['sex', 'sab'])
+  const hasFds = dias.some((d) => fdsSet.has(d))
+  const hasSemana = dias.some((d) => !fdsSet.has(d))
+  if (hasFds && !hasSemana) return 'fds_feriado'
+  if (!hasFds && hasSemana) return 'semana'
+  return 'todos'
+}
+
+/** Formata uma string amigável de dias para exibição */
+function formatDias(dias: string[]): string {
+  if (!dias.length) return 'Todos os dias'
+  return dias.map((d) => DAYS_OF_WEEK.find((x) => x.key === d)?.label ?? d).join(', ')
+}
 
 interface CompetitorAnalysisManagerProps {
   unitSlug: string
@@ -302,9 +329,21 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
     setManualSuites((prev) => prev.map((s, i) => i === suiteIdx ? { ...s, entries: [...s.entries, makeEmptyEntry()] } : s))
   const removeManualEntry = (suiteIdx: number, entryIdx: number) =>
     setManualSuites((prev) => prev.map((s, i) => i === suiteIdx ? { ...s, entries: s.entries.filter((_, j) => j !== entryIdx) } : s))
-  const updateManualEntry = (suiteIdx: number, entryIdx: number, field: keyof ManualPriceEntry, value: string) =>
+  const updateManualEntry = (suiteIdx: number, entryIdx: number, field: 'periodo' | 'hora_inicio' | 'hora_fim' | 'preco', value: string) =>
     setManualSuites((prev) => prev.map((s, i) => i === suiteIdx
       ? { ...s, entries: s.entries.map((e, j) => j === entryIdx ? { ...e, [field]: value } : e) }
+      : s
+    ))
+  const toggleManualDay = (suiteIdx: number, entryIdx: number, day: string) =>
+    setManualSuites((prev) => prev.map((s, i) => i === suiteIdx
+      ? {
+          ...s,
+          entries: s.entries.map((e, j) => {
+            if (j !== entryIdx) return e
+            const dias = e.dias.includes(day) ? e.dias.filter((d) => d !== day) : [...e.dias, day]
+            return { ...e, dias }
+          }),
+        }
       : s
     ))
 
@@ -325,7 +364,10 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
           categoria_nossa: null,
           periodo: e.periodo.trim(),
           preco: parseFloat(e.preco),
-          dia_tipo: e.dia_tipo,
+          dia_tipo: computeDiaTipo(e.dias),
+          ...(e.dias.length > 0 && { dias: e.dias }),
+          ...(e.hora_inicio && { hora_inicio: e.hora_inicio }),
+          ...(e.hora_fim && { hora_fim: e.hora_fim }),
         }))
     )
 
@@ -694,12 +736,13 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
               </>
             ) : (
               /* ── Formulário de suítes manuais ─────────────────────────────── */
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2.5">
                 {manualSuites.map((suite, suiteIdx) => (
-                  <div key={suiteIdx} className="rounded-lg border bg-muted/20 p-3 flex flex-col gap-2">
+                  <div key={suiteIdx} className="rounded-lg border bg-muted/20 p-3 flex flex-col gap-2.5">
+                    {/* Nome da suíte */}
                     <div className="flex items-center gap-2">
                       <Input
-                        placeholder="Nome da suíte (ex: Master, Standard, Platinum)"
+                        placeholder="Nome da suíte (ex: Master Hidro, Standard, Loft)"
                         value={suite.name}
                         onChange={(e) => updateManualSuiteName(suiteIdx, e.target.value)}
                         className="h-7 text-xs flex-1"
@@ -709,64 +752,113 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                           type="button"
                           onClick={() => removeManualSuite(suiteIdx)}
                           className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                          title="Remover suíte"
                         >
                           <Trash2 className="size-3.5" />
                         </button>
                       )}
                     </div>
 
+                    {/* Cards de preço */}
                     {suite.entries.map((entry, entryIdx) => (
-                      <div key={entryIdx} className="flex items-center gap-1.5">
-                        <Input
-                          placeholder="Período"
-                          value={entry.periodo}
-                          onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'periodo', e.target.value)}
-                          className="h-7 text-xs w-20 shrink-0"
-                          list="period-suggestions"
-                        />
-                        <Select
-                          value={entry.dia_tipo}
-                          onValueChange={(v) => updateManualEntry(suiteIdx, entryIdx, 'dia_tipo', v)}
-                        >
-                          <SelectTrigger className="h-7 text-xs w-36 shrink-0">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {DIA_TIPO_OPTIONS.map((d) => (
-                              <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="flex items-center flex-1 min-w-0">
-                          <span className="text-xs text-muted-foreground mr-1 shrink-0">R$</span>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="0"
-                            value={entry.preco}
-                            onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'preco', e.target.value)}
-                            className="h-7 text-xs"
-                          />
+                      <div key={entryIdx} className="rounded-md border border-dashed bg-background/60 p-2.5 flex flex-col gap-2">
+
+                        {/* Linha 1: Período + Preço + Delete */}
+                        <div className="flex items-end gap-2">
+                          <div className="flex flex-col gap-0.5 w-[90px] shrink-0">
+                            <span className="text-[10px] text-muted-foreground font-medium">Período</span>
+                            <Input
+                              placeholder="3h, 6h..."
+                              value={entry.periodo}
+                              onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'periodo', e.target.value)}
+                              list="period-suggestions"
+                              className="h-7 text-xs"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                            <span className="text-[10px] text-muted-foreground font-medium">Preço</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-muted-foreground shrink-0">R$</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                placeholder="0,00"
+                                value={entry.preco}
+                                onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'preco', e.target.value)}
+                                className="h-7 text-xs"
+                              />
+                            </div>
+                          </div>
+                          {suite.entries.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeManualEntry(suiteIdx, entryIdx)}
+                              className="mb-0.5 shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                              title="Remover linha"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          )}
                         </div>
-                        {suite.entries.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeManualEntry(suiteIdx, entryIdx)}
-                            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-                          >
-                            <Trash2 className="size-3" />
-                          </button>
-                        )}
+
+                        {/* Linha 2: Dias da semana */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground font-medium w-10 shrink-0">Dias</span>
+                          <div className="flex flex-wrap gap-1">
+                            {DAYS_OF_WEEK.map((day) => (
+                              <button
+                                key={day.key}
+                                type="button"
+                                onClick={() => toggleManualDay(suiteIdx, entryIdx, day.key)}
+                                className={cn(
+                                  'h-6 w-8 rounded text-[10px] font-semibold transition-all border',
+                                  entry.dias.includes(day.key)
+                                    ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                                    : 'bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground'
+                                )}
+                              >
+                                {day.label}
+                              </button>
+                            ))}
+                            {entry.dias.length === 0 && (
+                              <span className="text-[10px] text-muted-foreground/50 self-center italic ml-0.5">
+                                todos
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Linha 3: Faixa de horário (opcional) */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground font-medium w-10 shrink-0">Horário</span>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="time"
+                              value={entry.hora_inicio}
+                              onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'hora_inicio', e.target.value)}
+                              className="h-6 w-[90px] text-xs border border-input rounded-md px-2 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                            />
+                            <span className="text-[10px] text-muted-foreground">–</span>
+                            <input
+                              type="time"
+                              value={entry.hora_fim}
+                              onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'hora_fim', e.target.value)}
+                              className="h-6 w-[90px] text-xs border border-input rounded-md px-2 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                            />
+                            <span className="text-[10px] text-muted-foreground/50 italic">opcional</span>
+                          </div>
+                        </div>
+
                       </div>
                     ))}
 
                     <button
                       type="button"
                       onClick={() => addManualEntry(suiteIdx)}
-                      className="text-[11px] text-primary hover:underline self-start flex items-center gap-1"
+                      className="text-[11px] text-primary/80 hover:text-primary self-start flex items-center gap-1 transition-colors"
                     >
-                      <Plus className="size-3" /> Período
+                      <Plus className="size-3" /> Adicionar período/turno
                     </button>
                   </div>
                 ))}
@@ -774,22 +866,15 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                 <button
                   type="button"
                   onClick={addManualSuite}
-                  className="text-xs text-muted-foreground hover:text-foreground self-start flex items-center gap-1 transition-colors"
+                  className="text-xs text-muted-foreground hover:text-foreground self-start flex items-center gap-1.5 transition-colors border border-dashed rounded-md px-3 py-1.5"
                 >
                   <Plus className="size-3.5" /> Adicionar suíte
                 </button>
 
-                {/* datalist para sugestões de período */}
                 <datalist id="period-suggestions">
-                  <option value="3h" />
-                  <option value="6h" />
-                  <option value="12h" />
-                  <option value="pernoite" />
-                  <option value="1h" />
-                  <option value="2h" />
-                  <option value="4h" />
-                  <option value="Day Use" />
-                  <option value="Diária" />
+                  <option value="3h" /><option value="6h" /><option value="12h" />
+                  <option value="pernoite" /><option value="1h" /><option value="2h" />
+                  <option value="4h" /><option value="Day Use" /><option value="Diária" />
                 </datalist>
               </div>
             )}
