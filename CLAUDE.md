@@ -1151,6 +1151,16 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - Novo design: `w-72 max-w-[calc(100vw-1.5rem)] right-0`; `TIER_META` + `TIER_ACCENT` para cor por tier; item com `border-l-2` + badge fixo `min-w-[62px]` + 2 linhas (nome bold + descrição)
   - Trigger: `max-w-[80px] truncate sm:max-w-none` — mostra tier badge em mobile, nome completo em desktop
 
+- **LHG-234:** feat(concorrentes): modo Manual — inserção direta de preços sem URL ✅ 2026-05-27
+  - 4ª aba "Manual" no formulário de concorrentes (após Padrão / Guia GM / Interativo)
+  - Formulário: nome do motel + blocos de suíte (nome da suíte + N linhas período×dia_tipo×preço)
+  - `datalist` com sugestões de período: 3h/6h/12h/pernoite/1h/2h/4h/Day Use/Diária
+  - URL sintética `manual:<slug>` como chave de snapshot — respeita `UNIQUE(unit_id, competitor_url)` sem migration
+  - API: handler `mode='manual'` salva `mapped_prices` diretamente (sem scraping); roda `detectPriceChanges` + `computeAndPersistGaps`
+  - Lista: badge âmbar "Manual", oculta URL sintética (mostra "Inserção manual de preços"), sem botão Reanalisar nem + URL
+  - **Caso de uso:** pesquisa de campo ou concorrentes sem site (ex: Tantra na LIV/Quito)
+  - **Armadilha:** ao editar preços de um concorrente manual, basta recriar com o mesmo nome — o upsert por URL sintética substitui o snapshot existente
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
