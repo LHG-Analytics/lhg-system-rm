@@ -679,7 +679,17 @@ Calibre a proposta considerando a sazonalidade projetada: se o orçamento futuro
   const forecastBlock = buildForecastBlock(computeRevenueForecast(kpiActive, budgetYearly))
 
   // Bloco de preços de concorrentes (snapshots dos últimos 7 dias)
-  interface MappedPrice { categoria_concorrente: string; categoria_nossa: string | null; periodo: string; preco: number; dia_tipo?: string; notas?: string }
+  interface MappedPrice {
+    categoria_concorrente: string
+    categoria_nossa: string | null
+    periodo: string
+    preco: number
+    dia_tipo?: string
+    dias?: string[]      // dias individuais (modo manual)
+    hora_inicio?: string // faixa intraday, ex: '06:00'
+    hora_fim?: string    // faixa intraday, ex: '12:00'
+    notas?: string
+  }
   interface GuiaMeta { mode: 'guia'; amenities?: string[]; amenitiesBySuite?: Record<string, string[]> }
 
   const competitorBlock = competitorSnapshotsData?.length
@@ -690,9 +700,17 @@ ${(competitorSnapshotsData as unknown as Array<{ competitor_name: string; mapped
   if (!prices.length) return `**${snap.competitor_name}**: sem preços extraídos`
   const date = new Date(snap.scraped_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
   const _fmtComp = fmtMoney ? (v: number) => fmtMoney(v, 2) : (v: number) => `R$ ${v.toFixed(2)}`
-  const lines = prices.map((p) =>
-    `  | ${p.categoria_concorrente} | ${p.periodo} | ${p.dia_tipo ?? 'todos'} | ${_fmtComp(p.preco)} |`
-  ).join('\n')
+  const hasIntraday = prices.some((p) => p.hora_inicio || p.hora_fim)
+  const lines = prices.map((p) => {
+    const horario = p.hora_inicio || p.hora_fim ? `${p.hora_inicio ?? '?'}–${p.hora_fim ?? '?'}` : '—'
+    const diasLabel = p.dias?.length ? p.dias.join(',') : (p.dia_tipo ?? 'todos')
+    return hasIntraday
+      ? `  | ${p.categoria_concorrente} | ${p.periodo} | ${diasLabel} | ${horario} | ${_fmtComp(p.preco)} |`
+      : `  | ${p.categoria_concorrente} | ${p.periodo} | ${diasLabel} | ${_fmtComp(p.preco)} |`
+  }).join('\n')
+  const header = hasIntraday
+    ? `  | Suíte | Período | Dia | Horário | Preço |\n  |-------|---------|-----|---------|-------|`
+    : `  | Suíte | Período | Dia | Preço |\n  |-------|---------|-----|-------|`
   let amenitiesBlock = ''
   try {
     const meta = JSON.parse(snap.raw_text ?? '') as GuiaMeta
@@ -707,10 +725,11 @@ ${(competitorSnapshotsData as unknown as Array<{ competitor_name: string; mapped
       }
     }
   } catch { /* não é JSON */ }
-  return `**${snap.competitor_name}** (analisado em ${date})${amenitiesBlock}\n  | Suíte | Período | Dia | Preço |\n  |-------|---------|-----|-------|\n${lines}`
+  return `**${snap.competitor_name}** (analisado em ${date})${amenitiesBlock}\n${header}\n${lines}`
 }).join('\n\n')}
 
-> Compare categorias com comodidades equivalentes (ex: suíte com hidro vs. concorrente com hidro; piscina vs. piscina).`
+> Compare categorias com comodidades equivalentes (ex: suíte com hidro vs. concorrente com hidro; piscina vs. piscina).
+> Quando concorrente usa preços diferentes por horário (Horário ≠ —), cruze com o Padrão de demanda por faixa horária — se sua demanda também é maior naquele horário, pode ser justificável o mesmo diferencial.`
     : ''
 
   const DIA_GUARDRAIL_LABEL: Record<string, string> = { todos: 'Semana + FDS', semana: 'Semana', fds_feriado: 'FDS/Feriado' }

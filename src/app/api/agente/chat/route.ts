@@ -561,7 +561,15 @@ export async function POST(req: NextRequest) {
     : ''
 
   // Tipos auxiliares para o bloco de concorrentes (usado na ferramenta lazy buscar_analise_concorrentes)
-  interface CMappedPrice { categoria_concorrente: string; periodo: string; preco: number; dia_tipo?: string }
+  interface CMappedPrice {
+    categoria_concorrente: string
+    periodo: string
+    preco: number
+    dia_tipo?: string
+    dias?: string[]         // dias individuais selecionados no modo manual
+    hora_inicio?: string    // faixa intraday, ex: '06:00'
+    hora_fim?: string       // faixa intraday, ex: '12:00'
+  }
   interface CGuiaMeta { mode: 'guia'; amenitiesBySuite?: Record<string, string[]>; amenities?: string[] }
 
   // Bloco de comodidades das nossas suítes
@@ -947,10 +955,20 @@ export async function POST(req: NextRequest) {
                   amenBlock = `\n  Comodidades:\n${lines}`
                 }
               } catch { /* não é JSON */ }
-              const lines = prices.map((p) =>
-                `  | ${p.categoria_concorrente} | ${p.periodo} | ${p.dia_tipo ?? 'todos'} | R$ ${p.preco.toFixed(2)} |`
-              ).join('\n')
-              return `**${snap.competitor_name}** (${date})${amenBlock}\n  | Suíte | Período | Dia | Preço |\n  |-------|---------|-----|-------|\n${lines}`
+              const hasIntraday = prices.some((p) => p.hora_inicio || p.hora_fim)
+              const lines = prices.map((p) => {
+                const horario = p.hora_inicio || p.hora_fim
+                  ? `${p.hora_inicio ?? '?'}–${p.hora_fim ?? '?'}`
+                  : '—'
+                const diasLabel = p.dias?.length ? p.dias.join(',') : (p.dia_tipo ?? 'todos')
+                return hasIntraday
+                  ? `  | ${p.categoria_concorrente} | ${p.periodo} | ${diasLabel} | ${horario} | R$ ${p.preco.toFixed(2)} |`
+                  : `  | ${p.categoria_concorrente} | ${p.periodo} | ${diasLabel} | R$ ${p.preco.toFixed(2)} |`
+              }).join('\n')
+              const header = hasIntraday
+                ? `  | Suíte | Período | Dia | Horário | Preço |\n  |-------|---------|-----|---------|-------|`
+                : `  | Suíte | Período | Dia | Preço |\n  |-------|---------|-----|-------|`
+              return `**${snap.competitor_name}** (${date})${amenBlock}\n${header}\n${lines}`
             }).join('\n\n') +
             '\n\n> Compare comodidades equivalentes ao sugerir posicionamento de preço.'
           : 'Nenhum snapshot de concorrentes disponível nos últimos 7 dias.'
