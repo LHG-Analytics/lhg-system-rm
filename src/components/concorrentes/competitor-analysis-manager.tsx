@@ -52,7 +52,7 @@ interface ManualSuite {
 }
 
 function makeEmptyEntry(): ManualPriceEntry {
-  return { periodo: '3h', dias: [], hora_inicio: '', hora_fim: '', preco: '' }
+  return { periodo: '', dias: [], hora_inicio: '', hora_fim: '', preco: '' }
 }
 function makeEmptySuite(): ManualSuite {
   return { name: '', entries: [makeEmptyEntry()] }
@@ -768,7 +768,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                           <div className="flex flex-col gap-0.5 flex-1 min-w-[90px]">
                             <span className="text-[10px] text-muted-foreground font-medium">Período</span>
                             <Input
-                              placeholder="3h, 6h, pernoite..."
+                              placeholder="Ex: 3h, 6h, Pernoite..."
                               value={entry.periodo}
                               onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'periodo', e.target.value)}
                               list="period-suggestions"
@@ -872,9 +872,15 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                 </button>
 
                 <datalist id="period-suggestions">
-                  <option value="3h" /><option value="6h" /><option value="12h" />
-                  <option value="pernoite" /><option value="1h" /><option value="2h" />
-                  <option value="4h" /><option value="Day Use" /><option value="Diária" />
+                  <option value="1h" />
+                  <option value="2h" />
+                  <option value="4h" />
+                  <option value="5h" />
+                  <option value="6h" />
+                  <option value="12h" />
+                  <option value="Day Use" />
+                  <option value="Diária" />
+                  <option value="Pernoite" />
                 </datalist>
               </div>
             )}
