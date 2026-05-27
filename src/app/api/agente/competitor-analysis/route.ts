@@ -370,10 +370,11 @@ export async function POST(req: NextRequest) {
     competitorUrl: string
     competitorLabel?: string
     ourCategories?: string[]
-    mode?: 'cheerio' | 'playwright' | 'guia'
+    mode?: 'cheerio' | 'playwright' | 'guia' | 'manual'
+    manualPrices?: MappedPrice[]
   }
 
-  const { unitSlug, competitorName, competitorUrl, ourCategories = [], mode = 'cheerio' } = body
+  const { unitSlug, competitorName, competitorUrl, ourCategories = [], mode = 'cheerio', manualPrices } = body
   if (!unitSlug || !competitorName || !competitorUrl) {
     return new Response('unitSlug, competitorName e competitorUrl são obrigatórios', { status: 400 })
   }
@@ -384,6 +385,45 @@ export async function POST(req: NextRequest) {
 
   if (!(['super_admin', 'admin'].includes(auth.profile!.role ?? '') && !auth.profile!.unit_id) && auth.profile!.unit_id !== unit.id) {
     return new Response('Sem acesso a essa unidade', { status: 403 })
+  }
+
+  // ─── Manual: dados inseridos diretamente pelo usuário ───────────────────
+  if (mode === 'manual') {
+    if (!manualPrices || !Array.isArray(manualPrices) || manualPrices.length === 0) {
+      return new Response('manualPrices é obrigatório no modo manual', { status: 400 })
+    }
+
+    const { data: saved, error: saveError } = await admin
+      .from('competitor_snapshots')
+      .upsert(
+        {
+          unit_id: unit.id,
+          competitor_name: competitorName,
+          competitor_url: competitorUrl,
+          mapped_prices: manualPrices as unknown as Database['public']['Tables']['competitor_snapshots']['Insert']['mapped_prices'],
+          raw_text: JSON.stringify({ mode: 'manual' }),
+          scraped_at: new Date().toISOString(),
+          status: 'done',
+          apify_run_id: null,
+        },
+        { onConflict: 'unit_id,competitor_url' }
+      )
+      .select('id, competitor_name, competitor_url, mapped_prices, scraped_at, status, apify_run_id')
+      .single()
+
+    if (saveError) return Response.json({ error: saveError.message }, { status: 500 })
+
+    console.log('[competitor-analysis/manual] Salvo', manualPrices.length, 'preços para', competitorName)
+
+    try {
+      const { detectPriceChanges, computeAndPersistGaps } = await import('@/lib/competitors/detect-changes')
+      await detectPriceChanges(saved.id, null)
+      await computeAndPersistGaps(unit.id)
+    } catch (e) {
+      console.error('[competitor-analysis/manual] detect/gap falhou (não bloqueia):', e)
+    }
+
+    return Response.json({ ...saved, amenities: [] } as unknown as CompetitorSnapshot)
   }
 
   // ─── Guia de Motéis: API estruturada gratuita ────────────────────────────

@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Globe, Plus, Trash2, RefreshCw, CheckCircle2,
-  AlertCircle, Zap, Link2, Loader2, Building2, Sparkles,
+  AlertCircle, Zap, Link2, Loader2, Building2, Sparkles, PenLine,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -34,6 +34,29 @@ interface MappedPrice {
   preco: number
   categoria_nossa?: string | null
 }
+
+interface ManualPriceEntry {
+  periodo: string
+  dia_tipo: 'semana' | 'fds_feriado' | 'todos'
+  preco: string
+}
+interface ManualSuite {
+  name: string
+  entries: ManualPriceEntry[]
+}
+
+function makeEmptyEntry(): ManualPriceEntry {
+  return { periodo: '3h', dia_tipo: 'todos', preco: '' }
+}
+function makeEmptySuite(): ManualSuite {
+  return { name: '', entries: [makeEmptyEntry()] }
+}
+
+const DIA_TIPO_OPTIONS = [
+  { value: 'todos',       label: 'Todos os dias' },
+  { value: 'semana',      label: 'Dom–Qui (semana)' },
+  { value: 'fds_feriado', label: 'Sex–Sáb (FDS)' },
+] as const
 
 interface CompetitorAnalysisManagerProps {
   unitSlug: string
@@ -96,7 +119,8 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
   const [newName, setNewName] = useState('')
   const [newUrl, setNewUrl] = useState('')
   const [newLabel, setNewLabel] = useState('')
-  const [newMode, setNewMode] = useState<'cheerio' | 'playwright' | 'guia'>('cheerio')
+  const [newMode, setNewMode] = useState<'cheerio' | 'playwright' | 'guia' | 'manual'>('cheerio')
+  const [manualSuites, setManualSuites] = useState<ManualSuite[]>([makeEmptySuite()])
   const [addingCompetitor, setAddingCompetitor] = useState(false)
   const [analyzingUrls, setAnalyzingUrls] = useState<Set<string>>(new Set())
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
@@ -269,6 +293,79 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
     await saveCompetitors(updated)
   }, [config, competitorUrls, saveCompetitors])
 
+  // ── Helpers para o formulário manual ────────────────────────────────────
+  const addManualSuite = () => setManualSuites((prev) => [...prev, makeEmptySuite()])
+  const removeManualSuite = (idx: number) => setManualSuites((prev) => prev.filter((_, i) => i !== idx))
+  const updateManualSuiteName = (idx: number, name: string) =>
+    setManualSuites((prev) => prev.map((s, i) => i === idx ? { ...s, name } : s))
+  const addManualEntry = (suiteIdx: number) =>
+    setManualSuites((prev) => prev.map((s, i) => i === suiteIdx ? { ...s, entries: [...s.entries, makeEmptyEntry()] } : s))
+  const removeManualEntry = (suiteIdx: number, entryIdx: number) =>
+    setManualSuites((prev) => prev.map((s, i) => i === suiteIdx ? { ...s, entries: s.entries.filter((_, j) => j !== entryIdx) } : s))
+  const updateManualEntry = (suiteIdx: number, entryIdx: number, field: keyof ManualPriceEntry, value: string) =>
+    setManualSuites((prev) => prev.map((s, i) => i === suiteIdx
+      ? { ...s, entries: s.entries.map((e, j) => j === entryIdx ? { ...e, [field]: value } : e) }
+      : s
+    ))
+
+  const handleAddManualCompetitor = useCallback(async () => {
+    const name = newName.trim()
+    if (!name || !config) return
+
+    const validSuites = manualSuites.filter(
+      (s) => s.name.trim() && s.entries.some((e) => e.periodo.trim() && parseFloat(e.preco) > 0)
+    )
+    if (!validSuites.length) return
+
+    const mappedPrices: MappedPrice[] = validSuites.flatMap((suite) =>
+      suite.entries
+        .filter((e) => e.periodo.trim() && parseFloat(e.preco) > 0)
+        .map((e) => ({
+          categoria_concorrente: suite.name.trim(),
+          categoria_nossa: null,
+          periodo: e.periodo.trim(),
+          preco: parseFloat(e.preco),
+          dia_tipo: e.dia_tipo,
+        }))
+    )
+
+    const syntheticUrl = `manual:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+    const entry: CompetitorUrlEntry = { url: syntheticUrl }
+    const newEntry: CompetitorUrl = { name, urls: [entry], mode: 'manual' }
+    const updated = [...competitorUrls, newEntry]
+
+    setAddingCompetitor(true)
+    const ok = await saveCompetitors(updated)
+    if (!ok) { setAddingCompetitor(false); return }
+
+    try {
+      setAnalyzingUrls((prev) => new Set([...prev, syntheticUrl]))
+      const res = await fetch('/api/agente/competitor-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unitSlug, competitorName: name, competitorUrl: syntheticUrl, mode: 'manual', manualPrices: mappedPrices }),
+      })
+      const data = await res.json() as Partial<CompetitorSnapshot>
+      if (res.ok && data.id) {
+        setSnapshots((prev) => {
+          const idx = prev.findIndex((s) => s.competitor_url === syntheticUrl)
+          const snap = data as CompetitorSnapshot
+          if (idx >= 0) { const next = [...prev]; next[idx] = snap; return next }
+          return [snap, ...prev]
+        })
+      } else if (!res.ok) {
+        setAnalyzeError((data as { error?: string }).error ?? 'Erro ao salvar dados manuais')
+      }
+    } catch (e) {
+      setAnalyzeError(e instanceof Error ? e.message : 'Erro ao salvar dados manuais')
+    } finally {
+      setAnalyzingUrls((prev) => { const n = new Set(prev); n.delete(syntheticUrl); return n })
+      setAddingCompetitor(false)
+    }
+
+    setNewName(''); setManualSuites([makeEmptySuite()]); setNewMode('cheerio')
+  }, [config, competitorUrls, newName, manualSuites, unitSlug, saveCompetitors])
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header + seletor de unidade */}
@@ -347,6 +444,12 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                         <Zap className="size-2.5" /> Interativo
                       </span>
                     )}
+                    {c.mode === 'manual' && (
+                      <span className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                        <PenLine className="size-2.5" /> Manual
+                      </span>
+                    )}
+                    {c.mode !== 'manual' && (
                     <Button
                       size="sm" variant="ghost"
                       className="h-6 gap-1 text-[11px] text-muted-foreground hover:text-foreground px-2"
@@ -354,6 +457,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                     >
                       <Link2 className="size-3" /> + URL
                     </Button>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-1.5">
@@ -368,7 +472,11 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                               {entry.label && (
                                 <p className="text-[11px] font-medium text-foreground">{entry.label}</p>
                               )}
-                              <p className="text-[11px] text-muted-foreground truncate">{entry.url}</p>
+                              {entry.url.startsWith('manual:') ? (
+                                <p className="text-[11px] text-muted-foreground italic">Inserção manual de preços</p>
+                              ) : (
+                                <p className="text-[11px] text-muted-foreground truncate">{entry.url}</p>
+                              )}
                               {(snap && snap.status !== 'processing') && (
                                 <button
                                   onClick={() => setExpandedPricesUrl(expandedPricesUrl === entry.url ? null : entry.url)}
@@ -559,28 +667,132 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
               onChange={(e) => setNewName(e.target.value)}
               className="h-8 text-xs"
             />
-            <Input
-              placeholder="URL da página de preços"
-              value={newUrl}
-              onChange={(e) => {
-                const url = e.target.value
-                setNewUrl(url)
-                if (isGuiaSite(url)) {
-                  setNewMode('guia')
-                  if (!newName.trim()) {
-                    const suggested = suggestNameFromUrl(url)
-                    if (suggested) setNewName(suggested)
-                  }
-                }
-              }}
-              className="h-8 text-xs"
-            />
-            <Input
-              placeholder="Rótulo da URL (ex: Standard, Master) — opcional"
-              value={newLabel}
-              onChange={(e) => setNewLabel(e.target.value)}
-              className="h-8 text-xs"
-            />
+            {newMode !== 'manual' ? (
+              <>
+                <Input
+                  placeholder="URL da página de preços"
+                  value={newUrl}
+                  onChange={(e) => {
+                    const url = e.target.value
+                    setNewUrl(url)
+                    if (isGuiaSite(url)) {
+                      setNewMode('guia')
+                      if (!newName.trim()) {
+                        const suggested = suggestNameFromUrl(url)
+                        if (suggested) setNewName(suggested)
+                      }
+                    }
+                  }}
+                  className="h-8 text-xs"
+                />
+                <Input
+                  placeholder="Rótulo da URL (ex: Standard, Master) — opcional"
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </>
+            ) : (
+              /* ── Formulário de suítes manuais ─────────────────────────────── */
+              <div className="flex flex-col gap-2">
+                {manualSuites.map((suite, suiteIdx) => (
+                  <div key={suiteIdx} className="rounded-lg border bg-muted/20 p-3 flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        placeholder="Nome da suíte (ex: Master, Standard, Platinum)"
+                        value={suite.name}
+                        onChange={(e) => updateManualSuiteName(suiteIdx, e.target.value)}
+                        className="h-7 text-xs flex-1"
+                      />
+                      {manualSuites.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeManualSuite(suiteIdx)}
+                          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {suite.entries.map((entry, entryIdx) => (
+                      <div key={entryIdx} className="flex items-center gap-1.5">
+                        <Input
+                          placeholder="Período"
+                          value={entry.periodo}
+                          onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'periodo', e.target.value)}
+                          className="h-7 text-xs w-20 shrink-0"
+                          list="period-suggestions"
+                        />
+                        <Select
+                          value={entry.dia_tipo}
+                          onValueChange={(v) => updateManualEntry(suiteIdx, entryIdx, 'dia_tipo', v)}
+                        >
+                          <SelectTrigger className="h-7 text-xs w-36 shrink-0">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {DIA_TIPO_OPTIONS.map((d) => (
+                              <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="flex items-center flex-1 min-w-0">
+                          <span className="text-xs text-muted-foreground mr-1 shrink-0">R$</span>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0"
+                            value={entry.preco}
+                            onChange={(e) => updateManualEntry(suiteIdx, entryIdx, 'preco', e.target.value)}
+                            className="h-7 text-xs"
+                          />
+                        </div>
+                        {suite.entries.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeManualEntry(suiteIdx, entryIdx)}
+                            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={() => addManualEntry(suiteIdx)}
+                      className="text-[11px] text-primary hover:underline self-start flex items-center gap-1"
+                    >
+                      <Plus className="size-3" /> Período
+                    </button>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={addManualSuite}
+                  className="text-xs text-muted-foreground hover:text-foreground self-start flex items-center gap-1 transition-colors"
+                >
+                  <Plus className="size-3.5" /> Adicionar suíte
+                </button>
+
+                {/* datalist para sugestões de período */}
+                <datalist id="period-suggestions">
+                  <option value="3h" />
+                  <option value="6h" />
+                  <option value="12h" />
+                  <option value="pernoite" />
+                  <option value="1h" />
+                  <option value="2h" />
+                  <option value="4h" />
+                  <option value="Day Use" />
+                  <option value="Diária" />
+                </datalist>
+              </div>
+            )}
 
             <div className="flex flex-col gap-1">
               <div className="flex rounded-lg border overflow-hidden text-xs w-fit">
@@ -602,24 +814,48 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                 >
                   <Zap className="size-3" /> Interativo
                 </button>
+                <button
+                  onClick={() => setNewMode('manual')}
+                  className={cn('px-3 py-1.5 transition-colors flex items-center gap-1', newMode === 'manual' ? 'bg-amber-500 text-white' : 'hover:bg-accent')}
+                >
+                  <PenLine className="size-3" /> Manual
+                </button>
               </div>
               <p className="text-[11px] text-muted-foreground">
                 {newMode === 'guia'
                   ? 'API estruturada do Guia de Motéis — gratuito, instantâneo, retorna comodidades.'
                   : newMode === 'playwright'
                     ? 'Renderiza JS + calendário para capturar semana e FDS (~45s). Requer Apify.'
-                    : 'Via Jina.ai — gratuito, rápido (~5s). Use para sites com preços no HTML.'}
+                    : newMode === 'manual'
+                      ? 'Insira os preços diretamente — sem necessidade de URL. Ideal para pesquisa de campo.'
+                      : 'Via Jina.ai — gratuito, rápido (~5s). Use para sites com preços no HTML.'}
               </p>
             </div>
 
-            <Button
-              size="sm" variant="outline" className="gap-1.5 self-start"
-              onClick={handleAddCompetitor}
-              disabled={!newName.trim() || !newUrl.trim() || addingCompetitor}
-            >
-              {addingCompetitor ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-              {addingCompetitor ? 'Salvando…' : 'Adicionar e Analisar'}
-            </Button>
+            {newMode === 'manual' ? (
+              <Button
+                size="sm"
+                className="gap-1.5 self-start bg-amber-500 hover:bg-amber-600 text-white"
+                onClick={handleAddManualCompetitor}
+                disabled={
+                  !newName.trim() ||
+                  !manualSuites.some((s) => s.name.trim() && s.entries.some((e) => e.periodo.trim() && parseFloat(e.preco) > 0)) ||
+                  addingCompetitor
+                }
+              >
+                {addingCompetitor ? <Loader2 className="size-3.5 animate-spin" /> : <PenLine className="size-3.5" />}
+                {addingCompetitor ? 'Salvando…' : 'Salvar concorrente manual'}
+              </Button>
+            ) : (
+              <Button
+                size="sm" variant="outline" className="gap-1.5 self-start"
+                onClick={handleAddCompetitor}
+                disabled={!newName.trim() || !newUrl.trim() || addingCompetitor}
+              >
+                {addingCompetitor ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                {addingCompetitor ? 'Salvando…' : 'Adicionar e Analisar'}
+              </Button>
+            )}
           </div>
         </div>
       )}
