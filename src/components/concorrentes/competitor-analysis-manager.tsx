@@ -48,6 +48,7 @@ interface ManualPriceEntry {
 }
 interface ManualSuite {
   name: string
+  amenities: string
   entries: ManualPriceEntry[]
 }
 
@@ -55,7 +56,32 @@ function makeEmptyEntry(): ManualPriceEntry {
   return { periodo: '', dias: [], hora_inicio: '', hora_fim: '', preco: '' }
 }
 function makeEmptySuite(): ManualSuite {
-  return { name: '', entries: [makeEmptyEntry()] }
+  return { name: '', amenities: '', entries: [makeEmptyEntry()] }
+}
+
+function snapshotToManualSuites(snap: CompetitorSnapshot): ManualSuite[] {
+  const prices = (snap.mapped_prices as unknown as MappedPrice[]) ?? []
+  const amenitiesMap: Record<string, string> = {}
+  for (const a of (snap.amenities ?? [])) {
+    const colonIdx = a.indexOf(': ')
+    if (colonIdx > 0) amenitiesMap[a.slice(0, colonIdx)] = a.slice(colonIdx + 2)
+  }
+  const suitesMap = new Map<string, ManualPriceEntry[]>()
+  for (const p of prices) {
+    if (!suitesMap.has(p.categoria_concorrente)) suitesMap.set(p.categoria_concorrente, [])
+    suitesMap.get(p.categoria_concorrente)!.push({
+      periodo: p.periodo,
+      dias: p.dias ?? [],
+      hora_inicio: p.hora_inicio ?? '',
+      hora_fim: p.hora_fim ?? '',
+      preco: String(p.preco),
+    })
+  }
+  const suites: ManualSuite[] = []
+  for (const [name, entries] of suitesMap) {
+    suites.push({ name, amenities: amenitiesMap[name] ?? '', entries: entries.length ? entries : [makeEmptyEntry()] })
+  }
+  return suites.length ? suites : [makeEmptySuite()]
 }
 
 const DAYS_OF_WEEK = [
@@ -149,6 +175,8 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
   const [newMode, setNewMode] = useState<'cheerio' | 'playwright' | 'guia' | 'manual'>('cheerio')
   const [manualSuites, setManualSuites] = useState<ManualSuite[]>([makeEmptySuite()])
   const [addingCompetitor, setAddingCompetitor] = useState(false)
+  const [editingCompetitorName, setEditingCompetitorName] = useState<string | null>(null)
+  const formRef = useRef<HTMLDivElement>(null)
   const [analyzingUrls, setAnalyzingUrls] = useState<Set<string>>(new Set())
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [expandedPricesUrl, setExpandedPricesUrl] = useState<string | null>(null)
@@ -325,6 +353,25 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
   const removeManualSuite = (idx: number) => setManualSuites((prev) => prev.filter((_, i) => i !== idx))
   const updateManualSuiteName = (idx: number, name: string) =>
     setManualSuites((prev) => prev.map((s, i) => i === idx ? { ...s, name } : s))
+  const updateManualSuiteAmenities = (idx: number, amenities: string) =>
+    setManualSuites((prev) => prev.map((s, i) => i === idx ? { ...s, amenities } : s))
+
+  const resetManualForm = useCallback(() => {
+    setEditingCompetitorName(null)
+    setNewName('')
+    setManualSuites([makeEmptySuite()])
+    setNewMode('cheerio')
+  }, [])
+
+  const startEditing = useCallback((competitor: CompetitorUrl) => {
+    const syntheticUrl = competitor.urls[0]?.url ?? ''
+    const snap = snapshots.find((s) => s.competitor_url === syntheticUrl)
+    setEditingCompetitorName(competitor.name)
+    setNewName(competitor.name)
+    setNewMode('manual')
+    setManualSuites(snap ? snapshotToManualSuites(snap) : [makeEmptySuite()])
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100)
+  }, [snapshots])
   const addManualEntry = (suiteIdx: number) =>
     setManualSuites((prev) => prev.map((s, i) => i === suiteIdx ? { ...s, entries: [...s.entries, makeEmptyEntry()] } : s))
   const removeManualEntry = (suiteIdx: number, entryIdx: number) =>
@@ -371,21 +418,38 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
         }))
     )
 
-    const syntheticUrl = `manual:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
-    const entry: CompetitorUrlEntry = { url: syntheticUrl }
-    const newEntry: CompetitorUrl = { name, urls: [entry], mode: 'manual' }
-    const updated = [...competitorUrls, newEntry]
+    // Build amenities map from suites with amenities text
+    const manualAmenities: Record<string, string[]> = {}
+    for (const suite of validSuites) {
+      if (suite.amenities.trim()) {
+        manualAmenities[suite.name.trim()] = suite.amenities.split(',').map((a) => a.trim()).filter(Boolean)
+      }
+    }
+
+    const isEditing = editingCompetitorName !== null
+    const baseName = isEditing ? editingCompetitorName! : name
+    const syntheticUrl = `manual:${baseName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
 
     setAddingCompetitor(true)
-    const ok = await saveCompetitors(updated)
-    if (!ok) { setAddingCompetitor(false); return }
+
+    if (!isEditing) {
+      const entry: CompetitorUrlEntry = { url: syntheticUrl }
+      const newEntry: CompetitorUrl = { name, urls: [entry], mode: 'manual' }
+      const updated = [...competitorUrls, newEntry]
+      const ok = await saveCompetitors(updated)
+      if (!ok) { setAddingCompetitor(false); return }
+    }
 
     try {
       setAnalyzingUrls((prev) => new Set([...prev, syntheticUrl]))
       const res = await fetch('/api/agente/competitor-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unitSlug, competitorName: name, competitorUrl: syntheticUrl, mode: 'manual', manualPrices: mappedPrices }),
+        body: JSON.stringify({
+          unitSlug, competitorName: baseName, competitorUrl: syntheticUrl, mode: 'manual',
+          manualPrices: mappedPrices,
+          ...(Object.keys(manualAmenities).length ? { manualAmenities } : {}),
+        }),
       })
       const data = await res.json() as Partial<CompetitorSnapshot>
       if (res.ok && data.id) {
@@ -405,8 +469,8 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
       setAddingCompetitor(false)
     }
 
-    setNewName(''); setManualSuites([makeEmptySuite()]); setNewMode('cheerio')
-  }, [config, competitorUrls, newName, manualSuites, unitSlug, saveCompetitors])
+    resetManualForm()
+  }, [config, competitorUrls, newName, manualSuites, unitSlug, saveCompetitors, editingCompetitorName, resetManualForm])
 
   return (
     <div className="flex flex-col gap-6">
@@ -490,6 +554,16 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                       <span className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-600 border border-amber-500/20">
                         <PenLine className="size-2.5" /> Manual
                       </span>
+                    )}
+                    {c.mode === 'manual' && (
+                      <Button
+                        size="sm" variant="ghost"
+                        className="h-6 gap-1 text-[11px] text-muted-foreground hover:text-amber-600 px-2"
+                        onClick={() => startEditing(c)}
+                        title="Editar dados manuais"
+                      >
+                        <PenLine className="size-3" /> Editar
+                      </Button>
                     )}
                     {c.mode !== 'manual' && (
                     <Button
@@ -701,13 +775,32 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
           )}
 
           {/* Formulário de novo concorrente */}
-          <div className="flex flex-col gap-2 pt-1">
-            <Label className="text-xs font-medium text-muted-foreground">Adicionar concorrente</Label>
+          <div ref={formRef} className="flex flex-col gap-2 pt-1">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-medium text-muted-foreground">
+                {editingCompetitorName ? (
+                  <span className="flex items-center gap-1.5">
+                    <PenLine className="size-3 text-amber-500" />
+                    Editando: <span className="text-foreground font-semibold">{editingCompetitorName}</span>
+                  </span>
+                ) : 'Adicionar concorrente'}
+              </Label>
+              {editingCompetitorName && (
+                <button
+                  type="button"
+                  onClick={resetManualForm}
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Cancelar edição
+                </button>
+              )}
+            </div>
             <Input
               placeholder="Nome (ex: Motel Prime)"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               className="h-8 text-xs"
+              disabled={editingCompetitorName !== null}
             />
             {newMode !== 'manual' ? (
               <>
@@ -757,6 +850,17 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                           <Trash2 className="size-3.5" />
                         </button>
                       )}
+                    </div>
+
+                    {/* Comodidades da suíte */}
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-muted-foreground font-medium">Comodidades <span className="opacity-50 font-normal">(opcional)</span></span>
+                      <Input
+                        placeholder="Ex: Hidro, Piscina, Ar-condicionado, Home Theater"
+                        value={suite.amenities}
+                        onChange={(e) => updateManualSuiteAmenities(suiteIdx, e.target.value)}
+                        className="h-7 text-xs"
+                      />
                     </div>
 
                     {/* Cards de preço */}
@@ -926,19 +1030,30 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
             </div>
 
             {newMode === 'manual' ? (
-              <Button
-                size="sm"
-                className="gap-1.5 self-start bg-amber-500 hover:bg-amber-600 text-white"
-                onClick={handleAddManualCompetitor}
-                disabled={
-                  !newName.trim() ||
-                  !manualSuites.some((s) => s.name.trim() && s.entries.some((e) => e.periodo.trim() && parseFloat(e.preco) > 0)) ||
-                  addingCompetitor
-                }
-              >
-                {addingCompetitor ? <Loader2 className="size-3.5 animate-spin" /> : <PenLine className="size-3.5" />}
-                {addingCompetitor ? 'Salvando…' : 'Salvar concorrente manual'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  className="gap-1.5 self-start bg-amber-500 hover:bg-amber-600 text-white"
+                  onClick={handleAddManualCompetitor}
+                  disabled={
+                    !newName.trim() ||
+                    !manualSuites.some((s) => s.name.trim() && s.entries.some((e) => e.periodo.trim() && parseFloat(e.preco) > 0)) ||
+                    addingCompetitor
+                  }
+                >
+                  {addingCompetitor ? <Loader2 className="size-3.5 animate-spin" /> : <PenLine className="size-3.5" />}
+                  {addingCompetitor ? 'Salvando…' : editingCompetitorName ? 'Atualizar concorrente' : 'Salvar concorrente manual'}
+                </Button>
+                {editingCompetitorName && (
+                  <button
+                    type="button"
+                    onClick={resetManualForm}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </div>
             ) : (
               <Button
                 size="sm" variant="outline" className="gap-1.5 self-start"

@@ -949,7 +949,7 @@ export async function POST(req: NextRequest) {
               let amenBlock = ''
               try {
                 const meta = JSON.parse((snap as { raw_text?: string }).raw_text ?? '') as CGuiaMeta
-                if (meta.mode === 'guia' && meta.amenitiesBySuite && Object.keys(meta.amenitiesBySuite).length) {
+                if ((meta.mode === 'guia' || meta.mode === 'manual') && meta.amenitiesBySuite && Object.keys(meta.amenitiesBySuite).length) {
                   const lines = Object.entries(meta.amenitiesBySuite)
                     .map(([s, ams]) => `  - **${s}**: ${ams.join(', ')}`).join('\n')
                   amenBlock = `\n  Comodidades:\n${lines}`

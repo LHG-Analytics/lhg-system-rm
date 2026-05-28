@@ -714,7 +714,7 @@ ${(competitorSnapshotsData as unknown as Array<{ competitor_name: string; mapped
   let amenitiesBlock = ''
   try {
     const meta = JSON.parse(snap.raw_text ?? '') as GuiaMeta
-    if (meta.mode === 'guia') {
+    if (meta.mode === 'guia' || meta.mode === 'manual') {
       if (meta.amenitiesBySuite && Object.keys(meta.amenitiesBySuite).length) {
         const lines2 = Object.entries(meta.amenitiesBySuite)
           .map(([suite, ams]) => `  - **${suite}**: ${ams.join(', ')}`)
