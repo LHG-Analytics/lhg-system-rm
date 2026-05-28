@@ -48,7 +48,7 @@ interface ManualPriceEntry {
 }
 interface ManualSuite {
   name: string
-  amenities: string
+  amenities: string[]
   entries: ManualPriceEntry[]
 }
 
@@ -56,15 +56,24 @@ function makeEmptyEntry(): ManualPriceEntry {
   return { periodo: '', dias: [], hora_inicio: '', hora_fim: '', preco: '' }
 }
 function makeEmptySuite(): ManualSuite {
-  return { name: '', amenities: '', entries: [makeEmptyEntry()] }
+  return { name: '', amenities: [], entries: [makeEmptyEntry()] }
 }
+
+const COMMON_AMENITIES = [
+  'Hidro', 'Hidro Dupla', 'Hidro Gigante', 'Piscina', 'Piscina Privativa', 'Jacuzzi', 'Spa', 'Sauna', 'Banheira',
+  'Ar-condicionado', 'Frigobar', 'Wi-Fi', 'Bluetooth',
+  'Smart TV', 'Netflix', 'Home Theater', 'Projetor',
+  'Garagem Privativa', 'Garagem Coberta',
+  'Ducha Dupla', 'Ducha Italiana', 'Lareira', 'Terraço', 'Varanda',
+  'Cama King', 'Cama Vibratória', 'Poltrona Erótica',
+]
 
 function snapshotToManualSuites(snap: CompetitorSnapshot): ManualSuite[] {
   const prices = (snap.mapped_prices as unknown as MappedPrice[]) ?? []
-  const amenitiesMap: Record<string, string> = {}
+  const amenitiesMap: Record<string, string[]> = {}
   for (const a of (snap.amenities ?? [])) {
     const colonIdx = a.indexOf(': ')
-    if (colonIdx > 0) amenitiesMap[a.slice(0, colonIdx)] = a.slice(colonIdx + 2)
+    if (colonIdx > 0) amenitiesMap[a.slice(0, colonIdx)] = a.slice(colonIdx + 2).split(', ').filter(Boolean)
   }
   const suitesMap = new Map<string, ManualPriceEntry[]>()
   for (const p of prices) {
@@ -79,7 +88,7 @@ function snapshotToManualSuites(snap: CompetitorSnapshot): ManualSuite[] {
   }
   const suites: ManualSuite[] = []
   for (const [name, entries] of suitesMap) {
-    suites.push({ name, amenities: amenitiesMap[name] ?? '', entries: entries.length ? entries : [makeEmptyEntry()] })
+    suites.push({ name, amenities: amenitiesMap[name] ?? [], entries: entries.length ? entries : [makeEmptyEntry()] })
   }
   return suites.length ? suites : [makeEmptySuite()]
 }
@@ -176,6 +185,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
   const [manualSuites, setManualSuites] = useState<ManualSuite[]>([makeEmptySuite()])
   const [addingCompetitor, setAddingCompetitor] = useState(false)
   const [editingCompetitorName, setEditingCompetitorName] = useState<string | null>(null)
+  const [customAmenityInputs, setCustomAmenityInputs] = useState<Record<number, string>>({})
   const formRef = useRef<HTMLDivElement>(null)
   const [analyzingUrls, setAnalyzingUrls] = useState<Set<string>>(new Set())
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
@@ -353,8 +363,27 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
   const removeManualSuite = (idx: number) => setManualSuites((prev) => prev.filter((_, i) => i !== idx))
   const updateManualSuiteName = (idx: number, name: string) =>
     setManualSuites((prev) => prev.map((s, i) => i === idx ? { ...s, name } : s))
-  const updateManualSuiteAmenities = (idx: number, amenities: string) =>
-    setManualSuites((prev) => prev.map((s, i) => i === idx ? { ...s, amenities } : s))
+  const toggleAmenity = (suiteIdx: number, amenity: string) =>
+    setManualSuites((prev) => prev.map((s, i) => i === suiteIdx ? {
+      ...s,
+      amenities: s.amenities.includes(amenity) ? s.amenities.filter((a) => a !== amenity) : [...s.amenities, amenity],
+    } : s))
+
+  const addCustomAmenity = (suiteIdx: number) => {
+    const val = (customAmenityInputs[suiteIdx] ?? '').trim()
+    if (!val) return
+    setManualSuites((prev) => prev.map((s, i) => i === suiteIdx
+      ? { ...s, amenities: s.amenities.includes(val) ? s.amenities : [...s.amenities, val] }
+      : s
+    ))
+    setCustomAmenityInputs((prev) => ({ ...prev, [suiteIdx]: '' }))
+  }
+
+  const removeAmenity = (suiteIdx: number, amenity: string) =>
+    setManualSuites((prev) => prev.map((s, i) => i === suiteIdx
+      ? { ...s, amenities: s.amenities.filter((a) => a !== amenity) }
+      : s
+    ))
 
   const resetManualForm = useCallback(() => {
     setEditingCompetitorName(null)
@@ -418,12 +447,9 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
         }))
     )
 
-    // Build amenities map from suites with amenities text
     const manualAmenities: Record<string, string[]> = {}
     for (const suite of validSuites) {
-      if (suite.amenities.trim()) {
-        manualAmenities[suite.name.trim()] = suite.amenities.split(',').map((a) => a.trim()).filter(Boolean)
-      }
+      if (suite.amenities.length) manualAmenities[suite.name.trim()] = suite.amenities
     }
 
     const isEditing = editingCompetitorName !== null
@@ -852,15 +878,63 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                       )}
                     </div>
 
-                    {/* Comodidades da suíte */}
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[10px] text-muted-foreground font-medium">Comodidades <span className="opacity-50 font-normal">(opcional)</span></span>
-                      <Input
-                        placeholder="Ex: Hidro, Piscina, Ar-condicionado, Home Theater"
-                        value={suite.amenities}
-                        onChange={(e) => updateManualSuiteAmenities(suiteIdx, e.target.value)}
-                        className="h-7 text-xs"
-                      />
+                    {/* Comodidades da suíte — tags selecionáveis */}
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] text-muted-foreground font-medium">
+                        Comodidades{suite.amenities.length > 0 && <span className="ml-1 text-primary">({suite.amenities.length})</span>}
+                        <span className="opacity-50 font-normal ml-1">clique para selecionar</span>
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {COMMON_AMENITIES.map((am) => {
+                          const selected = suite.amenities.includes(am)
+                          return (
+                            <button
+                              key={am}
+                              type="button"
+                              onClick={() => toggleAmenity(suiteIdx, am)}
+                              className={cn(
+                                'rounded-full border px-2 py-0.5 text-[10px] transition-all',
+                                selected
+                                  ? 'bg-primary/15 border-primary/40 text-primary font-semibold'
+                                  : 'bg-background border-border text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                              )}
+                            >
+                              {selected && '✓ '}{am}
+                            </button>
+                          )
+                        })}
+                        {/* Tags customizadas não presentes na lista padrão */}
+                        {suite.amenities.filter((a) => !COMMON_AMENITIES.includes(a)).map((am) => (
+                          <span key={am} className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/15 px-2 py-0.5 text-[10px] text-primary font-semibold">
+                            {am}
+                            <button
+                              type="button"
+                              onClick={() => removeAmenity(suiteIdx, am)}
+                              className="hover:text-destructive leading-none"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      {/* Adicionar tag customizada */}
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          placeholder="Adicionar comodidade personalizada…"
+                          value={customAmenityInputs[suiteIdx] ?? ''}
+                          onChange={(e) => setCustomAmenityInputs((prev) => ({ ...prev, [suiteIdx]: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { addCustomAmenity(suiteIdx); e.preventDefault() } }}
+                          className="h-6 text-[10px] flex-1"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => addCustomAmenity(suiteIdx)}
+                          disabled={!(customAmenityInputs[suiteIdx] ?? '').trim()}
+                          className="text-[10px] text-primary/80 hover:text-primary disabled:opacity-40 shrink-0 transition-colors"
+                        >
+                          + Adicionar
+                        </button>
+                      </div>
                     </div>
 
                     {/* Cards de preço */}

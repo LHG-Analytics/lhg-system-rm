@@ -343,8 +343,8 @@ export async function GET(req: NextRequest) {
     let amenities: string[] = []
     try {
       const meta = JSON.parse(raw_text ?? '') as GuiaMeta & { amenitiesBySuite?: Record<string, string[]> }
-      if (meta.mode === 'guia') {
-        // Novo formato: amenitiesBySuite → formata como "Suite X: comodidade1, comodidade2"
+      if (meta.mode === 'guia' || meta.mode === 'manual') {
+        // Formato: amenitiesBySuite → "Suite X: comodidade1, comodidade2"
         if (meta.amenitiesBySuite && Object.keys(meta.amenitiesBySuite).length) {
           amenities = Object.entries(meta.amenitiesBySuite).map(([suite, ams]) => `${suite}: ${ams.join(', ')}`)
         } else if (Array.isArray(meta.amenities)) {
@@ -372,9 +372,10 @@ export async function POST(req: NextRequest) {
     ourCategories?: string[]
     mode?: 'cheerio' | 'playwright' | 'guia' | 'manual'
     manualPrices?: MappedPrice[]
+    manualAmenities?: Record<string, string[]>
   }
 
-  const { unitSlug, competitorName, competitorUrl, ourCategories = [], mode = 'cheerio', manualPrices } = body
+  const { unitSlug, competitorName, competitorUrl, ourCategories = [], mode = 'cheerio', manualPrices, manualAmenities } = body
   if (!unitSlug || !competitorName || !competitorUrl) {
     return new Response('unitSlug, competitorName e competitorUrl são obrigatórios', { status: 400 })
   }
@@ -401,7 +402,7 @@ export async function POST(req: NextRequest) {
           competitor_name: competitorName,
           competitor_url: competitorUrl,
           mapped_prices: manualPrices as unknown as Database['public']['Tables']['competitor_snapshots']['Insert']['mapped_prices'],
-          raw_text: JSON.stringify({ mode: 'manual' }),
+          raw_text: JSON.stringify({ mode: 'manual', ...(manualAmenities && Object.keys(manualAmenities).length ? { amenitiesBySuite: manualAmenities } : {}) }),
           scraped_at: new Date().toISOString(),
           status: 'done',
           apify_run_id: null,
@@ -423,7 +424,10 @@ export async function POST(req: NextRequest) {
       console.error('[competitor-analysis/manual] detect/gap falhou (não bloqueia):', e)
     }
 
-    return Response.json({ ...saved, amenities: [] } as unknown as CompetitorSnapshot)
+    const computedAmenities = manualAmenities
+      ? Object.entries(manualAmenities).map(([suite, ams]) => `${suite}: ${ams.join(', ')}`)
+      : []
+    return Response.json({ ...saved, amenities: computedAmenities } as unknown as CompetitorSnapshot)
   }
 
   // ─── Guia de Motéis: API estruturada gratuita ────────────────────────────
