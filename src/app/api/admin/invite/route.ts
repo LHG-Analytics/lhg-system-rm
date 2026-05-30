@@ -52,12 +52,17 @@ export async function POST(req: NextRequest) {
 
   if (inviteError) return Response.json({ error: inviteError.message }, { status: 500 })
 
-  await admin.from('profiles').insert({
-    user_id: invited.user.id,
-    email,
-    role: targetRole as Database['public']['Enums']['user_role'],
-    unit_id: unit_id ?? null,
-  })
+  // O trigger on_auth_user_created já cria um profile com role='viewer' quando o
+  // usuário é adicionado em auth.users. Usar upsert para sobrescrever com o role correto.
+  await admin.from('profiles').upsert(
+    {
+      user_id: invited.user.id,
+      email,
+      role: targetRole as Database['public']['Enums']['user_role'],
+      unit_id: unit_id ?? null,
+    },
+    { onConflict: 'user_id' }
+  )
 
   return Response.json({ ok: true, user_id: invited.user.id })
 }
