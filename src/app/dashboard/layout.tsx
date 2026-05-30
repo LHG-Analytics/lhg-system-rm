@@ -49,7 +49,7 @@ export default async function DashboardLayout({
   const admin = getAdminClient()
   let units: Unit[] = []
 
-  // Qualquer role sem unit_id atribuído vê todas as unidades
+  // Qualquer role sem unit_id atribuído vê todas as unidades ativas
   if (!profile.unit_id) {
     const { data } = await admin
       .from('units')
@@ -57,14 +57,25 @@ export default async function DashboardLayout({
       .eq('is_active', true)
       .order('name')
     units = data ?? []
-  } else if (profile.unit_id) {
+  } else {
+    // Busca a unidade atribuída sem filtro is_active — usuário atribuído deve ver
+    // sua unidade independentemente do status (evita tela de "sem unidades")
     const { data } = await admin
       .from('units')
       .select('*')
       .eq('id', profile.unit_id)
-      .eq('is_active', true)
       .maybeSingle()
     if (data) units = [data]
+
+    // Fallback: admin/super_admin com unit_id inválido → acesso a todas as unidades ativas
+    if (!units.length && ['admin', 'super_admin'].includes(profile.role ?? '')) {
+      const { data: allUnits } = await admin
+        .from('units')
+        .select('*')
+        .eq('is_active', true)
+        .order('name')
+      units = allUnits ?? []
+    }
   }
 
   const activeUnit = units[0]
