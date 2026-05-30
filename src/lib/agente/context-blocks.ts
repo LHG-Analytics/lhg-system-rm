@@ -47,15 +47,19 @@ ${text.trim()}`
 interface GuardrailRow {
   categoria: string
   periodo: string
+  dia_semana?: string | null
+  /** @deprecated usar dia_semana */
   dia_tipo?: string | null
+  hora_inicio?: string | null
+  hora_fim?: string | null
   preco_minimo: number
   preco_maximo: number
 }
 
 const DIA_GUARDRAIL_LABEL: Record<string, string> = {
-  todos: 'Semana + FDS',
-  semana: 'Semana',
-  fds_feriado: 'FDS/Feriado',
+  todos: 'Todos', segunda: 'Segunda', terca: 'Terça', quarta: 'Quarta',
+  quinta: 'Quinta', sexta: 'Sexta', sabado: 'Sábado', domingo: 'Domingo',
+  semana: 'Semana', fds_feriado: 'FDS/Feriado',
 }
 
 export function buildGuardrailsBlock(rows: GuardrailRow[] | null | undefined, fmtMoney?: (n: number, decimals?: number) => string): string {
@@ -63,9 +67,11 @@ export function buildGuardrailsBlock(rows: GuardrailRow[] | null | undefined, fm
   const fmtPrice = fmtMoney
     ? (v: number) => fmtMoney(v, 2)
     : (v: number) => `R$ ${v.toFixed(2)}`
-  const lines = rows.map((g) =>
-    `| ${g.categoria} | ${g.periodo} | ${DIA_GUARDRAIL_LABEL[g.dia_tipo ?? 'todos'] ?? 'Todos'} | ${fmtPrice(g.preco_minimo)} | ${fmtPrice(g.preco_maximo)} |`
-  ).join('\n')
+  const lines = rows.map((g) => {
+    const dia = DIA_GUARDRAIL_LABEL[g.dia_semana ?? g.dia_tipo ?? 'todos'] ?? g.dia_semana ?? 'Todos'
+    const horario = g.hora_inicio || g.hora_fim ? ` (${g.hora_inicio ?? '00:00'}–${g.hora_fim ?? '23:59'})` : ''
+    return `| ${g.categoria} | ${g.periodo} | ${dia}${horario} | ${fmtPrice(g.preco_minimo)} | ${fmtPrice(g.preco_maximo)} |`
+  }).join('\n')
   return `## Guardrails de preço configurados pelo gestor
 
 | Categoria | Período | Dia | Preço Mínimo | Preço Máximo |

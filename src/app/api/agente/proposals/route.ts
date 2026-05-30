@@ -478,7 +478,7 @@ export async function POST(req: NextRequest) {
   ] = await Promise.all([
     supabase
       .from('agent_price_guardrails')
-      .select('categoria, periodo, dia_tipo, preco_minimo, preco_maximo')
+      .select('categoria, periodo, dia_semana, preco_minimo, preco_maximo')
       .eq('unit_id', unit.id),
     supabase
       .from('rm_agent_config')
@@ -550,13 +550,24 @@ export async function POST(req: NextRequest) {
   )
 
   // Mapa: "categoria|periodo|dia_tipo" → { min, max }
-  // Guardrails com dia_tipo='todos' atuam como fallback para semana e fds_feriado
-  const guardrailMap = new Map<string, { min: number; max: number }>(
-    (guardrailsData ?? []).map((g) => [
-      `${g.categoria}|${g.periodo}|${g.dia_tipo ?? 'todos'}`,
-      { min: g.preco_minimo, max: g.preco_maximo },
-    ])
-  )
+  // Converte dia_semana (específico) → dia_tipo (semana/fds_feriado/todos) para matching com proposta
+  const SEMANA_DAYS = new Set(['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'semana'])
+  const FDS_DAYS    = new Set(['sabado', 'domingo', 'fds_feriado'])
+  const guardrailMap = new Map<string, { min: number; max: number }>()
+  for (const g of (guardrailsData ?? [])) {
+    const diaSemana = (g as { dia_semana?: string }).dia_semana ?? 'todos'
+    const tipoLabel = SEMANA_DAYS.has(diaSemana) ? 'semana'
+      : FDS_DAYS.has(diaSemana) ? 'fds_feriado'
+      : 'todos'
+    const key = `${g.categoria}|${g.periodo}|${tipoLabel}`
+    const existing = guardrailMap.get(key)
+    if (existing) {
+      // Mais restritivo: maior mínimo, menor máximo
+      guardrailMap.set(key, { min: Math.max(existing.min, g.preco_minimo), max: Math.min(existing.max, g.preco_maximo) })
+    } else {
+      guardrailMap.set(key, { min: g.preco_minimo, max: g.preco_maximo })
+    }
+  }
 
   // Bloco de configuração do agente (estratégia + variação + foco)
   const strategy = agentConfigData?.pricing_strategy ?? 'moderado'
@@ -732,17 +743,23 @@ ${(competitorSnapshotsData as unknown as Array<{ competitor_name: string; mapped
 > Quando concorrente usa preços diferentes por horário (Horário ≠ —), cruze com o Padrão de demanda por faixa horária — se sua demanda também é maior naquele horário, pode ser justificável o mesmo diferencial.`
     : ''
 
-  const DIA_GUARDRAIL_LABEL: Record<string, string> = { todos: 'Semana + FDS', semana: 'Semana', fds_feriado: 'FDS/Feriado' }
+  const DIA_GUARDRAIL_LABEL: Record<string, string> = {
+    todos: 'Todos', segunda: 'Segunda', terca: 'Terça', quarta: 'Quarta',
+    quinta: 'Quinta', sexta: 'Sexta', sabado: 'Sábado', domingo: 'Domingo',
+    semana: 'Semana', fds_feriado: 'FDS/Feriado',
+  }
   const guardrailsBlock = guardrailsData?.length
     ? `## Guardrails de preço (limites obrigatórios — NÃO ULTRAPASSAR)
 
 Estes limites foram configurados pelo gestor. Nenhuma proposta pode ter preco_proposto fora deste intervalo.
 
-| Categoria | Período | Dia | Preço Mínimo | Preço Máximo |
-|-----------|---------|-----|-------------|-------------|
-${guardrailsData.map((g) =>
-  `| ${g.categoria} | ${g.periodo} | ${DIA_GUARDRAIL_LABEL[(g as { dia_tipo?: string }).dia_tipo ?? 'todos'] ?? 'Todos'} | R$ ${g.preco_minimo.toFixed(2)} | R$ ${g.preco_maximo.toFixed(2)} |`
-).join('\n')}
+| Categoria | Período | Dia | Horário | Preço Mínimo | Preço Máximo |
+|-----------|---------|-----|---------|-------------|-------------|
+${(guardrailsData as Array<{ categoria: string; periodo: string; dia_semana?: string; hora_inicio?: string | null; hora_fim?: string | null; preco_minimo: number; preco_maximo: number }>).map((g) => {
+  const dia = DIA_GUARDRAIL_LABEL[g.dia_semana ?? 'todos'] ?? g.dia_semana ?? 'Todos'
+  const horario = g.hora_inicio || g.hora_fim ? `${g.hora_inicio ?? '00:00'}–${g.hora_fim ?? '23:59'}` : '—'
+  return `| ${g.categoria} | ${g.periodo} | ${dia} | ${horario} | R$ ${g.preco_minimo.toFixed(2)} | R$ ${g.preco_maximo.toFixed(2)} |`
+}).join('\n')}
 
 IMPORTANTE: Se o preço ótimo calculado ultrapassar o máximo, use o máximo. Se estiver abaixo do mínimo, use o mínimo.`
     : ''

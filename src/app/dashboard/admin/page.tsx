@@ -73,11 +73,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     ? await Promise.all([
         supabase
           .from('agent_price_guardrails')
-          .select('id, categoria, periodo, dia_tipo, preco_minimo, preco_maximo')
+          .select('id, categoria, periodo, dia_semana, hora_inicio, hora_fim, preco_minimo, preco_maximo')
           .eq('unit_id', activeUnit.id)
           .order('categoria')
           .order('periodo')
-          .order('dia_tipo'),
+          .order('dia_semana'),
         supabase
           .from('price_imports')
           .select('parsed_data')
@@ -210,7 +210,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                     id: g.id,
                     categoria: g.categoria,
                     periodo: g.periodo,
-                    dia_tipo: g.dia_tipo,
+                    dia_semana: g.dia_semana,
+                    hora_inicio: g.hora_inicio ?? null,
+                    hora_fim: g.hora_fim ?? null,
                     preco_minimo: g.preco_minimo,
                     preco_maximo: g.preco_maximo,
                   }))}

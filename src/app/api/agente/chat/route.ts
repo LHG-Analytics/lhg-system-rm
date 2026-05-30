@@ -520,7 +520,7 @@ export async function POST(req: NextRequest) {
       .order('categoria'),
     admin
       .from('agent_price_guardrails')
-      .select('categoria, periodo, dia_tipo, preco_minimo, preco_maximo')
+      .select('categoria, periodo, dia_semana, hora_inicio, hora_fim, preco_minimo, preco_maximo')
       .eq('unit_id', unit.id),
     admin
       .from('unit_channel_costs')
