@@ -26,6 +26,7 @@ import { fetchWeatherContext } from '@/lib/agente/weather'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
 import { queryDemandPattern, buildDemandPatternBlock } from '@/lib/automo/demand-pattern'
+import { getDayTimeDemand, buildDayTimeDemandBlock } from '@/lib/automo/day-time-demand'
 import { queryCategoryPeriodKPIs, buildCategoryPeriodBlock } from '@/lib/automo/category-period-kpis'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
@@ -640,7 +641,7 @@ export async function POST(req: NextRequest) {
   // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
   const capacityRows = capacityResult.status === 'fulfilled' ? (capacityResult.value.data ?? []) : []
   const channelCostRows = channelCostsResult.status === 'fulfilled' ? (channelCostsResult.value.data ?? []) : []
-  const [availabilityRows, realtimeOccupancy, reservationPace, weatherContext, categoryPeriodKPIs, cancellationRates, demandPattern, weeklyPickup] = await Promise.all([
+  const [availabilityRows, realtimeOccupancy, reservationPace, weatherContext, categoryPeriodKPIs, cancellationRates, demandPattern, weeklyPickup, dayTimeDemand] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
     getReservationPace(unit.slug, unitTimezone).catch(() => null),
@@ -653,6 +654,7 @@ export async function POST(req: NextRequest) {
       : Promise.resolve([]),
     queryDemandPattern(unit.slug, 90).catch(() => null),
     getWeeklyPickup(unit.slug).catch(() => null),
+    getDayTimeDemand(unit.slug, 8).catch(() => []),
   ])
 
   // Guardrails sempre no prompt estático — safety-critical para o agente
@@ -701,6 +703,7 @@ export async function POST(req: NextRequest) {
     (cancellationRates?.length ? `\n\n${buildCancellationBlock(cancellationRates)}` : '') +
     (demandPattern ? `\n\n${buildDemandPatternBlock(demandPattern, unit.name, 90)}` : '') +
     (weeklyPickup ? `\n\n${buildPickupBlock(weeklyPickup)}` : '') +
+    (dayTimeDemand?.length ? `\n\n${buildDayTimeDemandBlock(dayTimeDemand)}` : '') +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
     (guardrailsTextBlock ? `\n\n${guardrailsTextBlock}` : '')
 
@@ -777,22 +780,36 @@ export async function POST(req: NextRequest) {
           canal:          z.enum(['balcao_site', 'site_programada', 'guia_moteis']),
           categoria:      z.string(),
           periodo:        z.string(),
-          dia_tipo:       z.enum(['semana', 'fds_feriado', 'todos']),
+          dias:           z.array(z.string()).describe(
+            'Dias da semana cobertos. Nomes exatos: segunda, terca, quarta, quinta, sexta, sabado, domingo. ' +
+            'Pode agrupar dias com demanda similar: ex ["segunda","terca","quarta"] ou ["sabado","domingo"].'
+          ),
+          hora_inicio:    z.enum(['06:00', '18:00']).describe("'06:00' = faixa diurna (06:00–17:59); '18:00' = faixa noturna (18:00–05:59)"),
+          hora_fim:       z.enum(['17:59', '05:59']).describe("'17:59' para faixa diurna; '05:59' para faixa noturna"),
           preco_atual:    z.number(),
           preco_proposto: z.number(),
           variacao_pct:   z.number(),
           justificativa:  z.string(),
-        })).describe('Linhas alteradas (preco_proposto ≠ preco_atual) de TODOS os canais relevantes. Itens mantidos NÃO entram aqui — o motivo por canal vai no campo context.'),
+        })).describe(
+          'Linhas de proposta de preços por dia × faixa horária. ' +
+          'Inclua TODOS os canais ativos, TODAS as categorias, TODOS os períodos × TODOS os dias × AMBAS as faixas. ' +
+          'Use o agrupamento de dias quando o padrão de demanda for igual (ex: seg+ter+qua diurno mesmo preço). ' +
+          'Items mantidos (preco_proposto = preco_atual) DEVEM ser incluídos com justificativa "Mantido — [motivo]".'
+        ),
       }),
       execute: async ({ context, rows }) => {
-        // Clamp max_variation_pct server-side — safety net caso o modelo ignore a instrução
+        // Clamp max_variation_pct + normalizar para o formato ParsedPriceRow (dia_tipo='')
         const clampedRows = rows.map((row) => {
           const clamped = Math.max(-maxVariationPct, Math.min(maxVariationPct, row.variacao_pct))
-          if (Math.abs(clamped - row.variacao_pct) > 0.05) {
-            const newPreco = +(row.preco_atual * (1 + clamped / 100)).toFixed(2)
-            return { ...row, preco_proposto: newPreco, variacao_pct: clamped }
+          const base = {
+            ...row,
+            dia_tipo: '',  // modelo novo: dia/hora em campos dedicados
+            variacao_pct: clamped,
           }
-          return row
+          if (Math.abs(clamped - row.variacao_pct) > 0.05) {
+            return { ...base, preco_proposto: +(row.preco_atual * (1 + clamped / 100)).toFixed(2) }
+          }
+          return base
         })
         const { data, error } = await supabase
           .from('price_proposals')

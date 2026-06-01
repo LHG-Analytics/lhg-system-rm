@@ -10,7 +10,14 @@ export interface ParsedPriceRow {
   canal: 'balcao_site' | 'site_programada' | 'guia_moteis'
   categoria: string
   periodo: string
-  dia_tipo: 'semana' | 'fds_feriado' | 'todos'
+  /** Modelo legado: 'semana' | 'fds_feriado' | 'todos'. '' quando row usa o modelo novo (dias+hora). */
+  dia_tipo: string
+  /** Modelo novo: lista de dias da semana (ex: ['segunda','terca']). Presente quando dia_tipo=''. */
+  dias?: string[]
+  /** Modelo novo: início da faixa horária ('06:00' ou '18:00'). */
+  hora_inicio?: string
+  /** Modelo novo: fim da faixa horária ('17:59' ou '05:59'). */
+  hora_fim?: string
   preco: number
 }
 

@@ -73,6 +73,24 @@ const CANAL_LABELS: Record<string, string> = {
   guia_moteis:     'Guia de Motéis',
 }
 
+const DAY_ABBR: Record<string, string> = {
+  segunda: 'Seg', terca: 'Ter', quarta: 'Qua', quinta: 'Qui',
+  sexta: 'Sex', sabado: 'Sáb', domingo: 'Dom',
+}
+const DOW_ORDER = ['segunda','terca','quarta','quinta','sexta','sabado','domingo']
+
+function formatDiaRow(row: ProposedPriceRow): string {
+  if (row.dias?.length) {
+    const sorted = [...row.dias].sort((a, b) => DOW_ORDER.indexOf(a) - DOW_ORDER.indexOf(b))
+    const days = sorted.map((d) => DAY_ABBR[d] ?? d).join('/')
+    const faixa = row.hora_inicio === '06:00' ? '06–18' : '18–06'
+    return `${days} · ${faixa}`
+  }
+  return row.dia_tipo === 'semana' ? 'Semana'
+    : row.dia_tipo === 'fds_feriado' ? 'FDS/Fer.'
+    : 'Todos'
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString('pt-BR', {
     day: '2-digit', month: '2-digit', year: 'numeric',
@@ -785,10 +803,8 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                               <TableCell className="text-xs">{CANAL_LABELS[row.canal] ?? row.canal}</TableCell>
                               <TableCell className="text-xs font-medium">{row.categoria}</TableCell>
                               <TableCell className="text-xs">{row.periodo}</TableCell>
-                              <TableCell className="text-xs">
-                                {row.dia_tipo === 'semana' ? 'Semana'
-                                  : row.dia_tipo === 'fds_feriado' ? 'FDS/Fer.'
-                                  : 'Todos'}
+                              <TableCell className="text-xs whitespace-nowrap">
+                                {formatDiaRow(row)}
                               </TableCell>
                               <TableCell className="text-right text-xs tabular-nums">
                                 {formatMoney(row.preco_atual, 2)}

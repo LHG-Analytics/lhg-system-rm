@@ -1166,7 +1166,13 @@ export async function PATCH(req: NextRequest) {
     })
     await admin.from('scheduled_reviews').insert(reviewInserts)
 
-    const rowKey = (r: ParsedPriceRow) => `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`
+    // rowKey suporta formato legado (dia_tipo) e novo (dias[] + hora_inicio/hora_fim)
+    const rowKey = (r: ParsedPriceRow) => {
+      if (r.dias?.length) {
+        return `${r.canal}|${r.categoria}|${r.periodo}|${[...r.dias].sort().join(',')}|${r.hora_inicio ?? ''}`
+      }
+      return `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`
+    }
 
     const proposedMap = new Map<string, number>()
     for (const r of proposedRows) {
@@ -1201,7 +1207,14 @@ export async function PATCH(req: NextRequest) {
     for (const [key, preco] of remainingProposed) {
       const src = proposedRows.find((r) => rowKey(r) === key)
       if (src) {
-        newRows.push({ canal: src.canal, categoria: src.categoria, periodo: src.periodo, dia_tipo: src.dia_tipo, preco })
+        newRows.push({
+          canal: src.canal,
+          categoria: src.categoria,
+          periodo: src.periodo,
+          dia_tipo: src.dia_tipo ?? '',
+          ...(src.dias?.length ? { dias: src.dias, hora_inicio: src.hora_inicio, hora_fim: src.hora_fim } : {}),
+          preco,
+        })
       }
     }
 
