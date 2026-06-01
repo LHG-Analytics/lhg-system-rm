@@ -47,7 +47,7 @@ function ToolCallChip({ toolName, state }: { toolName: string; state: string }) 
   )
 }
 
-// ─── Thinking bubble com frases rotativas ────────────────────────────────────
+// ─── Thinking bubble com dots → typewriter ───────────────────────────────────
 
 const THINKING_PHRASES = [
   'Consultando dados operacionais',
@@ -59,13 +59,25 @@ const THINKING_PHRASES = [
   'Preparando a análise',
 ]
 
+const DOT_DELAYS = ['0ms', '150ms', '300ms'] as const
+
 function ThinkingBubble() {
+  // Fase 1: dots imediatos (feedback instantâneo antes do modelo responder)
+  // Fase 2: typewriter com frases rotativas (começa após 700ms)
+  const [phase, setPhase] = useState<'dots' | 'typing'>('dots')
   const [idx, setIdx] = useState(0)
   const [charIdx, setCharIdx] = useState(0)
   const [fading, setFading] = useState(false)
 
+  // Transição dots → typewriter
   useEffect(() => {
-    if (fading) return
+    const t = setTimeout(() => setPhase('typing'), 700)
+    return () => clearTimeout(t)
+  }, [])
+
+  // Typewriter + rotação de frases
+  useEffect(() => {
+    if (phase !== 'typing' || fading) return
     const text = THINKING_PHRASES[idx]
     if (charIdx < text.length) {
       const t = setTimeout(() => setCharIdx((c) => c + 1), 22)
@@ -77,27 +89,42 @@ function ThinkingBubble() {
         setIdx((i) => (i + 1) % THINKING_PHRASES.length)
         setCharIdx(0)
         setFading(false)
-      }, 400)
-    }, 1400)
+      }, 350)
+    }, 1600)
     return () => clearTimeout(t)
-  }, [charIdx, idx, fading])
+  }, [charIdx, idx, fading, phase])
 
   return (
     <div className="flex gap-3 justify-start">
-      <div className="shrink-0 rounded-full bg-primary/10 p-1.5 h-7 w-7 flex items-center justify-center">
+      <div className={cn(
+        'shrink-0 rounded-full bg-primary/10 p-1.5 h-7 w-7 flex items-center justify-center transition-opacity',
+        phase === 'dots' && 'animate-pulse',
+      )}>
         <Bot className="size-4 text-primary" />
       </div>
-      <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center min-w-[200px]">
-        <span className={cn(
-          'text-xs text-muted-foreground transition-opacity duration-300',
-          fading ? 'opacity-0' : 'opacity-100'
-        )}>
-          {THINKING_PHRASES[idx].slice(0, charIdx)}
+      <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center min-h-[38px] min-w-[160px]">
+        {phase === 'dots' ? (
+          <div className="flex items-center gap-1.5">
+            {DOT_DELAYS.map((delay, i) => (
+              <span
+                key={i}
+                className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/60"
+                style={{ animation: `thinking-dot 1.2s ease-in-out infinite ${delay}` }}
+              />
+            ))}
+          </div>
+        ) : (
           <span className={cn(
-            'inline-block w-[2px] h-[0.8em] bg-muted-foreground/60 ml-0.5 align-middle',
-            fading ? 'opacity-0' : 'animate-pulse'
-          )} />
-        </span>
+            'text-sm text-muted-foreground transition-opacity duration-350',
+            fading ? 'opacity-0' : 'opacity-100',
+          )}>
+            {THINKING_PHRASES[idx].slice(0, charIdx)}
+            <span className={cn(
+              'inline-block w-[2px] h-[0.85em] bg-muted-foreground/60 ml-0.5 align-middle',
+              fading ? 'opacity-0' : 'animate-pulse',
+            )} />
+          </span>
+        )}
       </div>
     </div>
   )

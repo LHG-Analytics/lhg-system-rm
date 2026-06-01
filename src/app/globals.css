@@ -139,6 +139,12 @@ svg.recharts-surface {
   overflow: hidden;
 }
 
+/* ── Thinking dots (ThinkingBubble do Agente RM) ───────────────────────── */
+@keyframes thinking-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30%           { transform: translateY(-4px); opacity: 1; }
+}
+
 /* ── Marquee animations (usado no 3d-marquee da tela de login) ─────────── */
 @keyframes marquee {
   from { transform: translateX(0); }
