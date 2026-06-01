@@ -57,6 +57,8 @@ interface ProposalsListProps {
   selectedProposalId?: string | null
   /** false = gerente: só visualiza + pode agendar/reagendar revisão da última proposta aprovada */
   canManage?: boolean
+  /** Chamado quando uma proposta com status 'pending' é excluída — permite atualizar badge externo */
+  onPendingDeleted?: () => void
 }
 
 const STATUS_CONFIG = {
@@ -119,7 +121,7 @@ function ExpandableText({ text, maxLength = 120 }: { text: string; maxLength?: n
   )
 }
 
-export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, selectedProposalId, canManage = true }: ProposalsListProps) {
+export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, selectedProposalId, canManage = true, onPendingDeleted }: ProposalsListProps) {
   const supabase = useMemo(() => createClient(), [])
   const { formatMoney } = useCurrency()
   const [proposals, setProposals] = useState<PriceProposal[]>(initialProposals)
@@ -422,6 +424,7 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
     setDeleting(true)
     setError(null)
     try {
+      const wasPending = proposals.find((p) => p.id === confirmDelete)?.status === 'pending'
       const res = await fetch(`/api/agente/proposals?id=${confirmDelete}`, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json()
@@ -429,13 +432,14 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
       }
       setProposals((prev) => prev.filter((p) => p.id !== confirmDelete))
       if (editing?.id === confirmDelete) setEditing(null)
+      if (wasPending) onPendingDeleted?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
       setDeleting(false)
       setConfirmDelete(null)
     }
-  }, [confirmDelete, editing])
+  }, [confirmDelete, editing, proposals, onPendingDeleted])
 
   return (
     <div className="flex flex-col gap-4">

@@ -116,10 +116,14 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
         if (prev.status === 'pending' && next.status !== 'pending') setLivePendingCount((n) => Math.max(0, n - 1))
         if (prev.status !== 'pending' && next.status === 'pending') setLivePendingCount((n) => n + 1)
       })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'price_proposals', filter: `unit_id=eq.${unitId}` }, (payload) => {
-        if ((payload.old as { status?: string }).status === 'pending') {
-          setLivePendingCount((n) => Math.max(0, n - 1))
-        }
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'price_proposals', filter: `unit_id=eq.${unitId}` }, async () => {
+        // payload.old só traz o ID por padrão (REPLICA IDENTITY DEFAULT) — refetch a contagem real
+        const { count } = await supabase
+          .from('price_proposals')
+          .select('*', { count: 'exact', head: true })
+          .eq('unit_id', unitId)
+          .eq('status', 'pending')
+        if (count !== null) setLivePendingCount(count)
       })
       .subscribe()
     return () => { void supabase.removeChannel(ch) }
@@ -586,6 +590,7 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
                 refreshKey={proposalsRefreshKey}
                 selectedProposalId={selectedProposalId}
                 canManage={canManageProposals}
+                onPendingDeleted={() => setLivePendingCount((n) => Math.max(0, n - 1))}
               />
             </TabsContent>
 
