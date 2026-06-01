@@ -293,7 +293,7 @@ export async function POST(req: NextRequest) {
     return new Response('Nenhuma unidade disponível', { status: 400 })
   }
 
-  const { formatMoney: fmtMoney } = makeCurrencyFormatter(unit.slug)
+  const { formatMoney: fmtMoney, symbol: currencySymbol } = makeCurrencyFormatter(unit.slug)
 
   // 5. Resolver imports e KPIs
   type RawImport = { id: string; parsed_data: unknown; discount_data: unknown; valid_from: string; valid_until: string | null }
@@ -596,7 +596,8 @@ export async function POST(req: NextRequest) {
   const agentConfigBlock = `## Configuração do agente RM (${unit.name})
 - **Estratégia de precificação:** ${pricingStrategy}
 - **Variação máxima permitida:** ±${maxVariationPct}%
-- **Foco principal:** ${FOCUS_LABELS[focusMetric] ?? focusMetric}`
+- **Foco principal:** ${FOCUS_LABELS[focusMetric] ?? focusMetric}
+- **Moeda:** Use sempre **${currencySymbol}** para todos os valores monetários no texto e nas tabelas — nunca use outro símbolo de moeda`
 
   // Bloco de regras de ajuste dinâmico por giro/ocupação
   const pricingRulesBlock = buildPricingThresholdsBlock(pricingThresholds)
@@ -778,13 +779,22 @@ export async function POST(req: NextRequest) {
         })).describe('Linhas alteradas (preco_proposto ≠ preco_atual) de TODOS os canais relevantes. Itens mantidos NÃO entram aqui — o motivo por canal vai no campo context.'),
       }),
       execute: async ({ context, rows }) => {
+        // Clamp max_variation_pct server-side — safety net caso o modelo ignore a instrução
+        const clampedRows = rows.map((row) => {
+          const clamped = Math.max(-maxVariationPct, Math.min(maxVariationPct, row.variacao_pct))
+          if (Math.abs(clamped - row.variacao_pct) > 0.05) {
+            const newPreco = +(row.preco_atual * (1 + clamped / 100)).toFixed(2)
+            return { ...row, preco_proposto: newPreco, variacao_pct: clamped }
+          }
+          return row
+        })
         const { data, error } = await supabase
           .from('price_proposals')
           .insert({
             unit_id:    unit.id,
             created_by: user.id,
             context,
-            rows: rows as unknown as Database['public']['Tables']['price_proposals']['Insert']['rows'],
+            rows: clampedRows as unknown as Database['public']['Tables']['price_proposals']['Insert']['rows'],
             status:     'pending',
           })
           .select('id')
