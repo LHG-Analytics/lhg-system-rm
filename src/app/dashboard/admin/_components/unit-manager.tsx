@@ -25,6 +25,7 @@ interface UnitRow {
   automo_category_ids: number[]
   period_type: 'standard' | 'altana' | null
   logo_path: string | null
+  currency_code: string
   created_at: string
 }
 
@@ -48,6 +49,7 @@ function emptyForm(): Omit<UnitRow, 'id' | 'created_at'> {
     automo_category_ids: [],
     period_type: 'standard',
     logo_path: '',
+    currency_code: 'BRL',
   }
 }
 
@@ -80,6 +82,7 @@ export function UnitManager({ initialUnits }: UnitManagerProps) {
       automo_category_ids: unit.automo_category_ids,
       period_type: unit.period_type ?? 'standard',
       logo_path: unit.logo_path ?? '',
+      currency_code: unit.currency_code ?? 'BRL',
     })
     setError(null)
   }, [])
@@ -106,6 +109,7 @@ export function UnitManager({ initialUnits }: UnitManagerProps) {
         automo_category_ids: form.automo_category_ids,
         period_type: form.period_type,
         logo_path: form.logo_path?.trim() || null,
+        currency_code: form.currency_code || 'BRL',
       }
       const method = editingId ? 'PATCH' : 'POST'
       const res = await fetch('/api/admin/units', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -207,6 +211,9 @@ export function UnitManager({ initialUnits }: UnitManagerProps) {
                         {PERIOD_TYPE_LABELS[unit.period_type] ?? unit.period_type}
                       </span>
                     )}
+                    {unit.currency_code && unit.currency_code !== 'BRL' && (
+                      <span className="text-[11px] font-mono text-amber-500">{unit.currency_code}</span>
+                    )}
                   </div>
                 )}
               </div>
@@ -291,6 +298,14 @@ export function UnitManager({ initialUnits }: UnitManagerProps) {
 }
 
 // ─── Sub-componente de formulário ─────────────────────────────────────────────
+
+const CURRENCY_OPTIONS = [
+  { value: 'BRL', label: 'BRL — Real brasileiro (R$)' },
+  { value: 'USD', label: 'USD — Dólar americano ($)' },
+  { value: 'PEN', label: 'PEN — Sol peruano (S/)' },
+  { value: 'COP', label: 'COP — Peso colombiano ($)' },
+  { value: 'ARS', label: 'ARS — Peso argentino ($)' },
+]
 
 interface UnitFormProps {
   form: Omit<UnitRow, 'id' | 'created_at'>
@@ -382,6 +397,22 @@ function UnitForm({
             <SelectContent>
               <SelectItem value="standard" className="text-xs">Padrão (3h/6h/12h/Pernoite)</SelectItem>
               <SelectItem value="altana" className="text-xs">Altana (1h/2h/4h/12h)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Moeda local</Label>
+          <Select
+            value={form.currency_code || 'BRL'}
+            onValueChange={(v) => setForm((f) => ({ ...f, currency_code: v }))}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CURRENCY_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value} className="text-xs">{opt.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

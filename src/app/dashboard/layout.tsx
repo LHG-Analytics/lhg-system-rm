@@ -105,7 +105,7 @@ export default async function DashboardLayout({
         </header>
         <main className="flex flex-1 flex-col gap-4 p-4 min-w-0 overflow-x-hidden">
           <Suspense fallback={null}>
-            <CurrencyProvider>
+            <CurrencyProvider unitCurrencies={Object.fromEntries(units.map((u) => [u.slug, u.currency_code ?? 'BRL']))}>
               <AgentStreamingProvider>
                 {children}
               </AgentStreamingProvider>

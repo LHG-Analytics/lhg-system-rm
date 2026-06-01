@@ -1882,6 +1882,7 @@ export type Database = {
           automo_env_key: string | null
           city: string | null
           created_at: string
+          currency_code: string
           id: string
           is_active: boolean
           logo_path: string | null
@@ -1899,6 +1900,7 @@ export type Database = {
           automo_env_key?: string | null
           city?: string | null
           created_at?: string
+          currency_code?: string
           id?: string
           is_active?: boolean
           logo_path?: string | null
@@ -1916,6 +1918,7 @@ export type Database = {
           automo_env_key?: string | null
           city?: string | null
           created_at?: string
+          currency_code?: string
           id?: string
           is_active?: boolean
           logo_path?: string | null

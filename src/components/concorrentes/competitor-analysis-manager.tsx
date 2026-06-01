@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import type { AgentConfig, CompetitorUrl, CompetitorUrlEntry } from '@/app/api/admin/agent-config/route'
 import type { CompetitorSnapshot } from '@/app/api/agente/competitor-analysis/route'
 import { CategoryMappingDialog } from './category-mapping-dialog'
+import { useCurrency } from '@/components/currency-context'
 
 interface Unit {
   id: string
@@ -166,6 +167,7 @@ function normalizeCompetitor(c: CompetitorUrl): CompetitorUrl {
 
 export function CompetitorAnalysisManager({ unitSlug, unitName, units }: CompetitorAnalysisManagerProps) {
   const router = useRouter()
+  const { symbol: currencySymbol, formatMoney } = useCurrency()
   const [config, setConfig] = useState<AgentConfig | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -688,7 +690,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                               else groups[p.categoria_concorrente][p.periodo].todos = p.preco
                             }
 
-                            const fmt = (n?: number) => n !== undefined ? `R$\u00a0${n.toFixed(0)}` : '—'
+                            const fmt = (n?: number) => n !== undefined ? formatMoney(n, 0) : '—'
 
                             // Ordena períodos: crescente por horas, pernoite sempre por último
                             const sortPeriods = (keys: string[]) =>
@@ -956,7 +958,7 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
                           <div className="flex flex-col gap-0.5 flex-1 min-w-[80px]">
                             <span className="text-[10px] text-muted-foreground font-medium">Preço</span>
                             <div className="flex items-center gap-1">
-                              <span className="text-xs text-muted-foreground shrink-0">R$</span>
+                              <span className="text-xs text-muted-foreground shrink-0">{currencySymbol}</span>
                               <Input
                                 type="number"
                                 min="0"

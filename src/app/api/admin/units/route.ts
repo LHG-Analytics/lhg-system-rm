@@ -34,7 +34,7 @@ export async function GET() {
   const admin = getAdmin()
   const { data, error } = await admin
     .from('units')
-    .select('id, name, slug, city, state, is_active, automo_env_key, automo_category_ids, period_type, logo_path, created_at')
+    .select('id, name, slug, city, state, is_active, automo_env_key, automo_category_ids, period_type, logo_path, currency_code, created_at')
     .order('name')
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   if (!['super_admin', 'admin'].includes(profile?.role ?? '')) return Response.json({ error: 'Apenas super_admin pode criar unidades' }, { status: 403 })
 
   const body = await req.json()
-  const { name, slug, city, state, automo_env_key, automo_category_ids, period_type, logo_path } = body
+  const { name, slug, city, state, automo_env_key, automo_category_ids, period_type, logo_path, currency_code } = body
 
   if (!name || !slug) return Response.json({ error: 'name e slug são obrigatórios' }, { status: 400 })
 
@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
       automo_category_ids: automo_category_ids ?? [],
       period_type: period_type ?? 'standard',
       logo_path: logo_path || null,
+      currency_code: currency_code || 'BRL',
       is_active: true,
     })
     .select()
@@ -85,7 +86,7 @@ export async function PATCH(req: NextRequest) {
   if (!id) return Response.json({ error: 'id é obrigatório' }, { status: 400 })
 
   // Campos permitidos para update
-  const allowed = ['name', 'slug', 'city', 'state', 'is_active', 'automo_env_key', 'automo_category_ids', 'period_type', 'logo_path']
+  const allowed = ['name', 'slug', 'city', 'state', 'is_active', 'automo_env_key', 'automo_category_ids', 'period_type', 'logo_path', 'currency_code']
   const patch: Record<string, unknown> = {}
   for (const key of allowed) {
     if (key in updates) patch[key] = updates[key]
