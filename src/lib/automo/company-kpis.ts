@@ -144,76 +144,27 @@ async function queryBigNumbers(
 ) {
   if (!pool) throw new Error('pool is null')
 
+  // Usa la.id_tipounidade (categoria na época da locação) — mesmo critério do Analytics.
+  // Usa la.valortotal (campo pré-calculado pelo ERP) em vez de fórmula manual —
+  // mesma correção aplicada em queryDataTableSuiteCategory no LHG-128.
   const sql = `
     WITH ${cteBaseSuiteDays(catIds)},
-    ${cteSuiteDaysTotal()},
-    ${cteSuiteDaysByCategory()},
-    receita_consumo AS (
-      SELECT
-        la.id_apartamentostate AS id_locacao,
-        COALESCE(SUM(
-          CAST(sei.precovenda AS DECIMAL(15,4)) * CAST(sei.quantidade AS DECIMAL(15,4))
-        ), 0) AS valor_consumo_bruto
-      FROM locacaoapartamento la
-      INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
-      INNER JOIN apartamento a       ON aps.id_apartamento = a.id
-      INNER JOIN categoriaapartamento ca_apt ON a.id_categoriaapartamento = ca_apt.id
-      INNER JOIN suite_dias_por_cat  spc ON ca_apt.descricao = spc.categoria
-      INNER JOIN vendalocacao vl     ON la.id_apartamentostate = vl.id_locacaoapartamento
-      INNER JOIN saidaestoque se     ON vl.id_saidaestoque = se.id
-      INNER JOIN saidaestoqueitem sei ON se.id = sei.id_saidaestoque
-      WHERE ${dateCol} >= $1
-        AND ${dateCol} <  $2
-        ${statusFilter}
-        AND sei.cancelado IS NULL
-        AND ca_apt.id IN (${catIds})
-        ${timeFilter}
-      GROUP BY la.id_apartamentostate
-    ),
-    sale_direct AS (
-      SELECT COALESCE(SUM(
-        (CAST(sei.precovenda AS DECIMAL(15,4)) * CAST(sei.quantidade AS DECIMAL(15,4))) -
-        COALESCE(
-          CAST(v.desconto AS DECIMAL(15,4)) /
-          NULLIF((
-            SELECT COUNT(*) FROM saidaestoqueitem sei2
-            WHERE sei2.id_saidaestoque = se.id AND sei2.cancelado IS NULL
-          ), 0),
-          0
-        )
-      ), 0) AS total_sale_direct
-      FROM saidaestoque se
-      INNER JOIN vendadireta vd      ON se.id = vd.id_saidaestoque
-      INNER JOIN saidaestoqueitem sei ON se.id = sei.id_saidaestoque
-      LEFT JOIN  venda v              ON se.id = v.id_saidaestoque
-      WHERE vd.venda_completa = true
-        AND sei.cancelado IS NULL
-        AND sei.datasaidaitem >= $1
-        AND sei.datasaidaitem <  $2
-    )
+    ${cteSuiteDaysTotal()}
     SELECT
       COUNT(*)                    AS total_rentals,
       COALESCE(SUM(
-        COALESCE(CAST(la.valortotalpermanencia   AS DECIMAL(15,4)), 0) +
-        COALESCE(CAST(la.valortotalocupadicional AS DECIMAL(15,4)), 0) +
-        COALESCE(rc.valor_consumo_bruto,                             0) -
-        COALESCE(CAST(la.desconto                AS DECIMAL(15,4)), 0)
+        COALESCE(CAST(la.valortotal AS DECIMAL(15,4)), 0)
       ), 0)                       AS total_all_value,
       COALESCE(SUM(
         EXTRACT(EPOCH FROM la.datafinaldaocupacao - la.datainicialdaocupacao)
       ), 0)                       AS total_occupied_time,
-      (SELECT total_sale_direct FROM sale_direct) AS total_sale_direct,
-      (SELECT suite_dias FROM suite_dias_total)   AS total_suite_dias
+      0::numeric                  AS total_sale_direct,
+      (SELECT suite_dias FROM suite_dias_total) AS total_suite_dias
     FROM locacaoapartamento la
-    INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
-    INNER JOIN apartamento a        ON aps.id_apartamento = a.id
-    INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-    INNER JOIN suite_dias_por_cat  spc ON ca.descricao = spc.categoria
-    LEFT JOIN  receita_consumo rc   ON la.id_apartamentostate = rc.id_locacao
     WHERE ${dateCol} >= $1
       AND ${dateCol} <  $2
       ${statusFilter}
-      AND ca.id IN (${catIds})
+      AND la.id_tipounidade IN (${catIds})
       ${timeFilter}
   `
 
