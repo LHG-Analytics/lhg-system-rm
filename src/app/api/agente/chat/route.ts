@@ -426,10 +426,33 @@ export async function POST(req: NextRequest) {
       const monthStart = todayIso.slice(0, 7) + '-01'
       const effectiveFrom = maxDate(activeTable.valid_from, monthStart)
 
-      // Mesmo período no ano anterior (mantém os mesmos dias do mês)
-      const yearN = parseInt(todayIso.slice(0, 4), 10)
-      const lyFrom = `${yearN - 1}${effectiveFrom.slice(4)}`  // ex: 2025-05-01
-      const lyTo   = `${yearN - 1}${todayIso.slice(4)}`        // ex: 2025-05-21
+      // Guard: mês corrente com < 7 dias → recua para mês anterior fechado
+      // (ex: dia 01/06 → analisa maio completo em vez de 1 dia de junho)
+      const MIN_DAYS_FOR_MTD = 7
+      const daysMTD = daysBetween(effectiveFrom, todayIso)
+
+      let analysisFrom: string
+      let analysisTo: string
+      let fallbackLabel: string | null = null
+
+      if (daysMTD < MIN_DAYS_FOR_MTD) {
+        // Último dia do mês anterior via new Date(year, month, 0)
+        const prevLastDay = new Date(nowBRT.getFullYear(), nowBRT.getMonth(), 0)
+        const pmYear = prevLastDay.getFullYear()
+        const pmMM   = String(prevLastDay.getMonth() + 1).padStart(2, '0')
+        const pmDD   = String(prevLastDay.getDate()).padStart(2, '0')
+        analysisFrom = `${pmYear}-${pmMM}-01`
+        analysisTo   = `${pmYear}-${pmMM}-${pmDD}`
+        fallbackLabel = `Mês anterior fechado — ${isoToApi(analysisFrom)} a ${isoToApi(analysisTo)} (mês corrente com apenas ${daysMTD} ${daysMTD === 1 ? 'dia' : 'dias'} de dados — análise sobre mês anterior)`
+      } else {
+        analysisFrom = effectiveFrom
+        analysisTo   = todayIso
+      }
+
+      // Mesmo período no ano anterior
+      const yearN  = parseInt(analysisTo.slice(0, 4), 10)
+      const lyFrom = `${yearN - 1}${analysisFrom.slice(4)}`
+      const lyTo   = `${yearN - 1}${analysisTo.slice(4)}`
 
       // Busca tabela ativa no mesmo período do ano passado — em paralelo com KPIs
       const [lyTableResult, cCurrent, cLY, channelCurrent, channelLY] = await Promise.allSettled([
@@ -443,23 +466,23 @@ export async function POST(req: NextRequest) {
           .order('valid_from', { ascending: false })
           .limit(1)
           .maybeSingle(),
-        fetchCompanyKPIsFromAutomo(unit.slug, isoToApi(effectiveFrom), isoToApi(todayIso)),
+        fetchCompanyKPIsFromAutomo(unit.slug, isoToApi(analysisFrom), isoToApi(analysisTo)),
         fetchCompanyKPIsFromAutomo(unit.slug, isoToApi(lyFrom), isoToApi(lyTo)),
-        queryChannelKPIs(unit.slug, isoToApi(effectiveFrom), isoToApi(todayIso)),
+        queryChannelKPIs(unit.slug, isoToApi(analysisFrom), isoToApi(analysisTo)),
         queryChannelKPIs(unit.slug, isoToApi(lyFrom), isoToApi(lyTo)),
       ])
 
-      const lyTable = lyTableResult.status === 'fulfilled' ? lyTableResult.value.data : null
-      const currentCompany  = cCurrent.status === 'fulfilled' ? cCurrent.value : null
-      const lyCompany = cLY.status === 'fulfilled' ? cLY.value : null
+      const lyTable        = lyTableResult.status === 'fulfilled' ? lyTableResult.value.data : null
+      const currentCompany = cCurrent.status === 'fulfilled' ? cCurrent.value : null
+      const lyCompany      = cLY.status === 'fulfilled' ? cLY.value : null
 
       // rawImports: [tabela LY (se existir e diferente), tabela atual]
       rawImports = lyTable && lyTable.id !== activeTable.id
         ? [lyTable, activeTable]
         : [activeTable]
 
-      const daysCurrent = daysBetween(effectiveFrom, todayIso)
-      const daysLY      = daysBetween(lyFrom, lyTo)
+      const daysAnalysis = daysBetween(analysisFrom, analysisTo)
+      const daysLY       = daysBetween(lyFrom, lyTo)
 
       kpiPeriods = [
         {
@@ -471,8 +494,8 @@ export async function POST(req: NextRequest) {
           periodMix: lyCompany?.BillingRentalType,
         },
         {
-          label: `Período atual — ${isoToApi(effectiveFrom)} a ${isoToApi(todayIso)} (${daysCurrent} dias${daysCurrent < 7 ? ' — dados preliminares, aguardar dia 7 para análise conclusiva' : ''})`,
-          period: { startDate: isoToApi(effectiveFrom), endDate: isoToApi(todayIso) },
+          label: fallbackLabel ?? `Período atual — ${isoToApi(analysisFrom)} a ${isoToApi(analysisTo)} (${daysAnalysis} dias)`,
+          period: { startDate: isoToApi(analysisFrom), endDate: isoToApi(analysisTo) },
           company: currentCompany,
           bookings: null,
           channelKPIs: channelCurrent.status === 'fulfilled' ? channelCurrent.value : undefined,
