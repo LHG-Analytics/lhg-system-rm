@@ -72,7 +72,10 @@ function buildKPIContext(
   periodMix?: BillingRentalTypeItem[],
   fmtMoney?: (n: number, decimals?: number) => string,
 ): string {
-  if (!company) return `Dados de KPI indisponíveis para ${unitName} no momento.`
+  if (!company) return `## Dados operacionais — ${unitName}
+Período: ${period.startDate} a ${period.endDate}
+
+Nenhuma locação registrada neste período.`
 
   const fmtC = fmtMoney ?? ((n: number) => fmt(n, 'currency'))
   const r = company.TotalResult
