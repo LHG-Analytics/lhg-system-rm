@@ -309,7 +309,14 @@ export async function POST(req: NextRequest) {
   // Label de sincronização com o dashboard (usado no buildSystemPrompt)
   let dashboardSyncLabel: string | null = null
 
-  if (dashboardPeriod?.dateFrom && dashboardPeriod?.dateTo && !startDate && !endDate) {
+  // Período mínimo para usar dashboardPeriod — se < 7 dias (ex: dia 1 do mês com "Este mês"),
+  // ignora e cai no auto-detect que tem o fallback para o mês anterior completo
+  const MIN_DAYS_FOR_MTD = 7
+  const dashDays = (dashboardPeriod?.dateFrom && dashboardPeriod?.dateTo)
+    ? daysBetween(dashboardPeriod.dateFrom, dashboardPeriod.dateTo)
+    : 0
+
+  if (dashboardPeriod?.dateFrom && dashboardPeriod?.dateTo && !startDate && !endDate && dashDays >= MIN_DAYS_FOR_MTD) {
     // ── Modo sincronizado com dashboard: período selecionado pelo usuário ──────
     const [priceImpsResult, discountImpResult] = await Promise.allSettled([
       admin
@@ -428,7 +435,6 @@ export async function POST(req: NextRequest) {
 
       // Guard: mês corrente com < 7 dias → recua para mês anterior fechado
       // (ex: dia 01/06 → analisa maio completo em vez de 1 dia de junho)
-      const MIN_DAYS_FOR_MTD = 7
       const daysMTD = daysBetween(effectiveFrom, todayIso)
 
       let analysisFrom: string
