@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo, Fragment } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -143,6 +143,338 @@ function buildPivotRows(rows: ProposedPriceRow[]): PivotedRow[] {
   })
   return Array.from(map.values())
 }
+
+// ─── Spreadsheet layout ──────────────────────────────────────────────────────
+
+const GRID_DAYS = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'] as const
+type GridDay = typeof GRID_DAYS[number]
+const GRID_DAY_LABELS: Record<GridDay, string> = {
+  domingo: 'Dom', segunda: 'Seg', terca: 'Ter', quarta: 'Qua', quinta: 'Qui', sexta: 'Sex', sabado: 'Sáb',
+}
+const CANAL_ORDER = ['balcao_site', 'site_programada', 'guia_moteis']
+
+function sortPeriods(periods: string[]): string[] {
+  const rank = (p: string) => {
+    const lo = p.toLowerCase()
+    if (lo.includes('1 hora') || lo === '1h')  return 1
+    if (lo.includes('2 hora') || lo === '2h')  return 2
+    if (lo.includes('3 hora') || lo === '3h')  return 3
+    if (lo.includes('4 hora') || lo === '4h')  return 4
+    if (lo.includes('6 hora') || lo === '6h')  return 6
+    if (lo.includes('12 hora') || lo === '12h') return 12
+    if (lo.includes('day use') || lo.includes('diaria')) return 14
+    if (lo.includes('pernoite')) return 20
+    return 99
+  }
+  return [...periods].sort((a, b) => rank(a) - rank(b))
+}
+
+interface SpCell {
+  atual: number
+  proposto: number
+  variacao: number
+  justificativa: string
+  was_clamped?: boolean
+  clamp_info?: ProposedPriceRow['clamp_info']
+}
+
+type SpCellKey = `${GridDay}_d` | `${GridDay}_n`
+type SpCellMap = Partial<Record<SpCellKey, SpCell>>
+
+interface SpRow {
+  canal: string
+  periodo: string
+  categoria: string
+  cells: SpCellMap
+}
+
+function spExpandDays(row: ProposedPriceRow): GridDay[] {
+  if (row.dias?.length) return row.dias as GridDay[]
+  if (row.dia_tipo === 'semana')      return ['domingo', 'segunda', 'terca', 'quarta', 'quinta']
+  if (row.dia_tipo === 'fds_feriado') return ['sexta', 'sabado']
+  return [...GRID_DAYS]
+}
+
+function spGetBands(row: ProposedPriceRow): Array<'d' | 'n'> {
+  if (!row.dias?.length) return ['d', 'n']
+  return row.hora_inicio === '06:00' ? ['d'] : ['n']
+}
+
+function buildSpreadsheetRows(rows: ProposedPriceRow[]): SpRow[] {
+  const map = new Map<string, SpRow>()
+  for (const row of rows) {
+    const key = `${row.canal}|${row.periodo}|${row.categoria}`
+    if (!map.has(key)) {
+      map.set(key, { canal: row.canal, periodo: row.periodo, categoria: row.categoria, cells: {} })
+    }
+    const sr = map.get(key)!
+    const days  = spExpandDays(row)
+    const bands = spGetBands(row)
+    const cell: SpCell = {
+      atual: row.preco_atual, proposto: row.preco_proposto, variacao: row.variacao_pct,
+      justificativa: row.justificativa, was_clamped: row.was_clamped, clamp_info: row.clamp_info,
+    }
+    for (const day of days) {
+      for (const band of bands) {
+        const ck = `${day}_${band}` as SpCellKey
+        // new format (dias[]) overrides legacy (dia_tipo)
+        if (!sr.cells[ck] || row.dias?.length) sr.cells[ck] = cell
+      }
+    }
+  }
+  return Array.from(map.values())
+}
+
+function SpreadsheetCellTd({
+  cell,
+  mode,
+  formatMoney,
+}: {
+  cell: SpCell | undefined
+  mode: 'proposal' | 'current'
+  formatMoney: (v: number, d?: number) => string
+}) {
+  if (!cell) return <td className="border border-border/30 bg-muted/5" />
+
+  const v    = cell.variacao
+  const isUp   = v > 0.5
+  const isDown = v < -0.5
+
+  const bg = mode === 'proposal'
+    ? isUp   ? 'bg-green-500/12 dark:bg-green-500/18'
+    : isDown ? 'bg-red-500/12 dark:bg-red-500/18'
+    :          'bg-amber-500/10 dark:bg-amber-500/14'
+    : ''
+
+  const fg = mode === 'proposal'
+    ? isUp   ? 'text-green-700 dark:text-green-300'
+    : isDown ? 'text-red-600 dark:text-red-400'
+    :          'text-amber-700 dark:text-amber-300'
+    : 'text-foreground'
+
+  const tdContent = mode === 'proposal' ? (
+    <div className="flex flex-col items-end gap-px">
+      <span className="text-[9px] leading-tight text-muted-foreground/45 tabular-nums">
+        {formatMoney(cell.atual)}
+      </span>
+      <span className={cn('text-[11px] font-semibold leading-tight tabular-nums', fg)}>
+        {formatMoney(cell.proposto)}
+      </span>
+    </div>
+  ) : (
+    <span className="text-xs tabular-nums font-medium">{formatMoney(cell.atual)}</span>
+  )
+
+  if (mode === 'current') {
+    return (
+      <td className={cn('border border-border/30 px-2 py-1.5 text-right align-middle min-w-[56px]', bg)}>
+        {tdContent}
+      </td>
+    )
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <td className={cn('border border-border/30 px-2 py-1.5 text-right align-middle cursor-default min-w-[56px]', bg)}>
+          {tdContent}
+        </td>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[240px] text-xs">
+        <div className="space-y-1">
+          <div>
+            <span className={cn('font-semibold', isUp ? 'text-green-400' : isDown ? 'text-red-400' : 'text-amber-400')}>
+              {v >= 0 ? '+' : ''}{v.toFixed(1)}%
+            </span>
+            {' '}{isUp ? '↑ aumento' : isDown ? '↓ redução' : '≈ sem alteração'}
+          </div>
+          {cell.justificativa && (
+            <div className="text-muted-foreground">{cell.justificativa}</div>
+          )}
+          {cell.was_clamped && cell.clamp_info && (
+            <div className="text-amber-400 flex items-center gap-1">
+              <Shield className="size-3 shrink-0" />
+              Guardrail: modelo propôs {formatMoney(cell.clamp_info.original_price)}
+            </div>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function SpreadsheetView({ rows, formatMoney }: {
+  rows: ProposedPriceRow[]
+  formatMoney: (v: number, d?: number) => string
+}) {
+  const [viewMode, setViewMode]   = useState<'proposal' | 'current'>('proposal')
+  const [activeCanal, setActiveCanal] = useState<string>('')
+
+  const canals = useMemo(() => {
+    const cs = [...new Set(rows.map(r => r.canal))]
+    return cs.sort((a, b) => {
+      const ai = CANAL_ORDER.indexOf(a); const bi = CANAL_ORDER.indexOf(b)
+      if (ai === -1 && bi === -1) return a.localeCompare(b)
+      if (ai === -1) return 1; if (bi === -1) return -1
+      return ai - bi
+    })
+  }, [rows])
+
+  const canal   = activeCanal || canals[0] || ''
+  const spRows  = useMemo(() => buildSpreadsheetRows(rows), [rows])
+  const canRows = useMemo(() => spRows.filter(r => r.canal === canal), [spRows, canal])
+  const periods = useMemo(() => sortPeriods([...new Set(canRows.map(r => r.periodo))]), [canRows])
+
+  return (
+    <TooltipProvider delayDuration={150}>
+      <div>
+        {/* Canal tabs + view mode toggle */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3 pb-2.5 border-b bg-muted/20">
+          <div className="flex gap-1 flex-wrap">
+            {canals.map(c => (
+              <button
+                key={c}
+                onClick={() => setActiveCanal(c)}
+                className={cn(
+                  'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
+                  canal === c
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-border text-muted-foreground hover:bg-accent/50'
+                )}
+              >
+                {CANAL_LABELS[c] ?? c}
+              </button>
+            ))}
+          </div>
+          <div className="flex border rounded-md overflow-hidden text-xs">
+            <button
+              onClick={() => setViewMode('proposal')}
+              className={cn(
+                'px-3 py-1.5 font-medium transition-colors',
+                viewMode === 'proposal'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-accent/50'
+              )}
+            >
+              Proposta
+            </button>
+            <button
+              onClick={() => setViewMode('current')}
+              className={cn(
+                'px-3 py-1.5 font-medium border-l transition-colors',
+                viewMode === 'current'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-accent/50'
+              )}
+            >
+              Tabela vigente
+            </button>
+          </div>
+        </div>
+
+        {/* Legend (only in proposal mode) */}
+        {viewMode === 'proposal' && (
+          <div className="flex items-center gap-3 px-4 py-2 border-b text-[10px] text-muted-foreground bg-muted/10">
+            <span className="font-medium">Legenda:</span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block size-3 rounded-sm bg-green-500/20" />aumento
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block size-3 rounded-sm bg-red-500/20" />redução
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block size-3 rounded-sm bg-amber-500/15" />manutenção
+            </span>
+            <span className="text-muted-foreground/60">· Hover na célula para ver justificativa</span>
+          </div>
+        )}
+
+        {/* Spreadsheet grid */}
+        <div className="overflow-x-auto p-4">
+          <table className="border-collapse text-xs w-max">
+            <thead>
+              <tr>
+                <th className="border border-border/40 bg-muted/50 px-3 py-1.5 text-left font-semibold text-[11px] sticky left-0 z-10 min-w-[110px]">
+                  Categoria
+                </th>
+                {GRID_DAYS.map(day => (
+                  <th
+                    key={day}
+                    colSpan={2}
+                    className="border border-border/40 bg-muted/50 px-2 py-1.5 text-center font-semibold text-[11px] min-w-[112px]"
+                  >
+                    {GRID_DAY_LABELS[day]}
+                  </th>
+                ))}
+              </tr>
+              <tr>
+                <th className="border border-border/40 bg-muted/30 sticky left-0 z-10" />
+                {GRID_DAYS.flatMap(day => [
+                  <th
+                    key={`${day}_d_h`}
+                    className="border border-border/40 bg-muted/30 px-1.5 py-1 text-[10px] text-muted-foreground font-normal text-center whitespace-nowrap"
+                  >
+                    06–18h
+                  </th>,
+                  <th
+                    key={`${day}_n_h`}
+                    className="border border-border/40 bg-muted/30 px-1.5 py-1 text-[10px] text-muted-foreground font-normal text-center whitespace-nowrap"
+                  >
+                    18–06h
+                  </th>,
+                ])}
+              </tr>
+            </thead>
+            <tbody>
+              {periods.map(periodo => {
+                const pRows = canRows.filter(r => r.periodo === periodo)
+                const cats  = [...new Set(pRows.map(r => r.categoria))].sort()
+                return (
+                  <Fragment key={periodo}>
+                    <tr>
+                      <td
+                        colSpan={15}
+                        className="border border-border/40 bg-muted/60 px-3 py-1 font-semibold text-[11px] uppercase tracking-wide text-muted-foreground"
+                      >
+                        {periodo}
+                      </td>
+                    </tr>
+                    {cats.map(cat => {
+                      const srow = pRows.find(r => r.categoria === cat)!
+                      return (
+                        <tr key={cat} className="group hover:bg-primary/5">
+                          <td className="border border-border/40 px-3 py-1.5 font-medium text-[11px] sticky left-0 bg-background z-[5] group-hover:bg-primary/5 whitespace-nowrap">
+                            {cat}
+                          </td>
+                          {GRID_DAYS.flatMap(day => [
+                            <SpreadsheetCellTd
+                              key={`${day}_d`}
+                              cell={srow.cells[`${day}_d` as SpCellKey]}
+                              mode={viewMode}
+                              formatMoney={formatMoney}
+                            />,
+                            <SpreadsheetCellTd
+                              key={`${day}_n`}
+                              cell={srow.cells[`${day}_n` as SpCellKey]}
+                              mode={viewMode}
+                              formatMoney={formatMoney}
+                            />,
+                          ])}
+                        </tr>
+                      )
+                    })}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </TooltipProvider>
+  )
+}
+
+// ─── FIM Spreadsheet layout ───────────────────────────────────────────────────
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString('pt-BR', {
@@ -885,139 +1217,8 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                           </TableBody>
                         </Table>
                       ) : (
-                        /* ── Modo visualização: tabela pivô por faixa horária ── */
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead rowSpan={2} className="align-bottom">Canal</TableHead>
-                              <TableHead rowSpan={2} className="align-bottom">Categoria</TableHead>
-                              <TableHead rowSpan={2} className="align-bottom">Período</TableHead>
-                              <TableHead rowSpan={2} className="align-bottom">Dias</TableHead>
-                              <TableHead colSpan={3} className="text-center border-l text-[11px] font-semibold text-muted-foreground py-1.5">
-                                06:00–17:59
-                              </TableHead>
-                              <TableHead colSpan={3} className="text-center border-l text-[11px] font-semibold text-muted-foreground py-1.5">
-                                18:00–05:59
-                              </TableHead>
-                              <TableHead rowSpan={2} className="align-bottom">Justificativa</TableHead>
-                            </TableRow>
-                            <TableRow>
-                              <TableHead className="text-right border-l text-xs">Atual</TableHead>
-                              <TableHead className="text-right text-xs">Prop.</TableHead>
-                              <TableHead className="text-right text-xs">Var.</TableHead>
-                              <TableHead className="text-right border-l text-xs">Atual</TableHead>
-                              <TableHead className="text-right text-xs">Prop.</TableHead>
-                              <TableHead className="text-right text-xs">Var.</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {buildPivotRows(proposal.rows).map((pivot) => {
-                              const { diurno, noturno, isLegacy } = pivot
-                              const dimD = Math.abs(diurno?.row.variacao_pct ?? 0) <= 0.5
-                              const dimN = Math.abs(noturno?.row.variacao_pct ?? 0) <= 0.5
-                              const dimRow = isLegacy ? dimD : (dimD && dimN)
-                              return (
-                                <TableRow key={pivot.key} className={cn(dimRow && 'opacity-40')}>
-                                  <TableCell className="text-xs">{CANAL_LABELS[pivot.canal] ?? pivot.canal}</TableCell>
-                                  <TableCell className="text-xs font-medium">{pivot.categoria}</TableCell>
-                                  <TableCell className="text-xs">{pivot.periodo}</TableCell>
-                                  <TableCell className="text-xs whitespace-nowrap">{pivot.diasLabel}</TableCell>
-
-                                  {/* Faixa diurna 06:00–17:59 */}
-                                  {/* "Atual" sempre mostra o preço (do lado que existir — tabela atual não tem split) */}
-                                  <TableCell className="text-right text-xs tabular-nums border-l">
-                                    {diurno
-                                      ? formatMoney(diurno.row.preco_atual, 2)
-                                      : noturno
-                                        ? <span className="text-muted-foreground/50">{formatMoney(noturno.row.preco_atual, 2)}</span>
-                                        : <span className="text-muted-foreground/30">—</span>}
-                                  </TableCell>
-                                  <TableCell className="text-right text-xs tabular-nums font-medium">
-                                    {diurno ? (
-                                      <span className="inline-flex items-center gap-1 justify-end">
-                                        {diurno.row.was_clamped && diurno.row.clamp_info && (
-                                          <TooltipProvider delayDuration={150}>
-                                            <Tooltip>
-                                              <TooltipTrigger asChild>
-                                                <Shield className="size-3 text-amber-600 dark:text-amber-400 shrink-0" />
-                                              </TooltipTrigger>
-                                              <TooltipContent side="left" className="max-w-[260px] text-xs">
-                                                <div className="font-medium mb-0.5">Ajustado pelo guardrail</div>
-                                                <div className="text-muted-foreground">
-                                                  Modelo propôs {formatMoney(diurno.row.clamp_info.original_price, 2)}
-                                                  {diurno.row.clamp_info.clamp_type === 'max'
-                                                    ? ` (acima do máx. de ${formatMoney(diurno.row.clamp_info.guardrail_value, 2)})`
-                                                    : ` (abaixo do mín. de ${formatMoney(diurno.row.clamp_info.guardrail_value, 2)})`}
-                                                </div>
-                                              </TooltipContent>
-                                            </Tooltip>
-                                          </TooltipProvider>
-                                        )}
-                                        {formatMoney(diurno.row.preco_proposto, 2)}
-                                      </span>
-                                    ) : <span className="text-muted-foreground/30">—</span>}
-                                  </TableCell>
-                                  <TableCell className="text-right text-xs">
-                                    {diurno
-                                      ? <VariacaoBadge pct={diurno.row.variacao_pct} />
-                                      : <span className="text-muted-foreground/30">—</span>}
-                                  </TableCell>
-
-                                  {/* Faixa noturna 18:00–05:59 */}
-                                  <TableCell className="text-right text-xs tabular-nums border-l">
-                                    {noturno
-                                      ? <span className={cn(isLegacy && 'text-muted-foreground/50')}>{formatMoney(noturno.row.preco_atual, 2)}</span>
-                                      : diurno
-                                        ? <span className="text-muted-foreground/50">{formatMoney(diurno.row.preco_atual, 2)}</span>
-                                        : <span className="text-muted-foreground/30">—</span>}
-                                  </TableCell>
-                                  <TableCell className={cn('text-right text-xs tabular-nums font-medium', isLegacy && 'text-muted-foreground/50')}>
-                                    {noturno ? (
-                                      <span className="inline-flex items-center gap-1 justify-end">
-                                        {!isLegacy && noturno.row.was_clamped && noturno.row.clamp_info && (
-                                          <TooltipProvider delayDuration={150}>
-                                            <Tooltip>
-                                              <TooltipTrigger asChild>
-                                                <Shield className="size-3 text-amber-600 dark:text-amber-400 shrink-0" />
-                                              </TooltipTrigger>
-                                              <TooltipContent side="left" className="max-w-[260px] text-xs">
-                                                <div className="font-medium mb-0.5">Ajustado pelo guardrail</div>
-                                                <div className="text-muted-foreground">
-                                                  Modelo propôs {formatMoney(noturno.row.clamp_info.original_price, 2)}
-                                                  {noturno.row.clamp_info.clamp_type === 'max'
-                                                    ? ` (acima do máx. de ${formatMoney(noturno.row.clamp_info.guardrail_value, 2)})`
-                                                    : ` (abaixo do mín. de ${formatMoney(noturno.row.clamp_info.guardrail_value, 2)})`}
-                                                </div>
-                                              </TooltipContent>
-                                            </Tooltip>
-                                          </TooltipProvider>
-                                        )}
-                                        {formatMoney(noturno.row.preco_proposto, 2)}
-                                      </span>
-                                    ) : <span className="text-muted-foreground/30">—</span>}
-                                  </TableCell>
-                                  <TableCell className={cn('text-right text-xs', isLegacy && 'text-muted-foreground/50')}>
-                                    {noturno
-                                      ? <VariacaoBadge pct={noturno.row.variacao_pct} />
-                                      : <span className="text-muted-foreground/30">—</span>}
-                                  </TableCell>
-
-                                  {/* Justificativa — prioriza diurno; fallback para noturno quando só existe noturno */}
-                                  <TableCell className="text-xs text-muted-foreground max-w-[220px]">
-                                    {diurno && <ExpandableText text={diurno.row.justificativa} maxLength={80} />}
-                                    {!diurno && noturno && <ExpandableText text={noturno.row.justificativa} maxLength={80} />}
-                                    {!isLegacy && diurno && noturno && noturno.row.justificativa && noturno.row.justificativa !== diurno.row.justificativa && (
-                                      <div className="mt-1 pt-1 border-t border-border/30">
-                                        <span className="text-[10px] text-muted-foreground/50 mr-1">18h:</span>
-                                        <ExpandableText text={noturno.row.justificativa} maxLength={80} />
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              )
-                            })}
-                          </TableBody>
-                        </Table>
+                        /* ── Modo visualização: planilha por dia × faixa horária ── */
+                        <SpreadsheetView rows={proposal.rows} formatMoney={formatMoney} />
                       )}
                     </div>
 
