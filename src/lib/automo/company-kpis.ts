@@ -144,9 +144,9 @@ async function queryBigNumbers(
 ) {
   if (!pool) throw new Error('pool is null')
 
-  // Usa la.id_tipounidade (categoria na época da locação) — mesmo critério do Analytics.
-  // Usa la.valortotal (campo pré-calculado pelo ERP) em vez de fórmula manual —
-  // mesma correção aplicada em queryDataTableSuiteCategory no LHG-128.
+  // Usa la.valortotal (campo pré-calculado pelo ERP) em vez de fórmula manual.
+  // Filtro de categoria via JOIN chain (compatível com todas as versões do Automo —
+  // la.id_tipounidade não existe em todas as instalações).
   const sql = `
     WITH ${cteBaseSuiteDays(catIds)},
     ${cteSuiteDaysTotal()}
@@ -161,10 +161,13 @@ async function queryBigNumbers(
       0::numeric                  AS total_sale_direct,
       (SELECT suite_dias FROM suite_dias_total) AS total_suite_dias
     FROM locacaoapartamento la
+    INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+    INNER JOIN apartamento a        ON aps.id_apartamento = a.id
+    INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
     WHERE ${dateCol} >= $1
       AND ${dateCol} <  $2
       ${statusFilter}
-      AND la.id_tipounidade IN (${catIds})
+      AND ca.id IN (${catIds})
       ${timeFilter}
   `
 
