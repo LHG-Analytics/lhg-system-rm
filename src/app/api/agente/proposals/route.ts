@@ -449,6 +449,18 @@ export async function POST(req: NextRequest) {
 
   // Mapa de preços atuais (tabela ativa) para o modelo não precisar inferir
   const activeRows = (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? []
+
+  // Se a tabela tem balcao_site mas não site_programada, deriva linhas sintéticas
+  // (tabelas legadas só exportavam um canal; modelo deve propor para ambos)
+  const hasBalcao = activeRows.some((r) => r.canal === 'balcao_site')
+  const hasProgramada = activeRows.some((r) => r.canal === 'site_programada')
+  if (hasBalcao && !hasProgramada) {
+    const derived = activeRows
+      .filter((r) => r.canal === 'balcao_site')
+      .map((r) => ({ ...r, canal: 'site_programada' as const }))
+    activeRows.push(...derived)
+  }
+
   const distinctPeriods = [...new Set(activeRows.map((r) => r.periodo))]
   if (distinctPeriods.length <= 1) {
     console.warn(
@@ -758,7 +770,7 @@ Estes limites foram configurados pelo gestor. Nenhuma proposta pode ter preco_pr
 ${(guardrailsData as Array<{ categoria: string; periodo: string; dia_semana?: string; hora_inicio?: string | null; hora_fim?: string | null; preco_minimo: number; preco_maximo: number }>).map((g) => {
   const dia = DIA_GUARDRAIL_LABEL[g.dia_semana ?? 'todos'] ?? g.dia_semana ?? 'Todos'
   const horario = g.hora_inicio || g.hora_fim ? `${g.hora_inicio ?? '00:00'}–${g.hora_fim ?? '23:59'}` : '—'
-  return `| ${g.categoria} | ${g.periodo} | ${dia} | ${horario} | R$ ${g.preco_minimo.toFixed(2)} | R$ ${g.preco_maximo.toFixed(2)} |`
+  return `| ${g.categoria} | ${g.periodo} | ${dia} | ${horario} | ${_fmtPAB(g.preco_minimo)} | ${_fmtPAB(g.preco_maximo)} |`
 }).join('\n')}
 
 IMPORTANTE: Se o preço ótimo calculado ultrapassar o máximo, use o máximo. Se estiver abaixo do mínimo, use o mínimo.`
@@ -780,7 +792,7 @@ Estas regras estão configuradas na tabela vigente. Leve-as em conta ao propor a
 ${activeDiscounts.map((d) => {
   const dia = d.dia_semana ?? (d.dia_tipo === 'semana' ? 'seg–sex' : d.dia_tipo === 'fds_feriado' ? 'fds/feriado' : 'todos')
   const horario = d.faixa_horaria ?? '—'
-  return `| ${d.categoria} | ${d.periodo} | ${dia} | ${horario} | ${d.tipo_desconto === 'percentual' ? 'Percentual' : 'Absoluto'} | ${d.tipo_desconto === 'percentual' ? `${d.valor}%` : `R$ ${d.valor.toFixed(2)}`} | ${d.condicao ?? '—'} |`
+  return `| ${d.categoria} | ${d.periodo} | ${dia} | ${horario} | ${d.tipo_desconto === 'percentual' ? 'Percentual' : 'Absoluto'} | ${d.tipo_desconto === 'percentual' ? `${d.valor}%` : _fmtPAB(d.valor)} | ${d.condicao ?? '—'} |`
 }).join('\n')}
 
 > Os preços propostos para guia_moteis devem ser os preços BASE (antes do desconto). O desconto é aplicado automaticamente pelo canal.`

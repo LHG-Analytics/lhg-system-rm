@@ -41,6 +41,7 @@ import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { PriceProposal, ProposedPriceRow } from '@/app/api/agente/proposals/route'
 import { RejectionDialog } from '@/components/agente/rejection-dialog'
+import { useCurrency } from '@/components/currency-context'
 
 interface PendingReview {
   id: string
@@ -120,6 +121,7 @@ function ExpandableText({ text, maxLength = 120 }: { text: string; maxLength?: n
 
 export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, selectedProposalId, canManage = true }: ProposalsListProps) {
   const supabase = useMemo(() => createClient(), [])
+  const { formatMoney } = useCurrency()
   const [proposals, setProposals] = useState<PriceProposal[]>(initialProposals)
   const [reviewing, setReviewing] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -785,7 +787,7 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                                   : 'Todos'}
                               </TableCell>
                               <TableCell className="text-right text-xs tabular-nums">
-                                R$ {row.preco_atual.toFixed(2).replace('.', ',')}
+                                {formatMoney(row.preco_atual, 2)}
                               </TableCell>
                               <TableCell className="text-right text-xs tabular-nums font-medium">
                                 {isEditing ? (
@@ -808,16 +810,16 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                                           <TooltipContent side="left" className="max-w-[260px] text-xs">
                                             <div className="font-medium mb-0.5">Ajustado pelo guardrail</div>
                                             <div className="text-muted-foreground">
-                                              Modelo propôs R$ {row.clamp_info.original_price.toFixed(2).replace('.', ',')}
+                                              Modelo propôs {formatMoney(row.clamp_info.original_price, 2)}
                                               {row.clamp_info.clamp_type === 'max'
-                                                ? ` (acima do limite máx. de R$ ${row.clamp_info.guardrail_value.toFixed(2).replace('.', ',')})`
-                                                : ` (abaixo do limite mín. de R$ ${row.clamp_info.guardrail_value.toFixed(2).replace('.', ',')})`}
+                                                ? ` (acima do limite máx. de ${formatMoney(row.clamp_info.guardrail_value, 2)})`
+                                                : ` (abaixo do limite mín. de ${formatMoney(row.clamp_info.guardrail_value, 2)})`}
                                             </div>
                                           </TooltipContent>
                                         </Tooltip>
                                       </TooltipProvider>
                                     )}
-                                    R$ {row.preco_proposto.toFixed(2).replace('.', ',')}
+                                    {formatMoney(row.preco_proposto, 2)}
                                   </span>
                                 )}
                               </TableCell>
@@ -874,13 +876,13 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                         <span className="text-xs text-muted-foreground">
                           Ticket médio atual:{' '}
                           <span className="font-medium text-foreground">
-                            R$ {impact.avgCurrent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            {formatMoney(impact.avgCurrent, 2)}
                           </span>
                         </span>
                         <span className="text-xs text-muted-foreground">
                           Ticket projetado:{' '}
                           <span className="font-medium text-foreground">
-                            R$ {impact.avgProposed.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            {formatMoney(impact.avgProposed, 2)}
                           </span>
                         </span>
                         <span className={cn(
