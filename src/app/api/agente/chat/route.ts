@@ -380,7 +380,7 @@ export async function POST(req: NextRequest) {
     }]
   } else {
     // ── Modo automático: backend detecta tabelas e monta contexto ─────────────
-    // Busca as 2 tabelas de preços mais recentes + tabela de descontos ativa
+    // Busca até 20 tabelas de preços recentes + tabela de descontos ativa
     const [priceImpsResult, discountImpResult] = await Promise.allSettled([
       admin
         .from('price_imports')
@@ -388,7 +388,7 @@ export async function POST(req: NextRequest) {
         .eq('unit_id', unit.id)
         .filter('import_type', 'eq', 'prices')
         .order('valid_from', { ascending: false })
-        .limit(2),
+        .limit(20),
       admin
         .from('price_imports')
         .select('id, discount_data, valid_from, valid_until')
@@ -475,6 +475,23 @@ export async function POST(req: NextRequest) {
       const lyTable        = lyTableResult.status === 'fulfilled' ? lyTableResult.value.data : null
       const currentCompany = cCurrent.status === 'fulfilled' ? cCurrent.value : null
       const lyCompany      = cLY.status === 'fulfilled' ? cLY.value : null
+
+      // Mescla TODOS os imports ativos hoje em activeTable.parsed_data
+      // (suporte a imports separados por canal — ex: balcao_site e site_programada em arquivos distintos)
+      const otherActives = priceImps.filter(
+        (i) => i.id !== activeTable.id
+          && i.valid_from <= todayIso
+          && (i.valid_until === null || i.valid_until >= todayIso)
+      )
+      if (otherActives.length > 0) {
+        const mergedMap = new Map<string, ParsedPriceRow>()
+        for (const imp of [...otherActives, activeTable]) {
+          for (const r of (imp.parsed_data as unknown as ParsedPriceRow[]) ?? []) {
+            mergedMap.set(`${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`, r)
+          }
+        }
+        ;(activeTable as RawImport).parsed_data = [...mergedMap.values()]
+      }
 
       // rawImports: [tabela LY (se existir e diferente), tabela atual]
       rawImports = lyTable && lyTable.id !== activeTable.id
