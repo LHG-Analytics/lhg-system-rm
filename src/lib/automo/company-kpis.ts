@@ -136,7 +136,7 @@ async function queryBigNumbers(
   pool: Pool,
   catIds: string,
   isoStart: string,
-  isoEnd: string,          // exclusive upper bound (D+1 midnight)
+  isoEnd: string,          // exclusive upper bound (D+1 at 06:00)
   daysDiff: number,
   timeFilter = '',
   statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
@@ -144,26 +144,72 @@ async function queryBigNumbers(
 ) {
   if (!pool) throw new Error('pool is null')
 
-  // Usa la.valortotal (campo pré-calculado pelo ERP) em vez de fórmula manual.
-  // Filtro de categoria via JOIN chain (compatível com todas as versões do Automo —
-  // la.id_tipounidade não existe em todas as instalações).
+  // Fórmula explícita alinhada com o Analytics:
+  // total_all_value = valortotalpermanencia + valortotalocupadicional + consumo_bruto - desconto + vendas_diretas
+  // Filtro de categoria via JOIN chain (compatível com todas as versões do Automo).
   const sql = `
     WITH ${cteBaseSuiteDays(catIds)},
-    ${cteSuiteDaysTotal()}
+    ${cteSuiteDaysTotal()},
+    receita_consumo AS (
+      SELECT
+        la.id_apartamentostate                              AS id_locacao,
+        COALESCE(SUM(
+          CAST(sei.precovenda  AS DECIMAL(15,4)) *
+          CAST(sei.quantidade  AS DECIMAL(15,4))
+        ), 0)                                              AS valor_consumo_bruto
+      FROM locacaoapartamento la
+      INNER JOIN apartamentostate aps  ON la.id_apartamentostate = aps.id
+      INNER JOIN apartamento a         ON aps.id_apartamento = a.id
+      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+      INNER JOIN vendalocacao vl       ON la.id_apartamentostate = vl.id_locacaoapartamento
+      INNER JOIN saidaestoque se       ON vl.id_saidaestoque = se.id
+      INNER JOIN saidaestoqueitem sei  ON se.id = sei.id_saidaestoque
+      WHERE ${dateCol} >= $1
+        AND ${dateCol} <  $2
+        ${statusFilter}
+        AND sei.cancelado IS NULL
+        AND ca.id IN (${catIds})
+      GROUP BY la.id_apartamentostate
+    ),
+    vendas_diretas AS (
+      SELECT COALESCE(SUM(receita_item - desconto_proporcional), 0) AS total_sale_direct
+      FROM (
+        SELECT
+          CAST(sei.precovenda AS DECIMAL(15,4)) *
+          CAST(sei.quantidade AS DECIMAL(15,4))           AS receita_item,
+          COALESCE(CAST(v.desconto AS DECIMAL(15,4)), 0) /
+            NULLIF((
+              SELECT COUNT(*) FROM saidaestoqueitem sei2
+              WHERE sei2.id_saidaestoque = se.id AND sei2.cancelado IS NULL
+            ), 0)                                         AS desconto_proporcional
+        FROM saidaestoque se
+        INNER JOIN vendadireta vd        ON se.id = vd.id_saidaestoque
+        INNER JOIN saidaestoqueitem sei  ON se.id = sei.id_saidaestoque
+        LEFT  JOIN venda v               ON se.id = v.id_saidaestoque
+        WHERE vd.venda_completa = true
+          AND sei.cancelado IS NULL
+          AND sei.datasaidaitem >= $1
+          AND sei.datasaidaitem <  $2
+      ) vd_detail
+    )
     SELECT
       COUNT(*)                    AS total_rentals,
       COALESCE(SUM(
-        COALESCE(CAST(la.valortotal AS DECIMAL(15,4)), 0)
+        COALESCE(CAST(la.valortotalpermanencia   AS DECIMAL(15,4)), 0) +
+        COALESCE(CAST(la.valortotalocupadicional AS DECIMAL(15,4)), 0) +
+        COALESCE(rc.valor_consumo_bruto, 0) -
+        COALESCE(CAST(la.desconto               AS DECIMAL(15,4)), 0)
       ), 0)                       AS total_all_value,
       COALESCE(SUM(
         EXTRACT(EPOCH FROM la.datafinaldaocupacao - la.datainicialdaocupacao)
       ), 0)                       AS total_occupied_time,
-      0::numeric                  AS total_sale_direct,
-      (SELECT suite_dias FROM suite_dias_total) AS total_suite_dias
+      (SELECT total_sale_direct FROM vendas_diretas) AS total_sale_direct,
+      (SELECT suite_dias FROM suite_dias_total)      AS total_suite_dias
     FROM locacaoapartamento la
     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
     INNER JOIN apartamento a        ON aps.id_apartamento = a.id
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+    LEFT  JOIN receita_consumo rc   ON la.id_apartamentostate = rc.id_locacao
     WHERE ${dateCol} >= $1
       AND ${dateCol} <  $2
       ${statusFilter}
