@@ -595,9 +595,9 @@ export async function POST(req: NextRequest) {
   const sharedContextBlock    = buildSharedContextBlock(sharedContext)
 
   const STRATEGY_GUIDE: Record<string, string> = {
-    conservador: 'Priorize estabilidade: proponha variações menores (≤10%), evite mudanças simultâneas em muitos itens e prefira ajustes incrementais.',
-    moderado:    'Equilíbrio entre receita e volume: proponha variações proporcionais aos dados, ajustando itens com oportunidade clara.',
-    agressivo:   'Maximize receita: proponha variações maiores onde a demanda suportar, priorizando RevPAR mesmo que reduza volume.',
+    conservador: `Variações típicas recomendadas: ±3–8%. Use o teto máximo (±${maxVar}%) somente em situações extremas com evidência muito sólida. Prefira ajustes graduais e incrementais.`,
+    moderado:    `Variações típicas recomendadas: ±5–12%. Reserve o teto máximo (±${maxVar}%) apenas para itens com desvio significativo e justificativa robusta (ex: overprice >25% vs concorrente confirmado OU KPI extremo). A maioria das linhas deve ficar entre ±5–12% — evite usar o teto como padrão.`,
+    agressivo:   `Pode usar todo o limite máximo (±${maxVar}%) quando os dados justificarem claramente. Priorize maximização de RevPAR e TRevPAR.`,
   }
   const FOCUS_GUIDE: Record<string, string> = {
     balanceado: 'Otimize todos os KPIs em conjunto: RevPAR, Giro, TRevPAR, Taxa de Ocupação, Ticket Médio e TMO. Não sacrifique um KPI por outro sem justificativa clara nos dados.',
@@ -621,8 +621,8 @@ export async function POST(req: NextRequest) {
   }
 
   const agentConfigBlock = `## Configuração do agente para esta unidade
-- Estratégia: **${strategy}** — ${STRATEGY_GUIDE[strategy]}
-- Variação máxima permitida: **±${maxVar}%** por item (não exceder este limite em nenhuma linha)
+- Estratégia: **${strategy}** — ${STRATEGY_GUIDE[strategy] ?? STRATEGY_GUIDE['moderado']}
+- Variação máxima (teto absoluto): **±${maxVar}%** por item — não exceder em nenhuma linha; a estratégia define a amplitude típica recomendada, que é menor que o teto
 - Métrica de foco: **${focusLabel[focus] ?? focus}** — ${FOCUS_GUIDE[focus] ?? ''}`
 
   // Bloco de metas — compara meta configurada com KPIs do período ativo

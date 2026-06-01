@@ -593,9 +593,15 @@ export async function POST(req: NextRequest) {
     balanceado: 'Balanceado (sem foco definido)',
     agressivo: 'Maximizar RevPAR + TRevPAR',
   }
+  const STRATEGY_GUIDANCE: Record<string, string> = {
+    conservador: `Variações típicas recomendadas: ±3–8%. Use o teto máximo (±${maxVariationPct}%) somente em situações extremas com evidência muito sólida (ex: concorrente 40%+ abaixo/acima e KPI crítico). Prefira ajustes graduais e incrementais.`,
+    moderado:    `Variações típicas recomendadas: ±5–12%. Reserve o teto máximo (±${maxVariationPct}%) apenas para itens com desvio significativo e justificativa robusta (ex: overprice >25% vs concorrente confirmado OU KPI extremo). Evite usar o teto como padrão — a maioria das linhas deve ficar entre ±5–12%.`,
+    agressivo:   `Pode usar todo o limite máximo (±${maxVariationPct}%) quando os dados justificarem claramente. Priorize maximização de RevPAR e TRevPAR.`,
+  }
+  const strategyGuidance = STRATEGY_GUIDANCE[pricingStrategy] ?? STRATEGY_GUIDANCE['moderado']
   const agentConfigBlock = `## Configuração do agente RM (${unit.name})
-- **Estratégia de precificação:** ${pricingStrategy}
-- **Variação máxima permitida:** ±${maxVariationPct}%
+- **Estratégia de precificação:** ${pricingStrategy} — ${strategyGuidance}
+- **Variação máxima permitida (teto absoluto):** ±${maxVariationPct}%
 - **Foco principal:** ${FOCUS_LABELS[focusMetric] ?? focusMetric}
 - **Moeda:** Use sempre **${currencySymbol}** para todos os valores monetários no texto e nas tabelas — nunca use outro símbolo de moeda`
 
