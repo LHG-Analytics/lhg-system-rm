@@ -91,6 +91,59 @@ function formatDiaRow(row: ProposedPriceRow): string {
     : 'Todos'
 }
 
+// ─── Tabela Pivô (faixa horária) ─────────────────────────────────────────────
+
+interface PivotCell {
+  row: ProposedPriceRow
+  flatIndex: number
+}
+
+interface PivotedRow {
+  key: string
+  canal: string
+  categoria: string
+  periodo: string
+  diasLabel: string
+  /** true = formato legado (dia_tipo), ambas as células apontam para o mesmo row */
+  isLegacy: boolean
+  diurno: PivotCell | null  // hora_inicio 06:00 ou legado
+  noturno: PivotCell | null // hora_inicio 18:00 ou legado (mesmo row)
+}
+
+function buildPivotRows(rows: ProposedPriceRow[]): PivotedRow[] {
+  const map = new Map<string, PivotedRow>()
+  rows.forEach((row, flatIndex) => {
+    const isNewFormat = !!row.dias?.length
+    const diasKey = isNewFormat
+      ? [...row.dias!].sort().join(',')
+      : (row.dia_tipo || '')
+    const key = `${row.canal}|${row.categoria}|${row.periodo}|${diasKey}`
+
+    if (!map.has(key)) {
+      const diasLabel = isNewFormat
+        ? [...row.dias!]
+            .sort((a, b) => DOW_ORDER.indexOf(a) - DOW_ORDER.indexOf(b))
+            .map((d) => DAY_ABBR[d] ?? d)
+            .join('/')
+        : row.dia_tipo === 'semana' ? 'Semana'
+          : row.dia_tipo === 'fds_feriado' ? 'FDS/Fer.'
+          : row.dia_tipo || '—'
+      map.set(key, { key, canal: row.canal, categoria: row.categoria, periodo: row.periodo, diasLabel, isLegacy: !isNewFormat, diurno: null, noturno: null })
+    }
+
+    const pivot = map.get(key)!
+    if (!isNewFormat) {
+      pivot.diurno = { row, flatIndex }
+      pivot.noturno = { row, flatIndex }
+    } else if (row.hora_inicio === '06:00') {
+      pivot.diurno = { row, flatIndex }
+    } else {
+      pivot.noturno = { row, flatIndex }
+    }
+  })
+  return Array.from(map.values())
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString('pt-BR', {
     day: '2-digit', month: '2-digit', year: 'numeric',
@@ -783,34 +836,30 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                 {isExpanded && (
                   <div className="border-t">
                     <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Canal</TableHead>
-                            <TableHead>Categoria</TableHead>
-                            <TableHead>Período</TableHead>
-                            <TableHead>Dia</TableHead>
-                            <TableHead className="text-right">Atual</TableHead>
-                            <TableHead className="text-right">Proposto</TableHead>
-                            <TableHead className="text-right">Variação</TableHead>
-                            <TableHead className="text-right">Rev. Esperada</TableHead>
-                            <TableHead>Justificativa</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {(isEditing ? editing.rows : proposal.rows).map((row, i) => (
-                            <TableRow key={i} className={cn(Math.abs(row.variacao_pct) <= 0.5 && 'opacity-40')}>
-                              <TableCell className="text-xs">{CANAL_LABELS[row.canal] ?? row.canal}</TableCell>
-                              <TableCell className="text-xs font-medium">{row.categoria}</TableCell>
-                              <TableCell className="text-xs">{row.periodo}</TableCell>
-                              <TableCell className="text-xs whitespace-nowrap">
-                                {formatDiaRow(row)}
-                              </TableCell>
-                              <TableCell className="text-right text-xs tabular-nums">
-                                {formatMoney(row.preco_atual, 2)}
-                              </TableCell>
-                              <TableCell className="text-right text-xs tabular-nums font-medium">
-                                {isEditing ? (
+                      {isEditing ? (
+                        /* ── Modo edição: tabela flat para inputs ── */
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Canal</TableHead>
+                              <TableHead>Categoria</TableHead>
+                              <TableHead>Período</TableHead>
+                              <TableHead>Dia / Faixa</TableHead>
+                              <TableHead className="text-right">Atual</TableHead>
+                              <TableHead className="text-right">Proposto</TableHead>
+                              <TableHead className="text-right">Variação</TableHead>
+                              <TableHead>Justificativa</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {editing.rows.map((row, i) => (
+                              <TableRow key={i} className={cn(Math.abs(row.variacao_pct) <= 0.5 && 'opacity-40')}>
+                                <TableCell className="text-xs">{CANAL_LABELS[row.canal] ?? row.canal}</TableCell>
+                                <TableCell className="text-xs font-medium">{row.categoria}</TableCell>
+                                <TableCell className="text-xs">{row.periodo}</TableCell>
+                                <TableCell className="text-xs whitespace-nowrap">{formatDiaRow(row)}</TableCell>
+                                <TableCell className="text-right text-xs tabular-nums">{formatMoney(row.preco_atual, 2)}</TableCell>
+                                <TableCell className="text-right text-xs tabular-nums font-medium">
                                   <input
                                     type="number"
                                     step="0.01"
@@ -819,72 +868,147 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                                     value={row.preco_proposto}
                                     onChange={(e) => updateEditRow(i, parseFloat(e.target.value) || 0)}
                                   />
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 justify-end">
-                                    {row.was_clamped && row.clamp_info && (
-                                      <TooltipProvider delayDuration={150}>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <Shield className="size-3 text-amber-600 dark:text-amber-400 shrink-0" aria-label="Ajustado por guardrail" />
-                                          </TooltipTrigger>
-                                          <TooltipContent side="left" className="max-w-[260px] text-xs">
-                                            <div className="font-medium mb-0.5">Ajustado pelo guardrail</div>
-                                            <div className="text-muted-foreground">
-                                              Modelo propôs {formatMoney(row.clamp_info.original_price, 2)}
-                                              {row.clamp_info.clamp_type === 'max'
-                                                ? ` (acima do limite máx. de ${formatMoney(row.clamp_info.guardrail_value, 2)})`
-                                                : ` (abaixo do limite mín. de ${formatMoney(row.clamp_info.guardrail_value, 2)})`}
-                                            </div>
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
-                                    )}
-                                    {formatMoney(row.preco_proposto, 2)}
-                                  </span>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right text-xs">
-                                <VariacaoBadge pct={row.variacao_pct} />
-                              </TableCell>
-                              <TableCell className="text-right text-xs tabular-nums">
-                                {row.expected_revenue_change_pct != null ? (
-                                  <TooltipProvider delayDuration={150}>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span className={cn(
-                                          'font-medium',
-                                          row.expected_revenue_change_pct > 0 ? 'text-emerald-600 dark:text-emerald-400' :
-                                          row.expected_revenue_change_pct < 0 ? 'text-red-600 dark:text-red-400' :
-                                          'text-muted-foreground'
-                                        )}>
-                                          {row.expected_revenue_change_pct > 0 ? '+' : ''}{row.expected_revenue_change_pct.toFixed(1)}%
-                                        </span>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="left" className="max-w-[220px] text-xs">
-                                        Impacto estimado na receita considerando a elasticidade-preço observada historicamente nesta combinação.
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                ) : (
-                                  <span className="text-muted-foreground/40">—</span>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground max-w-[240px]">
-                                {isEditing ? (
+                                </TableCell>
+                                <TableCell className="text-right text-xs">
+                                  <VariacaoBadge pct={row.variacao_pct} />
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground max-w-[240px]">
                                   <input
                                     type="text"
                                     className="w-full bg-transparent border-b border-primary outline-none text-xs text-foreground"
                                     value={row.justificativa}
                                     onChange={(e) => updateEditJustificativa(i, e.target.value)}
                                   />
-                                ) : (
-                                  <ExpandableText text={row.justificativa} maxLength={80} />
-                                )}
-                              </TableCell>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      ) : (
+                        /* ── Modo visualização: tabela pivô por faixa horária ── */
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead rowSpan={2} className="align-bottom">Canal</TableHead>
+                              <TableHead rowSpan={2} className="align-bottom">Categoria</TableHead>
+                              <TableHead rowSpan={2} className="align-bottom">Período</TableHead>
+                              <TableHead rowSpan={2} className="align-bottom">Dias</TableHead>
+                              <TableHead colSpan={3} className="text-center border-l text-[11px] font-semibold text-muted-foreground py-1.5">
+                                06:00–17:59
+                              </TableHead>
+                              <TableHead colSpan={3} className="text-center border-l text-[11px] font-semibold text-muted-foreground py-1.5">
+                                18:00–05:59
+                              </TableHead>
+                              <TableHead rowSpan={2} className="align-bottom">Justificativa</TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                            <TableRow>
+                              <TableHead className="text-right border-l text-xs">Atual</TableHead>
+                              <TableHead className="text-right text-xs">Prop.</TableHead>
+                              <TableHead className="text-right text-xs">Var.</TableHead>
+                              <TableHead className="text-right border-l text-xs">Atual</TableHead>
+                              <TableHead className="text-right text-xs">Prop.</TableHead>
+                              <TableHead className="text-right text-xs">Var.</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {buildPivotRows(proposal.rows).map((pivot) => {
+                              const { diurno, noturno, isLegacy } = pivot
+                              const dimD = Math.abs(diurno?.row.variacao_pct ?? 0) <= 0.5
+                              const dimN = Math.abs(noturno?.row.variacao_pct ?? 0) <= 0.5
+                              const dimRow = isLegacy ? dimD : (dimD && dimN)
+                              return (
+                                <TableRow key={pivot.key} className={cn(dimRow && 'opacity-40')}>
+                                  <TableCell className="text-xs">{CANAL_LABELS[pivot.canal] ?? pivot.canal}</TableCell>
+                                  <TableCell className="text-xs font-medium">{pivot.categoria}</TableCell>
+                                  <TableCell className="text-xs">{pivot.periodo}</TableCell>
+                                  <TableCell className="text-xs whitespace-nowrap">{pivot.diasLabel}</TableCell>
+
+                                  {/* Faixa diurna 06:00–17:59 */}
+                                  <TableCell className="text-right text-xs tabular-nums border-l">
+                                    {diurno ? formatMoney(diurno.row.preco_atual, 2) : <span className="text-muted-foreground/30">—</span>}
+                                  </TableCell>
+                                  <TableCell className="text-right text-xs tabular-nums font-medium">
+                                    {diurno ? (
+                                      <span className="inline-flex items-center gap-1 justify-end">
+                                        {diurno.row.was_clamped && diurno.row.clamp_info && (
+                                          <TooltipProvider delayDuration={150}>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <Shield className="size-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                                              </TooltipTrigger>
+                                              <TooltipContent side="left" className="max-w-[260px] text-xs">
+                                                <div className="font-medium mb-0.5">Ajustado pelo guardrail</div>
+                                                <div className="text-muted-foreground">
+                                                  Modelo propôs {formatMoney(diurno.row.clamp_info.original_price, 2)}
+                                                  {diurno.row.clamp_info.clamp_type === 'max'
+                                                    ? ` (acima do máx. de ${formatMoney(diurno.row.clamp_info.guardrail_value, 2)})`
+                                                    : ` (abaixo do mín. de ${formatMoney(diurno.row.clamp_info.guardrail_value, 2)})`}
+                                                </div>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
+                                        )}
+                                        {formatMoney(diurno.row.preco_proposto, 2)}
+                                      </span>
+                                    ) : <span className="text-muted-foreground/30">—</span>}
+                                  </TableCell>
+                                  <TableCell className="text-right text-xs">
+                                    {diurno
+                                      ? <VariacaoBadge pct={diurno.row.variacao_pct} />
+                                      : <span className="text-muted-foreground/30">—</span>}
+                                  </TableCell>
+
+                                  {/* Faixa noturna 18:00–05:59 */}
+                                  <TableCell className={cn('text-right text-xs tabular-nums border-l', isLegacy && 'text-muted-foreground/50')}>
+                                    {noturno ? formatMoney(noturno.row.preco_atual, 2) : <span className="text-muted-foreground/30">—</span>}
+                                  </TableCell>
+                                  <TableCell className={cn('text-right text-xs tabular-nums font-medium', isLegacy && 'text-muted-foreground/50')}>
+                                    {noturno ? (
+                                      <span className="inline-flex items-center gap-1 justify-end">
+                                        {!isLegacy && noturno.row.was_clamped && noturno.row.clamp_info && (
+                                          <TooltipProvider delayDuration={150}>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <Shield className="size-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                                              </TooltipTrigger>
+                                              <TooltipContent side="left" className="max-w-[260px] text-xs">
+                                                <div className="font-medium mb-0.5">Ajustado pelo guardrail</div>
+                                                <div className="text-muted-foreground">
+                                                  Modelo propôs {formatMoney(noturno.row.clamp_info.original_price, 2)}
+                                                  {noturno.row.clamp_info.clamp_type === 'max'
+                                                    ? ` (acima do máx. de ${formatMoney(noturno.row.clamp_info.guardrail_value, 2)})`
+                                                    : ` (abaixo do mín. de ${formatMoney(noturno.row.clamp_info.guardrail_value, 2)})`}
+                                                </div>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
+                                        )}
+                                        {formatMoney(noturno.row.preco_proposto, 2)}
+                                      </span>
+                                    ) : <span className="text-muted-foreground/30">—</span>}
+                                  </TableCell>
+                                  <TableCell className={cn('text-right text-xs', isLegacy && 'text-muted-foreground/50')}>
+                                    {noturno
+                                      ? <VariacaoBadge pct={noturno.row.variacao_pct} />
+                                      : <span className="text-muted-foreground/30">—</span>}
+                                  </TableCell>
+
+                                  {/* Justificativa — prioriza diurno; se noturno tem texto diferente, exibe em 2ª linha */}
+                                  <TableCell className="text-xs text-muted-foreground max-w-[220px]">
+                                    {diurno && <ExpandableText text={diurno.row.justificativa} maxLength={80} />}
+                                    {!isLegacy && noturno && noturno.row.justificativa && noturno.row.justificativa !== diurno?.row.justificativa && (
+                                      <div className="mt-1 pt-1 border-t border-border/30">
+                                        <span className="text-[10px] text-muted-foreground/50 mr-1">18h:</span>
+                                        <ExpandableText text={noturno.row.justificativa} maxLength={80} />
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })}
+                          </TableBody>
+                        </Table>
+                      )}
                     </div>
 
                     {/* Painel de simulação de receita */}
