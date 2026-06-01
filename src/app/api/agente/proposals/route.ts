@@ -447,19 +447,20 @@ export async function POST(req: NextRequest) {
     return `#### Tabela ${vigencia}\n${sections.join('\n\n')}`
   }).join('\n\n---\n\n')
 
-  // Mapa de preços atuais (tabela ativa) para o modelo não precisar inferir
-  const activeRows = (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? []
-
-  // Se a tabela tem balcao_site mas não site_programada, deriva linhas sintéticas
-  // (tabelas legadas só exportavam um canal; modelo deve propor para ambos)
-  const hasBalcao = activeRows.some((r) => r.canal === 'balcao_site')
-  const hasProgramada = activeRows.some((r) => r.canal === 'site_programada')
-  if (hasBalcao && !hasProgramada) {
-    const derived = activeRows
-      .filter((r) => r.canal === 'balcao_site')
-      .map((r) => ({ ...r, canal: 'site_programada' as const }))
-    activeRows.push(...derived)
+  // Mapa de preços atuais: agrega rows de TODOS os imports de preços ativos.
+  // Permite que imports separados por canal (ex: um para balcao_site, outro para
+  // site_programada) contribuam todos — o import mais recente tem prioridade por chave.
+  const allActiveImports = priceOnlyImports.filter(
+    (i) => i.valid_from <= todayStr && (i.valid_until === null || i.valid_until >= todayStr)
+  )
+  const rowMap = new Map<string, ParsedPriceRow>()
+  // Processa do mais antigo para o mais recente — o mais recente sobrescreve
+  for (const imp of [...allActiveImports].reverse()) {
+    for (const r of (imp.parsed_data as unknown as ParsedPriceRow[]) ?? []) {
+      rowMap.set(`${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`, r)
+    }
   }
+  const activeRows = [...rowMap.values()]
 
   const distinctPeriods = [...new Set(activeRows.map((r) => r.periodo))]
   if (distinctPeriods.length <= 1) {
