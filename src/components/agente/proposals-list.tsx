@@ -924,8 +924,13 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                                   <TableCell className="text-xs whitespace-nowrap">{pivot.diasLabel}</TableCell>
 
                                   {/* Faixa diurna 06:00–17:59 */}
+                                  {/* "Atual" sempre mostra o preço (do lado que existir — tabela atual não tem split) */}
                                   <TableCell className="text-right text-xs tabular-nums border-l">
-                                    {diurno ? formatMoney(diurno.row.preco_atual, 2) : <span className="text-muted-foreground/30">—</span>}
+                                    {diurno
+                                      ? formatMoney(diurno.row.preco_atual, 2)
+                                      : noturno
+                                        ? <span className="text-muted-foreground/50">{formatMoney(noturno.row.preco_atual, 2)}</span>
+                                        : <span className="text-muted-foreground/30">—</span>}
                                   </TableCell>
                                   <TableCell className="text-right text-xs tabular-nums font-medium">
                                     {diurno ? (
@@ -959,8 +964,12 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                                   </TableCell>
 
                                   {/* Faixa noturna 18:00–05:59 */}
-                                  <TableCell className={cn('text-right text-xs tabular-nums border-l', isLegacy && 'text-muted-foreground/50')}>
-                                    {noturno ? formatMoney(noturno.row.preco_atual, 2) : <span className="text-muted-foreground/30">—</span>}
+                                  <TableCell className="text-right text-xs tabular-nums border-l">
+                                    {noturno
+                                      ? <span className={cn(isLegacy && 'text-muted-foreground/50')}>{formatMoney(noturno.row.preco_atual, 2)}</span>
+                                      : diurno
+                                        ? <span className="text-muted-foreground/50">{formatMoney(diurno.row.preco_atual, 2)}</span>
+                                        : <span className="text-muted-foreground/30">—</span>}
                                   </TableCell>
                                   <TableCell className={cn('text-right text-xs tabular-nums font-medium', isLegacy && 'text-muted-foreground/50')}>
                                     {noturno ? (
@@ -993,10 +1002,11 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                                       : <span className="text-muted-foreground/30">—</span>}
                                   </TableCell>
 
-                                  {/* Justificativa — prioriza diurno; se noturno tem texto diferente, exibe em 2ª linha */}
+                                  {/* Justificativa — prioriza diurno; fallback para noturno quando só existe noturno */}
                                   <TableCell className="text-xs text-muted-foreground max-w-[220px]">
                                     {diurno && <ExpandableText text={diurno.row.justificativa} maxLength={80} />}
-                                    {!isLegacy && noturno && noturno.row.justificativa && noturno.row.justificativa !== diurno?.row.justificativa && (
+                                    {!diurno && noturno && <ExpandableText text={noturno.row.justificativa} maxLength={80} />}
+                                    {!isLegacy && diurno && noturno && noturno.row.justificativa && noturno.row.justificativa !== diurno.row.justificativa && (
                                       <div className="mt-1 pt-1 border-t border-border/30">
                                         <span className="text-[10px] text-muted-foreground/50 mr-1">18h:</span>
                                         <ExpandableText text={noturno.row.justificativa} maxLength={80} />
