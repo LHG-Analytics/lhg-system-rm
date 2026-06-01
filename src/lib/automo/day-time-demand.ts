@@ -23,6 +23,7 @@ export async function getDayTimeDemand(unitSlug: string, weeks = 8): Promise<Day
   const start = new Date(end)
   start.setDate(start.getDate() - weeks * 7)
 
+  const catIdsLiteral = catIds.join(',')
   const { rows } = await pool.query<{
     dow: string
     faixa: string
@@ -30,22 +31,25 @@ export async function getDayTimeDemand(unitSlug: string, weeks = 8): Promise<Day
     total_dias: string
   }>(
     `SELECT
-       EXTRACT(DOW FROM datainicialdaocupacao)::integer AS dow,
+       EXTRACT(DOW FROM la.datainicialdaocupacao)::integer AS dow,
        CASE
-         WHEN EXTRACT(HOUR FROM datainicialdaocupacao) >= 6
-              AND EXTRACT(HOUR FROM datainicialdaocupacao) < 18
+         WHEN EXTRACT(HOUR FROM la.datainicialdaocupacao) >= 6
+              AND EXTRACT(HOUR FROM la.datainicialdaocupacao) < 18
          THEN 'diurno' ELSE 'noturno'
        END AS faixa,
        COUNT(*) AS total_locacoes,
-       COUNT(DISTINCT datainicialdaocupacao::date) AS total_dias
-     FROM locacaoapartamento
-     WHERE id_tipounidade = ANY($1)
-       AND datainicialdaocupacao >= $2
-       AND datainicialdaocupacao < $3
-       AND fimocupacaotipo IS NOT NULL
+       COUNT(DISTINCT la.datainicialdaocupacao::date) AS total_dias
+     FROM locacaoapartamento la
+     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+     INNER JOIN apartamento a        ON aps.id_apartamento = a.id
+     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+     WHERE ca.id IN (${catIdsLiteral})
+       AND la.datainicialdaocupacao >= $1
+       AND la.datainicialdaocupacao < $2
+       AND la.fimocupacaotipo IS NOT NULL
      GROUP BY dow, faixa
      ORDER BY dow, faixa`,
-    [catIds, start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)],
+    [start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)],
   )
 
   return rows.map((r) => ({
