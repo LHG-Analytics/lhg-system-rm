@@ -349,23 +349,19 @@ export async function POST(req: NextRequest) {
 
   const activePeriod = { startDate: toApiDate(kpiStartDate), endDate: toApiDate(yesterday) }
 
-  // Período anterior: mesma duração, terminando no dia antes da tabela atual entrar
-  let prevPeriod: { startDate: string; endDate: string } | null = null
-  if (previousImport) {
-    const durationDays = Math.floor((yesterday.getTime() - kpiStartDate.getTime()) / 86400000) + 1
-    const prevEnd = new Date(activeFromDate)
-    prevEnd.setDate(prevEnd.getDate() - 1)
-    const prevStart = new Date(prevEnd)
-    prevStart.setDate(prevStart.getDate() - (durationDays - 1))
-    prevPeriod = { startDate: toApiDate(prevStart), endDate: toApiDate(prevEnd) }
-  }
+  // Período de comparação: mesmo intervalo de datas, 1 ano atrás (YoY).
+  // Mais relevante para sazonalidade do que a janela da tabela anterior,
+  // especialmente quando a tabela entrou em vigor há poucos dias.
+  const yoyStart = new Date(kpiStartDate)
+  yoyStart.setFullYear(yoyStart.getFullYear() - 1)
+  const yoyEnd = new Date(yesterday)
+  yoyEnd.setFullYear(yoyEnd.getFullYear() - 1)
+  const prevPeriod = { startDate: toApiDate(yoyStart), endDate: toApiDate(yoyEnd) }
 
   // ─── Buscar KPIs + histórico de propostas aprovadas em paralelo ─────────
   const kpiTasks = [
     fetchCompanyKPIsFromAutomo(unit.slug, activePeriod.startDate, activePeriod.endDate),
-    ...(prevPeriod
-      ? [fetchCompanyKPIsFromAutomo(unit.slug, prevPeriod.startDate, prevPeriod.endDate)]
-      : []),
+    fetchCompanyKPIsFromAutomo(unit.slug, prevPeriod.startDate, prevPeriod.endDate),
   ]
   const [kpiResults, historyResult, channelResult] = await Promise.all([
     Promise.allSettled(kpiTasks),
@@ -406,9 +402,9 @@ export async function POST(req: NextRequest) {
       company: kpiActive,
       bookings: null,
     },
-    ...(kpiPrevious && prevPeriod
+    ...(kpiPrevious
       ? [{
-          label: `Período anterior (tabela de ${previousImport?.valid_from ?? '?'} a ${previousImport?.valid_until ?? activeImport.valid_from})`,
+          label: `Mesmo período — ano anterior (${prevPeriod.startDate} → ${prevPeriod.endDate})`,
           period: prevPeriod,
           company: kpiPrevious,
           bookings: null,
@@ -828,7 +824,7 @@ TAREFA: Com base nos dados acima, preencha a proposta de ajuste de preços para 
 
 Critérios:
 - Analise giro, ocupação e RevPAR por categoria e dia da semana nas tabelas semanais
-${hasPrevious ? '- Compare o desempenho do período atual com o anterior: se KPIs melhoraram após mudança de tabela, a direção estava certa; se pioraram, corrija\n' : ''}${memoryBlock ? '- Use a memória estratégica para calibrar a nova proposta: se as mudanças anteriores melhoraram os KPIs, intensifique a direção; se pioraram, recue ou teste outro caminho\n' : ''}- Variação máxima: ±${maxVar}% por item (configurado pelo gestor — não exceder)
+${hasPrevious ? '- Compare o desempenho do período atual com o mesmo período do ano anterior (YoY): diferença negativa indica necessidade de ajuste; positiva confirma direção\n' : ''}${memoryBlock ? '- Use a memória estratégica para calibrar a nova proposta: se as mudanças anteriores melhoraram os KPIs, intensifique a direção; se pioraram, recue ou teste outro caminho\n' : ''}- Variação máxima: ±${maxVar}% por item (configurado pelo gestor — não exceder)
 - Priorize itens com maior impacto no RevPAR (alto giro + RevPAR baixo = oportunidade de aumento)
 ${activeDiscounts.length > 0 ? '- Para guia_moteis: os preços propostos devem ser os valores BASE (o desconto é aplicado automaticamente)\n' : ''}
 ANTI-PADRÃO PROIBIDO — variações uniformes:
