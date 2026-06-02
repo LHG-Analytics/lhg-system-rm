@@ -858,6 +858,15 @@ Auditoria profunda do agente em 2026-04-28; Fase 1 (quick wins) entregue em 2026
   - Mantido corte operacional 06:00 nas queries (`EXTRACT(HOUR FROM ...) < 6 → DOW do dia anterior`)
   - **Armadilha:** o helper inclui `id_categoria` em `suite_dias` para permitir JOIN com `events.category_id` no heatmap
 
+- **LHG-243:** feat(agente): método de precificação `giro_uplift` (método do gestor da LIV) — híbrido ✅ 2026-06-02
+  - **Contexto:** planilha de RM do gestor da LIV (`docs/RM_Liv.xlsx`) analisada fórmula a fórmula. Método: `preço = atual × (1 + clamp(giro_do_dia/giro_médio_categoria − 1, 0, teto))`; +prêmio na faixa de pico 15–21h; **nunca reduz**; impacto validado com elasticidade preço→giro (−0,5). Mesmo corte 06:00 e giro por categoria×DOW do nosso sistema.
+  - Migration `20260602000001`: `pricing_method` ('agent_judgment'|'giro_uplift'), `giro_uplift_cap` (0.05), `peak_premium` (0.05), `peak_start`/`peak_end` (15/21), `never_reduce` (bool), `default_elasticity` (−0.5) em `rm_agent_config`. LIV default `giro_uplift`+`never_reduce`.
+  - `src/lib/pricing/giro-uplift.ts`: `generateGiroUpliftRows` (replica a planilha; consome `DataTableGiroByWeek` + `DataTableSuiteCategory`; cobertura total; nunca reduz pois clamp≥0) + `buildGiroUpliftBaselineBlock` (bloco de PISO para o prompt).
+  - **Híbrido:** `proposals/route.ts` injeta os preços-base como PISO no prompt (LLM só sobe acima quando concorrência/eventos justificam) + trava server-side: `never_reduce` (≥ preço atual) e piso do método, respeitando o teto de guardrail. Chat: regra no `agentConfigBlock` + clamp `never_reduce` (lowerBound 0%) no `salvar_proposta`.
+  - UI: card "Método de precificação" no `AgentConfigManager` (toggle método, switch nunca reduzir, teto/prêmio/elasticidade). API `agent-config` expõe os campos.
+  - **Limitação:** prêmio de pico (15–21h) NÃO é persistido — `price_imports` não tem dimensão intraday (só canal×categoria×periodo×dia_tipo). Gerador faz só o PADRÃO; pico fica para quando houver preço por faixa horária.
+  - **Granularidade:** planilha usa 7 dias individuais; nosso modelo colapsa em `semana` (Dom–Qui) / `fds_feriado` (Sex–Sáb) — para a LIV os valores do gestor colapsam nesse mesmo agrupamento.
+
 - **fix(kpis): inferência de tipo de parâmetro quebrava o corte operacional 06:00** ✅ 2026-06-02
   - **Sintoma:** dashboard mostrava 1.643 locações / R$439.212 para Andar de Cima (maio); LHG Analytics = 1.633 / R$433.686,83
   - **Root cause:** `cteBaseSuiteDays` fazia `generate_series($1::date, $2::date - INTERVAL '1 day', ...)`. Casar um parâmetro de tipo desconhecido com `$1::date` faz o Postgres **inferir `$1`/`$2` como `date` para a query INTEIRA** (tipo de parâmetro é resolvido uma vez por prepared statement). No `WHERE` principal `la.datainicialdaocupacao >= $1`, isso comparava timestamp com `date` → `'2026-05-01'` virava `00:00:00`, derrubando o corte operacional de **06:00 para meia-noite** e incluindo locações da madrugada (00:00–06:00) que pertencem ao dia operacional anterior
