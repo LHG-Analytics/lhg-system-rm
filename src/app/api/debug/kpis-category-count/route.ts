@@ -13,6 +13,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
 import { ddmmyyyyToIso, fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { cachedCompanyKPIs } from '@/lib/automo/cached-kpis'
+import { cteBaseSuiteDays, cteSuiteDaysTotal } from '@/lib/automo/suite-days'
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
@@ -52,7 +53,7 @@ export async function GET(req: NextRequest) {
   `
 
   try {
-    const [withCat, withoutCat, perCategory, dashboardFn, dashboardCached] = await Promise.all([
+    const [withCat, withoutCat, perCategory, dashboardFn, dashboardCached, bigNumbersReplica] = await Promise.all([
       // COUNT com filtro de categoria (o que RM usa)
       pool.query<{ cnt: string; total_value: string }>(`
         SELECT COUNT(*) AS cnt, COALESCE(SUM(CAST(la.valortotal AS DECIMAL(15,4))), 0) AS total_value
@@ -101,6 +102,27 @@ export async function GET(req: NextRequest) {
           faturamento: r.TotalResult.totalAllValue,
         }))
         .catch((e) => ({ error: String(e) })),
+
+      // RÉPLICA EXATA da SQL de queryBigNumbers (com as CTEs) — isola se as CTEs alteram o COUNT
+      pool.query<{ total_rentals: string; total_all_value: string }>(`
+        WITH ${cteBaseSuiteDays(catStr)},
+        ${cteSuiteDaysTotal()}
+        SELECT
+          COUNT(*) AS total_rentals,
+          COALESCE(SUM(COALESCE(CAST(la.valortotal AS DECIMAL(15,4)), 0)), 0) AS total_all_value,
+          (SELECT suite_dias FROM suite_dias_total) AS total_suite_dias
+        FROM locacaoapartamento la
+        INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+        INNER JOIN apartamento a        ON aps.id_apartamento = a.id
+        INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+        WHERE la.datainicialdaocupacao >= $1
+          AND la.datainicialdaocupacao <= $2
+          AND la.fimocupacaotipo = 'FINALIZADA'
+          AND ca.id IN (${catStr})
+      `, [isoStart, isoEnd]).then((r) => ({
+        locacoes:    Number(r.rows[0].total_rentals),
+        faturamento: Number(r.rows[0].total_all_value),
+      })).catch((e) => ({ error: String(e) })),
     ])
 
     return NextResponse.json({
@@ -121,6 +143,8 @@ export async function GET(req: NextRequest) {
       dashboardFunction: dashboardFn,
       // O que cachedCompanyKPIs retorna (idêntico à função, pois removemos unstable_cache)
       dashboardCached,
+      // Réplica da SQL exata de queryBigNumbers — se != withCategoryFilter, o bug está nas CTEs/SQL
+      bigNumbersReplica,
       perCategory: perCategory.rows.map(r => ({
         id:         Number(r.cat_id),
         nome:       r.cat_name,
