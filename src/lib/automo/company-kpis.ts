@@ -150,7 +150,6 @@ interface BigNumbersRow {
   total_rentals: string
   total_all_value: string
   total_occupied_time: string
-  total_sale_direct: string
   total_suite_dias: string
 }
 
@@ -158,7 +157,7 @@ async function queryBigNumbers(
   pool: Pool,
   catIds: string,
   isoStart: string,
-  isoEnd: string,          // exclusive upper bound (D+1 at 06:00)
+  isoEnd: string,
   daysDiff: number,
   timeFilter = '',
   statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
@@ -166,72 +165,25 @@ async function queryBigNumbers(
 ) {
   if (!pool) throw new Error('pool is null')
 
-  // Fórmula explícita alinhada com o Analytics:
-  // total_all_value = valortotalpermanencia + valortotalocupadicional + consumo_bruto - desconto + vendas_diretas
-  // Filtro de categoria via JOIN chain (compatível com todas as versões do Automo).
+  // Usa la.valortotal (campo pré-calculado pelo ERP = locação + consumo - desconto).
+  // Idêntico ao que o LHG Analytics exibe — sem adicionar vendas diretas (vendadireta),
+  // que o Analytics também não inclui no faturamento de locações.
   const sql = `
     WITH ${cteBaseSuiteDays(catIds)},
-    ${cteSuiteDaysTotal()},
-    receita_consumo AS (
-      SELECT
-        la.id_apartamentostate                              AS id_locacao,
-        COALESCE(SUM(
-          CAST(sei.precovenda  AS DECIMAL(15,4)) *
-          CAST(sei.quantidade  AS DECIMAL(15,4))
-        ), 0)                                              AS valor_consumo_bruto
-      FROM locacaoapartamento la
-      INNER JOIN apartamentostate aps  ON la.id_apartamentostate = aps.id
-      INNER JOIN apartamento a         ON aps.id_apartamento = a.id
-      INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      INNER JOIN vendalocacao vl       ON la.id_apartamentostate = vl.id_locacaoapartamento
-      INNER JOIN saidaestoque se       ON vl.id_saidaestoque = se.id
-      INNER JOIN saidaestoqueitem sei  ON se.id = sei.id_saidaestoque
-      WHERE ${dateCol} >= $1
-        AND ${dateCol} <= $2
-        ${statusFilter}
-        AND sei.cancelado IS NULL
-        AND ca.id IN (${catIds})
-      GROUP BY la.id_apartamentostate
-    ),
-    vendas_diretas AS (
-      SELECT COALESCE(SUM(receita_item - desconto_proporcional), 0) AS total_sale_direct
-      FROM (
-        SELECT
-          CAST(sei.precovenda AS DECIMAL(15,4)) *
-          CAST(sei.quantidade AS DECIMAL(15,4))           AS receita_item,
-          COALESCE(CAST(v.desconto AS DECIMAL(15,4)), 0) /
-            NULLIF((
-              SELECT COUNT(*) FROM saidaestoqueitem sei2
-              WHERE sei2.id_saidaestoque = se.id AND sei2.cancelado IS NULL
-            ), 0)                                         AS desconto_proporcional
-        FROM saidaestoque se
-        INNER JOIN vendadireta vd        ON se.id = vd.id_saidaestoque
-        INNER JOIN saidaestoqueitem sei  ON se.id = sei.id_saidaestoque
-        LEFT  JOIN venda v               ON se.id = v.id_saidaestoque
-        WHERE vd.venda_completa = true
-          AND sei.cancelado IS NULL
-          AND sei.datasaidaitem >= $1
-          AND sei.datasaidaitem <= $2
-      ) vd_detail
-    )
+    ${cteSuiteDaysTotal()}
     SELECT
-      COUNT(*)                    AS total_rentals,
+      COUNT(*)                                                   AS total_rentals,
       COALESCE(SUM(
-        COALESCE(CAST(la.valortotalpermanencia   AS DECIMAL(15,4)), 0) +
-        COALESCE(CAST(la.valortotalocupadicional AS DECIMAL(15,4)), 0) +
-        COALESCE(rc.valor_consumo_bruto, 0) -
-        COALESCE(CAST(la.desconto               AS DECIMAL(15,4)), 0)
-      ), 0)                       AS total_all_value,
+        COALESCE(CAST(la.valortotal AS DECIMAL(15,4)), 0)
+      ), 0)                                                      AS total_all_value,
       COALESCE(SUM(
         EXTRACT(EPOCH FROM la.datafinaldaocupacao - la.datainicialdaocupacao)
-      ), 0)                       AS total_occupied_time,
-      (SELECT total_sale_direct FROM vendas_diretas) AS total_sale_direct,
-      (SELECT suite_dias FROM suite_dias_total)      AS total_suite_dias
+      ), 0)                                                      AS total_occupied_time,
+      (SELECT suite_dias FROM suite_dias_total)                  AS total_suite_dias
     FROM locacaoapartamento la
     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
     INNER JOIN apartamento a        ON aps.id_apartamento = a.id
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-    LEFT  JOIN receita_consumo rc   ON la.id_apartamentostate = rc.id_locacao
     WHERE ${dateCol} >= $1
       AND ${dateCol} <= $2
       ${statusFilter}
@@ -245,9 +197,7 @@ async function queryBigNumbers(
   // total_suite_dias já considera bloqueios e janela do período
   const totalSuiteDias = Number(r.total_suite_dias) || 1
   const totalRentals   = Number(r.total_rentals)   || 0
-  const locacaoValue   = Number(r.total_all_value)  || 0
-  const saleDirect     = Number(r.total_sale_direct) || 0
-  const totalAllValue  = +(locacaoValue + saleDirect).toFixed(2)
+  const totalAllValue  = +(Number(r.total_all_value) || 0).toFixed(2)
   const occupiedTime   = Number(r.total_occupied_time) || 0
 
   const avgTicket = totalRentals > 0 ? +(totalAllValue / totalRentals).toFixed(2) : 0
