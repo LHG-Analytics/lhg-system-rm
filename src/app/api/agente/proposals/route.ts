@@ -1,5 +1,5 @@
 import { generateText } from 'ai'
-import { PRIMARY_MODEL, gatewayOptions, ANALYSIS_MAX_OUTPUT_TOKENS } from '@/lib/agente/model'
+import { ANALYSIS_MODEL, analysisOptions, ANALYSIS_MAX_OUTPUT_TOKENS } from '@/lib/agente/model'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -864,8 +864,8 @@ JSON minificado, sem indentação, sem texto antes ou depois.`
   console.log('[proposals] prompt length (chars):', prompt.length)
 
   const { text } = await generateText({
-    model: PRIMARY_MODEL,
-    providerOptions: gatewayOptions,
+    model: ANALYSIS_MODEL,
+    providerOptions: analysisOptions,
     prompt,
     maxOutputTokens: ANALYSIS_MAX_OUTPUT_TOKENS,
     temperature: 0.2,
