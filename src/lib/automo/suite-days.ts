@@ -34,7 +34,11 @@
 export function cteBaseSuiteDays(catIds: string, startExpr = '$1', endExpr = '$2'): string {
   return `
     dias_periodo AS (
-      SELECT generate_series(${startExpr}::date, ${endExpr}::date - INTERVAL '1 day', '1 day'::interval)::date AS dia
+      -- CRÍTICO: cast via ::timestamp ANTES de ::date. Casar o parâmetro direto para ::date
+      -- faz o Postgres inferir $1/$2 como DATE em TODA a query — inclusive no WHERE principal
+      -- (la.datainicialdaocupacao >= $1), derrubando o corte operacional de 06:00 para meia-noite
+      -- e inflando o COUNT com locações da madrugada. ::timestamp::date força tipo timestamp.
+      SELECT generate_series((${startExpr})::timestamp::date, (${endExpr})::timestamp::date - INTERVAL '1 day', '1 day'::interval)::date AS dia
     ),
     bloqueios_intervalos AS (
       SELECT
