@@ -47,3 +47,6 @@ next-env.d.ts
 CLAUDE.md
 
 .vercel
+
+# Planilhas internas de RM (dados sensiveis — nao versionar)
+docs/*.xlsx
