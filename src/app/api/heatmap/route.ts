@@ -18,7 +18,7 @@ function getAdminClient() {
   )
 }
 
-export type HeatmapMetric   = 'giro' | 'ocupacao' | 'revpar' | 'trevpar'
+export type HeatmapMetric   = 'giro' | 'locacoes' | 'ocupacao' | 'revpar' | 'trevpar'
 export type HeatmapDateType = 'all' | 'checkin' | 'checkout'
 
 export interface HeatmapCategory {
@@ -108,6 +108,32 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: st
       ROUND(SUM(e.rentals::DECIMAL / scd.suite_dias), 2)::float AS value
     FROM events e
     JOIN suite_dias_cat_dow scd ON scd.id_categoria = e.category_id AND scd.dow = e.dow
+    GROUP BY e.day_name, e.hour_of_day
+    ORDER BY ${orderDay('e')}, e.hour_of_day`
+}
+
+// ─── Locações (contagem crua) por hora × dia ──────────────────────────────────
+// Número absoluto de locações no slot — sem denominador de suítes-dia.
+function buildLocacoesQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'"): string {
+  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, startDate, endDate, '', statusFilter)
+  const checkoutSel = giroEventsSelect(
+    'la.datafinaldaocupacao', idList, startDate, endDate,
+    'AND la.datafinaldaocupacao IS NOT NULL', statusFilter
+  )
+
+  const eventsCTE =
+    dateType === 'checkin'  ? checkinSel  :
+    dateType === 'checkout' ? checkoutSel :
+    `${checkinSel}\n        UNION ALL\n${checkoutSel}`
+
+  return `
+    WITH events AS (${eventsCTE}
+    )
+    SELECT
+      e.day_name,
+      e.hour_of_day,
+      SUM(e.rentals)::float AS value
+    FROM events e
     GROUP BY e.day_name, e.hour_of_day
     ORDER BY ${orderDay('e')}, e.hour_of_day`
 }
@@ -325,6 +351,7 @@ export async function GET(req: NextRequest) {
 
     const sql =
       metric === 'giro'     ? buildGiroQuery(idList, dateType, startDate, endDate, statusFilter) :
+      metric === 'locacoes' ? buildLocacoesQuery(idList, dateType, startDate, endDate, statusFilter) :
       metric === 'ocupacao' ? buildOcupacaoQuery(idList, dateType, startDate, endDate, statusFilter) :
       metric === 'revpar'   ? buildRevparQuery(idList, startDate, endDate, statusFilter) :
       buildTrevparQuery(idList, startDate, endDate, statusFilter)

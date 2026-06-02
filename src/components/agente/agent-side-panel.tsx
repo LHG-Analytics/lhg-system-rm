@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, Suspense } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { BotMessageSquare, ExternalLink, Plus, X } from 'lucide-react'
+import { BotMessageSquare, ExternalLink, Plus, X, Minus } from 'lucide-react'
 import Link from 'next/link'
 import type { UIMessage } from 'ai'
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,7 @@ function AgentSidePanelInner({ units, userRole }: AgentSidePanelProps) {
   const searchParams = useSearchParams()
 
   const [isOpen,           setIsOpen]           = useState(false)
+  const [isMinimized,      setIsMinimized]      = useState(false)
   const [chatKey,          setChatKey]          = useState(0)
   const [selectedConvId,   setSelectedConvId]   = useState<string | null>(null)
   const [selectedMessages, setSelectedMessages] = useState<UIMessage[] | undefined>()
@@ -41,6 +42,16 @@ function AgentSidePanelInner({ units, userRole }: AgentSidePanelProps) {
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) setCurrentUserId(data.user.id)
     })
+  }, [])
+
+  // Restaura a preferência de FAB minimizado (persistida entre sessões)
+  useEffect(() => {
+    try { setIsMinimized(localStorage.getItem('lhg-panel-fab-min') === '1') } catch {}
+  }, [])
+
+  const setMinimized = useCallback((v: boolean) => {
+    setIsMinimized(v)
+    try { localStorage.setItem('lhg-panel-fab-min', v ? '1' : '0') } catch {}
   }, [])
 
   // Persiste o convId no localStorage para sobreviver a remounts por Suspense
@@ -228,16 +239,38 @@ function AgentSidePanelInner({ units, userRole }: AgentSidePanelProps) {
 
   return (
     <>
-      {/* FAB — oculto na página do agente e quando o painel está aberto */}
+      {/* FAB — oculto na página do agente e quando o painel está aberto.
+          Minimizado: ícone circular compacto que não atrapalha o dashboard/heatmap. */}
       {!isAgentePage && !isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-primary text-primary-foreground rounded-full shadow-lg hover:shadow-xl px-4 py-3 text-sm font-medium hover:bg-primary/90 transition-all active:scale-95"
-          aria-label="Abrir Agente RM"
-        >
-          <BotMessageSquare className="size-4 shrink-0" />
-          <span>Agente RM</span>
-        </button>
+        isMinimized ? (
+          <button
+            onClick={() => setIsOpen(true)}
+            className="fixed bottom-6 right-6 z-40 flex items-center justify-center size-11 rounded-full bg-primary/85 text-primary-foreground shadow-lg hover:bg-primary hover:shadow-xl transition-all active:scale-95"
+            aria-label="Abrir Agente RM"
+            title="Abrir Agente RM"
+          >
+            <BotMessageSquare className="size-5" />
+          </button>
+        ) : (
+          <div className="fixed bottom-6 right-6 z-40 flex items-center rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all">
+            <button
+              onClick={() => setIsOpen(true)}
+              className="flex items-center gap-2 pl-4 pr-2 py-3 text-sm font-medium hover:bg-primary/90 rounded-l-full transition-colors active:scale-95"
+              aria-label="Abrir Agente RM"
+            >
+              <BotMessageSquare className="size-4 shrink-0" />
+              <span>Agente RM</span>
+            </button>
+            <button
+              onClick={() => setMinimized(true)}
+              className="pr-3 pl-1.5 py-3 opacity-70 hover:opacity-100 hover:bg-primary/90 rounded-r-full transition-all"
+              aria-label="Minimizar botão do Agente RM"
+              title="Minimizar"
+            >
+              <Minus className="size-3.5" />
+            </button>
+          </div>
+        )
       )}
 
       {/* Overlay — apenas quando aberto */}

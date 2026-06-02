@@ -45,6 +45,13 @@ function getColor(value: number | undefined, metric: HeatmapMetric, maxVal: numb
     if (ratio < 0.80) return 'bg-green-600/50'
     return 'bg-green-500/80'
   }
+  if (metric === 'locacoes') {
+    if (ratio < 0.15) return 'bg-muted/40'
+    if (ratio < 0.35) return 'bg-indigo-900/30'
+    if (ratio < 0.60) return 'bg-indigo-700/40'
+    if (ratio < 0.80) return 'bg-indigo-500/60'
+    return 'bg-indigo-400/80'
+  }
   if (metric === 'ocupacao') {
     if (ratio < 0.15) return 'bg-muted/40'
     if (ratio < 0.35) return 'bg-blue-900/30'
@@ -64,6 +71,7 @@ function formatValue(value: number | undefined, metric: HeatmapMetric, fm: (v: n
   if (value === undefined) return '–'
   if (metric === 'ocupacao') return `${value.toFixed(0)}%`
   if (metric === 'revpar' || metric === 'trevpar') return fm(value)
+  if (metric === 'locacoes') return value.toFixed(0)
   return value.toFixed(2)
 }
 
@@ -144,7 +152,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
   const maxVal    = allValues.length ? Math.max(...allValues) : 1
 
   const metricLabel: Record<HeatmapMetric, string> = {
-    giro: 'Giro', ocupacao: 'Tx. Ocupação', revpar: 'RevPAR', trevpar: 'TRevPAR',
+    giro: 'Giro', locacoes: 'Locações', ocupacao: 'Tx. Ocupação', revpar: 'RevPAR', trevpar: 'TRevPAR',
   }
   const subtitle = (metric === 'revpar' || metric === 'trevpar')
     ? `${metricLabel[metric]} por hora × dia da semana (${symbol})`
@@ -207,20 +215,26 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
                 KPI
               </span>
               <div className="flex gap-1 rounded-lg border p-0.5 text-xs">
-                {(['giro', 'ocupacao', 'revpar', 'trevpar'] as HeatmapMetric[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMetric(m)}
-                    className={cn(
-                      'px-3 py-1 rounded-md transition-colors capitalize whitespace-nowrap',
-                      metric === m
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    {m === 'ocupacao' ? 'Ocup.' : m.charAt(0).toUpperCase() + m.slice(1)}
-                  </button>
-                ))}
+                {(['giro', 'locacoes', 'ocupacao', 'revpar', 'trevpar'] as HeatmapMetric[]).map((m) => {
+                  const btnLabel =
+                    m === 'ocupacao' ? 'Ocup.' :
+                    m === 'locacoes' ? 'Locações' :
+                    m.charAt(0).toUpperCase() + m.slice(1)
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => setMetric(m)}
+                      className={cn(
+                        'px-3 py-1 rounded-md transition-colors whitespace-nowrap',
+                        metric === m
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      {btnLabel}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           </div>
@@ -236,6 +250,13 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
           <div className="h-3 w-8 rounded-sm bg-yellow-600/50" />
           <div className="h-3 w-8 rounded-sm bg-green-600/50" />
           <div className="h-3 w-8 rounded-sm bg-green-500/80" />
+        </>}
+        {metric === 'locacoes' && <>
+          <div className="h-3 w-8 rounded-sm bg-muted/40" />
+          <div className="h-3 w-8 rounded-sm bg-indigo-900/30" />
+          <div className="h-3 w-8 rounded-sm bg-indigo-700/40" />
+          <div className="h-3 w-8 rounded-sm bg-indigo-500/60" />
+          <div className="h-3 w-8 rounded-sm bg-indigo-400/80" />
         </>}
         {metric === 'ocupacao' && <>
           <div className="h-3 w-8 rounded-sm bg-muted/40" />
