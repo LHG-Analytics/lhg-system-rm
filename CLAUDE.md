@@ -859,6 +859,15 @@ Auditoria profunda do agente em 2026-04-28; Fase 1 (quick wins) entregue em 2026
   - Mantido corte operacional 06:00 nas queries (`EXTRACT(HOUR FROM ...) < 6 → DOW do dia anterior`)
   - **Armadilha:** o helper inclui `id_categoria` em `suite_dias` para permitir JOIN com `events.category_id` no heatmap
 
+- **fix(kpis): inferência de tipo de parâmetro quebrava o corte operacional 06:00** ✅ 2026-06-02
+  - **Sintoma:** dashboard mostrava 1.643 locações / R$439.212 para Andar de Cima (maio); LHG Analytics = 1.633 / R$433.686,83
+  - **Root cause:** `cteBaseSuiteDays` fazia `generate_series($1::date, $2::date - INTERVAL '1 day', ...)`. Casar um parâmetro de tipo desconhecido com `$1::date` faz o Postgres **inferir `$1`/`$2` como `date` para a query INTEIRA** (tipo de parâmetro é resolvido uma vez por prepared statement). No `WHERE` principal `la.datainicialdaocupacao >= $1`, isso comparava timestamp com `date` → `'2026-05-01'` virava `00:00:00`, derrubando o corte operacional de **06:00 para meia-noite** e incluindo locações da madrugada (00:00–06:00) que pertencem ao dia operacional anterior
+  - **Atingia TODAS as ~12 queries** que usam `cteBaseSuiteDays` (BigNumbers, categorias, semanas, RevOcc, heatmap) — corte operacional silenciosamente quebrado
+  - **Fix:** `(${startExpr})::timestamp::date` força `$1`/`$2` a `timestamp` (cast interno resolve o tipo do parâmetro), restaurando o corte 06:00 no `WHERE`. O conjunto de dias do `generate_series` é idêntico — apenas o tipo inferido do parâmetro muda
+  - **Diagnóstico:** endpoint `/api/debug/kpis-category-count` compara query crua vs `cteBaseSuiteDays` isolada vs função do dashboard; expõe `VERCEL_GIT_COMMIT_SHA` para confirmar versão deployada
+  - **Lição:** uma CTE "não referenciada" no `WITH` NÃO é inócua — se ela casta um parâmetro compartilhado (`$1::date`), muda a inferência de tipo desse parâmetro em TODA a query, inclusive num `WHERE` distante. Sempre cast via `::timestamp::date` (nunca `::date` direto) ao usar parâmetros de data/hora em `cteBaseSuiteDays`
+  - **Também nesta sessão:** `cachedCompanyKPIs` deixou de usar `unstable_cache` (alias direto de `fetchCompanyKPIsFromAutomo`) — o Vercel Data Cache persistia valores antigos entre deploys, mascarando correções de KPI
+
 - **LHG-158 / QW4:** Razão de rejeição estruturada
   - `price_proposals` e `discount_proposals` ganham `rejection_reason_type` (CHECK enum), `rejection_reason_text`, `rejected_items JSONB`
   - Enums diferentes: 8 motivos para preço (precos_muito_altos, estrategia_inadequada, item_especifico_errado, ...), 5 para desconto (desconto_alto_demais, condicao_inadequada, ...)
