@@ -8,15 +8,14 @@
   - Local: `http://127.0.0.1:54321` (Docker via Scoop CLI v2.84.2)
   - Remoto: `https://pvlcktqbjianrbzpqrbd.supabase.co`
 - **Upstash Redis** — cache (a configurar)
-- **OpenRouter** — roteamento de IA
+- **OpenRouter** — roteamento de IA (BYOK: chave OpenAI própria via OpenRouter)
   - Provider: `@openrouter/ai-sdk-provider` v2.5.1
   - Auth: `OPENROUTER_API_KEY`
-  - `STRATEGY_MODEL` (chat, propostas, cron): `nvidia/nemotron-3-super-120b-a12b:free` | Fallback: `minimax/minimax-m2.5:free` — **≤ 2500 tokens**
-  - `ANALYSIS_MODEL` (import, análise de concorrentes): `openai/gpt-4.1-mini` (BYOK — chave OpenAI própria via OpenRouter) | Fallback: `nvidia/nemotron-3-super-120b-a12b:free` — **≤ 8000 tokens**
-  - Modelos gratuitos disponíveis (STRATEGY): `nvidia/nemotron-3-super-120b-a12b:free`, `minimax/minimax-m2.5:free`, `google/gemma-4-31b-it:free`
-  - **Regra obrigatória para STRATEGY_MODEL:** sempre sufixo `:free`; nunca exceder 2500 tokens
-  - **ANALYSIS_MODEL usa BYOK** — não precisa de sufixo `:free`; limite 8000 tokens
-  - Config centralizada em `src/lib/agente/model.ts`
+  - **Chat do agente:** `createChatModel(modelId ?? DEFAULT_CHAT_MODEL_ID)` — default `openai/gpt-4.1`; usuário escolhe no seletor entre `gpt-4.1-mini` (fast) / `gpt-4.1` (balanced) / `gpt-4.5` (reasoning) / `gpt-5-mini` (powerful). `STRATEGY_MAX_OUTPUT_TOKENS = 8000`, `STRATEGY_MAX_STEPS = 12`.
+  - `STRATEGY_MODEL = openai/gpt-4.1-mini` — usado pelo **cron de revisões** (`run-reviews.ts`), não pelo chat interativo.
+  - `ANALYSIS_MODEL = openai/gpt-5-mini` — **geração de propostas (preço e desconto), import CSV, análise de concorrentes, relatórios**. `ANALYSIS_MAX_OUTPUT_TOKENS = 10000`.
+  - **Armadilha:** `proposals/route.ts` deve usar `ANALYSIS_MODEL` (não `PRIMARY_MODEL`, que é alias de `STRATEGY_MODEL`/gpt-4.1-mini). Já corrigido — proposta é a tarefa mais pesada e precisa do modelo forte.
+  - Config centralizada em `src/lib/agente/model.ts`. Trocar o modelo lá atualiza limites automaticamente.
 - **Deploy:** Vercel + Supabase hosted
   - Projeto linkado: `danilo-dinizs-projects/lhg-system-rm`
 
@@ -62,10 +61,10 @@ Só commitar se ambos passarem sem erros.
 
 ### OpenRouter
 - Usar `createOpenRouter` de `@openrouter/ai-sdk-provider` — não usar Vercel AI Gateway
-- Usar modelos com sufixo `:free` — sem custo de créditos OpenRouter
-- `PRIMARY_MODEL = openrouter('google/gemma-4-26b-a4b-it:free')`
-- `FALLBACK_MODEL = openrouter('nvidia/nemotron-3-super-120b-a12b:free')`
-- `gatewayOptions` exportado como `{}` — mantido para compatibilidade de assinatura nas rotas
+- Modelos OpenAI via BYOK (chave própria) — ver bloco **OpenRouter** na seção Stack para os modelos atuais
+- `STRATEGY_MODEL = openai/gpt-4.1-mini` (cron) · `ANALYSIS_MODEL = openai/gpt-5-mini` (propostas/import/concorrentes) · chat default `openai/gpt-4.1` via seletor
+- `PRIMARY_MODEL` é alias de `STRATEGY_MODEL` — **não usar em geração de propostas** (use `ANALYSIS_MODEL`)
+- `gatewayOptions`/`analysisOptions` exportados como `{}` — mantidos para compatibilidade de assinatura nas rotas
 - `NODE_OPTIONS="--max-old-space-size=4096" npm run build` para build local (evita OOM)
 
 ### Next.js 16 — armadilhas conhecidas

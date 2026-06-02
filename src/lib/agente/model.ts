@@ -58,10 +58,12 @@ export const strategyOptions = {}
 export const STRATEGY_MAX_OUTPUT_TOKENS = 8000
 /**
  * Máximo de iterações de tool calls por turno do chat.
- * Fluxo máximo esperado: fetch lazy (1-3) + salvar_proposta (1) +
- * buscar_padrao_horario (1) + salvar_proposta_desconto (1) + sugerir_respostas (1) = 8.
+ * Fluxo máximo esperado: fetch lazy (1-3) + buscar_padrao_horario (1) +
+ * salvar_proposta (1) + salvar_proposta_desconto (1) + sugerir_respostas (1) = 8.
+ * Teto em 12 dá folga para múltiplos fetches lazy ANTES de uma proposta sem
+ * truncar a sequência final (sugerir_respostas / proposta de desconto).
  */
-export const STRATEGY_MAX_STEPS = 8
+export const STRATEGY_MAX_STEPS = 12
 
 /**
  * ANALYSIS_MODEL — geração de propostas, import CSV, análise de concorrentes, relatórios.
