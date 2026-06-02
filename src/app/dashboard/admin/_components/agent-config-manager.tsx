@@ -222,11 +222,7 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
           focus_metric: config.focus_metric,
           city: config.city,
           pricing_thresholds: config.pricing_thresholds ?? null,
-          pricing_method: config.pricing_method,
-          giro_uplift_cap: config.giro_uplift_cap,
-          peak_premium: config.peak_premium,
           never_reduce: config.never_reduce,
-          default_elasticity: config.default_elasticity,
         }),
       })
       const data = await res.json()
@@ -280,90 +276,23 @@ export function AgentConfigManager({ unitSlug, unitName, units, initialConfig, c
             <div className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
           )}
 
-          {/* Método de precificação */}
-          <div className="rounded-xl border bg-card p-5 flex flex-col gap-4">
-            <div>
-              <Label className="text-sm font-semibold">Método de precificação</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Como o agente calcula os preços propostos.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2">
-              {([
-                { value: 'agent_judgment', label: 'Julgamento do agente', desc: 'O agente analisa KPIs, concorrência e eventos e decide livremente (pode subir ou reduzir).' },
-                { value: 'giro_uplift',    label: 'Uplift por giro (método do gestor)', desc: 'Preço = atual × (1 + giro do dia acima da média, capado no teto). Nunca reduz. O agente só sobe acima do piso quando justificado.' },
-              ] as const).map((opt) => {
-                const active = (config.pricing_method ?? 'agent_judgment') === opt.value
-                return (
-                  <button
-                    key={opt.value}
-                    onClick={() => setConfig((prev) => prev ? { ...prev, pricing_method: opt.value } : prev)}
-                    className={cn(
-                      'rounded-lg border px-4 py-3 text-left transition-colors flex items-start gap-3',
-                      active ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent'
-                    )}
-                  >
-                    <div className={cn('mt-0.5 size-4 rounded-full border-2 shrink-0 flex items-center justify-center', active ? 'border-primary text-primary' : 'border-muted-foreground/40')}>
-                      {active && <div className="size-2 rounded-full bg-current" />}
-                    </div>
-                    <div className="min-w-0">
-                      <span className={cn('text-sm font-semibold', active ? 'text-primary' : 'text-foreground')}>{opt.label}</span>
-                      <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">{opt.desc}</p>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Nunca reduzir */}
+          {/* Nunca reduzir preço */}
+          <div className="rounded-xl border bg-card p-5 flex flex-col gap-3">
             <button
               onClick={() => setConfig((prev) => prev ? { ...prev, never_reduce: !prev.never_reduce } : prev)}
-              className="flex items-center justify-between rounded-lg border px-4 py-3 text-left hover:bg-accent transition-colors"
+              className="flex items-center justify-between text-left"
             >
               <div className="min-w-0 pr-3">
-                <span className="text-sm font-medium">Nunca reduzir preço</span>
-                <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">
-                  Propostas só sobem ou mantêm — nenhum preço fica abaixo do atual.
+                <span className="text-sm font-semibold">Nunca reduzir preço</span>
+                <p className="text-xs text-muted-foreground leading-snug mt-0.5">
+                  Disciplina do gestor: as propostas só sobem ou mantêm — nenhum preço fica abaixo do atual.
+                  O agente continua fazendo a análise completa (giro, ocupação, RevPAR, concorrentes).
                 </p>
               </div>
               <div className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', config.never_reduce ? 'bg-primary' : 'bg-muted-foreground/30')}>
                 <div className={cn('absolute top-0.5 size-4 rounded-full bg-white transition-transform', config.never_reduce ? 'translate-x-4' : 'translate-x-0.5')} />
               </div>
             </button>
-
-            {/* Parâmetros do método giro_uplift */}
-            {(config.pricing_method ?? 'agent_judgment') === 'giro_uplift' && (
-              <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/30 p-3">
-                <div className="flex flex-col gap-1">
-                  <Label className="text-[11px] text-muted-foreground">Teto de reajuste de giro (%)</Label>
-                  <input
-                    type="number" min={0} max={50} step={1}
-                    value={Math.round((config.giro_uplift_cap ?? 0.05) * 100)}
-                    onChange={(e) => setConfig((prev) => prev ? { ...prev, giro_uplift_cap: Math.max(0, Number(e.target.value) || 0) / 100 } : prev)}
-                    className="h-8 rounded-md border bg-background px-2 text-sm"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <Label className="text-[11px] text-muted-foreground">Prêmio de pico (%)</Label>
-                  <input
-                    type="number" min={0} max={50} step={1}
-                    value={Math.round((config.peak_premium ?? 0.05) * 100)}
-                    onChange={(e) => setConfig((prev) => prev ? { ...prev, peak_premium: Math.max(0, Number(e.target.value) || 0) / 100 } : prev)}
-                    className="h-8 rounded-md border bg-background px-2 text-sm"
-                  />
-                </div>
-                <div className="flex flex-col gap-1 col-span-2">
-                  <Label className="text-[11px] text-muted-foreground">Elasticidade preço→giro (fallback)</Label>
-                  <input
-                    type="number" min={-3} max={0} step={0.1}
-                    value={config.default_elasticity ?? -0.5}
-                    onChange={(e) => setConfig((prev) => prev ? { ...prev, default_elasticity: Number(e.target.value) } : prev)}
-                    className="h-8 rounded-md border bg-background px-2 text-sm"
-                  />
-                  <p className="text-[10px] text-muted-foreground/70">−0,5 = giro cai 0,5% a cada +1% de preço. Usado quando não há elasticidade aprendida.</p>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Estratégia de precificação */}

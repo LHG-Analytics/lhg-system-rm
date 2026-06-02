@@ -124,8 +124,9 @@ export function generateGiroUpliftRows(
 }
 
 /**
- * Bloco markdown com os preços-base do método, para injetar no prompt da proposta (modo híbrido):
- * o LLM usa como PISO e só sobe acima quando concorrência/eventos justificarem.
+ * Bloco markdown com a REFERÊNCIA de uplift por giro — um insumo a mais que o agente
+ * considera junto com KPIs, concorrentes e eventos (não é um modo separado nem um piso rígido).
+ * Mostra, por item, quanto o giro daquele dia está acima da média da própria categoria.
  */
 export function buildGiroUpliftBaselineBlock(
   rows: GiroUpliftRow[],
@@ -133,20 +134,18 @@ export function buildGiroUpliftBaselineBlock(
 ): string {
   if (!rows.length) return ''
   const changed = rows.filter((r) => r.fator_giro > 0)
+  if (!changed.length) return ''  // sem dias acima da média → referência não acrescenta nada
   const lines = [
-    '## Preços-base do método giro_uplift (PISO — método do gestor)',
-    '> Regra do gestor: preço = atual × (1 + clamp(giro_do_dia/giro_médio − 1, 0, teto)). NUNCA reduz.',
-    '> Use estes valores como **piso**. Você pode propor ACIMA quando concorrência/eventos/sazonalidade justificarem,',
-    '> mas NUNCA abaixo do preço-base nem abaixo do preço atual. Itens sem uplift = manter.',
+    '## Referência de uplift por giro (insumo — não é piso obrigatório)',
+    '> Sinaliza dias/categorias que giram acima da média da PRÓPRIA categoria — candidatos a aumento.',
+    '> Use como UM dos insumos: cruze com concorrência, eventos e sazonalidade antes de decidir o preço final.',
+    '> Mostra apenas os itens com giro acima da média; os demais não têm sinal de aumento por giro.',
     '',
-    '| Canal | Categoria | Período | Dia | Atual | Base método | Δ% | Critério |',
-    '|-------|-----------|---------|-----|-------|-------------|----|----------|',
-    ...rows.map((r) =>
+    '| Canal | Categoria | Período | Dia | Atual | Sugestão giro | Δ% | Critério |',
+    '|-------|-----------|---------|-----|-------|---------------|----|----------|',
+    ...changed.map((r) =>
       `| ${r.canal} | ${r.categoria} | ${r.periodo} | ${r.dia_tipo} | ${fmtMoney(r.preco_atual)} | ${fmtMoney(r.preco_proposto)} | ${r.variacao_pct >= 0 ? '+' : ''}${r.variacao_pct}% | ${r.justificativa} |`
     ),
   ]
-  if (!changed.length) {
-    lines.push('', '> Nenhuma categoria/dia girou acima da média neste período — método mantém todos os preços.')
-  }
   return lines.join('\n')
 }

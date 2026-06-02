@@ -587,9 +587,7 @@ export async function POST(req: NextRequest) {
   const pricingThresholds = (agentConfigData as { pricing_thresholds?: PricingThresholds | null } | null)?.pricing_thresholds ?? null
   const unitGoals      = (agentConfigData as { unit_goals?: Record<string, number | null> | null } | null)?.unit_goals ?? null
   const budgetYearly   = (agentConfigData as { budget_yearly?: BudgetYearly | null } | null)?.budget_yearly ?? null
-  const pricingMethod  = (agentConfigData as { pricing_method?: string } | null)?.pricing_method ?? 'agent_judgment'
   const neverReduce    = (agentConfigData as { never_reduce?: boolean } | null)?.never_reduce ?? false
-  const giroUpliftCap  = Number((agentConfigData as { giro_uplift_cap?: number } | null)?.giro_uplift_cap ?? 0.05)
 
   const FOCUS_LABELS: Record<string, string> = {
     revpar: 'RevPAR', ocupacao: 'Taxa de Ocupação', ticket: 'Ticket Médio',
@@ -607,9 +605,9 @@ export async function POST(req: NextRequest) {
 - **Estratégia de precificação:** ${pricingStrategy} — ${strategyGuidance}
 - **Variação máxima permitida (teto absoluto):** ±${maxVariationPct}%
 - **Foco principal:** ${FOCUS_LABELS[focusMetric] ?? focusMetric}
-- **Moeda:** Use sempre **${currencySymbol}** para todos os valores monetários no texto e nas tabelas — nunca use outro símbolo de moeda${neverReduce ? `
-- **NUNCA REDUZIR (regra do gestor):** nenhum preço proposto pode ser menor que o preço atual. Dias/categorias fracos = manter o preço (0%), nunca reduzir.` : ''}${pricingMethod === 'giro_uplift' ? `
-- **Método giro_uplift:** o preço-base de cada item é \`atual × (1 + clamp(giro_do_dia/giro_médio − 1, 0, ${(giroUpliftCap * 100).toFixed(0)}%))\`. Use como PISO; só suba acima quando concorrência/eventos/sazonalidade justificarem. Nunca abaixo do piso.` : ''}`
+- **Moeda:** Use sempre **${currencySymbol}** para todos os valores monetários no texto e nas tabelas — nunca use outro símbolo de moeda
+- **Giro como sinal de aumento:** dê peso a dias que giram acima da média da PRÓPRIA categoria (candidatos a aumento, até a variação máxima) — cruze com concorrência/eventos antes de decidir.${neverReduce ? `
+- **NUNCA REDUZIR (regra do gestor):** nenhum preço proposto pode ser menor que o preço atual. Dias/categorias fracos = manter o preço (0%), nunca reduzir.` : ''}`
 
   // Bloco de regras de ajuste dinâmico por giro/ocupação
   const pricingRulesBlock = buildPricingThresholdsBlock(pricingThresholds)
