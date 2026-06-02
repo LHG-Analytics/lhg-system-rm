@@ -71,6 +71,18 @@ export interface AgentConfig {
   budget_last_sync: string | null
   /** Mapeamento manual de categorias do concorrente → nossas categorias */
   competitor_category_map: CategoryMapEntry[]
+  /** Método de precificação: agent_judgment (LLM livre) | giro_uplift (método determinístico do gestor) */
+  pricing_method: 'agent_judgment' | 'giro_uplift'
+  /** Teto de reajuste por giro (fração, ex: 0.05 = 5%) */
+  giro_uplift_cap: number
+  /** Prêmio adicional na faixa de pico (fração) */
+  peak_premium: number
+  peak_start: number
+  peak_end: number
+  /** Se true, propostas nunca propõem preço abaixo do atual */
+  never_reduce: boolean
+  /** Elasticidade preço→giro usada como fallback */
+  default_elasticity: number
 }
 
 function getAdminClient() {
@@ -102,7 +114,7 @@ export async function GET(req: NextRequest) {
   const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
   if (!unit) return new Response('Unidade não encontrada', { status: 404 })
 
-  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, budget_last_sync, competitor_category_map'
+  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, budget_last_sync, competitor_category_map, pricing_method, giro_uplift_cap, peak_premium, peak_start, peak_end, never_reduce, default_elasticity'
 
   const { data, error: err } = await admin
     .from('rm_agent_config')
@@ -146,6 +158,13 @@ export async function PATCH(req: NextRequest) {
     budget_config?: BudgetConfig | null
     price_sheet_url?: string | null
     competitor_category_map?: CategoryMapEntry[]
+    pricing_method?: string
+    giro_uplift_cap?: number
+    peak_premium?: number
+    peak_start?: number
+    peak_end?: number
+    never_reduce?: boolean
+    default_elasticity?: number
   }
   const { unit_id, competitor_urls, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, price_sheet_url, competitor_category_map, ...rest } = body
   if (!unit_id) return new Response('unit_id obrigatório', { status: 400 })
@@ -169,7 +188,7 @@ export async function PATCH(req: NextRequest) {
     ...(competitor_category_map !== undefined ? { competitor_category_map } : {}),
   }
 
-  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, budget_last_sync, competitor_category_map'
+  const SELECT_FIELDS = 'id, unit_id, pricing_strategy, max_variation_pct, focus_metric, is_active, competitor_urls, city, timezone, postal_code, suite_amenities, shared_context, pricing_thresholds, unit_goals, budget_sheet_url, budget_config, budget_last_sync, competitor_category_map, pricing_method, giro_uplift_cap, peak_premium, peak_start, peak_end, never_reduce, default_elasticity'
   const admin = getAdminClient()
   const { data, error: err } = await admin
     .from('rm_agent_config')
