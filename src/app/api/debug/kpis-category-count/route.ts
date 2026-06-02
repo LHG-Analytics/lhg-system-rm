@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
   `
 
   try {
-    const [withCat, withoutCat, perCategory, dashboardFn, dashboardCached, bigNumbersReplica] = await Promise.all([
+    const [withCat, withoutCat, perCategory, dashboardFn, dashboardCached, bigNumbersReplica, testA_withNoScalar, testB_baseOnly] = await Promise.all([
       // COUNT com filtro de categoria (o que RM usa)
       pool.query<{ cnt: string; total_value: string }>(`
         SELECT COUNT(*) AS cnt, COALESCE(SUM(CAST(la.valortotal AS DECIMAL(15,4))), 0) AS total_value
@@ -123,6 +123,39 @@ export async function GET(req: NextRequest) {
         locacoes:    Number(r.rows[0].total_rentals),
         faturamento: Number(r.rows[0].total_all_value),
       })).catch((e) => ({ error: String(e) })),
+
+      // TESTE A: WITH presente, mas SEM a subquery escalar no SELECT
+      pool.query<{ total_rentals: string }>(`
+        WITH ${cteBaseSuiteDays(catStr)},
+        ${cteSuiteDaysTotal()}
+        SELECT COUNT(*) AS total_rentals
+        FROM locacaoapartamento la
+        INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+        INNER JOIN apartamento a        ON aps.id_apartamento = a.id
+        INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+        WHERE la.datainicialdaocupacao >= $1
+          AND la.datainicialdaocupacao <= $2
+          AND la.fimocupacaotipo = 'FINALIZADA'
+          AND ca.id IN (${catStr})
+      `, [isoStart, isoEnd]).then((r) => ({
+        locacoes: Number(r.rows[0].total_rentals),
+      })).catch((e) => ({ error: String(e) })),
+
+      // TESTE B: só cteBaseSuiteDays (sem suite_dias_total), sem subquery escalar
+      pool.query<{ total_rentals: string }>(`
+        WITH ${cteBaseSuiteDays(catStr)}
+        SELECT COUNT(*) AS total_rentals
+        FROM locacaoapartamento la
+        INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+        INNER JOIN apartamento a        ON aps.id_apartamento = a.id
+        INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+        WHERE la.datainicialdaocupacao >= $1
+          AND la.datainicialdaocupacao <= $2
+          AND la.fimocupacaotipo = 'FINALIZADA'
+          AND ca.id IN (${catStr})
+      `, [isoStart, isoEnd]).then((r) => ({
+        locacoes: Number(r.rows[0].total_rentals),
+      })).catch((e) => ({ error: String(e) })),
     ])
 
     return NextResponse.json({
@@ -145,6 +178,9 @@ export async function GET(req: NextRequest) {
       dashboardCached,
       // Réplica da SQL exata de queryBigNumbers — se != withCategoryFilter, o bug está nas CTEs/SQL
       bigNumbersReplica,
+      // Teste A: WITH presente, sem subquery escalar. Teste B: só cteBaseSuiteDays.
+      testA_withNoScalar,
+      testB_baseOnly,
       perCategory: perCategory.rows.map(r => ({
         id:         Number(r.cat_id),
         nome:       r.cat_name,
