@@ -31,6 +31,7 @@ import { queryCategoryPeriodKPIs, buildCategoryPeriodBlock } from '@/lib/automo/
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 import type { PriceImportForPrompt, KPIPeriod, VigenciaInfo } from '@/lib/agente/system-prompt'
+import { reconcileProposalToActiveTable } from '@/lib/agente/reconcile-proposal'
 import { makeCurrencyFormatter } from '@/lib/utils/currency'
 
 function getAdminClient() {
@@ -546,6 +547,10 @@ export async function POST(req: NextRequest) {
     valid_until: imp.valid_until,
   }))
 
+  // Linhas da tabela ATIVA — esqueleto para cobertura total ao salvar proposta no chat
+  const activePriceRows: ParsedPriceRow[] =
+    (priceImports.find((i) => i.valid_until === null) ?? priceImports[0])?.rows ?? []
+
   // 6. Buscar config + capacity + guardrails em paralelo (contexto essencial estático)
   // Concorrentes, histórico, sazonalidade e eventos são carregados via ferramentas lazy.
   const snapshotCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -824,16 +829,17 @@ export async function POST(req: NextRequest) {
         ),
       }),
       execute: async ({ context, rows }) => {
-        // Clamp max_variation_pct + never_reduce (regra do gestor) + normalizar (dia_tipo='')
-        const clampedRows = rows.map((row) => {
-          // never_reduce: piso em 0% de variação (nunca abaixo do atual)
+        // Cobertura total: se a tabela ativa é legada (dia_tipo, sem faixa), reconcilia a
+        // proposta sobre o esqueleto completo (todos os canais + semana/fds) preservando o
+        // formato legado → a grade preenche ambas as faixas e mostra todos os canais.
+        const reconciled = reconcileProposalToActiveTable(rows, activePriceRows)
+        const sourceRows = reconciled ?? rows.map((r) => ({ ...r, dia_tipo: '' }))
+
+        // Clamp max_variation_pct + never_reduce (piso 0% = nunca abaixo do atual)
+        const clampedRows = sourceRows.map((row) => {
           const lowerBound = neverReduce ? 0 : -maxVariationPct
           const clamped = Math.max(lowerBound, Math.min(maxVariationPct, row.variacao_pct))
-          const base = {
-            ...row,
-            dia_tipo: '',  // modelo novo: dia/hora em campos dedicados
-            variacao_pct: clamped,
-          }
+          const base = { ...row, variacao_pct: clamped }
           if (Math.abs(clamped - row.variacao_pct) > 0.05) {
             return { ...base, preco_proposto: +(row.preco_atual * (1 + clamped / 100)).toFixed(2) }
           }
