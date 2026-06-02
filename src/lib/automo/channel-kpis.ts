@@ -1,5 +1,5 @@
 import { getAutomPool, getUnitCategoryIds, getUnitPeriodType } from './client'
-import { ddmmyyyyToIso, addDays, buildDateRangeFilter, buildStatusFilter, buildTimeFilter } from './company-kpis'
+import { ddmmyyyyToIso, ddmmyyyyToIsoEnd, addDays, buildDateRangeFilter, buildStatusFilter, buildTimeFilter } from './company-kpis'
 import { buildPeriodCaseSQL, getValidPeriodsForType } from './period-helpers'
 import type { ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
 
@@ -15,14 +15,17 @@ const CANAL_LABELS: Record<string, string> = {
   EXPEDIA:           'Expedia',
 }
 
-// ─── Helper de isoEnd BRT-aware (igual ao fetchCompanyKPIsFromAutomo) ─────────
+// ─── Helper de isoEnd BRT-aware (idêntico ao fetchCompanyKPIsFromAutomo) ──────
 
 function buildIsoEnd(ddmmyyyy: string): string {
-  const nowBR     = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
-  const todayBR   = `${String(nowBR.getDate()).padStart(2, '0')}/${String(nowBR.getMonth() + 1).padStart(2, '0')}/${nowBR.getFullYear()}`
-  return ddmmyyyy === todayBR
-    ? ddmmyyyyToIso(ddmmyyyy)
-    : addDays(ddmmyyyyToIso(ddmmyyyy), 1)
+  const nowBR   = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+  const todayBR = `${String(nowBR.getDate()).padStart(2, '0')}/${String(nowBR.getMonth() + 1).padStart(2, '0')}/${nowBR.getFullYear()}`
+  // Bound inclusivo 05:59:59 — igual ao Analytics (endHour=5, endMinute=59, endSecond=59)
+  if (ddmmyyyy === todayBR) return ddmmyyyyToIsoEnd(ddmmyyyy)
+  // Período fechado: próximo dia a 05:59:59 (inclusivo)
+  const [d, m, y] = ddmmyyyy.split('/').map(Number)
+  const dt = new Date(y, m - 1, d + 1)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 05:59:59`
 }
 
 // ─── Query principal ──────────────────────────────────────────────────────────
@@ -207,7 +210,7 @@ export async function queryPeriodMix(
       INNER JOIN apartamento a        ON aps.id_apartamento = a.id
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
       WHERE ${col} >= $1
-        AND ${col} <  $2
+        AND ${col} <= $2
         ${statusFilter}
         ${timeFilter}
         AND ca.id IN (${idList})

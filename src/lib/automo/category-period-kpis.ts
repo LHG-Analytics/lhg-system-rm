@@ -1,5 +1,5 @@
 import { getAutomPool, getUnitCategoryIds, getUnitPeriodType } from './client'
-import { ddmmyyyyToIso, addDays } from './company-kpis'
+import { ddmmyyyyToIso, ddmmyyyyToIsoEnd, addDays } from './company-kpis'
 import { buildPeriodCaseSQL, getValidPeriodsForType } from './period-helpers'
 import { cteBaseSuiteDays, cteSuiteDaysByCategory } from './suite-days'
 
@@ -55,9 +55,17 @@ export async function queryCategoryPeriodKPIs(
   const catIds      = categoryIds.join(',')
   const validPeriods = getValidPeriodsForType(periodType)
 
-  // Corte operacional 06:00 — igual ao fetchCompanyKPIsFromAutomo
+  // Bound inclusivo 05:59:59 — idêntico ao Analytics
   const isoStart = ddmmyyyyToIso(startDateDDMMYYYY)
-  const isoEnd   = addDays(ddmmyyyyToIso(endDateDDMMYYYY), 1)
+  const nowBR    = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+  const todayBR  = `${String(nowBR.getDate()).padStart(2, '0')}/${String(nowBR.getMonth() + 1).padStart(2, '0')}/${nowBR.getFullYear()}`
+  const isoEnd   = endDateDDMMYYYY === todayBR
+    ? ddmmyyyyToIsoEnd(endDateDDMMYYYY)
+    : (() => {
+        const [d, m, y] = endDateDDMMYYYY.split('/').map(Number)
+        const dt = new Date(y, m - 1, d + 1)
+        return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 05:59:59`
+      })()
 
   const periodSQL = buildPeriodCaseSQL(periodType)
 
@@ -77,7 +85,7 @@ export async function queryCategoryPeriodKPIs(
       INNER JOIN apartamento a        ON aps.id_apartamento     = a.id
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
       WHERE la.datainicialdaocupacao >= $1
-        AND la.datainicialdaocupacao <  $2
+        AND la.datainicialdaocupacao <= $2
         AND la.fimocupacaotipo = 'FINALIZADA'
         AND la.datafinaldaocupacao IS NOT NULL
         AND ca.id IN (${catIds})

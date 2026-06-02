@@ -35,14 +35,36 @@ export function addDays(iso: string, n: number): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 06:00:00`
 }
 
-/** Desloca N meses em uma string ISO 'YYYY-MM-DD HH:MM:SS' (clampeia dia ao último do mês destino) */
+/**
+ * DD/MM/YYYY → ISO string para bound INCLUSIVO de fim de período (05:59:59).
+ * Idêntico ao Analytics: endHour=5, endMinute=59, endSecond=59.
+ * Usar com <= $2 (nunca com < $2).
+ */
+export function ddmmyyyyToIsoEnd(ddmmyyyy: string): string {
+  const [d, m, y] = ddmmyyyy.split('/').map(Number)
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')} 05:59:59`
+}
+
+/**
+ * Adiciona N dias e retorna horário de fim 05:59:59.
+ * Usar para calcular isoEnd de períodos fechados (endDate + 1 dia a 05:59:59).
+ */
+function addDaysEnd(iso: string, n: number): string {
+  const [y, mo, d] = iso.slice(0, 10).split('-').map(Number)
+  const dt = new Date(y, mo - 1, d + n)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 05:59:59`
+}
+
+/** Desloca N meses em uma string ISO 'YYYY-MM-DD HH:MM:SS' (clampeia dia ao último do mês destino).
+ *  Preserva o horário da string de entrada (06:00:00 para isoStart, 05:59:59 para isoEnd). */
 function shiftMonths(iso: string, months: number): string {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
   const dt = new Date(y, m - 1 + months, d)
   if (dt.getMonth() !== ((m - 1 + months + 12) % 12)) {
     dt.setDate(0)
   }
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 06:00:00`
+  const timePart = iso.length > 10 ? iso.slice(10) : ' 06:00:00'
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}${timePart}`
 }
 
 /** Número de dias entre duas strings ISO */
@@ -70,12 +92,12 @@ export function buildDateRangeFilter(dateType: string): { col: string; fragment:
   if (dateType === 'checkout') {
     return {
       col:      'la.datafinaldaocupacao',
-      fragment: 'la.datafinaldaocupacao >= $1 AND la.datafinaldaocupacao < $2',
+      fragment: 'la.datafinaldaocupacao >= $1 AND la.datafinaldaocupacao <= $2',
     }
   }
   return {
     col:      'la.datainicialdaocupacao',
-    fragment: 'la.datainicialdaocupacao >= $1 AND la.datainicialdaocupacao < $2',
+    fragment: 'la.datainicialdaocupacao >= $1 AND la.datainicialdaocupacao <= $2',
   }
 }
 
@@ -165,7 +187,7 @@ async function queryBigNumbers(
       INNER JOIN saidaestoque se       ON vl.id_saidaestoque = se.id
       INNER JOIN saidaestoqueitem sei  ON se.id = sei.id_saidaestoque
       WHERE ${dateCol} >= $1
-        AND ${dateCol} <  $2
+        AND ${dateCol} <= $2
         ${statusFilter}
         AND sei.cancelado IS NULL
         AND ca.id IN (${catIds})
@@ -189,7 +211,7 @@ async function queryBigNumbers(
         WHERE vd.venda_completa = true
           AND sei.cancelado IS NULL
           AND sei.datasaidaitem >= $1
-          AND sei.datasaidaitem <  $2
+          AND sei.datasaidaitem <= $2
       ) vd_detail
     )
     SELECT
@@ -211,7 +233,7 @@ async function queryBigNumbers(
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
     LEFT  JOIN receita_consumo rc   ON la.id_apartamentostate = rc.id_locacao
     WHERE ${dateCol} >= $1
-      AND ${dateCol} <  $2
+      AND ${dateCol} <= $2
       ${statusFilter}
       AND ca.id IN (${catIds})
       ${timeFilter}
@@ -288,7 +310,7 @@ async function queryDataTableSuiteCategory(
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
     INNER JOIN suite_dias_por_cat sc ON ca.descricao = sc.categoria
     WHERE ${dateCol} >= $1
-      AND ${dateCol} <  $2
+      AND ${dateCol} <= $2
       ${statusFilter}
       AND ca.id IN (${catIds})
       ${timeFilter}
@@ -366,7 +388,7 @@ async function queryWeekTables(
       INNER JOIN apartamento a        ON aps.id_apartamento = a.id
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
       WHERE ${dateCol} >= $1
-        AND ${dateCol} <  $2
+        AND ${dateCol} <= $2
         ${statusFilter}
         AND ca.id IN (${catIds})
         ${timeFilter}
@@ -388,7 +410,7 @@ async function queryWeekTables(
       INNER JOIN apartamento a        ON aps.id_apartamento = a.id
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
       WHERE ${dateCol} >= $1
-        AND ${dateCol} <  $2
+        AND ${dateCol} <= $2
         ${statusFilter}
         AND ca.id IN (${catIds})
         ${timeFilter}
@@ -491,7 +513,7 @@ async function queryTotalRevOcc(
     INNER JOIN apartamento a        ON aps.id_apartamento = a.id
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
     WHERE ${dateCol} >= $1
-      AND ${dateCol} <  $2
+      AND ${dateCol} <= $2
       ${statusFilter}
       AND ca.id IN (${catIds})
       ${timeFilter}
@@ -539,7 +561,7 @@ async function queryPeriodMixInline(
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
       INNER JOIN suite_dias_por_cat  spc ON ca.descricao = spc.categoria
       WHERE ${dateCol} >= $1
-        AND ${dateCol} <  $2
+        AND ${dateCol} <= $2
         ${statusFilter}
         AND ca.id IN (${catIds})
         ${timeFilter}
@@ -625,12 +647,13 @@ export async function fetchCompanyKPIsFromAutomo(
 
   // Período atual
   const isoStart = ddmmyyyyToIso(startDateDDMMYYYY)
-  // Período aberto (endDate = hoje): usar hoje 06:00 como bound exclusivo — só dias completos,
-  // igual ao Analytics e à previsão de fechamento (monIsoEnd).
-  // Período fechado (endDate no passado): usar (endDate+1) 06:00 para incluir o último dia inteiro.
+  // Bound INCLUSIVO de fim de período, idêntico ao Analytics (endHour=5, endMinute=59, endSecond=59).
+  // Período aberto (hoje): endDate 05:59:59 com <= $2 — inclui madrugada do dia corrente.
+  // Período fechado (passado): (endDate+1) 05:59:59 com <= $2 — inclui o último dia operacional inteiro.
+  // Isso garante que locações em sub-segundos (ex: 05:59:59.500000) NÃO entrem, alinhado ao Analytics.
   const isoEnd   = endDateDDMMYYYY === todayBRStr
-    ? ddmmyyyyToIso(endDateDDMMYYYY)
-    : addDays(ddmmyyyyToIso(endDateDDMMYYYY), 1)
+    ? ddmmyyyyToIsoEnd(endDateDDMMYYYY)
+    : addDaysEnd(ddmmyyyyToIso(endDateDDMMYYYY), 1)
   const daysDiff = daysBetween(isoStart, isoEnd)
 
   // Período anterior a/a (mesmo período do ano passado)
@@ -645,7 +668,7 @@ export async function fetchCompanyKPIsFromAutomo(
   const monthStart = new Date(nowBR.getFullYear(), nowBR.getMonth(), 1)
   const yesterday  = new Date(nowBR.getFullYear(), nowBR.getMonth(), nowBR.getDate() - 1)
   const monIsoStart = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-01 06:00:00`
-  const monIsoEnd   = `${nowBR.getFullYear()}-${String(nowBR.getMonth() + 1).padStart(2, '0')}-${String(nowBR.getDate()).padStart(2, '0')} 06:00:00`
+  const monIsoEnd   = `${nowBR.getFullYear()}-${String(nowBR.getMonth() + 1).padStart(2, '0')}-${String(nowBR.getDate()).padStart(2, '0')} 05:59:59`
   const daysElapsed = yesterday.getDate()
   const totalDaysInMonth = new Date(nowBR.getFullYear(), nowBR.getMonth() + 1, 0).getDate()
   const remainingDays = totalDaysInMonth - daysElapsed
