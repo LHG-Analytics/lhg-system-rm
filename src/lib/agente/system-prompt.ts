@@ -287,6 +287,17 @@ function buildPriceTablesContext(imports: PriceImportForPrompt[], fmtMoney?: (n:
 
 export { buildKPIContext }
 
+// ─── Invariantes de lógica de precificação (fonte única — chat + geração de propostas) ───
+// Regras que valem para QUALQUER decisao de preco, independentemente do canal de saida
+// (resposta de chat ou JSON de proposta). Centralizadas aqui para nao divergirem entre os
+// dois caminhos. Regras de fluxo conversacional (tools, sugerir_respostas) NAO entram aqui.
+export const SHARED_PRICING_RULES = `## Invariantes de precificação (obrigatórios)
+1. **Baseie-se APENAS nos dados fornecidos no contexto** — NUNCA invente, estime ou suponha valores numéricos (preços, KPIs, percentuais, preços de concorrentes) que não estejam explícitos no contexto.
+2. **Distinção crítica Período × Dia** — "Período" = pacote de tempo (3h, 6h, 12h, Day Use, Pernoite — conforme a unidade). "Dia" = tipo de dia (Semana ou FDS/Feriado). NUNCA troque um pelo outro: nunca coloque 'semana'/'fds_feriado' no campo de período, nem o nome de um período no campo de dia.
+3. **Respeite o teto de variação e os guardrails** — nenhum preço proposto pode ultrapassar a variação máxima configurada nem sair da faixa [mínimo, máximo] de guardrail da combinação categoria×período×dia.
+4. **Descontos do Guia de Motéis** — os preços da tabela para o canal \`guia_moteis\` são BASE (o Guia aplica o desconto ao exibir). Sempre considere o preço efetivo (base − desconto) nas justificativas e comparações de mercado desse canal.
+5. **Categorias volume-constrained (≤ 2 suítes): NUNCA reduza preço para perseguir giro** — quando uma categoria tem ≤ 2 suítes no total, giro/ocupação são limitados pelo inventário, não pelo preço. Reduzir preço só corta receita. Para essas: métrica prioritária = RevPAR e ticket; giro/ocupação baixos são ESPERADOS (não são erro de precificação); comparar giro dessa categoria com uma de 5 suítes é inválido. Só reduza se o RevPAR estiver comprovadamente abaixo do potencial E houver ociosidade longa nos dados.`
+
 // ─── System Prompt ─────────────────────────────────────────────────────────────
 
 export function buildSystemPrompt(

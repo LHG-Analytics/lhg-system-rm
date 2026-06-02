@@ -20,7 +20,7 @@ import {
   buildSharedContextBlock,
   type PricingThresholds,
 } from '@/lib/agente/context-blocks'
-import { buildKPIContext, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
+import { buildKPIContext, SHARED_PRICING_RULES, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { getRealtimeOccupancyByCategory } from '@/lib/automo/realtime-occupancy'
@@ -803,6 +803,8 @@ ${activeDiscounts.map((d) => {
     : ''
 
   const prompt = `Você é um especialista em Revenue Management para motéis. Analise os dados abaixo e gere uma proposta de ajuste de preços.
+
+${SHARED_PRICING_RULES}
 
 ## Dados operacionais — ${unit.name}
 
