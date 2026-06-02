@@ -21,6 +21,7 @@ import {
   type PricingThresholds,
 } from '@/lib/agente/context-blocks'
 import { buildKPIContext, SHARED_PRICING_RULES, type PriceImportForPrompt, type KPIPeriod } from '@/lib/agente/system-prompt'
+import { generateGiroUpliftRows, buildGiroUpliftBaselineBlock } from '@/lib/pricing/giro-uplift'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
 import { getRealtimeOccupancyByCategory } from '@/lib/automo/realtime-occupancy'
@@ -491,7 +492,7 @@ export async function POST(req: NextRequest) {
       .eq('unit_id', unit.id),
     supabase
       .from('rm_agent_config')
-      .select('pricing_strategy, max_variation_pct, focus_metric, suite_amenities, unit_goals, budget_yearly, shared_context, pricing_thresholds')
+      .select('pricing_strategy, max_variation_pct, focus_metric, suite_amenities, unit_goals, budget_yearly, shared_context, pricing_thresholds, pricing_method, giro_uplift_cap, never_reduce')
       .eq('unit_id', unit.id)
       .maybeSingle(),
     supabase
@@ -587,6 +588,22 @@ export async function POST(req: NextRequest) {
   const budgetYearly = (agentConfigData as { budget_yearly?: Record<string, Record<string, { receita: number | null; ticket: number | null; giro: number | null; revpar: number | null }>> | null } | null)?.budget_yearly ?? null
   const sharedContext = (agentConfigData as { shared_context?: string | null } | null)?.shared_context ?? null
   const pricingThresholdsCfg = (agentConfigData as { pricing_thresholds?: PricingThresholds | null } | null)?.pricing_thresholds ?? null
+  // Método de precificação (LHG: método do chefe da LIV)
+  const pricingMethod  = (agentConfigData as { pricing_method?: string } | null)?.pricing_method ?? 'agent_judgment'
+  const giroUpliftCap  = Number((agentConfigData as { giro_uplift_cap?: number } | null)?.giro_uplift_cap ?? 0.05)
+  const neverReduce    = (agentConfigData as { never_reduce?: boolean } | null)?.never_reduce ?? false
+
+  // Baseline determinístico do método giro_uplift (piso para o modo híbrido)
+  const giroUpliftRows = (pricingMethod === 'giro_uplift' && kpiActive)
+    ? generateGiroUpliftRows(activeRows, kpiActive, { cap: giroUpliftCap, decimals: 0 })
+    : []
+  const giroBaselineByKey = new Map<string, number>()
+  for (const r of giroUpliftRows) {
+    giroBaselineByKey.set(`${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`, r.preco_proposto)
+  }
+  const giroUpliftBlock = giroUpliftRows.length
+    ? buildGiroUpliftBaselineBlock(giroUpliftRows, fmtMoney)
+    : ''
   const pricingThresholdsBlock = buildPricingThresholdsBlock(pricingThresholdsCfg)
   const sharedContextBlock    = buildSharedContextBlock(sharedContext)
 
@@ -809,7 +826,7 @@ ${SHARED_PRICING_RULES}
 ## Dados operacionais — ${unit.name}
 
 ${kpiBlocks}
-${memoryBlock ? `\n${memoryBlock}\n` : ''}
+${giroUpliftBlock ? `\n${giroUpliftBlock}\n` : ''}${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${agentConfigBlock}
 ${unitStructureBlock ? `\n${unitStructureBlock}\n` : ''}${goalsBlock ? `\n${goalsBlock}\n` : ''}${forecastBlock ? `\n${forecastBlock}\n` : ''}${buildPaceBlock(reservationPace) ? `\n${buildPaceBlock(reservationPace)}\n` : ''}${pricingThresholdsBlock ? `\n${pricingThresholdsBlock}\n` : ''}${sharedContextBlock ? `\n${sharedContextBlock}\n` : ''}${seasonalityBlock ? `\n${seasonalityBlock}\n` : ''}${demandPattern ? `\n${buildDemandPatternBlock(demandPattern, unit.name, 60)}\n` : ''}${categoryPeriodKPIs?.length ? `\n${buildCategoryPeriodBlock(categoryPeriodKPIs, fmtMoney ?? undefined)}\n` : ''}${cancellationRates?.length ? `\n${buildCancellationBlock(cancellationRates)}\n` : ''}${weeklyPickup ? `\n${buildPickupBlock(weeklyPickup)}\n` : ''}${competitorGapBlock ? `\n${competitorGapBlock}\n` : ''}${ownAmenitiesBlock ? `\n${ownAmenitiesBlock}\n` : ''}${competitorBlock ? `\n${competitorBlock}\n` : ''}${guardrailsBlock ? `\n${guardrailsBlock}\n` : ''}${discountBlock ? `\n${discountBlock}\n` : ''}${elasticityBlock ? `\n${elasticityBlock}\n` : ''}${pricingLessonsBlock ? `\n${pricingLessonsBlock}\n` : ''}${rejectionLessonsBlock ? `\n${rejectionLessonsBlock}\n` : ''}
 ## Tabelas de preços${priceImports.length > 1 ? ' (histórico — tabela atual primeiro, anterior depois)' : ''}
@@ -826,7 +843,7 @@ TAREFA: Com base nos dados acima, preencha a proposta de ajuste de preços para 
 
 Critérios:
 - Analise giro, ocupação e RevPAR por categoria e dia da semana nas tabelas semanais
-${hasPrevious ? '- Compare o desempenho do período atual com o mesmo período do ano anterior (YoY): diferença negativa indica necessidade de ajuste; positiva confirma direção\n' : ''}${memoryBlock ? '- Use a memória estratégica para calibrar a nova proposta: se as mudanças anteriores melhoraram os KPIs, intensifique a direção; se pioraram, recue ou teste outro caminho\n' : ''}- Variação máxima: ±${maxVar}% por item (configurado pelo gestor — não exceder)
+${giroUpliftBlock ? '- MÉTODO giro_uplift ATIVO: o bloco "Preços-base do método" é o PISO. Para cada linha, comece pelo preço-base e só suba ACIMA dele quando concorrência/eventos/sazonalidade justificarem. NUNCA proponha abaixo do preço-base.\n' : ''}${neverReduce ? '- NUNCA REDUZIR (regra do gestor): nenhum preco_proposto pode ser menor que o preco_atual. Dias/categorias fracos = manter o preço atual (variacao_pct = 0), nunca reduzir.\n' : ''}${hasPrevious ? '- Compare o desempenho do período atual com o mesmo período do ano anterior (YoY): diferença negativa indica necessidade de ajuste; positiva confirma direção\n' : ''}${memoryBlock ? '- Use a memória estratégica para calibrar a nova proposta: se as mudanças anteriores melhoraram os KPIs, intensifique a direção; se pioraram, recue ou teste outro caminho\n' : ''}- Variação máxima: ±${maxVar}% por item (configurado pelo gestor — não exceder)
 - Priorize itens com maior impacto no RevPAR (alto giro + RevPAR baixo = oportunidade de aumento)
 ${activeDiscounts.length > 0 ? '- Para guia_moteis: os preços propostos devem ser os valores BASE (o desconto é aplicado automaticamente)\n' : ''}
 ANTI-PADRÃO PROIBIDO — variações uniformes:
@@ -940,6 +957,25 @@ JSON minificado, sem indentação, sem texto antes ou depois.`
         }
         // Justificativa fica limpa — UI mostra badge estruturado pelo was_clamped
       }
+    }
+  }
+
+  // ─── Trava do método (never_reduce + piso giro_uplift) ──────────────────
+  // never_reduce: nunca abaixo do preço atual. giro_uplift: nunca abaixo do preço-base do método.
+  // O LLM pode propor ACIMA (concorrência/eventos); aqui só garantimos o piso, respeitando o teto de guardrail.
+  if (neverReduce || giroBaselineByKey.size > 0) {
+    for (const row of parsed.rows) {
+      const baseline = giroBaselineByKey.get(`${row.canal}|${row.categoria}|${row.periodo}|${row.dia_tipo}`)
+      let floor = neverReduce ? row.preco_atual : 0
+      if (baseline != null) floor = Math.max(floor, baseline)
+      if (floor <= 0 || row.preco_proposto >= floor) continue
+      // Respeita o teto de guardrail se houver
+      const g = guardrailMap.get(`${row.categoria}|${row.periodo}|${row.dia_tipo}`)
+        ?? guardrailMap.get(`${row.categoria}|${row.periodo}|todos`)
+      const raised = g ? Math.min(g.max, floor) : floor
+      if (raised === row.preco_proposto) continue
+      row.preco_proposto = +raised.toFixed(2)
+      row.variacao_pct   = row.preco_atual > 0 ? +((raised - row.preco_atual) / row.preco_atual * 100).toFixed(1) : 0
     }
   }
 

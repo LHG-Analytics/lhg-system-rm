@@ -698,6 +698,13 @@ export type Database = {
           price_sheet_url: string | null
           pricing_strategy: string
           pricing_thresholds: Json | null
+          pricing_method: string
+          giro_uplift_cap: number
+          peak_premium: number
+          peak_start: number
+          peak_end: number
+          never_reduce: boolean
+          default_elasticity: number
           shared_context: string | null
           suite_amenities: Json
           timezone: string
@@ -727,6 +734,13 @@ export type Database = {
           price_sheet_url?: string | null
           pricing_strategy?: string
           pricing_thresholds?: Json | null
+          pricing_method?: string
+          giro_uplift_cap?: number
+          peak_premium?: number
+          peak_start?: number
+          peak_end?: number
+          never_reduce?: boolean
+          default_elasticity?: number
           shared_context?: string | null
           suite_amenities?: Json
           timezone?: string
@@ -756,6 +770,13 @@ export type Database = {
           price_sheet_url?: string | null
           pricing_strategy?: string
           pricing_thresholds?: Json | null
+          pricing_method?: string
+          giro_uplift_cap?: number
+          peak_premium?: number
+          peak_start?: number
+          peak_end?: number
+          never_reduce?: boolean
+          default_elasticity?: number
           shared_context?: string | null
           suite_amenities?: Json
           timezone?: string
