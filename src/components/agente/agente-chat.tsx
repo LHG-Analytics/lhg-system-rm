@@ -848,11 +848,13 @@ function AgenteChatInner({
           // (que têm janelas onde ambos ficam false: criação da conversa, gaps de status do AI SDK).
           if (awaitingOnly || error) return false
           const last = messages[messages.length - 1]
-          const lastHasContent = last?.role === 'assistant' && last.parts.some(
-            (p) => (p.type === 'text' && (p as { type: 'text'; text: string }).text.length > 0) || isToolUIPart(p)
+          // Esconde o "pensando" SÓ quando o assistente começa a escrever TEXTO.
+          // Enquanto ele apenas chama ferramentas (diagnóstico/fetch), as frases continuam
+          // girando — é o feedback de "trabalhando" até a resposta de fato começar.
+          const lastHasText = last?.role === 'assistant' && last.parts.some(
+            (p) => p.type === 'text' && (p as { type: 'text'; text: string }).text.length > 0
           )
-          if (lastHasContent) return false
-          // Aguardando enquanto: enviou agora (última msg é do usuário) OU pendente OU streaming sem conteúdo
+          if (lastHasText) return false
           return last?.role === 'user' || localPending || isStreaming
         })() && <ThinkingBubble />}
 
