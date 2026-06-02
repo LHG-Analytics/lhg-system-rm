@@ -48,6 +48,7 @@ export function ddmmyyyyToIsoEnd(ddmmyyyy: string): string {
 /**
  * Adiciona N dias e retorna horário de fim 05:59:59.
  * Usar para calcular isoEnd de períodos fechados (endDate + 1 dia a 05:59:59).
+ * Dia operacional: 06:00:00 → 05:59:59 (igual ao Automo).
  */
 function addDaysEnd(iso: string, n: number): string {
   const [y, mo, d] = iso.slice(0, 10).split('-').map(Number)
@@ -150,6 +151,7 @@ interface BigNumbersRow {
   total_rentals: string
   total_all_value: string
   total_occupied_time: string
+  total_sale_direct: string
   total_suite_dias: string
 }
 
@@ -165,12 +167,31 @@ async function queryBigNumbers(
 ) {
   if (!pool) throw new Error('pool is null')
 
-  // Usa la.valortotal (campo pré-calculado pelo ERP = locação + consumo - desconto).
-  // Idêntico ao que o LHG Analytics exibe — sem adicionar vendas diretas (vendadireta),
-  // que o Analytics também não inclui no faturamento de locações.
+  // la.valortotal = locação + consumo - desconto (campo pré-calculado pelo ERP).
+  // Analytics soma ainda vendas_diretas (vendadireta) com os mesmos $1/$2 — replicado aqui.
   const sql = `
     WITH ${cteBaseSuiteDays(catIds)},
-    ${cteSuiteDaysTotal()}
+    ${cteSuiteDaysTotal()},
+    vendas_diretas AS (
+      SELECT COALESCE(SUM(receita_item - desconto_proporcional), 0) AS total_sale_direct
+      FROM (
+        SELECT
+          CAST(sei.precovenda  AS DECIMAL(15,4)) * CAST(sei.quantidade AS DECIMAL(15,4)) AS receita_item,
+          COALESCE(CAST(v.desconto AS DECIMAL(15,4)), 0) /
+            NULLIF((
+              SELECT COUNT(*) FROM saidaestoqueitem sei2
+              WHERE sei2.id_saidaestoque = se.id AND sei2.cancelado IS NULL
+            ), 0) AS desconto_proporcional
+        FROM saidaestoque se
+        INNER JOIN vendadireta         vd  ON se.id = vd.id_saidaestoque
+        INNER JOIN saidaestoqueitem    sei ON se.id = sei.id_saidaestoque
+        LEFT  JOIN venda               v   ON se.id = v.id_saidaestoque
+        WHERE vd.venda_completa = true
+          AND sei.cancelado IS NULL
+          AND sei.datasaidaitem >= $1
+          AND sei.datasaidaitem <= $2
+      ) vd_detail
+    )
     SELECT
       COUNT(*)                                                   AS total_rentals,
       COALESCE(SUM(
@@ -179,6 +200,7 @@ async function queryBigNumbers(
       COALESCE(SUM(
         EXTRACT(EPOCH FROM la.datafinaldaocupacao - la.datainicialdaocupacao)
       ), 0)                                                      AS total_occupied_time,
+      (SELECT total_sale_direct FROM vendas_diretas)             AS total_sale_direct,
       (SELECT suite_dias FROM suite_dias_total)                  AS total_suite_dias
     FROM locacaoapartamento la
     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
@@ -195,9 +217,11 @@ async function queryBigNumbers(
   const r = rows[0]
 
   // total_suite_dias já considera bloqueios e janela do período
-  const totalSuiteDias = Number(r.total_suite_dias) || 1
-  const totalRentals   = Number(r.total_rentals)   || 0
-  const totalAllValue  = +(Number(r.total_all_value) || 0).toFixed(2)
+  const totalSuiteDias  = Number(r.total_suite_dias)    || 1
+  const totalRentals    = Number(r.total_rentals)        || 0
+  const locacaoValue    = Number(r.total_all_value)      || 0
+  const saleDirect      = Number(r.total_sale_direct)    || 0
+  const totalAllValue   = +(locacaoValue + saleDirect).toFixed(2)
   const occupiedTime   = Number(r.total_occupied_time) || 0
 
   const avgTicket = totalRentals > 0 ? +(totalAllValue / totalRentals).toFixed(2) : 0
