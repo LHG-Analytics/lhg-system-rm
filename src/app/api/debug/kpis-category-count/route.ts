@@ -11,7 +11,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
-import { ddmmyyyyToIso, addDays } from '@/lib/automo/company-kpis'
+import { ddmmyyyyToIso, fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
+import { cachedCompanyKPIs } from '@/lib/automo/cached-kpis'
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
   `
 
   try {
-    const [withCat, withoutCat, perCategory] = await Promise.all([
+    const [withCat, withoutCat, perCategory, dashboardFn, dashboardCached] = await Promise.all([
       // COUNT com filtro de categoria (o que RM usa)
       pool.query<{ cnt: string; total_value: string }>(`
         SELECT COUNT(*) AS cnt, COALESCE(SUM(CAST(la.valortotal AS DECIMAL(15,4))), 0) AS total_value
@@ -84,9 +85,27 @@ export async function GET(req: NextRequest) {
         GROUP BY ca.id, ca.descricao
         ORDER BY cnt DESC
       `, [isoStart, isoEnd]),
+
+      // CAMINHO EXATO DO DASHBOARD — função direta (sem cache), mesmos params da página
+      fetchCompanyKPIsFromAutomo(unit, start, end, 6, 5, 'FINALIZADA', 'checkin')
+        .then((r) => ({
+          locacoes:    r.TotalResult.totalAllRentalsApartments,
+          faturamento: r.TotalResult.totalAllValue,
+        }))
+        .catch((e) => ({ error: String(e) })),
+
+      // CAMINHO EXATO DO DASHBOARD — via cachedCompanyKPIs (o que a página realmente chama)
+      cachedCompanyKPIs(unit, start, end, 6, 5, 'FINALIZADA', 'checkin')
+        .then((r) => ({
+          locacoes:    r.TotalResult.totalAllRentalsApartments,
+          faturamento: r.TotalResult.totalAllValue,
+        }))
+        .catch((e) => ({ error: String(e) })),
     ])
 
     return NextResponse.json({
+      // Marcador de versão deployada — confirma qual commit está no ar
+      deployedCommit: process.env.VERCEL_GIT_COMMIT_SHA ?? 'local/desconhecido',
       unit,
       period: { start, end, isoStart, isoEnd },
       catIds,
@@ -98,6 +117,10 @@ export async function GET(req: NextRequest) {
         locacoes: Number(withoutCat.rows[0].cnt),
         faturamento: Number(withoutCat.rows[0].total_value),
       },
+      // O que a FUNÇÃO do dashboard retorna (deve bater com withCategoryFilter + vendas_diretas)
+      dashboardFunction: dashboardFn,
+      // O que cachedCompanyKPIs retorna (idêntico à função, pois removemos unstable_cache)
+      dashboardCached,
       perCategory: perCategory.rows.map(r => ({
         id:         Number(r.cat_id),
         nome:       r.cat_name,
