@@ -641,7 +641,7 @@ export async function POST(req: NextRequest) {
   // Bloco de estrutura da unidade — disponibilidade vem do Automo (descontando bloqueios)
   const capacityRows = capacityResult.status === 'fulfilled' ? (capacityResult.value.data ?? []) : []
   const channelCostRows = channelCostsResult.status === 'fulfilled' ? (channelCostsResult.value.data ?? []) : []
-  const [availabilityRows, realtimeOccupancy, reservationPace, weatherContext, categoryPeriodKPIs, cancellationRates, demandPattern, weeklyPickup, dayTimeDemand] = await Promise.all([
+  const [availabilityRows, realtimeOccupancy, reservationPace, weatherContext, categoryPeriodKPIs, cancellationRates, demandPattern, weeklyPickup, dayTimeDemand, elasticityRowsStatic, recentGaps, approvedHistoryStatic] = await Promise.all([
     getSuiteAvailabilityByCategory(unit.slug).catch(() => []),
     getRealtimeOccupancyByCategory(unit.slug).catch(() => []),
     getReservationPace(unit.slug, unitTimezone).catch(() => null),
@@ -655,6 +655,17 @@ export async function POST(req: NextRequest) {
     queryDemandPattern(unit.slug, 90).catch(() => null),
     getWeeklyPickup(unit.slug).catch(() => null),
     getDayTimeDemand(unit.slug, 8).catch(() => []),
+    // Paridade com geração de propostas (LHG: chat não pode ser cego a estes sinais):
+    getElasticityForUnit(unit.id).catch(() => []),                       // elasticidade-preço observada
+    getRecentGaps(unit.id).catch(() => []),                              // gap de posicionamento vs concorrentes
+    admin                                                                // memória estratégica (propostas aprovadas)
+      .from('price_proposals')
+      .select('id, rows, context, reviewed_at, kpi_baseline')
+      .eq('unit_id', unit.id)
+      .eq('status', 'approved')
+      .order('reviewed_at', { ascending: false })
+      .limit(3)
+      .then((r) => r.data ?? [], () => []),
   ])
 
   // Guardrails sempre no prompt estático — safety-critical para o agente
@@ -683,6 +694,15 @@ export async function POST(req: NextRequest) {
 
   const paceBlock = buildPaceBlock(reservationPace)
 
+  // Paridade de inteligência com a geração de propostas — o chat não pode raciocinar
+  // cego a estes sinais. Elasticidade e gap de concorrentes são objetivos (sempre).
+  // Memória estratégica é decisão coletiva da org → omitida em contextMode 'personal'.
+  const elasticityBlock     = buildElasticityBlock(elasticityRowsStatic)
+  const competitorGapBlock  = buildCompetitorGapBlock(recentGaps)
+  const strategicMemoryBlock = contextMode === 'org'
+    ? buildStrategicMemoryBlock(approvedHistoryStatic, kpiPeriods[0]?.company ?? null, kpiPeriods[1]?.company ?? null, fmtMoney)
+    : ''
+
   // Contexto estático: KPIs, estrutura, config, metas, clima — dados operacionais essenciais.
   // Histórico, concorrentes, sazonalidade e eventos são carregados via ferramentas lazy.
   const systemPrompt =
@@ -705,7 +725,10 @@ export async function POST(req: NextRequest) {
     (weeklyPickup ? `\n\n${buildPickupBlock(weeklyPickup)}` : '') +
     (dayTimeDemand?.length ? `\n\n${buildDayTimeDemandBlock(dayTimeDemand)}` : '') +
     (ownAmenitiesBlock ? `\n\n${ownAmenitiesBlock}` : '') +
-    (guardrailsTextBlock ? `\n\n${guardrailsTextBlock}` : '')
+    (guardrailsTextBlock ? `\n\n${guardrailsTextBlock}` : '') +
+    (elasticityBlock ? `\n\n${elasticityBlock}` : '') +
+    (competitorGapBlock ? `\n\n${competitorGapBlock}` : '') +
+    (strategicMemoryBlock ? `\n\n${strategicMemoryBlock}` : '')
 
   const agentTools = {
     buscar_kpis_periodo: tool({
