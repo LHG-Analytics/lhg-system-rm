@@ -652,7 +652,7 @@ function AgenteChatInner({
   return (
     <>
       <div ref={scrollAreaRef} onScroll={handleScroll} className="flex flex-col flex-1 overflow-y-auto p-4 gap-4 min-h-0">
-        {messages.length === 0 && (
+        {messages.length === 0 && !localPending && (
           <div className="flex flex-1 flex-col items-center justify-center gap-5 text-center px-4">
             <div className="rounded-full bg-primary/10 p-4 shadow-sm">
               <Bot className="size-9 text-primary" />
@@ -842,13 +842,18 @@ function AgenteChatInner({
           />
         )}
 
-        {(localPending || isStreaming) && (() => {
+        {(() => {
+          // Regra: o "pensando" fica visível desde o envio ATÉ a resposta do agente começar
+          // a renderizar conteúdo (texto ou tool). Não depende de timing de localPending/isStreaming
+          // (que têm janelas onde ambos ficam false: criação da conversa, gaps de status do AI SDK).
+          if (awaitingOnly || error) return false
           const last = messages[messages.length - 1]
-          if (!last || last.role === 'user') return true
-          const hasContent = last.parts.some(
+          const lastHasContent = last?.role === 'assistant' && last.parts.some(
             (p) => (p.type === 'text' && (p as { type: 'text'; text: string }).text.length > 0) || isToolUIPart(p)
           )
-          return !hasContent
+          if (lastHasContent) return false
+          // Aguardando enquanto: enviou agora (última msg é do usuário) OU pendente OU streaming sem conteúdo
+          return last?.role === 'user' || localPending || isStreaming
         })() && <ThinkingBubble />}
 
         {error && (
