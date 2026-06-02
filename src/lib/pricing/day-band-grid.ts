@@ -1,0 +1,185 @@
+/**
+ * Gera uma proposta em GRADE COMPLETA dia da semana × faixa horária a partir de uma
+ * tabela vigente legada (semana/fds, sem distinção de horário).
+ *
+ * A tabela vigente é apenas a fonte do PREÇO ATUAL. A proposta FLUTUA:
+ *   preço = atual × (1 + fator_dia) × (1 + fator_faixa)   [capado, nunca reduz se neverReduce]
+ *   - fator_dia  = clamp(giro_do_dia / giro_médio_categoria − 1, 0, dayCap)   (método do gestor por dia)
+ *   - fator_faixa = prêmio na faixa de MAIOR demanda, só quando a demanda confirma (share > 55%)
+ *
+ * Resultado: grade sem buracos (todos canais × dias × faixas) com preços que variam célula a célula.
+ * Aceita um overlay opcional (linhas propostas pelo agente) que sobrescreve as células correspondentes.
+ */
+import type { CompanyKPIResponse } from '@/lib/kpis/types'
+import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
+import type { BandDemand } from '@/lib/automo/band-demand'
+
+// dias "curtos" (formato do modelo) ↔ dias completos (DataTableGiroByWeek)
+const DOW_FULL: Record<string, string> = {
+  domingo: 'domingo', segunda: 'segunda-feira', terca: 'terça-feira',
+  quarta: 'quarta-feira', quinta: 'quinta-feira', sexta: 'sexta-feira', sabado: 'sábado',
+}
+const SEMANA = ['domingo', 'segunda', 'terca', 'quarta', 'quinta']
+const FDS    = ['sexta', 'sabado']
+const ALL    = [...SEMANA, 'sexta', 'sabado']
+const BANDS  = ['d', 'n'] as const
+type Band = typeof BANDS[number]
+
+export interface GridProposalRow {
+  canal: string
+  categoria: string
+  periodo: string
+  dias: string[]
+  dia_tipo: string
+  hora_inicio: string
+  hora_fim: string
+  preco_atual: number
+  preco_proposto: number
+  variacao_pct: number
+  justificativa: string
+}
+
+export interface DayBandParams {
+  dayCap: number        // teto do fator por dia (fração, ex 0.05)
+  bandCap: number       // teto do prêmio por faixa (fração)
+  maxVar: number        // teto absoluto de variação (%) — guardrail do agente
+  neverReduce: boolean
+  decimals?: number
+}
+
+export interface OverlayRow {
+  canal: string
+  categoria: string
+  periodo: string
+  dias?: string[]
+  dia_tipo?: string
+  hora_inicio?: string
+  preco_proposto: number
+  justificativa?: string
+}
+
+function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)) }
+function norm(s: string) { return (s ?? '').trim().toUpperCase() }
+function nlow(s: string) { return (s ?? '').trim().toLowerCase() }
+
+function daysOfTipo(dia_tipo: string): string[] {
+  if (dia_tipo === 'semana') return SEMANA
+  if (dia_tipo === 'fds_feriado') return FDS
+  return ALL
+}
+
+export function isLegacyTable(activeRows: ParsedPriceRow[]): boolean {
+  return activeRows.length > 0 &&
+    activeRows.every((r) => !!r.dia_tipo && !((r as { dias?: string[] }).dias?.length))
+}
+
+export function generateDayBandGrid(
+  activeRows: ParsedPriceRow[],
+  company: CompanyKPIResponse | null,
+  bandDemand: Map<string, BandDemand>,
+  params: DayBandParams,
+  overlay: OverlayRow[] = [],
+): GridProposalRow[] {
+  const decimals = params.decimals ?? 0
+  const f = Math.pow(10, decimals)
+  const round = (v: number) => Math.round(v * f) / f
+
+  // giro médio por categoria
+  const giroAvg = new Map<string, number>()
+  for (const item of company?.DataTableSuiteCategory ?? []) {
+    for (const [cat, kpi] of Object.entries(item)) giroAvg.set(norm(cat), kpi.giro)
+  }
+  // giro por categoria × dia (nome completo)
+  const giroDay = new Map<string, Record<string, number>>()
+  for (const item of company?.DataTableGiroByWeek ?? []) {
+    for (const [cat, days] of Object.entries(item)) {
+      const m: Record<string, number> = {}
+      for (const [dia, v] of Object.entries(days)) m[dia] = v.giro
+      giroDay.set(norm(cat), m)
+    }
+  }
+
+  // Overlay: célula (canal|categoria|periodo|dia|band) → {preco, justificativa}
+  const overlayCell = new Map<string, { preco: number; just?: string }>()
+  for (const o of overlay) {
+    const dias = (o.dias?.length ? o.dias : daysOfTipo(o.dia_tipo ?? '')).map(nlow)
+    const bands: Band[] = o.hora_inicio === '06:00' ? ['d'] : o.hora_inicio === '18:00' ? ['n'] : ['d', 'n']
+    for (const d of dias) for (const b of bands) {
+      overlayCell.set(`${nlow(o.canal)}|${norm(o.categoria)}|${nlow(o.periodo)}|${d}|${b}`, { preco: o.preco_proposto, just: o.justificativa })
+    }
+  }
+
+  // Preço atual por (canal|categoria|periodo|dia) a partir da tabela legada
+  const atualByDay = new Map<string, number>()
+  for (const r of activeRows) {
+    for (const d of daysOfTipo(r.dia_tipo)) {
+      atualByDay.set(`${nlow(r.canal)}|${norm(r.categoria)}|${nlow(r.periodo)}|${d}`, Number(r.preco) || 0)
+    }
+  }
+
+  // Esqueleto: combinações únicas de canal|categoria|periodo
+  const combos = new Map<string, { canal: string; categoria: string; periodo: string }>()
+  for (const r of activeRows) combos.set(`${nlow(r.canal)}|${norm(r.categoria)}|${nlow(r.periodo)}`, { canal: r.canal, categoria: r.categoria, periodo: r.periodo })
+
+  const cellRows: GridProposalRow[] = []
+  for (const { canal, categoria, periodo } of combos.values()) {
+    const catKey = norm(categoria)
+    const avg = giroAvg.get(catKey) ?? 0
+    const days = giroDay.get(catKey) ?? {}
+    const bd = bandDemand.get(catKey)
+    const total = bd ? bd.diurno + bd.noturno : 0
+
+    for (const dia of ALL) {
+      const atual = atualByDay.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}`) ?? 0
+      if (atual <= 0) continue
+      const giroD = days[DOW_FULL[dia]] ?? 0
+      const dayFactor = avg > 0 ? clamp(giroD / avg - 1, 0, params.dayCap) : 0
+
+      for (const band of BANDS) {
+        // fator de faixa: prêmio só na faixa de maior demanda quando share > 55%
+        let bandFactor = 0
+        if (total > 0) {
+          const share = (band === 'd' ? bd!.diurno : bd!.noturno) / total
+          if (share > 0.55) bandFactor = clamp((share - 0.5) / 0.5 * params.bandCap, 0, params.bandCap)
+        }
+
+        const overlayHit = overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|${band}`)
+        let proposto: number
+        let just: string
+        if (overlayHit) {
+          proposto = overlayHit.preco
+          just = overlayHit.just || 'Ajuste do agente'
+        } else {
+          proposto = atual * (1 + dayFactor) * (1 + bandFactor)
+          const parts: string[] = []
+          if (dayFactor > 0) parts.push(`giro ${giroD.toFixed(2)} > média ${avg.toFixed(2)} (+${(dayFactor * 100).toFixed(1)}%)`)
+          if (bandFactor > 0) parts.push(`faixa ${band === 'd' ? 'diurna' : 'noturna'} com maior demanda (+${(bandFactor * 100).toFixed(1)}%)`)
+          just = parts.length ? parts.join(' · ') : 'Sem sinal de aumento — mantido'
+        }
+
+        // teto absoluto + never_reduce
+        let variacao = atual > 0 ? (proposto - atual) / atual * 100 : 0
+        variacao = clamp(variacao, params.neverReduce ? 0 : -params.maxVar, params.maxVar)
+        proposto = round(atual * (1 + variacao / 100))
+        variacao = atual > 0 ? +((proposto - atual) / atual * 100).toFixed(1) : 0
+
+        cellRows.push({
+          canal, categoria, periodo, dias: [dia], dia_tipo: '',
+          hora_inicio: band === 'd' ? '06:00' : '18:00',
+          hora_fim: band === 'd' ? '17:59' : '05:59',
+          preco_atual: atual, preco_proposto: proposto, variacao_pct: variacao, justificativa: just,
+        })
+      }
+    }
+  }
+
+  // Agrupa dias com mesmo preço dentro de (canal|categoria|periodo|band) → dias[]
+  const grouped = new Map<string, GridProposalRow>()
+  for (const r of cellRows) {
+    const key = `${nlow(r.canal)}|${norm(r.categoria)}|${nlow(r.periodo)}|${r.hora_inicio}|${r.preco_proposto}`
+    const ex = grouped.get(key)
+    if (ex) ex.dias.push(r.dias[0])
+    else grouped.set(key, { ...r, dias: [...r.dias] })
+  }
+  return Array.from(grouped.values())
+}

@@ -31,7 +31,8 @@ import { queryCategoryPeriodKPIs, buildCategoryPeriodBlock } from '@/lib/automo/
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 import type { PriceImportForPrompt, KPIPeriod, VigenciaInfo } from '@/lib/agente/system-prompt'
-import { reconcileProposalToActiveTable } from '@/lib/agente/reconcile-proposal'
+import { generateDayBandGrid, isLegacyTable } from '@/lib/pricing/day-band-grid'
+import { queryBandDemandByCategory } from '@/lib/automo/band-demand'
 import { makeCurrencyFormatter } from '@/lib/utils/currency'
 
 function getAdminClient() {
@@ -593,6 +594,7 @@ export async function POST(req: NextRequest) {
   const unitGoals      = (agentConfigData as { unit_goals?: Record<string, number | null> | null } | null)?.unit_goals ?? null
   const budgetYearly   = (agentConfigData as { budget_yearly?: BudgetYearly | null } | null)?.budget_yearly ?? null
   const neverReduce    = (agentConfigData as { never_reduce?: boolean } | null)?.never_reduce ?? false
+  const giroUpliftCap  = Number((agentConfigData as { giro_uplift_cap?: number } | null)?.giro_uplift_cap ?? 0.05)
 
   const FOCUS_LABELS: Record<string, string> = {
     revpar: 'RevPAR', ocupacao: 'Taxa de Ocupação', ticket: 'Ticket Médio',
@@ -829,22 +831,34 @@ export async function POST(req: NextRequest) {
         ),
       }),
       execute: async ({ context, rows }) => {
-        // Cobertura total: se a tabela ativa é legada (dia_tipo, sem faixa), reconcilia a
-        // proposta sobre o esqueleto completo (todos os canais + semana/fds) preservando o
-        // formato legado → a grade preenche ambas as faixas e mostra todos os canais.
-        const reconciled = reconcileProposalToActiveTable(rows, activePriceRows)
-        const sourceRows = reconciled ?? rows.map((r) => ({ ...r, dia_tipo: '' }))
-
-        // Clamp max_variation_pct + never_reduce (piso 0% = nunca abaixo do atual)
-        const clampedRows = sourceRows.map((row) => {
-          const lowerBound = neverReduce ? 0 : -maxVariationPct
-          const clamped = Math.max(lowerBound, Math.min(maxVariationPct, row.variacao_pct))
-          const base = { ...row, variacao_pct: clamped }
-          if (Math.abs(clamped - row.variacao_pct) > 0.05) {
-            return { ...base, preco_proposto: +(row.preco_atual * (1 + clamped / 100)).toFixed(2) }
-          }
-          return base
-        })
+        let clampedRows
+        if (isLegacyTable(activePriceRows)) {
+          // Tabela vigente é legada (semana/fds, sem faixa) → a proposta NÃO deve espelhá-la.
+          // Gera GRADE COMPLETA dia × faixa que flutua por giro/dia e demanda/faixa (baseline
+          // determinístico), com as alterações do agente sobrepostas. Cobertura total, sem buracos.
+          const period = kpiPeriods[0]?.period
+          const bandDemand = period
+            ? await queryBandDemandByCategory(unit.slug, period.startDate, period.endDate).catch(() => new Map())
+            : new Map()
+          clampedRows = generateDayBandGrid(
+            activePriceRows,
+            kpiPeriods[0]?.company ?? null,
+            bandDemand,
+            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0 },
+            rows,  // overlay: ajustes propostos pelo agente sobrescrevem as células correspondentes
+          )
+        } else {
+          // Tabela já em formato dia × faixa: usa as linhas do agente com clamp + never_reduce.
+          clampedRows = rows.map((row) => {
+            const lowerBound = neverReduce ? 0 : -maxVariationPct
+            const clamped = Math.max(lowerBound, Math.min(maxVariationPct, row.variacao_pct))
+            const base = { ...row, dia_tipo: '', variacao_pct: clamped }
+            if (Math.abs(clamped - row.variacao_pct) > 0.05) {
+              return { ...base, preco_proposto: +(row.preco_atual * (1 + clamped / 100)).toFixed(2) }
+            }
+            return base
+          })
+        }
         const { data, error } = await supabase
           .from('price_proposals')
           .insert({
