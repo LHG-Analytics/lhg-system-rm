@@ -858,7 +858,7 @@ Auditoria profunda do agente em 2026-04-28; Fase 1 (quick wins) entregue em 2026
   - Mantido corte operacional 06:00 nas queries (`EXTRACT(HOUR FROM ...) < 6 → DOW do dia anterior`)
   - **Armadilha:** o helper inclui `id_categoria` em `suite_dias` para permitir JOIN com `events.category_id` no heatmap
 
-- **LHG-243:** feat(agente): método de precificação `giro_uplift` (método do gestor da LIV) — híbrido ✅ 2026-06-02
+- **LHG-242:** feat(agente): método de precificação `giro_uplift` (método do gestor da LIV) — híbrido ✅ 2026-06-02
   - **Contexto:** planilha de RM do gestor da LIV (`docs/RM_Liv.xlsx`) analisada fórmula a fórmula. Método: `preço = atual × (1 + clamp(giro_do_dia/giro_médio_categoria − 1, 0, teto))`; +prêmio na faixa de pico 15–21h; **nunca reduz**; impacto validado com elasticidade preço→giro (−0,5). Mesmo corte 06:00 e giro por categoria×DOW do nosso sistema.
   - Migration `20260602000001`: `pricing_method` ('agent_judgment'|'giro_uplift'), `giro_uplift_cap` (0.05), `peak_premium` (0.05), `peak_start`/`peak_end` (15/21), `never_reduce` (bool), `default_elasticity` (−0.5) em `rm_agent_config`. LIV default `giro_uplift`+`never_reduce`.
   - `src/lib/pricing/giro-uplift.ts`: `generateGiroUpliftRows` (replica a planilha; consome `DataTableGiroByWeek` + `DataTableSuiteCategory`; cobertura total; nunca reduz pois clamp≥0) + `buildGiroUpliftBaselineBlock` (bloco de PISO para o prompt).
