@@ -197,7 +197,8 @@ function spExpandDays(row: ProposedPriceRow): GridDay[] {
 
 function spGetBands(row: ProposedPriceRow): Array<'d' | 'n'> {
   if (!row.dias?.length) return ['d', 'n']
-  return row.hora_inicio === '06:00' ? ['d'] : ['n']
+  // hora_inicio vazio/ausente = produto de janela fixa (site programada, day use, etc.) → sem banda: preenche ambas
+  return row.hora_inicio === '06:00' ? ['d'] : row.hora_inicio === '18:00' ? ['n'] : ['d', 'n']
 }
 
 function buildSpreadsheetRows(rows: ProposedPriceRow[]): SpRow[] {
@@ -325,6 +326,14 @@ function SpreadsheetView({ rows, formatMoney }: {
   const canRows = useMemo(() => spRows.filter(r => r.canal === canal), [spRows, canal])
   const periods = useMemo(() => sortPeriods([...new Set(canRows.map(r => r.periodo))]), [canRows])
 
+  // Faixa horária (06–18 / 18–06) só aparece se o canal tem linhas com banda definida.
+  // Site Programada e janelas fixas → um preço por dia (sem sub-colunas de faixa).
+  const useBands = useMemo(
+    () => rows.some(r => r.canal === canal && (r.hora_inicio === '06:00' || r.hora_inicio === '18:00')),
+    [rows, canal],
+  )
+  const headerColSpan = 1 + GRID_DAYS.length * (useBands ? 2 : 1)
+
   return (
     <TooltipProvider delayDuration={150}>
       <div>
@@ -401,13 +410,14 @@ function SpreadsheetView({ rows, formatMoney }: {
                 {GRID_DAYS.map(day => (
                   <th
                     key={day}
-                    colSpan={2}
+                    colSpan={useBands ? 2 : 1}
                     className="border border-border/40 bg-muted px-2 py-1.5 text-center font-semibold text-[11px] min-w-[112px] sticky top-0 z-20 h-[30px]"
                   >
                     {GRID_DAY_LABELS[day]}
                   </th>
                 ))}
               </tr>
+              {useBands && (
               <tr>
                 <th className="border border-border/40 bg-muted sticky left-0 top-[30px] z-30" />
                 {GRID_DAYS.flatMap(day => [
@@ -425,6 +435,7 @@ function SpreadsheetView({ rows, formatMoney }: {
                   </th>,
                 ])}
               </tr>
+              )}
             </thead>
             <tbody>
               {periods.map(periodo => {
@@ -434,7 +445,7 @@ function SpreadsheetView({ rows, formatMoney }: {
                   <Fragment key={periodo}>
                     <tr>
                       <td
-                        colSpan={15}
+                        colSpan={headerColSpan}
                         className="border border-border/40 bg-muted/60 px-3 py-1 font-semibold text-[11px] uppercase tracking-wide text-muted-foreground"
                       >
                         {periodo}
@@ -447,20 +458,15 @@ function SpreadsheetView({ rows, formatMoney }: {
                           <td className="border border-border/40 px-3 py-1.5 font-medium text-[11px] sticky left-0 bg-background z-[5] group-hover:bg-primary/5 whitespace-nowrap">
                             {cat}
                           </td>
-                          {GRID_DAYS.flatMap(day => [
-                            <SpreadsheetCellTd
-                              key={`${day}_d`}
-                              cell={srow.cells[`${day}_d` as SpCellKey]}
-                              mode={viewMode}
-                              formatMoney={formatMoney}
-                            />,
-                            <SpreadsheetCellTd
-                              key={`${day}_n`}
-                              cell={srow.cells[`${day}_n` as SpCellKey]}
-                              mode={viewMode}
-                              formatMoney={formatMoney}
-                            />,
-                          ])}
+                          {useBands
+                            ? GRID_DAYS.flatMap(day => [
+                                <SpreadsheetCellTd key={`${day}_d`} cell={srow.cells[`${day}_d` as SpCellKey]} mode={viewMode} formatMoney={formatMoney} />,
+                                <SpreadsheetCellTd key={`${day}_n`} cell={srow.cells[`${day}_n` as SpCellKey]} mode={viewMode} formatMoney={formatMoney} />,
+                              ])
+                            : GRID_DAYS.map(day => (
+                                <SpreadsheetCellTd key={day} cell={srow.cells[`${day}_d` as SpCellKey] ?? srow.cells[`${day}_n` as SpCellKey]} mode={viewMode} formatMoney={formatMoney} />
+                              ))
+                          }
                         </tr>
                       )
                     })}

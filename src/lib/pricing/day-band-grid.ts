@@ -62,6 +62,18 @@ function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min
 function norm(s: string) { return (s ?? '').trim().toUpperCase() }
 function nlow(s: string) { return (s ?? '').trim().toLowerCase() }
 
+// Produtos de janela fixa (sem faixa diurna/noturna): day use, diária, pernoite.
+const FIXED_WINDOW_RE = /day\s*use|di[áa]ria|pernoite/i
+
+/**
+ * Faixa horária (06–18 / 18–06) só faz sentido para CHECK-IN imediato (balcão/site imediato)
+ * em produtos de curta estadia (3h/6h/12h). Site Programada e produtos de janela fixa
+ * (Day Use 13–19, Diária 15–12, Pernoite 20–12) têm horário próprio → um preço por dia, sem banda.
+ */
+function usesBands(canal: string, periodo: string): boolean {
+  return nlow(canal) === 'balcao_site' && !FIXED_WINDOW_RE.test(periodo)
+}
+
 function daysOfTipo(dia_tipo: string): string[] {
   if (dia_tipo === 'semana') return SEMANA
   if (dia_tipo === 'fds_feriado') return FDS
@@ -138,17 +150,23 @@ export function generateDayBandGrid(
       const giroD = days[DOW_FULL[dia]] ?? 0
       const dayFactor = span > 0 ? clamp((giroD - giroMin) / span * params.dayCap, 0, params.dayCap) : 0
 
-      for (const band of BANDS) {
+      // Bandas só para balcão imediato + curta estadia; senão um preço por dia ('all').
+      const bands: Array<Band | 'all'> = usesBands(canal, periodo) ? ['d', 'n'] : ['all']
+      for (const band of bands) {
         // fator de faixa: prêmio só na faixa de maior demanda quando share > 55%
         let bandFactor = 0
-        if (total > 0) {
+        if (band !== 'all' && total > 0) {
           const share = (band === 'd' ? bd!.diurno : bd!.noturno) / total
           if (share > 0.55) bandFactor = clamp((share - 0.5) / 0.5 * params.bandCap, 0, params.bandCap)
         }
 
         // Baseline determinístico (gradiente de giro × faixa) — é o PISO do dia.
         const baseline = atual * (1 + dayFactor) * (1 + bandFactor)
-        const overlayHit = overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|${band}`)
+        const overlayHit = band === 'all'
+          ? (overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|all`)
+             ?? overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|d`)
+             ?? overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|n`))
+          : overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|${band}`)
         let proposto: number
         let just: string
         if (overlayHit && overlayHit.preco > baseline) {
@@ -171,8 +189,8 @@ export function generateDayBandGrid(
 
         cellRows.push({
           canal, categoria, periodo, dias: [dia], dia_tipo: '',
-          hora_inicio: band === 'd' ? '06:00' : '18:00',
-          hora_fim: band === 'd' ? '17:59' : '05:59',
+          hora_inicio: band === 'd' ? '06:00' : band === 'n' ? '18:00' : '',
+          hora_fim: band === 'd' ? '17:59' : band === 'n' ? '05:59' : '',
           preco_atual: atual, preco_proposto: proposto, variacao_pct: variacao, justificativa: just,
         })
       }
