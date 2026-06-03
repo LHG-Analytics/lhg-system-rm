@@ -1178,6 +1178,12 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Caso de uso:** pesquisa de campo ou concorrentes sem site (ex: Tantra na LIV/Quito)
   - **Armadilha:** ao editar preços de um concorrente manual, basta recriar com o mesmo nome — o upsert por URL sintética substitui o snapshot existente
 
+- **LHG-244:** fix(concorrentes): excluir concorrente remove snapshots e price gaps órfãos ✅ 2026-06-03
+  - Root cause: excluir concorrente/URL só removia de `rm_agent_config.competitor_urls`; `competitor_snapshots` e `rm_competitor_price_gaps` ficavam órfãos e reapareciam no relatório semanal (janela 14 dias)
+  - Novo handler `DELETE` em `/api/agente/competitor-analysis?unitSlug=&competitorUrl=` (ou `competitorName=`): apaga snapshots + recomputa gaps via `computeAndPersistGaps` (truncate + reinsert dos snapshots restantes)
+  - `handleRemoveUrl` no frontend chama o endpoint após salvar a config e remove o snapshot do estado local
+  - **Armadilha:** gaps são keyed por `unit_id` (truncate+reinsert por unidade) — recomputar após qualquer exclusão de snapshot é obrigatório para não deixar gaps órfãos
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
