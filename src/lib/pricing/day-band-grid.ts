@@ -207,3 +207,39 @@ export function generateDayBandGrid(
   }
   return Array.from(grouped.values())
 }
+
+/**
+ * Resumo FIEL da proposta, calculado a partir das linhas realmente salvas (não do LLM).
+ * Garante que a descrição no chat e no card nunca contradiga a tabela.
+ */
+export function summarizeProposalRows(
+  rows: Array<{ categoria: string; variacao_pct: number }>,
+): string {
+  const n = rows.length
+  if (!n) return 'Nenhuma linha na proposta.'
+  const up   = rows.filter((r) => r.variacao_pct >= 0.1)
+  const down = rows.filter((r) => r.variacao_pct <= -0.1)
+  const kept = n - up.length - down.length
+  const avgUp = up.length ? up.reduce((s, r) => s + r.variacao_pct, 0) / up.length : 0
+  const maxUp = up.length ? Math.max(...up.map((r) => r.variacao_pct)) : 0
+
+  // Categorias com aumento vs mantidas integralmente
+  const byCat = new Map<string, { up: number; tot: number }>()
+  for (const r of rows) {
+    const c = byCat.get(r.categoria) ?? { up: 0, tot: 0 }
+    c.tot++
+    if (r.variacao_pct >= 0.1) c.up++
+    byCat.set(r.categoria, c)
+  }
+  const catsUp   = [...byCat].filter(([, v]) => v.up > 0).map(([c]) => c)
+  const catsKept = [...byCat].filter(([, v]) => v.up === 0).map(([c]) => c)
+
+  const parts: string[] = [
+    `${n} linhas: ${up.length} com aumento${down.length ? `, ${down.length} com redução` : ''}, ${kept} mantidas.`,
+  ]
+  if (up.length) parts.push(`Aumento médio +${avgUp.toFixed(1)}% (máx +${maxUp.toFixed(1)}%).`)
+  if (catsUp.length)   parts.push(`Categorias ajustadas: ${catsUp.join(', ')}.`)
+  if (catsKept.length) parts.push(`Mantidas integralmente: ${catsKept.join(', ')}.`)
+  if (!down.length)    parts.push('Nenhum preço reduzido.')
+  return parts.join(' ')
+}

@@ -31,7 +31,7 @@ import { queryCategoryPeriodKPIs, buildCategoryPeriodBlock } from '@/lib/automo/
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 import type { PriceImportForPrompt, KPIPeriod, VigenciaInfo } from '@/lib/agente/system-prompt'
-import { generateDayBandGrid, isLegacyTable } from '@/lib/pricing/day-band-grid'
+import { generateDayBandGrid, isLegacyTable, summarizeProposalRows } from '@/lib/pricing/day-band-grid'
 import { queryBandDemandByCategory } from '@/lib/automo/band-demand'
 import { makeCurrencyFormatter } from '@/lib/utils/currency'
 
@@ -726,6 +726,12 @@ Não há canal \`guia_moteis\` na tabela de preços vigente nem política de des
 Ignore qualquer regra geral sobre descontos do Guia: ela NÃO se aplica a esta unidade. Analise somente os canais presentes na tabela vigente (${[...new Set(activePriceRows.map((r) => r.canal))].join(', ') || 'nenhum'}).`
     : ''
 
+  // Trava de mercado: sem snapshot de concorrentes, os aumentos não foram validados.
+  const noMarketGuard = (!recentGaps || recentGaps.length === 0)
+    ? `\n\n## ⚠️ Sem dados de concorrentes nesta unidade
+Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento proposto é baseado SÓ no giro interno — **não validado contra o mercado**. Declare isso explicitamente e seja conservador: não justifique aumentos por "vs mercado" e não vá ao teto de variação sem evidência de demanda inelástica clara.`
+    : ''
+
   const systemPrompt =
     buildSystemPrompt(
       unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext,
@@ -735,6 +741,7 @@ Ignore qualquer regra geral sobre descontos do Guia: ela NÃO se aplica a esta u
       fmtMoney,
     ) +
     noGuiaGuard +
+    noMarketGuard +
     `\n\n${agentConfigBlock}` +
     (contextMode === 'org' ? pricingRulesBlock : '') +
     (contextMode === 'org' ? sharedContextBlock : '') +
@@ -871,19 +878,23 @@ Ignore qualquer regra geral sobre descontos do Guia: ela NÃO se aplica a esta u
             return base
           })
         }
+        // Resumo FIEL calculado da grade salva (não do LLM) — evita o texto contradizer a tabela.
+        const factual = summarizeProposalRows(clampedRows)
+        const savedContext = `${factual}\n\n— Racional do agente: ${context}`
         const { data, error } = await supabase
           .from('price_proposals')
           .insert({
             unit_id:    unit.id,
             created_by: user.id,
-            context,
+            context:    savedContext,
             rows: clampedRows as unknown as Database['public']['Tables']['price_proposals']['Insert']['rows'],
             status:     'pending',
           })
           .select('id')
           .single()
         if (error) return { success: false, error: error.message }
-        return { success: true, proposalId: data.id }
+        // Retorna o resumo fiel para o agente ECOAR no chat (não inventar o que mudou)
+        return { success: true, proposalId: data.id, resumo_fiel: factual }
       },
     }),
 
