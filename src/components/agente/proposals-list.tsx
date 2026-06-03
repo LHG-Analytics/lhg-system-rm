@@ -392,33 +392,34 @@ function SpreadsheetView({ rows, formatMoney }: {
         {/* Spreadsheet grid — viewport próprio com scroll (X e Y) e cabeçalho fixo */}
         <div className="overflow-auto max-h-[70vh] p-4">
           <table className="border-collapse text-xs w-max">
-            <thead className="sticky top-0 z-20">
+            {/* Sticky nas CÉLULAS th (não no thead) — sticky em thead/tr não funciona com border-collapse no Chrome */}
+            <thead>
               <tr>
-                <th className="border border-border/40 bg-muted px-3 py-1.5 text-left font-semibold text-[11px] sticky left-0 top-0 z-30 min-w-[110px]">
+                <th className="border border-border/40 bg-muted px-3 py-1.5 text-left font-semibold text-[11px] sticky left-0 top-0 z-30 min-w-[110px] h-[30px]">
                   Categoria
                 </th>
                 {GRID_DAYS.map(day => (
                   <th
                     key={day}
                     colSpan={2}
-                    className="border border-border/40 bg-muted px-2 py-1.5 text-center font-semibold text-[11px] min-w-[112px]"
+                    className="border border-border/40 bg-muted px-2 py-1.5 text-center font-semibold text-[11px] min-w-[112px] sticky top-0 z-20 h-[30px]"
                   >
                     {GRID_DAY_LABELS[day]}
                   </th>
                 ))}
               </tr>
               <tr>
-                <th className="border border-border/40 bg-muted sticky left-0 z-30" />
+                <th className="border border-border/40 bg-muted sticky left-0 top-[30px] z-30" />
                 {GRID_DAYS.flatMap(day => [
                   <th
                     key={`${day}_d_h`}
-                    className="border border-border/40 bg-muted px-1.5 py-1 text-[10px] text-muted-foreground font-normal text-center whitespace-nowrap"
+                    className="border border-border/40 bg-muted px-1.5 py-1 text-[10px] text-muted-foreground font-normal text-center whitespace-nowrap sticky top-[30px] z-20"
                   >
                     06–18h
                   </th>,
                   <th
                     key={`${day}_n_h`}
-                    className="border border-border/40 bg-muted px-1.5 py-1 text-[10px] text-muted-foreground font-normal text-center whitespace-nowrap"
+                    className="border border-border/40 bg-muted px-1.5 py-1 text-[10px] text-muted-foreground font-normal text-center whitespace-nowrap sticky top-[30px] z-20"
                   >
                     18–06h
                   </th>,
