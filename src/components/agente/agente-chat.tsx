@@ -694,11 +694,16 @@ function AgenteChatInner({
 
         {messages.map((msg) => {
           if (msg.role === 'assistant') {
-            const hasVisible = msg.parts.some(
-              (p) => (p.type === 'text' && (p as { type: 'text'; text: string }).text.length > 0) ||
-                     (isToolUIPart(p) && getToolName(p) !== 'sugerir_respostas')
+            // Durante a fase de trabalho (só tool calls, sem texto ainda), NÃO renderiza a
+            // mensagem — o ThinkingBubble cobre com as frases. Evita avatar duplicado.
+            // Exceção: resultado visível do heatmap (a tool é o próprio entregável).
+            const hasText = msg.parts.some(
+              (p) => p.type === 'text' && (p as { type: 'text'; text: string }).text.length > 0
             )
-            if (!hasVisible) return null
+            const hasHeatmap = msg.parts.some(
+              (p) => isToolUIPart(p) && getToolName(p) === 'gerar_heatmap' && (p as { state: string }).state === 'output-available'
+            )
+            if (!hasText && !hasHeatmap) return null
           }
           return (
           <div
