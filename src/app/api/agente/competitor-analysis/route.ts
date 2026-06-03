@@ -731,3 +731,46 @@ export async function POST(req: NextRequest) {
   })
   return Response.json(snapshot)
 }
+
+// ─── DELETE: remove snapshots de um concorrente + recomputa price gaps ───────
+// Chamado ao excluir um concorrente (ou uma de suas URLs) no frontend.
+// Sem isso, os dados ficavam órfãos em competitor_snapshots / rm_competitor_price_gaps
+// e voltavam a aparecer no relatório semanal (janela de 14 dias).
+export async function DELETE(req: NextRequest) {
+  const auth = await requireManagerOrAbove()
+  if (auth.error) return new Response(auth.error, { status: auth.status })
+
+  const { searchParams } = req.nextUrl
+  const unitSlug       = searchParams.get('unitSlug')
+  const competitorUrl  = searchParams.get('competitorUrl')
+  const competitorName = searchParams.get('competitorName')
+
+  if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
+  if (!competitorUrl && !competitorName) {
+    return new Response('competitorUrl ou competitorName obrigatório', { status: 400 })
+  }
+
+  const admin = getAdminClient()
+  const { data: unit } = await admin.from('units').select('id').eq('slug', unitSlug).single()
+  if (!unit) return new Response('Unidade não encontrada', { status: 404 })
+
+  // Apaga os snapshots — por URL (uma URL específica) ou por nome (concorrente inteiro)
+  let delQuery = admin.from('competitor_snapshots').delete().eq('unit_id', unit.id)
+  delQuery = competitorUrl
+    ? delQuery.eq('competitor_url', competitorUrl)
+    : delQuery.eq('competitor_name', competitorName!)
+
+  const { error: delErr } = await delQuery
+  if (delErr) return Response.json({ error: delErr.message }, { status: 500 })
+
+  // Recomputa os price gaps a partir dos snapshots restantes (truncate + reinsert).
+  // Falha silenciosa não bloqueia a exclusão.
+  try {
+    const { computeAndPersistGaps } = await import('@/lib/competitors/detect-changes')
+    await computeAndPersistGaps(unit.id)
+  } catch (e) {
+    console.error('[competitor-analysis] Erro ao recomputar gaps após exclusão:', e)
+  }
+
+  return Response.json({ ok: true })
+}

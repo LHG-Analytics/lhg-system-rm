@@ -357,8 +357,18 @@ export function CompetitorAnalysisManager({ unitSlug, unitName, units }: Competi
           : c
       )
       .filter((c) => c.urls.length > 0)
-    await saveCompetitors(updated)
-  }, [config, competitorUrls, saveCompetitors])
+    const ok = await saveCompetitors(updated)
+    if (!ok) return
+
+    // Apaga o snapshot dessa URL + recomputa os price gaps — evita dados órfãos
+    // que reapareceriam no relatório semanal (janela de 14 dias).
+    try {
+      const params = new URLSearchParams({ unitSlug, competitorUrl: url })
+      await fetch(`/api/agente/competitor-analysis?${params}`, { method: 'DELETE' })
+    } catch { /* exclusão de dados é best-effort */ }
+
+    setSnapshots((prev) => prev.filter((s) => s.competitor_url !== url))
+  }, [config, competitorUrls, saveCompetitors, unitSlug])
 
   // ── Helpers para o formulário manual ────────────────────────────────────
   const addManualSuite = () => setManualSuites((prev) => [...prev, makeEmptySuite()])
