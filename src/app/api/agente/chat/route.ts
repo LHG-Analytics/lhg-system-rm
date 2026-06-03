@@ -715,6 +715,17 @@ export async function POST(req: NextRequest) {
 
   // Contexto estático: KPIs, estrutura, config, metas, clima — dados operacionais essenciais.
   // Histórico, concorrentes, sazonalidade e eventos são carregados via ferramentas lazy.
+  // Trava anti-alucinação do Guia de Motéis: se a unidade não opera esse canal
+  // nem tem desconto cadastrado, o agente é PROIBIDO de mencionar Guia/descontos.
+  const hasGuiaChannel  = activePriceRows.some((r) => r.canal === 'guia_moteis')
+  const hasDiscountData = priceImports.some((i) => (i.discount_data?.length ?? 0) > 0)
+  const noGuiaGuard = (!hasGuiaChannel && !hasDiscountData)
+    ? `\n\n## ⚠️ Esta unidade NÃO opera com o canal Guia de Motéis
+Não há canal \`guia_moteis\` na tabela de preços vigente nem política de descontos cadastrada para esta unidade.
+**NUNCA** mencione "Guia de Motéis", descontos do Guia, share do Guia ou ajustes de desconto — nada disso existe aqui.
+Ignore qualquer regra geral sobre descontos do Guia: ela NÃO se aplica a esta unidade. Analise somente os canais presentes na tabela vigente (${[...new Set(activePriceRows.map((r) => r.canal))].join(', ') || 'nenhum'}).`
+    : ''
+
   const systemPrompt =
     buildSystemPrompt(
       unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext,
@@ -723,6 +734,7 @@ export async function POST(req: NextRequest) {
       dashboardSyncLabel,
       fmtMoney,
     ) +
+    noGuiaGuard +
     `\n\n${agentConfigBlock}` +
     (contextMode === 'org' ? pricingRulesBlock : '') +
     (contextMode === 'org' ? sharedContextBlock : '') +

@@ -85,10 +85,6 @@ export function generateDayBandGrid(
   const round = (v: number) => Math.round(v * f) / f
 
   // giro médio por categoria
-  const giroAvg = new Map<string, number>()
-  for (const item of company?.DataTableSuiteCategory ?? []) {
-    for (const [cat, kpi] of Object.entries(item)) giroAvg.set(norm(cat), kpi.giro)
-  }
   // giro por categoria × dia (nome completo)
   const giroDay = new Map<string, Record<string, number>>()
   for (const item of company?.DataTableGiroByWeek ?? []) {
@@ -124,16 +120,23 @@ export function generateDayBandGrid(
   const cellRows: GridProposalRow[] = []
   for (const { canal, categoria, periodo } of combos.values()) {
     const catKey = norm(categoria)
-    const avg = giroAvg.get(catKey) ?? 0
     const days = giroDay.get(catKey) ?? {}
     const bd = bandDemand.get(catKey)
     const total = bd ? bd.diurno + bd.noturno : 0
+
+    // Gradiente min–máx por categoria: o dia mais fraco da semana → 0, o mais forte → teto,
+    // os do meio proporcionalmente. Evita o achatamento de "giro/média − 1" (que zera todo dia
+    // abaixo da média inflada por sex/sáb). Assim qua/qui, se giram mais que seg/ter, sobem um pouco.
+    const giroVals = ALL.map((d) => days[DOW_FULL[d]] ?? 0)
+    const giroMin = Math.min(...giroVals)
+    const giroMax = Math.max(...giroVals)
+    const span = giroMax - giroMin
 
     for (const dia of ALL) {
       const atual = atualByDay.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}`) ?? 0
       if (atual <= 0) continue
       const giroD = days[DOW_FULL[dia]] ?? 0
-      const dayFactor = avg > 0 ? clamp(giroD / avg - 1, 0, params.dayCap) : 0
+      const dayFactor = span > 0 ? clamp((giroD - giroMin) / span * params.dayCap, 0, params.dayCap) : 0
 
       for (const band of BANDS) {
         // fator de faixa: prêmio só na faixa de maior demanda quando share > 55%
@@ -143,18 +146,21 @@ export function generateDayBandGrid(
           if (share > 0.55) bandFactor = clamp((share - 0.5) / 0.5 * params.bandCap, 0, params.bandCap)
         }
 
+        // Baseline determinístico (gradiente de giro × faixa) — é o PISO do dia.
+        const baseline = atual * (1 + dayFactor) * (1 + bandFactor)
         const overlayHit = overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|${band}`)
         let proposto: number
         let just: string
-        if (overlayHit) {
+        if (overlayHit && overlayHit.preco > baseline) {
+          // Agente só pode SUBIR acima do piso (concorrência/eventos) — nunca achatar o gradiente.
           proposto = overlayHit.preco
-          just = overlayHit.just || 'Ajuste do agente'
+          just = overlayHit.just || 'Ajuste do agente acima do piso de giro'
         } else {
-          proposto = atual * (1 + dayFactor) * (1 + bandFactor)
+          proposto = baseline
           const parts: string[] = []
-          if (dayFactor > 0) parts.push(`giro ${giroD.toFixed(2)} > média ${avg.toFixed(2)} (+${(dayFactor * 100).toFixed(1)}%)`)
+          if (dayFactor > 0) parts.push(`giro do dia ${giroD.toFixed(2)} (gradiente da semana ${giroMin.toFixed(2)}–${giroMax.toFixed(2)}) → +${(dayFactor * 100).toFixed(1)}%`)
           if (bandFactor > 0) parts.push(`faixa ${band === 'd' ? 'diurna' : 'noturna'} com maior demanda (+${(bandFactor * 100).toFixed(1)}%)`)
-          just = parts.length ? parts.join(' · ') : 'Sem sinal de aumento — mantido'
+          just = parts.length ? parts.join(' · ') : 'Dia mais fraco da semana — mantido'
         }
 
         // teto absoluto + never_reduce
