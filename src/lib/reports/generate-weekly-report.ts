@@ -824,10 +824,16 @@ ${historicalInsights.map(h => `- ${h.fromDate}→${h.toDate}: ${h.changesCount} 
       historicalCtx || null,
     ].filter(Boolean).join('\n\n')
 
+    // Trava anti-Guia: se a unidade não opera o canal Guia de Motéis, não sugerir descontos do Guia.
+    const hasGuia = channelKPIs.some(c => /guia/i.test(c.canal ?? '') || /guia/i.test(c.label ?? ''))
+    const noGuiaNote = hasGuia
+      ? ''
+      : '\nEsta unidade NÃO opera o canal Guia de Motéis: NUNCA mencione Guia, descontos do Guia ou share do Guia, e NUNCA use actionType "discount_proposal".'
+
     // System prompt minimalista: identidade de analista RM + config da unidade.
     // NÃO inclui tools/proposals do chat agent — esses conflitam com JSON-only output.
     // Todo o contexto analítico vai em reportContextBlocks (injetado na mensagem do usuário).
-    const reportSystemPrompt = `Você é o analista de Revenue Management de ${unit.name}.\nEstratégia: ${pricingStrategy} | Foco: ${FOCUS_LABELS[focusMetric] ?? focusMetric} | Variação máx: ±${maxVar}%\nRESPONDA APENAS COM JSON VÁLIDO — sem texto extra, sem markdown fence.`
+    const reportSystemPrompt = `Você é o analista de Revenue Management de ${unit.name}.\nEstratégia: ${pricingStrategy} | Foco: ${FOCUS_LABELS[focusMetric] ?? focusMetric} | Variação máx: ±${maxVar}%${noGuiaNote}\nRESPONDA APENAS COM JSON VÁLIDO — sem texto extra, sem markdown fence.`
 
     // Mensagem do usuário: pede o JSON do relatório semanal com contexto de períodos
     const weeklyReportUserMsg = `Elabore o resumo executivo do relatório semanal de ${unit.name} para o período ${fmtPeriodStart} a ${fmtPeriodEnd}.

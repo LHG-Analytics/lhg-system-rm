@@ -402,6 +402,35 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
   const isSunday      = now.getUTCDay() === 0
   const isFirstOfMonth = now.getUTCDate() === 1
 
+  // Geração de relatórios semanais — toda segunda-feira UTC.
+  // Roda ANTES da manutenção diária: a manutenção é idempotente (recupera amanhã) e
+  // pesada; se algo estourar o timeout de 60s do Hobby, a vítima deve ser a manutenção,
+  // não o relatório semanal (que só tem 1 chance por semana).
+  if (now.getUTCDay() === 1) {
+    const lastSunday = new Date(now)
+    lastSunday.setUTCDate(now.getUTCDate() - 1)
+    const lastMonday = new Date(lastSunday)
+    lastMonday.setUTCDate(lastSunday.getUTCDate() - 6)
+
+    const periodStart = lastMonday.toISOString().slice(0, 10)
+    const periodEnd   = lastSunday.toISOString().slice(0, 10)
+
+    // Gera relatório apenas para unidades SEM revisão agendada hoje (revisão > relatório)
+    const reportSlugs = (allConfigs ?? [])
+      .filter(c => !reviewedUnitIds.has(c.unit_id))
+      .map(c => (c.units as { slug: string } | null)?.slug)
+      .filter(Boolean) as string[]
+
+    console.log(`[run-reviews] Segunda-feira — gerando relatórios para: ${reportSlugs.join(', ')} (${periodStart} → ${periodEnd})`)
+
+    const reportResults = await Promise.allSettled(
+      reportSlugs.map(slug => generateWeeklyReport(slug, periodStart, periodEnd))
+    )
+    const reportDone   = reportResults.filter(r => r.status === 'fulfilled').length
+    const reportFailed = reportResults.filter(r => r.status === 'rejected').length
+    console.log(`[run-reviews] Relatórios: ${reportDone} gerados, ${reportFailed} falhou`)
+  }
+
   await Promise.allSettled(
     (allConfigs ?? []).map(async (cfg) => {
       const city     = (cfg.city as string).split(',')[0].trim()
@@ -451,33 +480,6 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
       ])
     })
   )
-
-  // Geração de relatórios semanais — toda segunda-feira UTC
-  if (now.getUTCDay() === 1) {
-    const lastSunday = new Date(now)
-    lastSunday.setUTCDate(now.getUTCDate() - 1)
-    const lastMonday = new Date(lastSunday)
-    lastMonday.setUTCDate(lastSunday.getUTCDate() - 6)
-
-    const periodStart = lastMonday.toISOString().slice(0, 10)
-    const periodEnd   = lastSunday.toISOString().slice(0, 10)
-
-    // Gera relatório apenas para unidades SEM revisão agendada hoje
-    // (prioridade: revisão > relatório semanal)
-    const reportSlugs = (allConfigs ?? [])
-      .filter(c => !reviewedUnitIds.has(c.unit_id))
-      .map(c => (c.units as { slug: string } | null)?.slug)
-      .filter(Boolean) as string[]
-
-    console.log(`[run-reviews] Segunda-feira — gerando relatórios para: ${reportSlugs.join(', ')} (${periodStart} → ${periodEnd})`)
-
-    const reportResults = await Promise.allSettled(
-      reportSlugs.map(slug => generateWeeklyReport(slug, periodStart, periodEnd))
-    )
-    const reportDone   = reportResults.filter(r => r.status === 'fulfilled').length
-    const reportFailed = reportResults.filter(r => r.status === 'rejected').length
-    console.log(`[run-reviews] Relatórios: ${reportDone} gerados, ${reportFailed} falhou`)
-  }
 
   return {
     executed: results.length,
