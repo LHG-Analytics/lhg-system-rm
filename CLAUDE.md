@@ -1191,7 +1191,12 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `chat/route.ts`: caminho não-legado usa `explodeRowsToPerDay` antes do clamp; schema de `salvar_proposta.dias` exige 1 único dia por linha
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
-  - **Pré-existente (fora de escopo):** na aprovação, a snapshot mistura linhas legadas (semana/fds) da tabela ativa com as novas linhas por-dia (rowKeys não batem) — não é regressão deste fix
+
+- **LHG-248:** fix(propostas): aprovação substitui modelo semana/fds pelo dia-a-dia sem duplicar ✅ 2026-06-08
+  - Root cause: merge da aprovação casava por `rowKey` (`canal|cat|per|dia_tipo` legado vs `canal|cat|per|dias|hora` dia-a-dia); tabela ativa legada + proposta dia-a-dia = nenhum rowKey batia → linhas legadas passavam intactas E por-dia eram adicionadas (tabela aprovada com os dois formatos duplicados)
+  - Fix: merge por **COMBO** (`canal|categoria|periodo`, case-insensitive) em `proposals/route.ts` PATCH — combos na proposta substituem integralmente as linhas base daquele combo; combos ausentes são preservados; remove `rowKey`/`proposedMap`/`remainingProposed`
+  - Como a proposta tem cobertura total (todos dias×faixas por combo), a tabela aprovada fica 100% dia-a-dia, sem resíduo legado
+  - **Armadilha:** se um dia a proposta deixar de cobrir todos os dias de um combo, esse combo perde os dias não-propostos (cobertura total mitiga; o gerador de grade garante isso)
 
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
