@@ -197,15 +197,34 @@ export function generateDayBandGrid(
     }
   }
 
-  // Agrupa dias com mesmo preço dentro de (canal|categoria|periodo|band) → dias[]
-  const grouped = new Map<string, GridProposalRow>()
-  for (const r of cellRows) {
-    const key = `${nlow(r.canal)}|${norm(r.categoria)}|${nlow(r.periodo)}|${r.hora_inicio}|${r.preco_proposto}`
-    const ex = grouped.get(key)
-    if (ex) ex.dias.push(r.dias[0])
-    else grouped.set(key, { ...r, dias: [...r.dias] })
+  // Cada dia da semana é uma LINHA própria — nunca agregamos dias com preço igual.
+  // O preço já flutua célula a célula pelo gradiente de giro; manter uma linha por dia
+  // deixa o gestor ajustar qualquer dia isoladamente (mesmo que hoje coincidam).
+  const dayIdx = (d: string) => ALL.indexOf(nlow(d))
+  const bandIdx = (h: string) => (h === '06:00' ? 0 : h === '18:00' ? 1 : 2)
+  return cellRows.sort((a, b) =>
+    nlow(a.canal).localeCompare(nlow(b.canal)) ||
+    norm(a.categoria).localeCompare(norm(b.categoria)) ||
+    nlow(a.periodo).localeCompare(nlow(b.periodo)) ||
+    dayIdx(a.dias[0]) - dayIdx(b.dias[0]) ||
+    bandIdx(a.hora_inicio) - bandIdx(b.hora_inicio)
+  )
+}
+
+/**
+ * Explode linhas multi-dia (ex: dias: ["segunda","terca"]) em uma linha por dia,
+ * preservando preço/justificativa. Usado quando a tabela vigente já está em formato
+ * dia × faixa e o agente propôs dias agrupados — garantimos uma linha por dia.
+ */
+export function explodeRowsToPerDay<T extends { dias?: string[]; dia_tipo?: string }>(
+  rows: T[],
+): T[] {
+  const out: T[] = []
+  for (const r of rows) {
+    const dias = (r.dias?.length ? r.dias : daysOfTipo(r.dia_tipo ?? '')).map(nlow)
+    for (const d of dias) out.push({ ...r, dias: [d], dia_tipo: '' })
   }
-  return Array.from(grouped.values())
+  return out
 }
 
 /**

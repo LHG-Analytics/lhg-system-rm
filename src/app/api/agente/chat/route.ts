@@ -31,7 +31,7 @@ import { queryCategoryPeriodKPIs, buildCategoryPeriodBlock } from '@/lib/automo/
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 import type { PriceImportForPrompt, KPIPeriod, VigenciaInfo } from '@/lib/agente/system-prompt'
-import { generateDayBandGrid, isLegacyTable, summarizeProposalRows } from '@/lib/pricing/day-band-grid'
+import { generateDayBandGrid, isLegacyTable, summarizeProposalRows, explodeRowsToPerDay } from '@/lib/pricing/day-band-grid'
 import { queryBandDemandByCategory } from '@/lib/automo/band-demand'
 import { makeCurrencyFormatter } from '@/lib/utils/currency'
 
@@ -833,8 +833,9 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
           categoria:      z.string(),
           periodo:        z.string(),
           dias:           z.array(z.string()).describe(
-            'Dias da semana cobertos. Nomes exatos: segunda, terca, quarta, quinta, sexta, sabado, domingo. ' +
-            'Pode agrupar dias com demanda similar: ex ["segunda","terca","quarta"] ou ["sabado","domingo"].'
+            'UM ÚNICO dia da semana por linha. Nomes exatos: segunda, terca, quarta, quinta, sexta, sabado, domingo. ' +
+            'NUNCA agrupe dias — sempre exatamente um item no array (ex: ["segunda"], ["sabado"]). ' +
+            'Cada dia deve ter sua própria linha, com preço flutuando conforme o giro daquele dia.'
           ),
           hora_inicio:    z.enum(['06:00', '18:00']).describe("'06:00' = faixa diurna (06:00–17:59); '18:00' = faixa noturna (18:00–05:59)"),
           hora_fim:       z.enum(['17:59', '05:59']).describe("'17:59' para faixa diurna; '05:59' para faixa noturna"),
@@ -845,7 +846,7 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
         })).describe(
           'Linhas de proposta de preços por dia × faixa horária. ' +
           'Inclua TODOS os canais ativos, TODAS as categorias, TODOS os períodos × TODOS os dias × AMBAS as faixas. ' +
-          'Use o agrupamento de dias quando o padrão de demanda for igual (ex: seg+ter+qua diurno mesmo preço). ' +
+          'UMA LINHA POR DIA — nunca agrupe dias num mesmo item, mesmo que o preço coincida (ex: gere linhas separadas para segunda e terça). ' +
           'Items mantidos (preco_proposto = preco_atual) DEVEM ser incluídos com justificativa "Mantido — [motivo]".'
         ),
       }),
@@ -868,7 +869,8 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
           )
         } else {
           // Tabela já em formato dia × faixa: usa as linhas do agente com clamp + never_reduce.
-          clampedRows = rows.map((row) => {
+          // Explode dias agrupados (ex: ["seg","ter"]) em uma linha por dia — nunca agregamos.
+          clampedRows = explodeRowsToPerDay(rows).map((row) => {
             const lowerBound = neverReduce ? 0 : -maxVariationPct
             const clamped = Math.max(lowerBound, Math.min(maxVariationPct, row.variacao_pct))
             const base = { ...row, dia_tipo: '', variacao_pct: clamped }
@@ -1132,9 +1134,8 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
       description:
         'Retorna o volume de locações por dia da semana × faixa horária (padrão: últimos 60 dias). ' +
         'É a ferramenta fundamental de Revenue Management — use ANTES de qualquer proposta de preço ou desconto. ' +
-        'Responde as perguntas mais críticas: (a) o split semana/FDS é suficiente ou há dias com demanda similar ' +
-        'ao FDS dentro da semana (ex: quinta-sexta com share alto = terceiro tier de preço)? ' +
-        '(b) qual o ratio real de demanda FDS÷semana para calibrar o premium? ' +
+        'Responde as perguntas mais críticas: (a) qual o padrão de demanda de CADA dia (cada dia tem sua própria linha de preço — nunca agrupe dias)? ' +
+        '(b) qual o ratio real de demanda FDS÷semana para calibrar o quanto o preço de cada dia flutua? ' +
         '(c) quais faixas horárias têm demanda estruturalmente baixa (preço estimulante) vs alta (preço agressivo)? ' +
         '(d) quais dias × faixas do Guia têm desconto desalinhado com a demanda real? ' +
         'O resultado já sinaliza 🔵 baixa demanda e 🟢 alta demanda por slot.',

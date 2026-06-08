@@ -80,12 +80,12 @@ export function buildDayTimeDemandBlock(data: DayTimeDemandRow[], weeks = 8): st
 
   return `## Padrão de demanda por dia × faixa horária (últimas ${weeks} semanas)
 
-Use esta tabela para decidir agrupamentos de dias e diferenciação de preço diurno/noturno.
-Valores = locações médias por dia naquela faixa.
+Use esta tabela para precificar CADA dia individualmente e diferenciar preço diurno/noturno.
+Cada dia tem sua própria linha na proposta — nunca agrupe dias. Valores = locações médias por dia naquela faixa.
 
 | Dia      | 06:00–17:59 | 18:00–05:59 |
 |----------|-------------|-------------|
 ${lines.join('\n')}
 
-> **Interpretação:** dias com diferença < 0,3 loc/dia entre si são candidatos a agrupamento no mesmo preço. Diferença > 0,8 entre faixas diurna/noturna justifica preço distinto para o mesmo dia.`
+> **Interpretação:** quanto maior a demanda do dia, mais o preço daquele dia pode subir — precifique cada dia conforme seu próprio padrão (não junte dias com demanda parecida numa linha só). Diferença > 0,8 entre faixas diurna/noturna justifica preço distinto entre diurno e noturno no mesmo dia.`
 }
