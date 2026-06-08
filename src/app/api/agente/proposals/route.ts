@@ -284,18 +284,13 @@ export async function PATCH(req: NextRequest) {
     })
     await admin.from('scheduled_reviews').insert(reviewInserts)
 
-    // rowKey suporta formato legado (dia_tipo) e novo (dias[] + hora_inicio/hora_fim)
-    const rowKey = (r: ParsedPriceRow) => {
-      if (r.dias?.length) {
-        return `${r.canal}|${r.categoria}|${r.periodo}|${[...r.dias].sort().join(',')}|${r.hora_inicio ?? ''}`
-      }
-      return `${r.canal}|${r.categoria}|${r.periodo}|${r.dia_tipo}`
-    }
-
-    const proposedMap = new Map<string, number>()
-    for (const r of proposedRows) {
-      proposedMap.set(rowKey(r), r.preco_proposto)
-    }
+    // Chave por COMBO (canal|categoria|periodo) — case-insensitive. A proposta cobre
+    // todos os dias×faixas de cada combo, então combos presentes na proposta substituem
+    // INTEGRALMENTE as linhas base daquele combo (inclusive a transição legado semana/fds
+    // → modelo dia-a-dia, cujos rowKeys nunca batiam). Combos ausentes na proposta são
+    // preservados como estão (não perdem cobertura).
+    const comboKey = (r: ParsedPriceRow) =>
+      `${(r.canal ?? '').trim().toLowerCase()}|${(r.categoria ?? '').trim().toUpperCase()}|${(r.periodo ?? '').trim().toLowerCase()}`
 
     const { data: activeImport } = await admin
       .from('price_imports')
@@ -311,29 +306,23 @@ export async function PATCH(req: NextRequest) {
       ? (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? []
       : []
 
-    const remainingProposed = new Map(proposedMap)
-    const newRows: ParsedPriceRow[] = baseRows.map((r) => {
-      const key = rowKey(r)
-      const newPrice = remainingProposed.get(key)
-      if (newPrice !== undefined) {
-        remainingProposed.delete(key)
-        return { ...r, preco: newPrice }
-      }
-      return { ...r }
-    })
+    const proposedCombos = new Set(proposedRows.map(comboKey))
 
-    for (const [key, preco] of remainingProposed) {
-      const src = proposedRows.find((r) => rowKey(r) === key)
-      if (src) {
-        newRows.push({
-          canal: src.canal,
-          categoria: src.categoria,
-          periodo: src.periodo,
-          dia_tipo: src.dia_tipo ?? '',
-          ...(src.dias?.length ? { dias: src.dias, hora_inicio: src.hora_inicio, hora_fim: src.hora_fim } : {}),
-          preco,
-        })
-      }
+    // 1. Mantém apenas as linhas base de combos NÃO cobertos pela proposta.
+    const newRows: ParsedPriceRow[] = baseRows
+      .filter((r) => !proposedCombos.has(comboKey(r)))
+      .map((r) => ({ ...r }))
+
+    // 2. Adiciona todas as linhas propostas (formato dia-a-dia) com o preço proposto.
+    for (const src of proposedRows) {
+      newRows.push({
+        canal: src.canal,
+        categoria: src.categoria,
+        periodo: src.periodo,
+        dia_tipo: src.dia_tipo ?? '',
+        ...(src.dias?.length ? { dias: src.dias, hora_inicio: src.hora_inicio, hora_fim: src.hora_fim } : {}),
+        preco: src.preco_proposto,
+      })
     }
 
     const newCanais = [...new Set(newRows.map((r) => r.canal))]
