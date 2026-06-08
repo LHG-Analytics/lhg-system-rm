@@ -1184,6 +1184,15 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `handleRemoveUrl` no frontend chama o endpoint após salvar a config e remove o snapshot do estado local
   - **Armadilha:** gaps são keyed por `unit_id` (truncate+reinsert por unidade) — recomputar após qualquer exclusão de snapshot é obrigatório para não deixar gaps órfãos
 
+- **LHG-247:** fix(agente): proposta não agrega dia da semana — uma linha por dia ✅ 2026-06-08
+  - Root cause: `day-band-grid` juntava dias com preço igual numa única linha (`dias: ["domingo","segunda",...]`); system prompt + overlay do LLM permitiam agrupar dias com demanda similar
+  - Agora cada dia da semana é uma linha INDEPENDENTE, preço flutuando dia a dia pelo gradiente de giro
+  - `day-band-grid.ts`: removida etapa de agrupamento (retorna 1 linha/dia, ordenação estável); novo `explodeRowsToPerDay` explode dias agrupados do LLM
+  - `chat/route.ts`: caminho não-legado usa `explodeRowsToPerDay` antes do clamp; schema de `salvar_proposta.dias` exige 1 único dia por linha
+  - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
+  - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
+  - **Pré-existente (fora de escopo):** na aprovação, a snapshot mistura linhas legadas (semana/fds) da tabela ativa com as novas linhas por-dia (rowKeys não batem) — não é regressão deste fix
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
