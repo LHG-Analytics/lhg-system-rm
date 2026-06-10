@@ -1192,6 +1192,15 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
 
+- **LHG-254:** fix(agente): data do período errada — agente somava +1 dia ✅ 2026-06-10
+  - Sintoma: hoje=10/06, agente escrevia "01/06 → 11/06 (11 dias)". Bloco de KPIs estava CORRETO (`endDate=todayIso`=10/06); o agente recalculava data/dias e errava (LLM ruim em aritmética de data)
+  - `buildKPIContext`: linha "Período:" agora traz o nº de dias pronto (`periodDaysLabel`, inclusivo); passo 0 do system-prompt proíbe recalcular — copiar literalmente do bloco
+
+- **LHG-253:** fix(agente): proposta garantida quando pedida (fallback server-side) ✅ 2026-06-10
+  - Root cause: `streamText` encerra o loop quando um step termina só com texto; o modelo às vezes escreve análise + "resumo" fabricado e para, sem chamar `salvar_proposta` → nenhuma proposta salva
+  - Fix `chat/route.ts onFinish`: se o pedido tem gatilho de proposta E `salvar_proposta` não foi chamada E tabela ativa é legada → gera grade determinística (`generateDayBandGrid` overlay vazio) e salva + notifica. Roda mesmo com cliente desconectado
+  - **Armadilha:** só funciona com tabela ativa legada (semana/fds); tabelas já em dia×faixa precisam do overlay do modelo
+
 - **LHG-252:** feat(propostas): editar preços na própria planilha (mesmo layout da apresentação) ✅ 2026-06-10
   - Editar jogava o usuário numa lista flat linha-a-linha (78–91 linhas) — péssimo. Agora edita na MESMA planilha dia × faixa da apresentação, cada célula vira input
   - `SpCell` ganha `rowIndex`; `buildSpreadsheetRows` rastreia índice por célula; `SpreadsheetView` aceita `editable`+`onCellChange`; `SpreadsheetCellTd` renderiza input no modo edição (atual em cima, preço editável, variação ao vivo)
