@@ -1192,6 +1192,14 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
 
+- **LHG-257:** feat(agente): faixa de pico do LIV configurável (peak_start/peak_end) — 15h→22h ✅ 2026-06-10
+  - Faixa de pico estava hardcoded 15/21 no gerador/prompt/UI (dívida do LHG-250); agora usa `peak_start`/`peak_end` do `rm_agent_config` — mudar a janela é operação só de banco
+  - `day-band-grid.ts`: `DayBandParams.peakStart/peakEnd`; horas pico/padrão dinâmicas + `bandIdx` do sort
+  - `chat/route.ts`: lê peak_start/peak_end, passa ao gerador (tool + fallback); agentConfigBlock dinâmico
+  - `proposals-list.tsx`: `spGetBands` detecta pico por **janela direta** (início<fim) vs padrão por **wrap** — independe de peakEnd e é retrocompatível com propostas antigas; rótulo derivado das horas reais
+  - Banco: LIV `peak_end` 21→22 (pico agora 15h–22h)
+  - **Obs:** AgentConfigManager ainda não expõe edição de peak_start/peak_end (melhoria futura)
+
 - **LHG-256:** fix(kpis): Mix por Canal conta por check-in (datainicio), não por data da reserva ✅ 2026-06-10
   - Sintoma: Mix por Canal mostrava Site Programado=6, mas Mix por Período mostrava 9 produtos programados (Day Use 7 + Pernoite 2) na mesma janela
   - Root cause: `queryChannelKPIs` filtrava por `r.dataatendimento` (data da RESERVA, corte 00:00); produtos programados são comprados com antecedência → check-in em dias futuros (07,08,10,12,14/06). Só 6 tinham dataatendimento na janela, mas 9 tinham check-in
