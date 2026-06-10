@@ -45,6 +45,10 @@ export interface DayBandParams {
   maxVar: number        // teto absoluto de variação (%) — guardrail do agente
   neverReduce: boolean
   decimals?: number
+  /** Modo do gestor (giro_uplift): faixa única de PICO 15h–21h em vez de diurno/noturno. */
+  primeTime?: boolean
+  /** Prêmio aplicado à faixa de pico sobre o padrão (fração, ex 0.05). Só usado em primeTime. */
+  peakPremium?: number
 }
 
 export interface OverlayRow {
@@ -150,6 +154,56 @@ export function generateDayBandGrid(
       const giroD = days[DOW_FULL[dia]] ?? 0
       const dayFactor = span > 0 ? clamp((giroD - giroMin) / span * params.dayCap, 0, params.dayCap) : 0
 
+      // ── Modo Prime Time (método do gestor / giro_uplift) ──────────────────
+      // Em vez de diurno/noturno: PADRÃO (fora de pico) + PICO 15h–21h.
+      // Padrão = atual × (1 + fator de giro do dia), com teto/never_reduce.
+      // Pico   = padrão × (1 + prêmio de pico) — o prêmio fica ACIMA do teto de reajuste
+      // (o teto limita o padrão vs atual; o pico é +X% sobre o padrão, como na planilha do gestor).
+      if (params.primeTime) {
+        const premium = params.peakPremium ?? 0
+        const baseline = atual * (1 + dayFactor)
+        const ov = overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|d`)
+                ?? overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|n`)
+                ?? overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|all`)
+        const padraoRaw = (ov && ov.preco > baseline) ? ov.preco : baseline
+        let padVar = clamp((padraoRaw - atual) / atual * 100, params.neverReduce ? 0 : -params.maxVar, params.maxVar)
+        const padrao = round(atual * (1 + padVar / 100))
+        padVar = atual > 0 ? +((padrao - atual) / atual * 100).toFixed(1) : 0
+        const padJust = (ov && ov.preco > baseline)
+          ? (ov.just || 'Ajuste do agente acima do piso de giro')
+          : (dayFactor > 0
+              ? `giro do dia ${giroD.toFixed(2)} (gradiente ${giroMin.toFixed(2)}–${giroMax.toFixed(2)}) → +${(dayFactor * 100).toFixed(1)}%`
+              : 'Dia mais fraco da semana — mantido')
+
+        if (usesBands(canal, periodo)) {
+          // Fora de pico (padrão) — cobre o dia todo exceto 15h–21h
+          cellRows.push({
+            canal, categoria, periodo, dias: [dia], dia_tipo: '',
+            hora_inicio: '21:00', hora_fim: '14:59',
+            preco_atual: atual, preco_proposto: padrao, variacao_pct: padVar,
+            justificativa: `Padrão (fora de pico) · ${padJust}`,
+          })
+          // Pico 15h–21h = padrão × (1 + prêmio)
+          const pico = round(padrao * (1 + premium))
+          const picoVar = atual > 0 ? +((pico - atual) / atual * 100).toFixed(1) : 0
+          cellRows.push({
+            canal, categoria, periodo, dias: [dia], dia_tipo: '',
+            hora_inicio: '15:00', hora_fim: '21:00',
+            preco_atual: atual, preco_proposto: pico, variacao_pct: picoVar,
+            justificativa: `Prime time 15h–21h (padrão +${(premium * 100).toFixed(0)}%)`,
+          })
+        } else {
+          // Janela fixa (day use / pernoite / diária / site programada): um preço por dia, sem pico
+          cellRows.push({
+            canal, categoria, periodo, dias: [dia], dia_tipo: '',
+            hora_inicio: '', hora_fim: '',
+            preco_atual: atual, preco_proposto: padrao, variacao_pct: padVar, justificativa: padJust,
+          })
+        }
+        continue
+      }
+
+      // ── Modo padrão (diurno/noturno) ──────────────────────────────────────
       // Bandas só para balcão imediato + curta estadia; senão um preço por dia ('all').
       const bands: Array<Band | 'all'> = usesBands(canal, periodo) ? ['d', 'n'] : ['all']
       for (const band of bands) {
@@ -201,7 +255,8 @@ export function generateDayBandGrid(
   // O preço já flutua célula a célula pelo gradiente de giro; manter uma linha por dia
   // deixa o gestor ajustar qualquer dia isoladamente (mesmo que hoje coincidam).
   const dayIdx = (d: string) => ALL.indexOf(nlow(d))
-  const bandIdx = (h: string) => (h === '06:00' ? 0 : h === '18:00' ? 1 : 2)
+  // padrão/diurno (col A) antes de pico/noturno (col B); janela fixa por último
+  const bandIdx = (h: string) => (h === '06:00' || h === '21:00' ? 0 : h === '18:00' || h === '15:00' ? 1 : 2)
   return cellRows.sort((a, b) =>
     nlow(a.canal).localeCompare(nlow(b.canal)) ||
     norm(a.categoria).localeCompare(norm(b.categoria)) ||

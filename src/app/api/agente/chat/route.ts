@@ -563,7 +563,7 @@ export async function POST(req: NextRequest) {
   ] = await Promise.allSettled([
     admin
       .from('rm_agent_config')
-      .select('city, timezone, suite_amenities, focus_metric, pricing_strategy, max_variation_pct, shared_context, pricing_thresholds, unit_goals, budget_yearly, pricing_method, giro_uplift_cap, never_reduce')
+      .select('city, timezone, suite_amenities, focus_metric, pricing_strategy, max_variation_pct, shared_context, pricing_thresholds, unit_goals, budget_yearly, pricing_method, giro_uplift_cap, never_reduce, peak_premium, peak_start, peak_end')
       .eq('unit_id', unit.id)
       .maybeSingle(),
     admin
@@ -595,6 +595,10 @@ export async function POST(req: NextRequest) {
   const budgetYearly   = (agentConfigData as { budget_yearly?: BudgetYearly | null } | null)?.budget_yearly ?? null
   const neverReduce    = (agentConfigData as { never_reduce?: boolean } | null)?.never_reduce ?? false
   const giroUpliftCap  = Number((agentConfigData as { giro_uplift_cap?: number } | null)?.giro_uplift_cap ?? 0.05)
+  const pricingMethod  = (agentConfigData as { pricing_method?: string } | null)?.pricing_method ?? 'agent_judgment'
+  const peakPremium    = Number((agentConfigData as { peak_premium?: number } | null)?.peak_premium ?? 0)
+  // Modo do gestor (giro_uplift): grade usa faixa de PICO 15h–21h em vez de diurno/noturno.
+  const primeTime      = pricingMethod === 'giro_uplift' && peakPremium > 0
 
   const FOCUS_LABELS: Record<string, string> = {
     revpar: 'RevPAR', ocupacao: 'Taxa de Ocupação', ticket: 'Ticket Médio',
@@ -614,7 +618,8 @@ export async function POST(req: NextRequest) {
 - **Foco principal:** ${FOCUS_LABELS[focusMetric] ?? focusMetric}
 - **Moeda:** Use sempre **${currencySymbol}** para todos os valores monetários no texto e nas tabelas — nunca use outro símbolo de moeda
 - **Giro como sinal de aumento:** dê peso a dias que giram acima da média da PRÓPRIA categoria (candidatos a aumento, até a variação máxima) — cruze com concorrência/eventos antes de decidir.${neverReduce ? `
-- **NUNCA REDUZIR (regra do gestor):** nenhum preço proposto pode ser menor que o preço atual. Dias/categorias fracos = manter o preço (0%), nunca reduzir.` : ''}`
+- **NUNCA REDUZIR (regra do gestor):** nenhum preço proposto pode ser menor que o preço atual. Dias/categorias fracos = manter o preço (0%), nunca reduzir.` : ''}${primeTime ? `
+- **FAIXA DE PICO (método do gestor):** para os produtos de check-in imediato (balcão/site: 3h/6h/12h), a proposta tem DUAS faixas por dia — **Padrão (fora de pico)** e **Pico das 15h às 21h**, este com prêmio de +${(peakPremium * 100).toFixed(0)}% sobre o padrão. O sistema gera essas duas faixas automaticamente; ao descrever a proposta, fale em "padrão" e "pico 15h–21h" (NÃO em diurno/noturno).` : ''}`
 
   // Bloco de regras de ajuste dinâmico por giro/ocupação
   const pricingRulesBlock = buildPricingThresholdsBlock(pricingThresholds)
@@ -864,7 +869,7 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
             activePriceRows,
             kpiPeriods[0]?.company ?? null,
             bandDemand,
-            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0 },
+            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium },
             rows,  // overlay: ajustes propostos pelo agente sobrescrevem as células correspondentes
           )
         } else {

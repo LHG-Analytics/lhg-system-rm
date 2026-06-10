@@ -197,8 +197,13 @@ function spExpandDays(row: ProposedPriceRow): GridDay[] {
 
 function spGetBands(row: ProposedPriceRow): Array<'d' | 'n'> {
   if (!row.dias?.length) return ['d', 'n']
-  // hora_inicio vazio/ausente = produto de janela fixa (site programada, day use, etc.) → sem banda: preenche ambas
-  return row.hora_inicio === '06:00' ? ['d'] : row.hora_inicio === '18:00' ? ['n'] : ['d', 'n']
+  // Coluna A (d): diurno 06:00 OU padrão/fora-de-pico 21:00.
+  // Coluna B (n): noturno 18:00 OU pico 15:00 (modo gestor / giro_uplift).
+  // hora_inicio vazio/ausente = produto de janela fixa → sem banda: preenche ambas.
+  const h = row.hora_inicio
+  if (h === '06:00' || h === '21:00') return ['d']
+  if (h === '18:00' || h === '15:00') return ['n']
+  return ['d', 'n']
 }
 
 function buildSpreadsheetRows(rows: ProposedPriceRow[]): SpRow[] {
@@ -329,9 +334,16 @@ function SpreadsheetView({ rows, formatMoney }: {
   // Faixa horária (06–18 / 18–06) só aparece se o canal tem linhas com banda definida.
   // Site Programada e janelas fixas → um preço por dia (sem sub-colunas de faixa).
   const useBands = useMemo(
-    () => rows.some(r => r.canal === canal && (r.hora_inicio === '06:00' || r.hora_inicio === '18:00')),
+    () => rows.some(r => r.canal === canal && ['06:00', '18:00', '15:00', '21:00'].includes(r.hora_inicio ?? '')),
     [rows, canal],
   )
+  // Modo gestor (giro_uplift): faixas são Padrão (fora de pico) + Pico 15h–21h, não diurno/noturno.
+  const isPrimeTime = useMemo(
+    () => rows.some(r => r.canal === canal && (r.hora_inicio === '15:00' || r.hora_inicio === '21:00')),
+    [rows, canal],
+  )
+  const bandLabelA = isPrimeTime ? 'fora de pico' : '06–18h'
+  const bandLabelB = isPrimeTime ? 'pico 15–21h' : '18–06h'
   const headerColSpan = 1 + GRID_DAYS.length * (useBands ? 2 : 1)
 
   return (
@@ -425,13 +437,13 @@ function SpreadsheetView({ rows, formatMoney }: {
                     key={`${day}_d_h`}
                     className="border border-border/40 bg-muted px-1.5 py-1 text-[10px] text-muted-foreground font-normal text-center whitespace-nowrap sticky top-[30px] z-20"
                   >
-                    06–18h
+                    {bandLabelA}
                   </th>,
                   <th
                     key={`${day}_n_h`}
                     className="border border-border/40 bg-muted px-1.5 py-1 text-[10px] text-muted-foreground font-normal text-center whitespace-nowrap sticky top-[30px] z-20"
                   >
-                    18–06h
+                    {bandLabelB}
                   </th>,
                 ])}
               </tr>
