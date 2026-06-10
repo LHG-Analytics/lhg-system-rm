@@ -1249,7 +1249,61 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
     // concluir ou atingir o timeout. Quando convId está presente e o cliente
     // desconectou, salvamos as mensagens e criamos notificação in-app.
     onFinish: async ({ steps }) => {
-      // Só age se o cliente desconectou E há uma conversa para salvar
+      // ── Fallback de proposta ──────────────────────────────────────────────
+      // O streamText encerra o loop quando um step termina só com texto (sem tool
+      // call). Às vezes o modelo escreve a análise + um "resumo da proposta" e PARA,
+      // sem nunca chamar salvar_proposta — então nenhuma proposta é registrada.
+      // Se o usuário pediu proposta explicitamente e a tool não foi chamada, geramos
+      // a grade determinística (giro/pico) server-side e salvamos. Roda SEMPRE (mesmo
+      // com cliente conectado) — a aba Propostas tem Realtime e exibe na hora.
+      try {
+        const calledSalvar = (steps ?? []).some((s) =>
+          ((s as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? [])
+            .some((tc) => tc.toolName === 'salvar_proposta')
+        )
+        const lastUser = [...(messages as Array<{ role: string; parts?: Array<{ type?: string; text?: string }> }>)]
+          .reverse().find((m) => m.role === 'user')
+        const lastUserText = (lastUser?.parts ?? [])
+          .filter((p) => p.type === 'text').map((p) => p.text ?? '').join(' ')
+        const proposalRequested = /proposta|proponha|gere|crie|fa[çc]a uma proposta|ajust\w* os pre[çc]os|nova tabela de pre[çc]os/i.test(lastUserText)
+
+        // Só conseguimos reconstruir a grade sem o overlay do modelo quando a tabela
+        // ativa é legada (semana/fds) — para tabelas já em dia×faixa, pulamos.
+        if (proposalRequested && !calledSalvar && activePriceRows.length > 0 && isLegacyTable(activePriceRows)) {
+          const period = kpiPeriods[0]?.period
+          const bandDemand = period
+            ? await queryBandDemandByCategory(unit.slug, period.startDate, period.endDate).catch(() => new Map())
+            : new Map()
+          const clampedRows = generateDayBandGrid(
+            activePriceRows,
+            kpiPeriods[0]?.company ?? null,
+            bandDemand,
+            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium },
+            [],
+          )
+          if (clampedRows.length) {
+            const factual = summarizeProposalRows(clampedRows)
+            await admin.from('price_proposals').insert({
+              unit_id:    unit.id,
+              created_by: user.id,
+              context:    `${factual}\n\n— Proposta gerada automaticamente pelo sistema (grade determinística por giro/faixa de pico). O modelo concluiu a análise sem registrar a proposta via tool.`,
+              rows:       clampedRows as unknown as Database['public']['Tables']['price_proposals']['Insert']['rows'],
+              status:     'pending',
+            })
+            await admin.from('notifications').insert({
+              user_id: user.id,
+              type:    'info',
+              title:   'Proposta de preços gerada',
+              body:    'A proposta foi gerada e está na aba Propostas para revisão.',
+              link:    `/dashboard/agente?unit=${unit.slug}`,
+            })
+          }
+        }
+      } catch (err) {
+        console.error('[chat/onFinish] Erro no fallback de proposta:', err)
+      }
+
+      // Só age (salvar mensagem em background) se o cliente desconectou E há conversa
       if (!req.signal.aborted) return
       if (!convId || typeof convId !== 'string') return
 
