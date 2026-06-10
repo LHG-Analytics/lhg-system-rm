@@ -5,14 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -78,18 +70,6 @@ const DAY_ABBR: Record<string, string> = {
   sexta: 'Sex', sabado: 'Sáb', domingo: 'Dom',
 }
 const DOW_ORDER = ['segunda','terca','quarta','quinta','sexta','sabado','domingo']
-
-function formatDiaRow(row: ProposedPriceRow): string {
-  if (row.dias?.length) {
-    const sorted = [...row.dias].sort((a, b) => DOW_ORDER.indexOf(a) - DOW_ORDER.indexOf(b))
-    const days = sorted.map((d) => DAY_ABBR[d] ?? d).join('/')
-    const faixa = row.hora_inicio === '06:00' ? '06–18' : '18–06'
-    return `${days} · ${faixa}`
-  }
-  return row.dia_tipo === 'semana' ? 'Semana'
-    : row.dia_tipo === 'fds_feriado' ? 'FDS/Fer.'
-    : 'Todos'
-}
 
 // ─── Tabela Pivô (faixa horária) ─────────────────────────────────────────────
 
@@ -176,6 +156,8 @@ interface SpCell {
   justificativa: string
   was_clamped?: boolean
   clamp_info?: ProposedPriceRow['clamp_info']
+  /** Índice da linha de origem em proposal.rows — usado para editar a célula in-place. */
+  rowIndex: number
 }
 
 type SpCellKey = `${GridDay}_d` | `${GridDay}_n`
@@ -208,7 +190,7 @@ function spGetBands(row: ProposedPriceRow): Array<'d' | 'n'> {
 
 function buildSpreadsheetRows(rows: ProposedPriceRow[]): SpRow[] {
   const map = new Map<string, SpRow>()
-  for (const row of rows) {
+  rows.forEach((row, idx) => {
     const key = `${row.canal}|${row.periodo}|${row.categoria}`
     if (!map.has(key)) {
       map.set(key, { canal: row.canal, periodo: row.periodo, categoria: row.categoria, cells: {} })
@@ -219,6 +201,7 @@ function buildSpreadsheetRows(rows: ProposedPriceRow[]): SpRow[] {
     const cell: SpCell = {
       atual: row.preco_atual, proposto: row.preco_proposto, variacao: row.variacao_pct,
       justificativa: row.justificativa, was_clamped: row.was_clamped, clamp_info: row.clamp_info,
+      rowIndex: idx,
     }
     for (const day of days) {
       for (const band of bands) {
@@ -227,7 +210,7 @@ function buildSpreadsheetRows(rows: ProposedPriceRow[]): SpRow[] {
         if (!sr.cells[ck] || row.dias?.length) sr.cells[ck] = cell
       }
     }
-  }
+  })
   return Array.from(map.values())
 }
 
@@ -235,16 +218,53 @@ function SpreadsheetCellTd({
   cell,
   mode,
   formatMoney,
+  editable,
+  onPriceChange,
 }: {
   cell: SpCell | undefined
   mode: 'proposal' | 'current'
   formatMoney: (v: number, d?: number) => string
+  editable?: boolean
+  onPriceChange?: (price: number) => void
 }) {
   if (!cell) return <td className="border border-border/30 bg-muted/5" />
 
   const v    = cell.variacao
   const isUp   = v > 0.5
   const isDown = v < -0.5
+
+  // ── Modo edição: input direto na célula da planilha ──
+  if (editable) {
+    const ebg = isUp ? 'bg-green-500/10 dark:bg-green-500/15'
+      : isDown ? 'bg-red-500/10 dark:bg-red-500/15'
+      : 'bg-amber-500/8 dark:bg-amber-500/12'
+    const efg = isUp ? 'text-green-700 dark:text-green-300'
+      : isDown ? 'text-red-600 dark:text-red-400'
+      : 'text-amber-700 dark:text-amber-300'
+    return (
+      <td className={cn('border border-border/30 px-1 py-1 text-right align-middle min-w-[64px]', ebg)}>
+        <div className="flex flex-col items-end gap-px">
+          <span className="text-[9px] leading-tight text-muted-foreground/45 tabular-nums">
+            {formatMoney(cell.atual)}
+          </span>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={cell.proposto}
+            onChange={(e) => onPriceChange?.(parseFloat(e.target.value) || 0)}
+            className={cn(
+              'w-[52px] bg-transparent border-b border-primary/50 focus:border-primary outline-none text-right text-[11px] font-semibold leading-tight tabular-nums',
+              efg,
+            )}
+          />
+          <span className={cn('text-[8px] leading-none tabular-nums', efg)}>
+            {v >= 0 ? '+' : ''}{v.toFixed(1)}%
+          </span>
+        </div>
+      </td>
+    )
+  }
 
   const bg = mode === 'proposal'
     ? isUp   ? 'bg-green-500/12 dark:bg-green-500/18'
@@ -309,9 +329,13 @@ function SpreadsheetCellTd({
   )
 }
 
-function SpreadsheetView({ rows, formatMoney }: {
+function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
   rows: ProposedPriceRow[]
   formatMoney: (v: number, d?: number) => string
+  /** Quando true, as células viram inputs editáveis (mesma planilha da apresentação). */
+  editable?: boolean
+  /** Edição de uma célula → índice da linha de origem + novo preço. */
+  onCellChange?: (rowIndex: number, price: number) => void
 }) {
   const [viewMode, setViewMode]   = useState<'proposal' | 'current'>('proposal')
   const [activeCanal, setActiveCanal] = useState<string>('')
@@ -367,30 +391,36 @@ function SpreadsheetView({ rows, formatMoney }: {
               </button>
             ))}
           </div>
-          <div className="flex border rounded-md overflow-hidden text-xs">
-            <button
-              onClick={() => setViewMode('proposal')}
-              className={cn(
-                'px-3 py-1.5 font-medium transition-colors',
-                viewMode === 'proposal'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent/50'
-              )}
-            >
-              Proposta
-            </button>
-            <button
-              onClick={() => setViewMode('current')}
-              className={cn(
-                'px-3 py-1.5 font-medium border-l transition-colors',
-                viewMode === 'current'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent/50'
-              )}
-            >
-              Tabela vigente
-            </button>
-          </div>
+          {editable ? (
+            <span className="text-[11px] text-primary font-medium px-2 py-1 rounded bg-primary/10">
+              ✎ Editando — altere os preços direto nas células
+            </span>
+          ) : (
+            <div className="flex border rounded-md overflow-hidden text-xs">
+              <button
+                onClick={() => setViewMode('proposal')}
+                className={cn(
+                  'px-3 py-1.5 font-medium transition-colors',
+                  viewMode === 'proposal'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50'
+                )}
+              >
+                Proposta
+              </button>
+              <button
+                onClick={() => setViewMode('current')}
+                className={cn(
+                  'px-3 py-1.5 font-medium border-l transition-colors',
+                  viewMode === 'current'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50'
+                )}
+              >
+                Tabela vigente
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Legend (only in proposal mode) */}
@@ -472,12 +502,15 @@ function SpreadsheetView({ rows, formatMoney }: {
                           </td>
                           {useBands
                             ? GRID_DAYS.flatMap(day => [
-                                <SpreadsheetCellTd key={`${day}_d`} cell={srow.cells[`${day}_d` as SpCellKey]} mode={viewMode} formatMoney={formatMoney} />,
-                                <SpreadsheetCellTd key={`${day}_n`} cell={srow.cells[`${day}_n` as SpCellKey]} mode={viewMode} formatMoney={formatMoney} />,
+                                <SpreadsheetCellTd key={`${day}_d`} cell={srow.cells[`${day}_d` as SpCellKey]} mode={viewMode} formatMoney={formatMoney} editable={editable} onPriceChange={(p) => { const c = srow.cells[`${day}_d` as SpCellKey]; if (c) onCellChange?.(c.rowIndex, p) }} />,
+                                <SpreadsheetCellTd key={`${day}_n`} cell={srow.cells[`${day}_n` as SpCellKey]} mode={viewMode} formatMoney={formatMoney} editable={editable} onPriceChange={(p) => { const c = srow.cells[`${day}_n` as SpCellKey]; if (c) onCellChange?.(c.rowIndex, p) }} />,
                               ])
-                            : GRID_DAYS.map(day => (
-                                <SpreadsheetCellTd key={day} cell={srow.cells[`${day}_d` as SpCellKey] ?? srow.cells[`${day}_n` as SpCellKey]} mode={viewMode} formatMoney={formatMoney} />
-                              ))
+                            : GRID_DAYS.map(day => {
+                                const c = srow.cells[`${day}_d` as SpCellKey] ?? srow.cells[`${day}_n` as SpCellKey]
+                                return (
+                                  <SpreadsheetCellTd key={day} cell={c} mode={viewMode} formatMoney={formatMoney} editable={editable} onPriceChange={(p) => { if (c) onCellChange?.(c.rowIndex, p) }} />
+                                )
+                              })
                           }
                         </tr>
                       )
@@ -515,15 +548,6 @@ function calcImpact(rows: ProposedPriceRow[]) {
   const avgProposed = rows.reduce((s, r) => s + r.preco_proposto, 0) / rows.length
   const deltaTicket = avgCurrent > 0 ? ((avgProposed - avgCurrent) / avgCurrent) * 100 : 0
   return { up: up.length, down: down.length, flat: flat.length, deltaTicket, avgCurrent, avgProposed }
-}
-
-function VariacaoBadge({ pct }: { pct: number }) {
-  const isPositive = pct > 0
-  return (
-    <span className={cn('font-medium', isPositive ? 'text-green-600' : 'text-red-600')}>
-      {isPositive ? '+' : ''}{pct.toFixed(1)}%
-    </span>
-  )
 }
 
 function ExpandableText({ text, maxLength = 120 }: { text: string; maxLength?: number }) {
@@ -743,14 +767,6 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
     })
   }, [])
 
-  const updateEditJustificativa = useCallback((index: number, value: string) => {
-    setEditing((prev) => {
-      if (!prev) return null
-      const rows = [...prev.rows]
-      rows[index] = { ...rows[index], justificativa: value }
-      return { ...prev, rows }
-    })
-  }, [])
 
   const handleSaveEdit = useCallback(async () => {
     if (!editing) return
@@ -1188,53 +1204,13 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                   <div className="border-t">
                     <div className="overflow-x-auto">
                       {isEditing ? (
-                        /* ── Modo edição: tabela flat para inputs ── */
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Canal</TableHead>
-                              <TableHead>Categoria</TableHead>
-                              <TableHead>Período</TableHead>
-                              <TableHead>Dia / Faixa</TableHead>
-                              <TableHead className="text-right">Atual</TableHead>
-                              <TableHead className="text-right">Proposto</TableHead>
-                              <TableHead className="text-right">Variação</TableHead>
-                              <TableHead>Justificativa</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {editing.rows.map((row, i) => (
-                              <TableRow key={i} className={cn(Math.abs(row.variacao_pct) <= 0.5 && 'opacity-40')}>
-                                <TableCell className="text-xs">{CANAL_LABELS[row.canal] ?? row.canal}</TableCell>
-                                <TableCell className="text-xs font-medium">{row.categoria}</TableCell>
-                                <TableCell className="text-xs">{row.periodo}</TableCell>
-                                <TableCell className="text-xs whitespace-nowrap">{formatDiaRow(row)}</TableCell>
-                                <TableCell className="text-right text-xs tabular-nums">{formatMoney(row.preco_atual, 2)}</TableCell>
-                                <TableCell className="text-right text-xs tabular-nums font-medium">
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    className="w-20 text-right bg-transparent border-b border-primary outline-none text-xs tabular-nums font-medium"
-                                    value={row.preco_proposto}
-                                    onChange={(e) => updateEditRow(i, parseFloat(e.target.value) || 0)}
-                                  />
-                                </TableCell>
-                                <TableCell className="text-right text-xs">
-                                  <VariacaoBadge pct={row.variacao_pct} />
-                                </TableCell>
-                                <TableCell className="text-xs text-muted-foreground max-w-[240px]">
-                                  <input
-                                    type="text"
-                                    className="w-full bg-transparent border-b border-primary outline-none text-xs text-foreground"
-                                    value={row.justificativa}
-                                    onChange={(e) => updateEditJustificativa(i, e.target.value)}
-                                  />
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                        /* ── Modo edição: MESMA planilha da apresentação, com células editáveis ── */
+                        <SpreadsheetView
+                          rows={editing.rows}
+                          formatMoney={formatMoney}
+                          editable
+                          onCellChange={updateEditRow}
+                        />
                       ) : (
                         /* ── Modo visualização: planilha por dia × faixa horária ── */
                         <SpreadsheetView rows={proposal.rows} formatMoney={formatMoney} />
