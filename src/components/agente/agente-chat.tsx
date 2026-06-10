@@ -771,17 +771,23 @@ function AgenteChatInner({
                   })
                 }
                 {(() => {
-                  // Só texto antes do sugerir_respostas — evita duplicação pós-tool-result
-                  const firstSugerirIdx = msg.parts.findIndex(
-                    (p) => isToolUIPart(p) && getToolName(p) === 'sugerir_respostas'
-                  )
-                  const relevantParts = firstSugerirIdx >= 0
-                    ? msg.parts.slice(0, firstSugerirIdx)
-                    : msg.parts
-                  const text = relevantParts
+                  // Junta os blocos de texto deduplicando por conteúdo. O AI SDK às vezes
+                  // reemite o MESMO texto após uma tool call (era o bug de duplicação da
+                  // LHG-150). Antes cortávamos tudo após o 1º sugerir_respostas — mas no fluxo
+                  // multi-step o agente costuma escrever a ANÁLISE por último (depois de
+                  // salvar_proposta/sugerir_respostas), e o corte a escondia. Deduplicar por
+                  // conteúdo colapsa o duplicado SEM esconder texto legítimo, em qualquer ordem.
+                  const seen = new Set<string>()
+                  const text = msg.parts
                     .filter((p) => p.type === 'text')
                     .map((p) => (p as { type: 'text'; text: string }).text)
-                    .join('')
+                    .filter((t) => {
+                      const k = t.trim()
+                      if (!k || seen.has(k)) return false
+                      seen.add(k)
+                      return true
+                    })
+                    .join('\n\n')
                   if (!text) return null
                   const isLastMsg = msg.id === lastAssistantMsg?.id
                   return (
