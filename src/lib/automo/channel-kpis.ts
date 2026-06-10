@@ -47,9 +47,12 @@ export async function queryChannelKPIs(
   const pool = await getAutomPool(unitSlug)
   if (!pool) return []
 
-  // Datas sem corte 06:00 — igual ao BETWEEN por dia do Analytics
-  const startDate = ddmmyyyyToIso(startDateDDMMYYYY).slice(0, 10)        // YYYY-MM-DD
-  const endDate   = addDays(ddmmyyyyToIso(endDateDDMMYYYY), 1).slice(0, 10) // exclusive next day
+  // Eixo = CHECK-IN (r.datainicio) com corte operacional 06:00, igual ao "Mix por Período"
+  // e ao filtro "Entrada" do dashboard. ANTES usava dataatendimento (data em que a reserva
+  // foi FEITA) — para produtos programados (Day Use/Pernoite/Diária), a compra é antecipada,
+  // então o check-in cai em dias futuros e a contagem divergia do Mix por Período.
+  const startDate = ddmmyyyyToIso(startDateDDMMYYYY)        // YYYY-MM-DD 06:00:00
+  const endDate   = buildIsoEnd(endDateDDMMYYYY)            // próximo dia 05:59:59 (operacional, inclusivo)
 
   const sql = `
     WITH canal_classificado AS (
@@ -79,7 +82,7 @@ export async function queryChannelKPIs(
       WHERE (r.cancelada IS NULL OR r.cancelada::date > (r.datainicio::date + 7))
         AND (r.valorcontratado IS NOT NULL OR la.valortotalpermanencia IS NOT NULL)
         AND r.id_tipoorigemreserva IN (1, 3, 4, 6, 7, 8)
-        AND r.dataatendimento >= $1 AND r.dataatendimento < $2
+        AND r.datainicio >= $1 AND r.datainicio <= $2
     ),
     -- Canais não-site: valorcontratado com desconto Guia Go (igual ao Analytics)
     valores_outros_canais AS (
@@ -121,7 +124,7 @@ export async function queryChannelKPIs(
       SELECT COALESCE(SUM(la2.valortotal), 0) AS total_geral
       FROM locacaoapartamento la2
       JOIN apartamentostate ast ON la2.id_apartamentostate = ast.id
-      WHERE ast.datainicio >= $1 AND ast.datainicio < $2
+      WHERE ast.datainicio >= $1 AND ast.datainicio <= $2
         AND la2.fimocupacaotipo = 'FINALIZADA'
     )
     SELECT
