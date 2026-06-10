@@ -45,10 +45,14 @@ export interface DayBandParams {
   maxVar: number        // teto absoluto de variação (%) — guardrail do agente
   neverReduce: boolean
   decimals?: number
-  /** Modo do gestor (giro_uplift): faixa única de PICO 15h–21h em vez de diurno/noturno. */
+  /** Modo do gestor (giro_uplift): faixa única de PICO em vez de diurno/noturno. */
   primeTime?: boolean
   /** Prêmio aplicado à faixa de pico sobre o padrão (fração, ex 0.05). Só usado em primeTime. */
   peakPremium?: number
+  /** Hora de início da faixa de pico (default 15). Só usado em primeTime. */
+  peakStart?: number
+  /** Hora de fim da faixa de pico (default 21). Só usado em primeTime. */
+  peakEnd?: number
 }
 
 export interface OverlayRow {
@@ -155,12 +159,20 @@ export function generateDayBandGrid(
       const dayFactor = span > 0 ? clamp((giroD - giroMin) / span * params.dayCap, 0, params.dayCap) : 0
 
       // ── Modo Prime Time (método do gestor / giro_uplift) ──────────────────
-      // Em vez de diurno/noturno: PADRÃO (fora de pico) + PICO 15h–21h.
+      // Em vez de diurno/noturno: PADRÃO (fora de pico) + PICO (faixa peakStart–peakEnd).
       // Padrão = atual × (1 + fator de giro do dia), com teto/never_reduce.
       // Pico   = padrão × (1 + prêmio de pico) — o prêmio fica ACIMA do teto de reajuste
       // (o teto limita o padrão vs atual; o pico é +X% sobre o padrão, como na planilha do gestor).
       if (params.primeTime) {
-        const premium = params.peakPremium ?? 0
+        const premium  = params.peakPremium ?? 0
+        const pStart   = params.peakStart ?? 15
+        const pEnd     = params.peakEnd ?? 21
+        const pad2     = (n: number) => String(n).padStart(2, '0')
+        const picoIni  = `${pad2(pStart)}:00`
+        const picoFim  = `${pad2(pEnd)}:00`
+        const padIni   = `${pad2(pEnd)}:00`         // padrão (wrap) começa quando o pico acaba
+        const padFim   = `${pad2(pStart - 1)}:59`   // …e vai até 1 min antes do pico
+        const picoLabel = `${pStart}h–${pEnd}h`
         const baseline = atual * (1 + dayFactor)
         const ov = overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|d`)
                 ?? overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|n`)
@@ -176,21 +188,21 @@ export function generateDayBandGrid(
               : 'Dia mais fraco da semana — mantido')
 
         if (usesBands(canal, periodo)) {
-          // Fora de pico (padrão) — cobre o dia todo exceto 15h–21h
+          // Fora de pico (padrão) — cobre o dia todo exceto a faixa de pico
           cellRows.push({
             canal, categoria, periodo, dias: [dia], dia_tipo: '',
-            hora_inicio: '21:00', hora_fim: '14:59',
+            hora_inicio: padIni, hora_fim: padFim,
             preco_atual: atual, preco_proposto: padrao, variacao_pct: padVar,
             justificativa: `Padrão (fora de pico) · ${padJust}`,
           })
-          // Pico 15h–21h = padrão × (1 + prêmio)
+          // Pico (peakStart–peakEnd) = padrão × (1 + prêmio)
           const pico = round(padrao * (1 + premium))
           const picoVar = atual > 0 ? +((pico - atual) / atual * 100).toFixed(1) : 0
           cellRows.push({
             canal, categoria, periodo, dias: [dia], dia_tipo: '',
-            hora_inicio: '15:00', hora_fim: '21:00',
+            hora_inicio: picoIni, hora_fim: picoFim,
             preco_atual: atual, preco_proposto: pico, variacao_pct: picoVar,
-            justificativa: `Prime time 15h–21h (padrão +${(premium * 100).toFixed(0)}%)`,
+            justificativa: `Prime time ${picoLabel} (padrão +${(premium * 100).toFixed(0)}%)`,
           })
         } else {
           // Janela fixa (day use / pernoite / diária / site programada): um preço por dia, sem pico
@@ -255,8 +267,11 @@ export function generateDayBandGrid(
   // O preço já flutua célula a célula pelo gradiente de giro; manter uma linha por dia
   // deixa o gestor ajustar qualquer dia isoladamente (mesmo que hoje coincidam).
   const dayIdx = (d: string) => ALL.indexOf(nlow(d))
-  // padrão/diurno (col A) antes de pico/noturno (col B); janela fixa por último
-  const bandIdx = (h: string) => (h === '06:00' || h === '21:00' ? 0 : h === '18:00' || h === '15:00' ? 1 : 2)
+  // padrão/diurno (col A) antes de pico/noturno (col B); janela fixa por último.
+  // Pico começa em peakStart; padrão (wrap) começa em peakEnd.
+  const ps = `${String(params.peakStart ?? 15).padStart(2, '0')}:00`
+  const pe = `${String(params.peakEnd ?? 21).padStart(2, '0')}:00`
+  const bandIdx = (h: string) => (h === '06:00' || h === pe ? 0 : h === '18:00' || h === ps ? 1 : 2)
   return cellRows.sort((a, b) =>
     nlow(a.canal).localeCompare(nlow(b.canal)) ||
     norm(a.categoria).localeCompare(norm(b.categoria)) ||

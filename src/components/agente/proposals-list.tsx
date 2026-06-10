@@ -179,13 +179,15 @@ function spExpandDays(row: ProposedPriceRow): GridDay[] {
 
 function spGetBands(row: ProposedPriceRow): Array<'d' | 'n'> {
   if (!row.dias?.length) return ['d', 'n']
-  // Coluna A (d): diurno 06:00 OU padrão/fora-de-pico 21:00.
-  // Coluna B (n): noturno 18:00 OU pico 15:00 (modo gestor / giro_uplift).
-  // hora_inicio vazio/ausente = produto de janela fixa → sem banda: preenche ambas.
-  const h = row.hora_inicio
-  if (h === '06:00' || h === '21:00') return ['d']
-  if (h === '18:00' || h === '15:00') return ['n']
-  return ['d', 'n']
+  const hi = row.hora_inicio, hf = row.hora_fim
+  if (!hi) return ['d', 'n']            // janela fixa (sem banda) → preenche ambas
+  if (hi === '06:00') return ['d']      // legado diurno → coluna A
+  if (hi === '18:00') return ['n']      // legado noturno → coluna B
+  // Modo gestor (giro_uplift), faixa de pico configurável (15–21h, 15–22h, …):
+  // PICO = janela direta (início < fim no mesmo dia) → coluna B;
+  // PADRÃO (fora de pico) = wrap (início >= fim, atravessa a meia-noite) → coluna A.
+  // Independe do valor exato de peakEnd — compatível com propostas antigas e novas.
+  return (hf && hi < hf) ? ['n'] : ['d']
 }
 
 function buildSpreadsheetRows(rows: ProposedPriceRow[]): SpRow[] {
@@ -357,17 +359,26 @@ function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
 
   // Faixa horária (06–18 / 18–06) só aparece se o canal tem linhas com banda definida.
   // Site Programada e janelas fixas → um preço por dia (sem sub-colunas de faixa).
+  // Tem sub-colunas de faixa quando há linhas com hora_inicio definida (06/18 legado OU pico/padrão).
   const useBands = useMemo(
-    () => rows.some(r => r.canal === canal && ['06:00', '18:00', '15:00', '21:00'].includes(r.hora_inicio ?? '')),
+    () => rows.some(r => r.canal === canal && !!r.hora_inicio),
     [rows, canal],
   )
-  // Modo gestor (giro_uplift): faixas são Padrão (fora de pico) + Pico 15h–21h, não diurno/noturno.
+  // Modo gestor (giro_uplift): qualquer hora_inicio não-legada (≠ 06:00/18:00) indica faixa de pico configurável.
   const isPrimeTime = useMemo(
-    () => rows.some(r => r.canal === canal && (r.hora_inicio === '15:00' || r.hora_inicio === '21:00')),
+    () => rows.some(r => r.canal === canal && !!r.hora_inicio && r.hora_inicio !== '06:00' && r.hora_inicio !== '18:00'),
     [rows, canal],
   )
+  // Deriva o rótulo do pico das horas reais da própria proposta (15–21h, 15–22h, …).
+  const picoRow = useMemo(
+    () => rows.find(r => r.canal === canal && r.hora_inicio && r.hora_fim && r.hora_inicio !== '06:00' && r.hora_inicio < r.hora_fim),
+    [rows, canal],
+  )
+  const hh = (s?: string) => (s ? String(parseInt(s.slice(0, 2), 10)) : '')
   const bandLabelA = isPrimeTime ? 'fora de pico' : '06–18h'
-  const bandLabelB = isPrimeTime ? 'pico 15–21h' : '18–06h'
+  const bandLabelB = isPrimeTime
+    ? (picoRow ? `pico ${hh(picoRow.hora_inicio)}–${hh(picoRow.hora_fim)}h` : 'pico')
+    : '18–06h'
   const headerColSpan = 1 + GRID_DAYS.length * (useBands ? 2 : 1)
 
   return (

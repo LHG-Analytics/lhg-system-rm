@@ -597,7 +597,9 @@ export async function POST(req: NextRequest) {
   const giroUpliftCap  = Number((agentConfigData as { giro_uplift_cap?: number } | null)?.giro_uplift_cap ?? 0.05)
   const pricingMethod  = (agentConfigData as { pricing_method?: string } | null)?.pricing_method ?? 'agent_judgment'
   const peakPremium    = Number((agentConfigData as { peak_premium?: number } | null)?.peak_premium ?? 0)
-  // Modo do gestor (giro_uplift): grade usa faixa de PICO 15h–21h em vez de diurno/noturno.
+  const peakStart      = Number((agentConfigData as { peak_start?: number } | null)?.peak_start ?? 15)
+  const peakEnd        = Number((agentConfigData as { peak_end?: number } | null)?.peak_end ?? 21)
+  // Modo do gestor (giro_uplift): grade usa faixa de PICO (peakStart–peakEnd) em vez de diurno/noturno.
   const primeTime      = pricingMethod === 'giro_uplift' && peakPremium > 0
 
   const FOCUS_LABELS: Record<string, string> = {
@@ -619,7 +621,7 @@ export async function POST(req: NextRequest) {
 - **Moeda:** Use sempre **${currencySymbol}** para todos os valores monetários no texto e nas tabelas — nunca use outro símbolo de moeda
 - **Giro como sinal de aumento:** dê peso a dias que giram acima da média da PRÓPRIA categoria (candidatos a aumento, até a variação máxima) — cruze com concorrência/eventos antes de decidir.${neverReduce ? `
 - **NUNCA REDUZIR (regra do gestor):** nenhum preço proposto pode ser menor que o preço atual. Dias/categorias fracos = manter o preço (0%), nunca reduzir.` : ''}${primeTime ? `
-- **FAIXA DE PICO (método do gestor):** para os produtos de check-in imediato (balcão/site: 3h/6h/12h), a proposta tem DUAS faixas por dia — **Padrão (fora de pico)** e **Pico das 15h às 21h**, este com prêmio de +${(peakPremium * 100).toFixed(0)}% sobre o padrão. O sistema gera essas duas faixas automaticamente; ao descrever a proposta, fale em "padrão" e "pico 15h–21h" (NÃO em diurno/noturno).` : ''}`
+- **FAIXA DE PICO (método do gestor):** para os produtos de check-in imediato (balcão/site: 3h/6h/12h), a proposta tem DUAS faixas por dia — **Padrão (fora de pico)** e **Pico das ${peakStart}h às ${peakEnd}h**, este com prêmio de +${(peakPremium * 100).toFixed(0)}% sobre o padrão. O sistema gera essas duas faixas automaticamente; ao descrever a proposta, fale em "padrão" e "pico ${peakStart}h–${peakEnd}h" (NÃO em diurno/noturno).` : ''}`
 
   // Bloco de regras de ajuste dinâmico por giro/ocupação
   const pricingRulesBlock = buildPricingThresholdsBlock(pricingThresholds)
@@ -869,7 +871,7 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
             activePriceRows,
             kpiPeriods[0]?.company ?? null,
             bandDemand,
-            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium },
+            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium, peakStart, peakEnd },
             rows,  // overlay: ajustes propostos pelo agente sobrescrevem as células correspondentes
           )
         } else {
@@ -1278,7 +1280,7 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
             activePriceRows,
             kpiPeriods[0]?.company ?? null,
             bandDemand,
-            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium },
+            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium, peakStart, peakEnd },
             [],
           )
           if (clampedRows.length) {
