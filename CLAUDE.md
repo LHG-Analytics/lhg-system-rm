@@ -1192,6 +1192,12 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
 
+- **LHG-255:** fix(kpis): Day Use/Diária/Pernoite só contam quando há reserva programada ✅ 2026-06-10
+  - Sintoma: dashboard "Mix por Período" com 23 Day Use, mas admin de Reservas Programadas (verdade) tinha 7 Day Use + 2 Pernoite. Heurístico rotulava locações de balcão (check-in 12-14h, duração curta) como Day Use
+  - Day Use/Diária/Pernoite são produtos EXCLUSIVOS do site/guia programado. Fix: gate por reserva programada — locação só vira Day Use/Pernoite/Diária se houver reserva programada associada (mesma detecção `WEBSITE_SCHEDULED`/`GUIA_SCHEDULED`; join `reserva.id_locacaoapartamento = la.id_apartamentostate`)
+  - `period-helpers.ts`: `scheduledReservaExistsSQL(la)` + `buildPeriodCaseSQL(periodType, gateScheduled)`; aplicado em `queryPeriodMix`, `category-period-kpis` e `queryPeriodMixInline` (coluna `is_scheduled` na base + `gateScheduled=true`)
+  - **Armadilha:** `reserva.id_locacaoapartamento` armazena o `id_apartamentostate` da locação (não o `locacaoapartamento.id`) — join estabelecido em `queryChannelKPIs`. Mantém corte 06:00 (admin usa 00:00 → borda mínima)
+
 - **LHG-254:** fix(agente): data do período errada — agente somava +1 dia ✅ 2026-06-10
   - Sintoma: hoje=10/06, agente escrevia "01/06 → 11/06 (11 dias)". Bloco de KPIs estava CORRETO (`endDate=todayIso`=10/06); o agente recalculava data/dias e errava (LLM ruim em aritmética de data)
   - `buildKPIContext`: linha "Período:" agora traz o nº de dias pronto (`periodDaysLabel`, inclusivo); passo 0 do system-prompt proíbe recalcular — copiar literalmente do bloco
