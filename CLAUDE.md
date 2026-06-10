@@ -1192,6 +1192,17 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
 
+- **LHG-252:** feat(propostas): editar preços na própria planilha (mesmo layout da apresentação) ✅ 2026-06-10
+  - Editar jogava o usuário numa lista flat linha-a-linha (78–91 linhas) — péssimo. Agora edita na MESMA planilha dia × faixa da apresentação, cada célula vira input
+  - `SpCell` ganha `rowIndex`; `buildSpreadsheetRows` rastreia índice por célula; `SpreadsheetView` aceita `editable`+`onCellChange`; `SpreadsheetCellTd` renderiza input no modo edição (atual em cima, preço editável, variação ao vivo)
+  - Removida a tabela flat + código morto (`formatDiaRow`, `VariacaoBadge`, `updateEditJustificativa`, imports de `Table`); edição de justificativa por linha removida (aparece no hover em modo visualização)
+
+- **LHG-251:** fix(agente): análise não aparecia no chat ao gerar proposta ✅ 2026-06-10
+  - Root cause (renderização): a UI cortava todo texto APÓS o 1º `sugerir_respostas` (slice `firstSugerirIdx`, da LHG-150). No fluxo multi-step o agente costuma escrever a análise por último (depois de salvar_proposta/sugerir_respostas) → o corte a escondia (só avatar + cards)
+  - Fix `agente-chat.tsx`: em vez de cortar por posição, **deduplica blocos de texto por conteúdo** (colapsa o duplicado do SDK que motivou a LHG-150) e exibe todo texto único em qualquer ordem
+  - `system-prompt.ts`: reforço da ordem obrigatória análise(texto) → salvar_proposta → resumo → sugerir_respostas; nunca chamar salvar_proposta como 1ª ação
+  - **Armadilha:** o slice posicional `firstSugerirIdx` escondia texto legítimo pós-tool; dedup por conteúdo é o jeito certo de matar duplicata sem esconder a análise
+
 - **LHG-250:** feat(agente): faixa de pico 15h–21h na geração de proposta do LIV (método do gestor) ✅ 2026-06-10
   - Validação via heatmap do LIV (mai/2025→mai/2026): pico de entradas é a tarde-noite; 15h–21h é faixa de prime time defensável. O split diurno(06–18)/noturno(18–06) nem representava a faixa do gestor (ela atravessa as duas)
   - Ativa o prime-time já configurado na LHG-242 (`peak_start=15`, `peak_end=21`, `peak_premium=0.05`, `pricing_method=giro_uplift`) mas que a grade nunca emitia
