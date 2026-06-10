@@ -63,6 +63,19 @@ function buildRevparWeekTable(data: DataTableRevparByWeek[], fmtMoney?: (n: numb
 
 // ─── Contexto de KPIs ─────────────────────────────────────────────────────────
 
+// Conta dias (inclusivo) entre duas datas DD/MM/YYYY. Usado para já entregar o
+// número de dias na linha "Período:" — o agente NÃO deve recalcular (erra aritmética).
+function periodDaysLabel(start: string, end: string): string {
+  const parse = (s: string) => {
+    const [d, m, y] = s.split('/').map(Number)
+    return (d && m && y) ? Date.UTC(y, m - 1, d) : NaN
+  }
+  const a = parse(start), b = parse(end)
+  if (!isFinite(a) || !isFinite(b)) return ''
+  const days = Math.round((b - a) / 86400000) + 1
+  return days > 0 ? ` (${days} ${days === 1 ? 'dia' : 'dias'})` : ''
+}
+
 function buildKPIContext(
   unitName: string,
   period: { startDate: string; endDate: string },
@@ -73,7 +86,7 @@ function buildKPIContext(
   fmtMoney?: (n: number, decimals?: number) => string,
 ): string {
   if (!company) return `## Dados operacionais — ${unitName}
-Período: ${period.startDate} a ${period.endDate}
+Período: ${period.startDate} → ${period.endDate}${periodDaysLabel(period.startDate, period.endDate)}
 
 Nenhuma locação registrada neste período.`
 
@@ -161,7 +174,7 @@ ${channelKPIs.map((c) =>
     : ''
 
   return `## Dados operacionais — ${unitName}
-Período: ${period.startDate} a ${period.endDate}
+Período: ${period.startDate} → ${period.endDate}${periodDaysLabel(period.startDate, period.endDate)}
 
 ### KPIs gerais
 - Taxa de Ocupação: **${fmt(r.totalOccupancyRate, 'percent')}**
@@ -416,7 +429,7 @@ ${SHARED_PRICING_RULES}
 5. **Analise TODOS os canais** — se houver \`balcao_site\` e \`site_programada\`, avalie os dois
 
 ## Framework de análise (use sempre nesta ordem, de forma concisa)
-0. **Período analisado** — PRIMEIRA linha obrigatória, antes de qualquer análise. Formato exato: \`**📅 Período analisado:** DD/MM/YYYY → DD/MM/YYYY (N dias)\` — use exatamente as datas do campo "Período:" no bloco de KPIs. Exemplo: \`**📅 Período analisado:** 27/02/2026 → 21/05/2026 (83 dias — desde a vigência da tabela atual)\`. NUNCA omita esta linha.
+0. **Período analisado** — PRIMEIRA linha obrigatória, antes de qualquer análise. **Copie LITERALMENTE as datas E o número de dias do campo "Período:" do bloco de KPIs** — ele já vem no formato \`DD/MM/YYYY → DD/MM/YYYY (N dias)\`. **NUNCA recalcule, ajuste ou "arredonde" datas nem o número de dias por conta própria** (aritmética de data é proibida — use só o que está escrito no bloco). Formato: \`**📅 Período analisado:** <copie a linha Período exatamente> — <breve descrição opcional, ex: "mês atual, dados parciais">\`. Se a data final do bloco for hoje, ela JÁ é a data correta; não some +1 dia. NUNCA omita esta linha.
 1. **Hipótese** (1–2 frases, bloco callout) — Escreva em bloco markdown \`>\` com ícone 📌 a hipótese central já processada: qual o padrão mais relevante nos dados e qual ajuste potencial ele sugere. **Formato obrigatório:** \`> 📌 **Hipótese:** [frase com insight concreto + consequência esperada]\`. Máximo 2 frases de insight. Proibido: descrever intenções ("Usarei os KPIs..."), listar fontes de dados, ou prometer o que vai fazer — apenas a hipótese em si. Exemplo: \`> 📌 **Hipótese:** Overprice em 12h/FDS (+80% vs mercado) inibe ocupação nesse período; underprice em 3h semana deixa RevPAR na mesa. Ajuste assimétrico pode ganhar ticket sem perder giro.\`
 2. **Diagnóstico** — bullet points com pontos fortes e fracos nos KPIs. Sem parágrafos.
 3. **Padrão semanal** — dias de pico vs. dias fracos por categoria (tabela ou bullets curtos).
