@@ -11,7 +11,7 @@ import type {
 } from '@/lib/kpis/types'
 import { Pool } from 'pg'
 import { getAutomPool, getUnitCategoryIds, getUnitPeriodType } from './client'
-import { buildPeriodCaseSQL, getValidPeriodsForType } from './period-helpers'
+import { buildPeriodCaseSQL, getValidPeriodsForType, scheduledReservaExistsSQL } from './period-helpers'
 import {
   cteBaseSuiteDays,
   cteSuiteDaysTotal,
@@ -518,7 +518,7 @@ async function queryPeriodMixInline(
   statusFilter: string,
   dateCol: string,
 ): Promise<BillingRentalTypeItem[]> {
-  const periodCase   = buildPeriodCaseSQL(periodType)
+  const periodCase   = buildPeriodCaseSQL(periodType, true)
   const validPeriods = getValidPeriodsForType(periodType)
 
   const sql = `
@@ -528,6 +528,7 @@ async function queryPeriodMixInline(
       SELECT
         EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 AS dur,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)                                       AS h_in,
+        ${scheduledReservaExistsSQL('la')} AS is_scheduled,
         la.valortotal::numeric AS receita
       FROM locacaoapartamento la
       INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id

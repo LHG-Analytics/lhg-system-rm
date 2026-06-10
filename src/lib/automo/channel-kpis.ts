@@ -1,6 +1,6 @@
 import { getAutomPool, getUnitCategoryIds, getUnitPeriodType } from './client'
 import { ddmmyyyyToIso, ddmmyyyyToIsoEnd, addDays, buildDateRangeFilter, buildStatusFilter, buildTimeFilter } from './company-kpis'
-import { buildPeriodCaseSQL, getValidPeriodsForType } from './period-helpers'
+import { buildPeriodCaseSQL, getValidPeriodsForType, scheduledReservaExistsSQL } from './period-helpers'
 import type { ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
 
 // ─── Labels legíveis por tipo de canal ────────────────────────────────────────
@@ -197,13 +197,14 @@ export async function queryPeriodMix(
   const timeFilter   = buildTimeFilter(startHour, endHour, col)
   const idList       = catIds.join(',')
 
-  const periodCase = buildPeriodCaseSQL(periodType)
+  const periodCase = buildPeriodCaseSQL(periodType, true)
 
   const sql = `
     WITH base AS (
       SELECT
         EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 AS dur,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)                                       AS h_in,
+        ${scheduledReservaExistsSQL('la')} AS is_scheduled,
         la.valortotal::numeric AS receita
       FROM locacaoapartamento la
       INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id

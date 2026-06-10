@@ -1,6 +1,6 @@
 import { getAutomPool, getUnitCategoryIds, getUnitPeriodType } from './client'
 import { ddmmyyyyToIso, ddmmyyyyToIsoEnd, addDays } from './company-kpis'
-import { buildPeriodCaseSQL, getValidPeriodsForType } from './period-helpers'
+import { buildPeriodCaseSQL, getValidPeriodsForType, scheduledReservaExistsSQL } from './period-helpers'
 import { cteBaseSuiteDays, cteSuiteDaysByCategory } from './suite-days'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ export async function queryCategoryPeriodKPIs(
         return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 05:59:59`
       })()
 
-  const periodSQL = buildPeriodCaseSQL(periodType)
+  const periodSQL = buildPeriodCaseSQL(periodType, true)
 
   const sql = `
     WITH ${cteBaseSuiteDays(catIds)},
@@ -77,6 +77,7 @@ export async function queryCategoryPeriodKPIs(
         ca.descricao AS categoria,
         EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao)) / 3600.0 AS dur,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)                                       AS h_in,
+        ${scheduledReservaExistsSQL('la')} AS is_scheduled,
         COALESCE(CAST(la.valorliquidolocacao AS DECIMAL(15,4)), 0) AS receita_loc,
         COALESCE(CAST(la.valortotal          AS DECIMAL(15,4)), 0) AS valor_total,
         EXTRACT(EPOCH FROM (la.datafinaldaocupacao - la.datainicialdaocupacao))           AS occupied_sec
