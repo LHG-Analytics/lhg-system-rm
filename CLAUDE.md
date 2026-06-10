@@ -1192,6 +1192,14 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
 
+- **LHG-250:** feat(agente): faixa de pico 15h–21h na geração de proposta do LIV (método do gestor) ✅ 2026-06-10
+  - Validação via heatmap do LIV (mai/2025→mai/2026): pico de entradas é a tarde-noite; 15h–21h é faixa de prime time defensável. O split diurno(06–18)/noturno(18–06) nem representava a faixa do gestor (ela atravessa as duas)
+  - Ativa o prime-time já configurado na LHG-242 (`peak_start=15`, `peak_end=21`, `peak_premium=0.05`, `pricing_method=giro_uplift`) mas que a grade nunca emitia
+  - `day-band-grid.ts`: modo `primeTime` (gate `pricing_method='giro_uplift'`). Balcão/site curta estadia (3h/6h/12h) → 2 faixas/dia: PADRÃO (fora de pico) = atual×(1+fator giro), com teto+never_reduce; PICO 15h–21h = padrão×(1+peak_premium). O prêmio fica ACIMA do teto (teto limita padrão vs atual; pico é +X% sobre o padrão). Janela fixa segue 1 preço/dia
+  - `chat/route.ts`: lê `peak_premium`/`peak_start`/`peak_end`, passa `primeTime`+`peakPremium`; `agentConfigBlock` descreve a faixa de pico
+  - `proposals-list.tsx`: SpreadsheetView rotula colunas "fora de pico"/"pico 15–21h"; `spGetBands` mapeia hora `21:00`→col A, `15:00`→col B
+  - **Armadilha:** aplica-se SÓ a unidades `giro_uplift` (LIV). Andar de Cima é `agent_judgment` → segue diurno/noturno. Após aprovar uma proposta prime-time, a tabela vira não-legada (tem `dias`) e a próxima proposta usa o caminho LLM (não a grade)
+
 - **LHG-248:** fix(propostas): aprovação substitui modelo semana/fds pelo dia-a-dia sem duplicar ✅ 2026-06-08
   - Root cause: merge da aprovação casava por `rowKey` (`canal|cat|per|dia_tipo` legado vs `canal|cat|per|dias|hora` dia-a-dia); tabela ativa legada + proposta dia-a-dia = nenhum rowKey batia → linhas legadas passavam intactas E por-dia eram adicionadas (tabela aprovada com os dois formatos duplicados)
   - Fix: merge por **COMBO** (`canal|categoria|periodo`, case-insensitive) em `proposals/route.ts` PATCH — combos na proposta substituem integralmente as linhas base daquele combo; combos ausentes são preservados; remove `rowKey`/`proposedMap`/`remainingProposed`
