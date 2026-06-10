@@ -1192,6 +1192,13 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
 
+- **LHG-256:** fix(kpis): Mix por Canal conta por check-in (datainicio), não por data da reserva ✅ 2026-06-10
+  - Sintoma: Mix por Canal mostrava Site Programado=6, mas Mix por Período mostrava 9 produtos programados (Day Use 7 + Pernoite 2) na mesma janela
+  - Root cause: `queryChannelKPIs` filtrava por `r.dataatendimento` (data da RESERVA, corte 00:00); produtos programados são comprados com antecedência → check-in em dias futuros (07,08,10,12,14/06). Só 6 tinham dataatendimento na janela, mas 9 tinham check-in
+  - Fix: filtrar por `r.datainicio` (check-in) com corte operacional 06:00 (`buildIsoEnd`), igual ao Mix por Período e ao filtro "Entrada". Alinha com o denominador da representatividade (já usa `apartamentostate.datainicio`)
+  - Validado no Automo LIV: Site Programado 6→9 (== Day Use 7 + Pernoite 2); Site Imediato 10
+  - **Armadilha:** `dataatendimento` = quando a reserva foi feita (≠ check-in); para qualquer view filtrada por "Entrada" use `datainicio`. A query de cancelamento ainda usa dataatendimento (não tocada)
+
 - **LHG-255:** fix(kpis): Day Use/Diária/Pernoite só contam quando há reserva programada ✅ 2026-06-10
   - Sintoma: dashboard "Mix por Período" com 23 Day Use, mas admin de Reservas Programadas (verdade) tinha 7 Day Use + 2 Pernoite. Heurístico rotulava locações de balcão (check-in 12-14h, duração curta) como Day Use
   - Day Use/Diária/Pernoite são produtos EXCLUSIVOS do site/guia programado. Fix: gate por reserva programada — locação só vira Day Use/Pernoite/Diária se houver reserva programada associada (mesma detecção `WEBSITE_SCHEDULED`/`GUIA_SCHEDULED`; join `reserva.id_locacaoapartamento = la.id_apartamentostate`)
