@@ -626,12 +626,29 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
   const [onlyClamped, setOnlyClamped] = useState(false)
 
+  // Ticket médio operacional REAL do mês (receita ÷ locações) — baseline da simulação.
+  // A média simples dos preços da tabela não reflete o mix real de vendas.
+  const [realTicket, setRealTicket] = useState<number | null>(null)
+
   useEffect(() => {
     fetch(`/api/agente/proposals?unitSlug=${unitSlug}`)
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data)) setProposals(data as PriceProposal[]) })
       .catch(() => {})
   }, [refreshKey, unitSlug])
+
+  useEffect(() => {
+    if (!unitSlug) return
+    const now = new Date()
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    fetch(`/api/kpis/${unitSlug}?month=${month}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
+        const t = d?.company?.TotalResult?.totalAllTicketAverage
+        if (typeof t === 'number' && t > 0) setRealTicket(t)
+      })
+      .catch(() => {})
+  }, [unitSlug])
 
   // Carrega revisões pendentes — múltiplas por proposta (1 por checkpoint_days: 7/14/28)
   const loadPendingReviews = useCallback(async () => {
@@ -1246,21 +1263,26 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                     </div>
 
                     {/* Painel de simulação de receita */}
-                    {!isEditing && impact && (
+                    {!isEditing && impact && (() => {
+                      // Baseline = ticket médio operacional REAL do mês (receita÷locações), não a
+                      // média simples dos preços da tabela. Aplica o reajuste médio da proposta.
+                      const baseTicket = realTicket ?? impact.avgCurrent
+                      const projTicket = baseTicket * (1 + impact.deltaTicket / 100)
+                      return (
                       <div className="border-t px-4 py-3 bg-muted/30 flex flex-wrap items-center gap-x-6 gap-y-1">
                         <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                           Simulação (volume constante)
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          Ticket médio atual:{' '}
+                          Ticket médio atual{realTicket != null ? ' (operacional)' : ''}:{' '}
                           <span className="font-medium text-foreground">
-                            {formatMoney(impact.avgCurrent, 2)}
+                            {formatMoney(baseTicket, 2)}
                           </span>
                         </span>
                         <span className="text-xs text-muted-foreground">
                           Ticket projetado:{' '}
                           <span className="font-medium text-foreground">
-                            {formatMoney(impact.avgProposed, 2)}
+                            {formatMoney(projTicket, 2)}
                           </span>
                         </span>
                         <span className={cn(
@@ -1268,10 +1290,11 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                           impact.deltaTicket > 0 ? 'text-green-600' : impact.deltaTicket < 0 ? 'text-red-500' : 'text-muted-foreground'
                         )}>
                           {impact.deltaTicket >= 0 ? '▲' : '▼'}{' '}
-                          {Math.abs(impact.deltaTicket).toFixed(1)}% por locação
+                          {Math.abs(impact.deltaTicket).toFixed(1)}% (reajuste médio da tabela)
                         </span>
                       </div>
-                    )}
+                      )
+                    })()}
 
                     {/* Barra de ações */}
                     {canManage && isEditing ? (
