@@ -84,7 +84,9 @@ export function CategoryMappingDialog({
       result.set(name, [...catMap.values()].sort())
     }
     return result
-  }, [snapshots])
+    // activeCompetitorNames é USADO aqui — sem ele nas deps, o memo fica obsoleto quando
+    // o config carrega depois dos snapshots (race entre os dois fetches) → "nenhum snapshot".
+  }, [snapshots, activeCompetitorNames])
 
   // Nossas categorias — de suite_amenities ou fallback via mapped_prices.categoria_nossa
   const ourCategories = useMemo(() => {
