@@ -1192,6 +1192,10 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
 
+- **LHG-275:** feat(propostas): view "Δ%" na grade + painel-resumo lateral ✅ 2026-06-15
+  - Toggle `Proposta · Δ% · Tabela vigente`: modo Δ% mostra a variação % colorida em cada célula (reaproveita a grade; sem tabela espelhada). `SpreadsheetCellTd` mode ganha `'delta'`; legenda aparece em proposta+delta
+  - Painel-resumo lateral (`aside`, `hidden xl:flex`, fora do modo edição): contadores ▲/●/▼ + Δ% médio por categoria (ordenado por preço) e por período. Memo `summary` em `proposals-list.tsx`
+
 - **LHG-274:** fix(propostas): simulação usa ticket médio operacional real como baseline ✅ 2026-06-15
   - Sintoma: painel "Simulação (volume constante)" mostrava ticket atual R$ 291,11 mas o real do mês é R$ 282
   - Root cause: `calcImpact` usava média SIMPLES dos preços da tabela (cada célula pesa igual), não o ticket operacional (receita÷locações ponderado pelo mix)
