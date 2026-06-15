@@ -358,6 +358,21 @@ function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
   const canRows = useMemo(() => spRows.filter(r => r.canal === canal), [spRows, canal])
   const periods = useMemo(() => sortPeriods([...new Set(canRows.map(r => r.periodo))]), [canRows])
 
+  // Ranking de categoria por preço (média do preço atual no canal ativo) — da mais barata
+  // para a mais cara. Usado para ordenar as linhas em TODAS as seções de período.
+  const catRank = useMemo(() => {
+    const acc = new Map<string, { t: number; n: number }>()
+    for (const r of rows) {
+      if (r.canal !== canal) continue
+      const e = acc.get(r.categoria) ?? { t: 0, n: 0 }
+      e.t += r.preco_atual || 0; e.n += 1
+      acc.set(r.categoria, e)
+    }
+    const rank = new Map<string, number>()
+    for (const [c, { t, n }] of acc) rank.set(c, n ? t / n : 0)
+    return rank
+  }, [rows, canal])
+
   // Faixa horária (06–18 / 18–06) só aparece se o canal tem linhas com banda definida.
   // Site Programada e janelas fixas → um preço por dia (sem sub-colunas de faixa).
   // Tem sub-colunas de faixa quando há linhas com hora_inicio definida (06/18 legado OU pico/padrão).
@@ -494,7 +509,8 @@ function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
             <tbody>
               {periods.map(periodo => {
                 const pRows = canRows.filter(r => r.periodo === periodo)
-                const cats  = [...new Set(pRows.map(r => r.categoria))].sort()
+                const cats  = [...new Set(pRows.map(r => r.categoria))]
+                  .sort((a, b) => ((catRank.get(a) ?? 0) - (catRank.get(b) ?? 0)) || a.localeCompare(b))
                 return (
                   <Fragment key={periodo}>
                     <tr>
