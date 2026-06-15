@@ -1192,6 +1192,9 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
 
+- **LHG-273:** feat(propostas): ordenar categorias da mais barata para a mais cara na grade ✅ 2026-06-15
+  - Categorias estavam alfabéticas; agora por preço (memo `catRank` = média do `preco_atual` por categoria no canal ativo, asc, desempate alfabético); ordem consistente em todas as seções de período
+
 - **LHG-271:** fix(propostas): ordem dos períodos na grade (3h/6h/12h/pernoite → programadas) ✅ 2026-06-15
   - Sintoma: planilha de proposta mostrava 12 HORAS antes de 3 HORAS
   - Root cause: `sortPeriods` checava `'2 hora'` antes de `'12 hora'` e `"12 horas"` contém `"2 hora"` (substring) → rank 2; day use/diária empatavam e pernoite ia por último
