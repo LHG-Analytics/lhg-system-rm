@@ -1192,6 +1192,16 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
 
+- **LHG-271:** fix(propostas): ordem dos períodos na grade (3h/6h/12h/pernoite → programadas) ✅ 2026-06-15
+  - Sintoma: planilha de proposta mostrava 12 HORAS antes de 3 HORAS
+  - Root cause: `sortPeriods` checava `'2 hora'` antes de `'12 hora'` e `"12 horas"` contém `"2 hora"` (substring) → rank 2; day use/diária empatavam e pernoite ia por último
+  - Fix: extrai nº da hora por regex; ordem imposta: horas (3<6<12) < day use(14) < pernoite(15) < diária(16). Balcão: 3h,6h,12h,Pernoite(promo só ADC); programadas: Day Use, Pernoite, Diária
+
+- **LHG-272:** fix(concorrentes): "Mapear suítes" vazio por useMemo obsoleto (race config × snapshots) ✅ 2026-06-15
+  - `category-mapping-dialog.tsx`: o `useMemo` de `competitorCategories` usa `activeCompetitorNames` (de `config`) mas só tinha `[snapshots]` nas deps → quando snapshots chega antes do config, calcula vazio e nunca recalcula. Fix: adiciona `activeCompetitorNames` às deps
+  - **Concorrentes via Guia GO:** a SPA `go.guiademoteis.com.br/sites/{id}/...` usa API autenticada com token Basic público (no bundle JS). Endpoints: `reservas/listagemv5` (imediatas: nome+comodidades+preço), `programadas/reservas/v5` tipo=2 (pernoite/diária), `motel/{id}/{slug}/configuracoes/site` (IDs das suítes). Preços por suíte também via público `guiasites.guiademoteis.com.br/api/suites/Periodos/{id}`. Lido Plaza (site 1696) importado p/ Andar de Cima via script one-off; mapeamento de categorias pré-preenchido por tier (sem-hidro→básicas, hidro→ESPUMA, hidro+pista→LOUNGE/COPAN)
+  - **Pendência/melhoria:** não há modo "Guia GO" na UI ainda — esses links foram extraídos via script manual. Para self-serve, falta um `mode='guia-go'` no route + auto-detecção da URL
+
 - **LHG-257:** feat(agente): faixa de pico do LIV configurável (peak_start/peak_end) — 15h→22h ✅ 2026-06-10
   - Faixa de pico estava hardcoded 15/21 no gerador/prompt/UI (dívida do LHG-250); agora usa `peak_start`/`peak_end` do `rm_agent_config` — mudar a janela é operação só de banco
   - `day-band-grid.ts`: `DayBandParams.peakStart/peakEnd`; horas pico/padrão dinâmicas + `bandIdx` do sort
