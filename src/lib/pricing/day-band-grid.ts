@@ -156,7 +156,12 @@ export function generateDayBandGrid(
       const atual = atualByDay.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}`) ?? 0
       if (atual <= 0) continue
       const giroD = days[DOW_FULL[dia]] ?? 0
-      const dayFactor = span > 0 ? clamp((giroD - giroMin) / span * params.dayCap, 0, params.dayCap) : 0
+      // O fator de giro por dia só vale para curta estadia do balcão (3h/6h/12h) — é o
+      // volume que alimenta o giro da categoria (DataTableGiroByWeek). Produtos de janela
+      // fixa (Day Use/Pernoite/Diária e pernoite promo) têm volume próprio escasso e NÃO
+      // devem herdar o pico de tarde do balcão → fator 0 (mantém preço; agente sobe via overlay).
+      const dayFactor = (usesBands(canal, periodo) && span > 0)
+        ? clamp((giroD - giroMin) / span * params.dayCap, 0, params.dayCap) : 0
 
       // ── Modo Prime Time (método do gestor / giro_uplift) ──────────────────
       // Em vez de diurno/noturno: PADRÃO (fora de pico) + PICO (faixa peakStart–peakEnd).
