@@ -225,7 +225,7 @@ function SpreadsheetCellTd({
   onPriceChange,
 }: {
   cell: SpCell | undefined
-  mode: 'proposal' | 'current'
+  mode: 'proposal' | 'current' | 'delta'
   formatMoney: (v: number, d?: number) => string
   editable?: boolean
   onPriceChange?: (price: number) => void
@@ -269,19 +269,24 @@ function SpreadsheetCellTd({
     )
   }
 
-  const bg = mode === 'proposal'
+  const colored = mode === 'proposal' || mode === 'delta'
+  const bg = colored
     ? isUp   ? 'bg-green-500/12 dark:bg-green-500/18'
     : isDown ? 'bg-red-500/12 dark:bg-red-500/18'
     :          'bg-amber-500/10 dark:bg-amber-500/14'
     : ''
 
-  const fg = mode === 'proposal'
+  const fg = colored
     ? isUp   ? 'text-green-700 dark:text-green-300'
     : isDown ? 'text-red-600 dark:text-red-400'
     :          'text-amber-700 dark:text-amber-300'
     : 'text-foreground'
 
-  const tdContent = mode === 'proposal' ? (
+  const tdContent = mode === 'delta' ? (
+    <span className={cn('text-[11px] font-semibold tabular-nums', fg)}>
+      {v >= 0 ? '+' : ''}{v.toFixed(1)}%
+    </span>
+  ) : mode === 'proposal' ? (
     <div className="flex flex-col items-end gap-px">
       <span className="text-[9px] leading-tight text-muted-foreground/45 tabular-nums">
         {formatMoney(cell.atual)}
@@ -340,7 +345,7 @@ function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
   /** Edição de uma célula → índice da linha de origem + novo preço. */
   onCellChange?: (rowIndex: number, price: number) => void
 }) {
-  const [viewMode, setViewMode]   = useState<'proposal' | 'current'>('proposal')
+  const [viewMode, setViewMode]   = useState<'proposal' | 'current' | 'delta'>('proposal')
   const [activeCanal, setActiveCanal] = useState<string>('')
 
   const canals = useMemo(() => {
@@ -372,6 +377,25 @@ function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
     for (const [c, { t, n }] of acc) rank.set(c, n ? t / n : 0)
     return rank
   }, [rows, canal])
+
+  // Resumo agregado da proposta (canal ativo): contadores + Δ% médio por categoria e período.
+  const summary = useMemo(() => {
+    const canalRows = rows.filter(r => r.canal === canal)
+    let up = 0, flat = 0, down = 0
+    const byCat = new Map<string, { s: number; n: number }>()
+    const byPer = new Map<string, { s: number; n: number }>()
+    for (const r of canalRows) {
+      const v = r.variacao_pct
+      if (v > 0.5) up++; else if (v < -0.5) down++; else flat++
+      const c = byCat.get(r.categoria) ?? { s: 0, n: 0 }; c.s += v; c.n++; byCat.set(r.categoria, c)
+      const p = byPer.get(r.periodo) ?? { s: 0, n: 0 }; p.s += v; p.n++; byPer.set(r.periodo, p)
+    }
+    const cats = [...byCat.entries()]
+      .map(([k, { s, n }]) => ({ k, avg: n ? s / n : 0 }))
+      .sort((a, b) => (catRank.get(a.k) ?? 0) - (catRank.get(b.k) ?? 0))
+    const pers = sortPeriods([...byPer.keys()]).map(k => { const e = byPer.get(k)!; return { k, avg: e.n ? e.s / e.n : 0 } })
+    return { up, flat, down, cats, pers }
+  }, [rows, canal, catRank])
 
   // Faixa horária (06–18 / 18–06) só aparece se o canal tem linhas com banda definida.
   // Site Programada e janelas fixas → um preço por dia (sem sub-colunas de faixa).
@@ -436,6 +460,17 @@ function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
                 Proposta
               </button>
               <button
+                onClick={() => setViewMode('delta')}
+                className={cn(
+                  'px-3 py-1.5 font-medium border-l transition-colors',
+                  viewMode === 'delta'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50'
+                )}
+              >
+                Δ%
+              </button>
+              <button
                 onClick={() => setViewMode('current')}
                 className={cn(
                   'px-3 py-1.5 font-medium border-l transition-colors',
@@ -450,8 +485,8 @@ function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
           )}
         </div>
 
-        {/* Legend (only in proposal mode) */}
-        {viewMode === 'proposal' && (
+        {/* Legend (proposta e Δ% — ambos coloridos por direção) */}
+        {viewMode !== 'current' && (
           <div className="flex items-center gap-3 px-4 py-2 border-b text-[10px] text-muted-foreground bg-muted/10">
             <span className="font-medium">Legenda:</span>
             <span className="flex items-center gap-1">
@@ -467,8 +502,10 @@ function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
           </div>
         )}
 
+        {/* Grade + painel-resumo lado a lado */}
+        <div className="flex">
         {/* Spreadsheet grid — viewport próprio com scroll (X e Y) e cabeçalho fixo */}
-        <div className="overflow-auto max-h-[70vh] p-4">
+        <div className="flex-1 min-w-0 overflow-auto max-h-[70vh] p-4">
           <table className="border-collapse text-xs w-max">
             {/* Sticky nas CÉLULAS th (não no thead) — sticky em thead/tr não funciona com border-collapse no Chrome */}
             <thead>
@@ -548,6 +585,49 @@ function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* Painel-resumo (visão agregada) — só em telas largas e fora do modo edição */}
+        {!editable && (
+          <aside className="hidden xl:flex flex-col w-60 shrink-0 border-l max-h-[70vh] overflow-y-auto p-3 gap-3 bg-muted/10">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Resumo da proposta</p>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                <span className="text-green-600 font-medium">▲ {summary.up} aumentos</span>
+                <span className="text-amber-600 font-medium">● {summary.flat} mantidos</span>
+                <span className="text-red-500 font-medium">▼ {summary.down} reduções</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-1">Δ% médio por categoria</p>
+              <div className="flex flex-col gap-0.5">
+                {summary.cats.map(({ k, avg }) => (
+                  <div key={k} className="flex items-center justify-between text-xs border-b border-border/30 py-0.5">
+                    <span className="truncate text-muted-foreground">{k}</span>
+                    <span className={cn('font-semibold tabular-nums shrink-0',
+                      avg > 0.5 ? 'text-green-600' : avg < -0.5 ? 'text-red-500' : 'text-amber-600')}>
+                      {avg >= 0 ? '+' : ''}{avg.toFixed(1)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-1">Δ% médio por período</p>
+              <div className="flex flex-col gap-0.5">
+                {summary.pers.map(({ k, avg }) => (
+                  <div key={k} className="flex items-center justify-between text-xs border-b border-border/30 py-0.5">
+                    <span className="truncate text-muted-foreground capitalize">{k}</span>
+                    <span className={cn('font-semibold tabular-nums shrink-0',
+                      avg > 0.5 ? 'text-green-600' : avg < -0.5 ? 'text-red-500' : 'text-amber-600')}>
+                      {avg >= 0 ? '+' : ''}{avg.toFixed(1)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </aside>
+        )}
         </div>
       </div>
     </TooltipProvider>
