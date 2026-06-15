@@ -134,16 +134,17 @@ const GRID_DAY_LABELS: Record<GridDay, string> = {
 const CANAL_ORDER = ['balcao_site', 'site_programada', 'guia_moteis']
 
 function sortPeriods(periods: string[]): string[] {
+  // Ordem obrigatória: curtas por hora (3h, 6h, 12h…) → Pernoite (promo balcão, só ADC)
+  // → Day Use → Pernoite → Diária (programadas). Os produtos programados ficam após as horas.
   const rank = (p: string) => {
-    const lo = p.toLowerCase()
-    if (lo.includes('1 hora') || lo === '1h')  return 1
-    if (lo.includes('2 hora') || lo === '2h')  return 2
-    if (lo.includes('3 hora') || lo === '3h')  return 3
-    if (lo.includes('4 hora') || lo === '4h')  return 4
-    if (lo.includes('6 hora') || lo === '6h')  return 6
-    if (lo.includes('12 hora') || lo === '12h') return 12
-    if (lo.includes('day use') || lo.includes('diaria')) return 14
-    if (lo.includes('pernoite')) return 20
+    // normaliza acentos: "diária" → "diaria"
+    const lo = p.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+    if (lo.includes('day use') || lo.includes('dayuse')) return 14
+    if (lo.includes('pernoite')) return 15
+    if (lo.includes('diaria')) return 16
+    // períodos por hora: extrai o número (evita "12 horas" casar com "2 hora")
+    const m = lo.match(/(\d+)\s*h/)
+    if (m) return parseInt(m[1], 10)   // 1, 2, 3, 4, 6, 12 …
     return 99
   }
   return [...periods].sort((a, b) => rank(a) - rank(b))
