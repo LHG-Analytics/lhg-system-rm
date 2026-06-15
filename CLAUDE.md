@@ -1192,6 +1192,11 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
 
+- **LHG-274:** fix(propostas): simulação usa ticket médio operacional real como baseline ✅ 2026-06-15
+  - Sintoma: painel "Simulação (volume constante)" mostrava ticket atual R$ 291,11 mas o real do mês é R$ 282
+  - Root cause: `calcImpact` usava média SIMPLES dos preços da tabela (cada célula pesa igual), não o ticket operacional (receita÷locações ponderado pelo mix)
+  - Fix: `ProposalsList` busca `/api/kpis/{slug}?month=YYYY-MM` (`TotalResult.totalAllTicketAverage`) como baseline; projetado = baseline × (1 + reajuste médio da tabela); fallback p/ média da tabela se KPI não carregar
+
 - **LHG-273:** feat(propostas): ordenar categorias da mais barata para a mais cara na grade ✅ 2026-06-15
   - Categorias estavam alfabéticas; agora por preço (memo `catRank` = média do `preco_atual` por categoria no canal ativo, asc, desempate alfabético); ordem consistente em todas as seções de período
 
