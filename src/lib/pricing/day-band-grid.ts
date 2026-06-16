@@ -53,6 +53,10 @@ export interface DayBandParams {
   peakStart?: number
   /** Hora de fim da faixa de pico (default 21). Só usado em primeTime. */
   peakEnd?: number
+  /** Volume de reservas por `${NORM(categoria)}|${low(periodo)}` — demanda PRÓPRIA usada para
+   *  precificar produtos programados (site_programada: day use/pernoite/diária) por gradiente
+   *  de volume entre os programados da categoria. Não herda o giro do balcão. */
+  schedVol?: Map<string, number>
 }
 
 export interface OverlayRow {
@@ -137,6 +141,21 @@ export function generateDayBandGrid(
   const combos = new Map<string, { canal: string; categoria: string; periodo: string }>()
   for (const r of activeRows) combos.set(`${nlow(r.canal)}|${norm(r.categoria)}|${nlow(r.periodo)}`, { canal: r.canal, categoria: r.categoria, periodo: r.periodo })
 
+  // Demanda própria dos programados: min/máx de volume entre day use/pernoite/diária por categoria.
+  // Usado para gradiente — o programado mais vendido da categoria sobe até o teto; o menos, mantém.
+  const schedByCat = new Map<string, { min: number; max: number }>()
+  if (params.schedVol) {
+    for (const [k, vol] of params.schedVol) {
+      const per = k.split('|')[1] ?? ''
+      if (!FIXED_WINDOW_RE.test(per)) continue   // só day use / pernoite / diária
+      const cat = k.split('|')[0]
+      const e = schedByCat.get(cat) ?? { min: Infinity, max: -Infinity }
+      if (vol < e.min) e.min = vol
+      if (vol > e.max) e.max = vol
+      schedByCat.set(cat, e)
+    }
+  }
+
   const cellRows: GridProposalRow[] = []
   for (const { canal, categoria, periodo } of combos.values()) {
     const catKey = norm(categoria)
@@ -152,16 +171,31 @@ export function generateDayBandGrid(
     const giroMax = Math.max(...giroVals)
     const span = giroMax - giroMin
 
+    // Produtos programados (site_programada): fator pela DEMANDA PRÓPRIA (volume de reservas),
+    // não pelo giro do balcão. Gradiente entre os programados da categoria → uniforme por dia.
+    const isSchedProg = nlow(canal) === 'site_programada'
+    let schedFactor = 0
+    if (isSchedProg && params.schedVol) {
+      const stats = schedByCat.get(catKey)
+      const vol = params.schedVol.get(`${catKey}|${nlow(periodo)}`) ?? 0
+      if (stats && stats.max > stats.min) {
+        schedFactor = clamp((vol - stats.min) / (stats.max - stats.min) * params.dayCap, 0, params.dayCap)
+      }
+    }
+    const schedJust = schedFactor > 0
+      ? `${nlow(periodo)} é o programado de maior volume desta categoria → +${(schedFactor * 100).toFixed(1)}%`
+      : 'programado de baixa demanda — mantido'
+
     for (const dia of ALL) {
       const atual = atualByDay.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}`) ?? 0
       if (atual <= 0) continue
       const giroD = days[DOW_FULL[dia]] ?? 0
-      // O fator de giro por dia só vale para curta estadia do balcão (3h/6h/12h) — é o
-      // volume que alimenta o giro da categoria (DataTableGiroByWeek). Produtos de janela
-      // fixa (Day Use/Pernoite/Diária e pernoite promo) têm volume próprio escasso e NÃO
-      // devem herdar o pico de tarde do balcão → fator 0 (mantém preço; agente sobe via overlay).
-      const dayFactor = (usesBands(canal, periodo) && span > 0)
-        ? clamp((giroD - giroMin) / span * params.dayCap, 0, params.dayCap) : 0
+      // Curta estadia do balcão (3h/6h/12h) → fator de giro por dia (DataTableGiroByWeek).
+      // site_programada (Day Use/Pernoite/Diária) → fator pela demanda própria (schedFactor),
+      // uniforme por dia. Pernoite promo do balcão (janela fixa, não programada) → 0 (mantém).
+      const dayFactor = usesBands(canal, periodo)
+        ? (span > 0 ? clamp((giroD - giroMin) / span * params.dayCap, 0, params.dayCap) : 0)
+        : (isSchedProg ? schedFactor : 0)
 
       // ── Modo Prime Time (método do gestor / giro_uplift) ──────────────────
       // Em vez de diurno/noturno: PADRÃO (fora de pico) + PICO (faixa peakStart–peakEnd).
@@ -188,9 +222,11 @@ export function generateDayBandGrid(
         padVar = atual > 0 ? +((padrao - atual) / atual * 100).toFixed(1) : 0
         const padJust = (ov && ov.preco > baseline)
           ? (ov.just || 'Ajuste do agente acima do piso de giro')
-          : (dayFactor > 0
-              ? `giro do dia ${giroD.toFixed(2)} (gradiente ${giroMin.toFixed(2)}–${giroMax.toFixed(2)}) → +${(dayFactor * 100).toFixed(1)}%`
-              : 'Dia mais fraco da semana — mantido')
+          : isSchedProg
+            ? schedJust
+            : (dayFactor > 0
+                ? `giro do dia ${giroD.toFixed(2)} (gradiente ${giroMin.toFixed(2)}–${giroMax.toFixed(2)}) → +${(dayFactor * 100).toFixed(1)}%`
+                : 'Dia mais fraco da semana — mantido')
 
         if (usesBands(canal, periodo)) {
           // Fora de pico (padrão) — cobre o dia todo exceto a faixa de pico
@@ -244,6 +280,9 @@ export function generateDayBandGrid(
           // Agente só pode SUBIR acima do piso (concorrência/eventos) — nunca achatar o gradiente.
           proposto = overlayHit.preco
           just = overlayHit.just || 'Ajuste do agente acima do piso de giro'
+        } else if (isSchedProg) {
+          proposto = baseline
+          just = schedJust
         } else {
           proposto = baseline
           const parts: string[] = []

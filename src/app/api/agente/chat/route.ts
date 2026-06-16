@@ -685,6 +685,13 @@ export async function POST(req: NextRequest) {
       .then((r) => r.data ?? [], () => []),
   ])
 
+  // Volume por categoria×período → demanda própria dos programados (Day Use/Pernoite/Diária).
+  // Usado pelo gerador da grade para precificar programados sem herdar o giro do balcão.
+  const schedVol = new Map<string, number>()
+  for (const r of categoryPeriodKPIs ?? []) {
+    schedVol.set(`${(r.categoria ?? '').trim().toUpperCase()}|${(r.periodo ?? '').trim().toLowerCase()}`, r.locacoes ?? 0)
+  }
+
   // Guardrails sempre no prompt estático — safety-critical para o agente
   const guardrailRowsForBlock = guardrailsResult.status === 'fulfilled'
     ? (guardrailsResult.value.data ?? [])
@@ -871,7 +878,7 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
             activePriceRows,
             kpiPeriods[0]?.company ?? null,
             bandDemand,
-            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium, peakStart, peakEnd },
+            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium, peakStart, peakEnd, schedVol },
             rows,  // overlay: ajustes propostos pelo agente sobrescrevem as células correspondentes
           )
         } else {
@@ -1280,7 +1287,7 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
             activePriceRows,
             kpiPeriods[0]?.company ?? null,
             bandDemand,
-            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium, peakStart, peakEnd },
+            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium, peakStart, peakEnd, schedVol },
             [],
           )
           if (clampedRows.length) {
