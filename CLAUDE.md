@@ -1192,10 +1192,13 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação + Regra 8), `day-time-demand.ts` e `buscar_padrao_horario`: linguagem trocada de "agrupar dias similares" → "uma linha por dia, nunca agrupe"
   - **Armadilha:** a `SpreadsheetView` (proposals-list) monta a grade célula a célula via `spExpandDays`/`buildSheet` — linhas por-dia ou agrupadas renderizam idêntico; só muda a contagem de linhas
 
-- **fix(propostas): produtos programados não herdam o giro do balcão na grade** ✅ 2026-06-15 (commit `f1fd6c5`; Linear não criado — limite de issues grátis do workspace atingido)
-  - Sintoma: grade inflava Day Use/Pernoite/Diária aplicando o giro category×dia (`DataTableGiroByWeek`, dominado pelo balcão/pico de tarde) a TODOS os períodos
-  - Fix `day-band-grid.ts`: `dayFactor` só se aplica quando `usesBands` (curta estadia balcão 3h/6h/12h); janela fixa (Day Use/Pernoite/Diária + pernoite promo) → fator 0 (preço mantido; agente sobe via overlay com base no volume real por período)
-  - **Armadilha:** o agente (chat) tem volume por período no contexto (LHG-190/255), mas a geração determinística da grade não usava — só o balcão deve dirigir o giro
+- **feat(propostas): programados precificados pela demanda própria (volume)** ✅ 2026-06-16 (commit `7d9e283`; Linear suspenso — limite)
+  - Evolução do `f1fd6c5` (que tinha deixado os programados FLAT — conservador demais). Agora Day Use/Pernoite/Diária (site_programada) recebem fator pela SUA própria demanda
+  - `day-band-grid.ts`: `DayBandParams.schedVol` (Map `NORMCAT|periodo`→volume); `schedByCat` (min/máx por categoria); `schedFactor` = gradiente min-máx do volume entre os programados da categoria × `dayCap` (mais vendido→teto, menos→mantém); uniforme por dia (volume agregado, estável); justificativa própria
+  - `chat/route.ts`: monta `schedVol` de `categoryPeriodKPIs` (LHG-190) e passa nos 2 call sites do gerador (tool + fallback onFinish)
+  - Balcão curta estadia (3h/6h/12h) segue o giro; pernoite promo do balcão segue flat
+  - **Armadilha:** matching de categoria por UPPERCASE — Automo `ca.descricao` ("CUBO") == `norm()` da tabela de preços ("Cubo"). Validado com Automo real do ADC
+  - **Histórico do furo (f1fd6c5):** grade inflava Day Use herdando o giro category×dia (`DataTableGiroByWeek`, dominado pelo balcão/pico de tarde); o giro só deve dirigir o balcão de curta estadia
 
 - **LHG-275:** feat(propostas): view "Δ%" na grade + painel-resumo lateral ✅ 2026-06-15
   - Toggle `Proposta · Δ% · Tabela vigente`: modo Δ% mostra a variação % colorida em cada célula (reaproveita a grade; sem tabela espelhada). `SpreadsheetCellTd` mode ganha `'delta'`; legenda aparece em proposta+delta
