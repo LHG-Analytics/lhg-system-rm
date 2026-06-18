@@ -190,12 +190,25 @@ export function generateDayBandGrid(
       const atual = atualByDay.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}`) ?? 0
       if (atual <= 0) continue
       const giroD = days[DOW_FULL[dia]] ?? 0
+      // Posição do dia no gradiente de giro da categoria: 0 = dia mais fraco, 1 = pico.
+      // É o FORMATO do aumento ao longo da semana — vale recebe ~0, pico recebe tudo.
+      const giroPos = usesBands(canal, periodo) && span > 0
+        ? clamp((giroD - giroMin) / span, 0, 1)
+        : 0
       // Curta estadia do balcão (3h/6h/12h) → fator de giro por dia (DataTableGiroByWeek).
       // site_programada (Day Use/Pernoite/Diária) → fator pela demanda própria (schedFactor),
       // uniforme por dia. Pernoite promo do balcão (janela fixa, não programada) → 0 (mantém).
       const dayFactor = usesBands(canal, periodo)
-        ? (span > 0 ? clamp((giroD - giroMin) / span * params.dayCap, 0, params.dayCap) : 0)
+        ? giroPos * params.dayCap
         : (isSchedProg ? schedFactor : 0)
+
+      // O aumento sugerido pelo agente (gap de mercado / concorrência) NÃO infla dias de giro
+      // fraco: ele segue o formato do giro (giroPos). Dia de vale → mantém o preço atual; o
+      // aumento se concentra nos dias de maior demanda. Só se aplica ao balcão curta estadia.
+      const scaleOverlay = (ovPreco: number) => {
+        if (ovPreco <= atual) return atual
+        return atual * (1 + giroPos * ((ovPreco - atual) / atual))
+      }
 
       // ── Modo Prime Time (método do gestor / giro_uplift) ──────────────────
       // Em vez de diurno/noturno: PADRÃO (fora de pico) + PICO (faixa peakStart–peakEnd).
@@ -216,12 +229,16 @@ export function generateDayBandGrid(
         const ov = overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|d`)
                 ?? overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|n`)
                 ?? overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|all`)
-        const padraoRaw = (ov && ov.preco > baseline) ? ov.preco : baseline
+        const padraoRaw = (ov && ov.preco > baseline)
+          ? (usesBands(canal, periodo) ? Math.max(baseline, scaleOverlay(ov.preco)) : ov.preco)
+          : baseline
         let padVar = clamp((padraoRaw - atual) / atual * 100, params.neverReduce ? 0 : -params.maxVar, params.maxVar)
         const padrao = round(atual * (1 + padVar / 100))
         padVar = atual > 0 ? +((padrao - atual) / atual * 100).toFixed(1) : 0
         const padJust = (ov && ov.preco > baseline)
-          ? (ov.just || 'Ajuste do agente acima do piso de giro')
+          ? (usesBands(canal, periodo) && giroPos <= 0.001
+              ? 'Dia de giro fraco — mantido (aumento concentrado nos dias de maior demanda)'
+              : (ov.just || 'Ajuste do agente acima do piso de giro'))
           : isSchedProg
             ? schedJust
             : (dayFactor > 0
@@ -276,8 +293,20 @@ export function generateDayBandGrid(
           : overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|${band}`)
         let proposto: number
         let just: string
-        if (overlayHit && overlayHit.preco > baseline) {
-          // Agente só pode SUBIR acima do piso (concorrência/eventos) — nunca achatar o gradiente.
+        if (overlayHit && overlayHit.preco > baseline && usesBands(canal, periodo)) {
+          // Agente quer subir (gap de mercado/concorrência), MAS o aumento segue o formato do
+          // giro: dia de giro fraco → ~0 (mantém); o aumento se concentra nos dias de pico.
+          // Nunca infla um vale só porque está barato vs mercado.
+          proposto = Math.max(baseline, scaleOverlay(overlayHit.preco))
+          if (giroPos <= 0.001) {
+            just = 'Dia de giro fraco — mantido (aumento concentrado nos dias de maior demanda)'
+          } else if (proposto < overlayHit.preco - 0.5) {
+            just = `${overlayHit.just || 'gap de mercado'} · ajustado ao giro do dia (${Math.round(giroPos * 100)}% do pico)`
+          } else {
+            just = overlayHit.just || 'Ajuste do agente acima do piso de giro'
+          }
+        } else if (overlayHit && overlayHit.preco > baseline) {
+          // Não-balcão (pernoite promo / janela 'all'): agente pode subir acima do piso.
           proposto = overlayHit.preco
           just = overlayHit.just || 'Ajuste do agente acima do piso de giro'
         } else if (isSchedProg) {
@@ -375,4 +404,49 @@ export function summarizeProposalRows(
   if (catsKept.length) parts.push(`Mantidas integralmente: ${catsKept.join(', ')}.`)
   if (!down.length)    parts.push('Nenhum preço reduzido.')
   return parts.join(' ')
+}
+
+/**
+ * Reescala o AUMENTO de cada linha (balcão curta estadia) para seguir o formato do giro do dia:
+ * dia de giro fraco (vale) → aumento ~0 (mantém o preço atual); o aumento se concentra nos dias
+ * de pico da categoria. Usado no caminho NÃO-legado (tabela já em dia × faixa), onde as linhas vêm
+ * direto do LLM — garante a mesma coerência giro→aumento da grade (generateDayBandGrid), evitando
+ * que um vale seja inflado só por gap de mercado. Itens mantidos ou reduzidos não são tocados.
+ *
+ * `inc` é o delta marginal da rodada (proposto vs atual) — escalar por giroPos shapeia só essa
+ * mudança, não o preço absoluto; é idempotente sobre tabelas já bem-formadas.
+ */
+export function shapeIncreaseByGiro<
+  T extends { canal: string; categoria: string; periodo: string; dias?: string[]; preco_atual: number; preco_proposto: number; variacao_pct: number; justificativa?: string },
+>(rows: T[], company: CompanyKPIResponse | null, dayCap: number): T[] {
+  if (!company?.DataTableGiroByWeek?.length) return rows
+  const giroDay = new Map<string, Record<string, number>>()
+  for (const item of company.DataTableGiroByWeek) {
+    for (const [cat, daysObj] of Object.entries(item)) {
+      const m: Record<string, number> = {}
+      for (const [d, v] of Object.entries(daysObj as Record<string, { giro: number }>)) m[d] = v?.giro ?? 0
+      giroDay.set(norm(cat), m)
+    }
+  }
+  return rows.map((r) => {
+    if (!usesBands(r.canal, r.periodo)) return r            // só balcão curta estadia
+    const inc = r.preco_atual > 0 ? (r.preco_proposto - r.preco_atual) / r.preco_atual : 0
+    if (inc <= 0.001) return r                              // mantém/reduz → não mexe
+    const days = giroDay.get(norm(r.categoria))
+    if (!days) return r
+    const giroVals = ALL.map((d) => days[DOW_FULL[d]] ?? 0)
+    const span = Math.max(...giroVals) - Math.min(...giroVals)
+    if (span <= 0) return r
+    const giroD = days[DOW_FULL[nlow(r.dias?.[0] ?? '')]] ?? 0
+    const giroPos = clamp((giroD - Math.min(...giroVals)) / span, 0, 1)
+    // aumento segue o giro: piso = giroPos×dayCap (método); o delta proposto também escala por giroPos
+    const newInc = giroPos * Math.max(dayCap, inc)
+    const preco = Math.round(r.preco_atual * (1 + newInc) * 100) / 100
+    if (Math.abs(preco - r.preco_proposto) < 0.5) return r
+    const newVar = r.preco_atual > 0 ? +((preco - r.preco_atual) / r.preco_atual * 100).toFixed(1) : 0
+    const just = giroPos <= 0.001
+      ? 'Dia de giro fraco — mantido (aumento concentrado nos dias de maior demanda)'
+      : `${r.justificativa || 'ajuste'} · ajustado ao giro do dia (${Math.round(giroPos * 100)}% do pico)`
+    return { ...r, preco_proposto: preco, variacao_pct: newVar, justificativa: just }
+  })
 }

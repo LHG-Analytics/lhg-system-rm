@@ -31,7 +31,7 @@ import { queryCategoryPeriodKPIs, buildCategoryPeriodBlock } from '@/lib/automo/
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow, ParsedDiscountRow } from '@/app/api/agente/import-prices/route'
 import type { PriceImportForPrompt, KPIPeriod, VigenciaInfo } from '@/lib/agente/system-prompt'
-import { generateDayBandGrid, isLegacyTable, summarizeProposalRows, explodeRowsToPerDay } from '@/lib/pricing/day-band-grid'
+import { generateDayBandGrid, isLegacyTable, summarizeProposalRows, explodeRowsToPerDay, shapeIncreaseByGiro } from '@/lib/pricing/day-band-grid'
 import { queryBandDemandByCategory } from '@/lib/automo/band-demand'
 import { makeCurrencyFormatter } from '@/lib/utils/currency'
 
@@ -884,7 +884,10 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
         } else {
           // Tabela já em formato dia × faixa: usa as linhas do agente com clamp + never_reduce.
           // Explode dias agrupados (ex: ["seg","ter"]) em uma linha por dia — nunca agregamos.
-          clampedRows = explodeRowsToPerDay(rows).map((row) => {
+          // Reescala o aumento para seguir o giro do dia (vale mantém, pico recebe) — mesma
+          // coerência da grade legada; evita inflar dia de baixa demanda só por gap de mercado.
+          const shaped = shapeIncreaseByGiro(explodeRowsToPerDay(rows), kpiPeriods[0]?.company ?? null, giroUpliftCap)
+          clampedRows = shaped.map((row) => {
             const lowerBound = neverReduce ? 0 : -maxVariationPct
             const clamped = Math.max(lowerBound, Math.min(maxVariationPct, row.variacao_pct))
             const base = { ...row, dia_tipo: '', variacao_pct: clamped }
