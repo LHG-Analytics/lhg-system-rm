@@ -1230,6 +1230,16 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - Banco: LIV `peak_end` 21→22 (pico agora 15h–22h)
   - **Obs:** AgentConfigManager ainda não expõe edição de peak_start/peak_end (melhoria futura)
 
+- **fix(agente): aumento de preço segue o giro do dia — vale mantém, pico recebe** ✅ 2026-06-18 (commit `1d81bd6`; Linear pendente — limite)
+  - **Sintoma:** review externo (Excel) achou que na categoria A do Tout a correlação giro × aumento era ~0 — maiores aumentos caíam em dias de giro fraco (Qui/Dom) e o pico real (Sáb) ficava subaproveitado; 5/6 categorias OK (0,60–0,82)
+  - **Causa raiz:** o `dayFactor` (gradiente de giro) já concentrava no pico, mas o **overlay** do agente (gap de mercado/concorrência) podia subir acima do piso em QUALQUER dia, inclusive vales
+  - **Decisão:** corrigir na ORIGEM (não sinalizar — não errar). Como `never_reduce` proíbe baixar, a única ação coerente num dia de baixa demanda é **manter**. O aumento do overlay passa a seguir o FORMATO do giro do dia
+  - `day-band-grid.ts`: `giroPos` (0=dia mais fraco, 1=pico) + helper `scaleOverlay(ov) = atual × (1 + giroPos × inc)` aplicado no branch normal (agent_judgment: Tout/ADC) e no prime time (giro_uplift: LIV). `giroPos=0` → mantém; pico → aumento integral; meio → proporcional
+  - `shapeIncreaseByGiro(rows, company, dayCap)` (exportado): reescala o delta marginal das linhas do LLM no caminho **NÃO-legado** (tabela já em dia × faixa) — evita regressão depois que a 1ª proposta aprovada vira dia × faixa. Idempotente (escala o delta da rodada, não o preço absoluto)
+  - `chat/route.ts`: aplica `shapeIncreaseByGiro` no caminho não-legado (linha ~887)
+  - `system-prompt.ts` (Modelo de precificação): regra inegociável — aumento segue a demanda do dia; vale mantém; nunca dar maior aumento a dia de giro fraco nem subaproveitar o pico; análise textual deve refletir (servidor reescala automaticamente)
+  - **Armadilha:** só afeta `balcao_site` curta estadia (`usesBands`). `site_programada` segue `schedFactor` (demanda própria); pernoite promo do balcão segue inalterado
+
 - **LHG-256:** fix(kpis): Mix por Canal conta por check-in (datainicio), não por data da reserva ✅ 2026-06-10
   - Sintoma: Mix por Canal mostrava Site Programado=6, mas Mix por Período mostrava 9 produtos programados (Day Use 7 + Pernoite 2) na mesma janela
   - Root cause: `queryChannelKPIs` filtrava por `r.dataatendimento` (data da RESERVA, corte 00:00); produtos programados são comprados com antecedência → check-in em dias futuros (07,08,10,12,14/06). Só 6 tinham dataatendimento na janela, mas 9 tinham check-in
