@@ -1240,6 +1240,16 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `system-prompt.ts` (Modelo de precificação): regra inegociável — aumento segue a demanda do dia; vale mantém; nunca dar maior aumento a dia de giro fraco nem subaproveitar o pico; análise textual deve refletir (servidor reescala automaticamente)
   - **Armadilha:** só afeta `balcao_site` curta estadia (`usesBands`). `site_programada` segue `schedFactor` (demanda própria); pernoite promo do balcão segue inalterado
 
+- **feat(agente): never_reduce OFF habilita redução nos vales (gradiente simétrico de giro)** ✅ 2026-06-18 (commit `7231406`; Linear pendente — limite)
+  - **Sintoma:** desmarcar "nunca reduzir" no Tout não baixava nenhum preço na proposta
+  - **Causa raiz:** a grade legada (`generateDayBandGrid`) era estruturalmente "sobe ou mantém" — fator de giro = `giroPos × dayCap` sempre ≥ 0 (dia mais fraco → 0 = mantém). O `never_reduce` só controlava o piso do clamp, mas como a grade nunca gerava variação negativa, desmarcá-lo não tinha efeito visível no caminho legado
+  - **Fix:** o fator de giro do balcão curta estadia agora respeita o `never_reduce`: ON → `[0, +dayCap]` (vale mantém); OFF → `(2·giroPos − 1)·dayCap` = `[−dayCap, +dayCap]` (gradiente **simétrico**: vale reduz para estimular demanda, pico sobe, meio do range ≈ 0). Redução limitada ao teto de giro (`giro_uplift_cap`, default 5%)
+  - `day-band-grid.ts`: `giroFactor` simétrico quando `!neverReduce`; `scaleOverlay(ov, baseFloor)` aplica o lift do agente ACIMA do piso (escalado por `giroPos`) — assim o vale fica na redução, não volta a `atual` via `max()`; justificativas distinguem "reduzido X% para estimular demanda" de "mantido"
+  - `chat/route.ts` (agentConfigBlock): bloco "REDUÇÃO PERMITIDA em dias fracos" quando OFF
+  - `system-prompt.ts` (Modelo de precificação): regra passa a deferir ao `never_reduce` — vale mantém (ON) OU reduz (OFF)
+  - **Caminho não-legado:** reduções vêm do LLM (clamp com lowerBound `−maxVar` quando OFF); `shapeIncreaseByGiro` só reescala aumentos (delta marginal — re-anchorar ao gradiente compõe/duplica). O prompt guia o LLM a reduzir vales quando permitido
+  - **Armadilha:** `never_reduce` é por unidade (`rm_agent_config.never_reduce`), lido dinamicamente em `chat/route.ts:596`. LIV (giro_uplift) usa `never_reduce=true` → gradiente segue `[0,+dayCap]` (sem redução, método do gestor)
+
 - **LHG-256:** fix(kpis): Mix por Canal conta por check-in (datainicio), não por data da reserva ✅ 2026-06-10
   - Sintoma: Mix por Canal mostrava Site Programado=6, mas Mix por Período mostrava 9 produtos programados (Day Use 7 + Pernoite 2) na mesma janela
   - Root cause: `queryChannelKPIs` filtrava por `r.dataatendimento` (data da RESERVA, corte 00:00); produtos programados são comprados com antecedência → check-in em dias futuros (07,08,10,12,14/06). Só 6 tinham dataatendimento na janela, mas 9 tinham check-in
