@@ -191,23 +191,29 @@ export function generateDayBandGrid(
       if (atual <= 0) continue
       const giroD = days[DOW_FULL[dia]] ?? 0
       // Posição do dia no gradiente de giro da categoria: 0 = dia mais fraco, 1 = pico.
-      // É o FORMATO do aumento ao longo da semana — vale recebe ~0, pico recebe tudo.
+      // É o FORMATO do reajuste ao longo da semana.
       const giroPos = usesBands(canal, periodo) && span > 0
         ? clamp((giroD - giroMin) / span, 0, 1)
         : 0
-      // Curta estadia do balcão (3h/6h/12h) → fator de giro por dia (DataTableGiroByWeek).
-      // site_programada (Day Use/Pernoite/Diária) → fator pela demanda própria (schedFactor),
-      // uniforme por dia. Pernoite promo do balcão (janela fixa, não programada) → 0 (mantém).
-      const dayFactor = usesBands(canal, periodo)
+      // Fator de giro do dia (balcão curta estadia 3h/6h/12h):
+      //  - never_reduce ON  → [0, +dayCap]: dia de vale MANTÉM, pico sobe.
+      //  - never_reduce OFF → [-dayCap, +dayCap] (gradiente simétrico): vale REDUZ para estimular
+      //    demanda, pico sobe, meio do range ≈ 0.
+      // site_programada (Day Use/Pernoite/Diária) → fator pela demanda própria (schedFactor, ≥0).
+      // Pernoite promo do balcão (janela fixa, não programada) → 0 (mantém).
+      const giroFactor = params.neverReduce
         ? giroPos * params.dayCap
+        : (2 * giroPos - 1) * params.dayCap
+      const dayFactor = usesBands(canal, periodo)
+        ? giroFactor
         : (isSchedProg ? schedFactor : 0)
 
-      // O aumento sugerido pelo agente (gap de mercado / concorrência) NÃO infla dias de giro
-      // fraco: ele segue o formato do giro (giroPos). Dia de vale → mantém o preço atual; o
-      // aumento se concentra nos dias de maior demanda. Só se aplica ao balcão curta estadia.
-      const scaleOverlay = (ovPreco: number) => {
-        if (ovPreco <= atual) return atual
-        return atual * (1 + giroPos * ((ovPreco - atual) / atual))
+      // O aumento do agente (gap de mercado / concorrência) sobe ACIMA do piso de giro, escalado
+      // por giroPos: dia de vale (giroPos 0) não recebe lift; o aumento se concentra no pico.
+      // Aplica-se sobre o piso (baseFloor) — assim, com never_reduce OFF, o vale fica na redução.
+      const scaleOverlay = (ovPreco: number, baseFloor: number) => {
+        if (ovPreco <= baseFloor) return baseFloor
+        return baseFloor + giroPos * (ovPreco - baseFloor)
       }
 
       // ── Modo Prime Time (método do gestor / giro_uplift) ──────────────────
@@ -230,20 +236,25 @@ export function generateDayBandGrid(
                 ?? overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|n`)
                 ?? overlayCell.get(`${nlow(canal)}|${catKey}|${nlow(periodo)}|${dia}|all`)
         const padraoRaw = (ov && ov.preco > baseline)
-          ? (usesBands(canal, periodo) ? Math.max(baseline, scaleOverlay(ov.preco)) : ov.preco)
+          ? (usesBands(canal, periodo) ? scaleOverlay(ov.preco, baseline) : ov.preco)
           : baseline
         let padVar = clamp((padraoRaw - atual) / atual * 100, params.neverReduce ? 0 : -params.maxVar, params.maxVar)
         const padrao = round(atual * (1 + padVar / 100))
         padVar = atual > 0 ? +((padrao - atual) / atual * 100).toFixed(1) : 0
+        const fracaJust = dayFactor < -0.001
+          ? `Dia de giro fraco — reduzido ${(dayFactor * 100).toFixed(1)}% para estimular demanda`
+          : 'Dia de giro fraco — mantido (aumento concentrado nos dias de maior demanda)'
         const padJust = (ov && ov.preco > baseline)
           ? (usesBands(canal, periodo) && giroPos <= 0.001
-              ? 'Dia de giro fraco — mantido (aumento concentrado nos dias de maior demanda)'
+              ? fracaJust
               : (ov.just || 'Ajuste do agente acima do piso de giro'))
           : isSchedProg
             ? schedJust
-            : (dayFactor > 0
+            : (dayFactor > 0.001
                 ? `giro do dia ${giroD.toFixed(2)} (gradiente ${giroMin.toFixed(2)}–${giroMax.toFixed(2)}) → +${(dayFactor * 100).toFixed(1)}%`
-                : 'Dia mais fraco da semana — mantido')
+                : dayFactor < -0.001
+                  ? `giro do dia ${giroD.toFixed(2)} abaixo da categoria → ${(dayFactor * 100).toFixed(1)}% (estímulo de demanda)`
+                  : 'Dia mais fraco da semana — mantido')
 
         if (usesBands(canal, periodo)) {
           // Fora de pico (padrão) — cobre o dia todo exceto a faixa de pico
@@ -295,11 +306,13 @@ export function generateDayBandGrid(
         let just: string
         if (overlayHit && overlayHit.preco > baseline && usesBands(canal, periodo)) {
           // Agente quer subir (gap de mercado/concorrência), MAS o aumento segue o formato do
-          // giro: dia de giro fraco → ~0 (mantém); o aumento se concentra nos dias de pico.
-          // Nunca infla um vale só porque está barato vs mercado.
-          proposto = Math.max(baseline, scaleOverlay(overlayHit.preco))
+          // giro: dia de giro fraco → fica no piso (mantém ou reduz); o aumento se concentra no
+          // pico. Nunca infla um vale só porque está barato vs mercado.
+          proposto = scaleOverlay(overlayHit.preco, baseline)
           if (giroPos <= 0.001) {
-            just = 'Dia de giro fraco — mantido (aumento concentrado nos dias de maior demanda)'
+            just = dayFactor < -0.001
+              ? `Dia de giro fraco — reduzido ${(dayFactor * 100).toFixed(1)}% para estimular demanda`
+              : 'Dia de giro fraco — mantido (aumento concentrado nos dias de maior demanda)'
           } else if (proposto < overlayHit.preco - 0.5) {
             just = `${overlayHit.just || 'gap de mercado'} · ajustado ao giro do dia (${Math.round(giroPos * 100)}% do pico)`
           } else {
@@ -315,7 +328,8 @@ export function generateDayBandGrid(
         } else {
           proposto = baseline
           const parts: string[] = []
-          if (dayFactor > 0) parts.push(`giro do dia ${giroD.toFixed(2)} (gradiente da semana ${giroMin.toFixed(2)}–${giroMax.toFixed(2)}) → +${(dayFactor * 100).toFixed(1)}%`)
+          if (dayFactor > 0.001) parts.push(`giro do dia ${giroD.toFixed(2)} (gradiente da semana ${giroMin.toFixed(2)}–${giroMax.toFixed(2)}) → +${(dayFactor * 100).toFixed(1)}%`)
+          else if (dayFactor < -0.001) parts.push(`giro do dia ${giroD.toFixed(2)} abaixo da categoria → ${(dayFactor * 100).toFixed(1)}% (estímulo de demanda)`)
           if (bandFactor > 0) parts.push(`faixa ${band === 'd' ? 'diurna' : 'noturna'} com maior demanda (+${(bandFactor * 100).toFixed(1)}%)`)
           just = parts.length ? parts.join(' · ') : 'Dia mais fraco da semana — mantido'
         }
