@@ -325,6 +325,8 @@ export function buildSystemPrompt(
   dashboardSyncLabel?: string | null,
   /** Formatador monetário da unidade — use makeCurrencyFormatter(unitSlug).formatMoney */
   fmtMoney?: (n: number, decimals?: number) => string,
+  /** Regra "nunca reduzir preço" da config desta unidade — torna a instrução definitiva no prompt */
+  neverReduce?: boolean,
 ): string {
   // ── Montar contexto de KPIs (1 ou N períodos) ─────────────────────────────
   const periods = Array.isArray(kpiData) ? kpiData : [kpiData]
@@ -428,7 +430,9 @@ ${SHARED_PRICING_RULES}
 4. Para cada linha, informe \`preco_atual\` (lido da tabela vigente), \`preco_proposto\` e \`justificativa\`
 5. **Analise TODOS os canais** — se houver \`balcao_site\` e \`site_programada\`, avalie os dois
 
-**⚠️ O REAJUSTE SEGUE A DEMANDA DO DIA (regra inegociável):** o reajuste de um dia tem que acompanhar o **giro daquele dia**. Concentre o **aumento nos dias de pico** de cada categoria. Em **dias de giro fraco (vale)**: se a config tiver "nunca reduzir" LIGADO, **MANTENHA o preço atual** (nunca inflar um vale só porque está barato vs. mercado); se "nunca reduzir" estiver DESLIGADO, o vale pode ser **reduzido** para estimular demanda (ver bloco "Configuração do agente RM"). **NUNCA** dê o maior aumento de uma categoria a um dia de giro baixo, **nunca reduza um dia de giro alto**, nem deixe o dia de maior giro com aumento abaixo da média (pico subaproveitado). O servidor reescala automaticamente o reajuste para o formato do giro do dia (gradiente simétrico quando redução é permitida) — então sua análise textual DEVE refletir isso: não escreva "subi a semana toda para fechar o gap de mercado" se a semana tem giro fraco; diga que **concentrou o aumento nos dias/categorias de maior demanda** (e, quando permitido, **reduziu os vales**). O gap de mercado só justifica subir um dia se aquele dia tiver demanda real.
+${neverReduce
+  ? `**⚠️ NUNCA REDUZA PREÇO — REGRA ATIVA NESTA UNIDADE (inegociável):** a regra "nunca reduzir preço" está **LIGADA** para esta unidade. Isso significa: o preço proposto de QUALQUER linha NUNCA pode ser menor que o preço atual. **Dias de giro fraco (vale): MANTENHA o preço atual (0% de variação)** — nunca reduza, mesmo que o vale esteja caro vs. mercado ou tenha ocupação baixa. O gap de mercado ou giro fraco NÃO autorizam redução aqui. O pico (dias de maior giro) sobe; o vale fica no preço atual. O servidor trava qualquer valor abaixo do atual — sua proposta deve já refletir isso. NUNCA proponha redução em texto nem no JSON.`
+  : `**⚠️ O REAJUSTE SEGUE A DEMANDA DO DIA — GRADIENTE SIMÉTRICO ATIVO (inegociável):** a regra "nunca reduzir preço" está **DESLIGADA** para esta unidade. Isso significa: dias de **giro fraco (vale) DEVEM ter preço REDUZIDO** para estimular demanda; o pico sobe; o meio fica próximo de zero. **Não mantenha todos os dias iguais — o gradiente assimétrico é obrigatório.** NUNCA dê o maior aumento de uma categoria a um dia de giro baixo. NUNCA reduza um dia de giro alto. O servidor aplica o gradiente simétrico automaticamente — sua análise textual DEVE refletir: "vales reduzidos para estimular demanda, pico concentra os aumentos." O gap de mercado só justifica subir um dia se aquele dia tiver demanda real.`}
 
 ## Framework de análise (use sempre nesta ordem, de forma concisa)
 0. **Período analisado** — PRIMEIRA linha obrigatória, antes de qualquer análise. **Copie LITERALMENTE as datas E o número de dias do campo "Período:" do bloco de KPIs** — ele já vem no formato \`DD/MM/YYYY → DD/MM/YYYY (N dias)\`. **NUNCA recalcule, ajuste ou "arredonde" datas nem o número de dias por conta própria** (aritmética de data é proibida — use só o que está escrito no bloco). Formato: \`**📅 Período analisado:** <copie a linha Período exatamente> — <breve descrição opcional, ex: "mês atual, dados parciais">\`. Se a data final do bloco for hoje, ela JÁ é a data correta; não some +1 dia. NUNCA omita esta linha.

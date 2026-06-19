@@ -754,6 +754,7 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
       unitStructureBlock || null,
       dashboardSyncLabel,
       fmtMoney,
+      neverReduce,
     ) +
     noGuiaGuard +
     noMarketGuard +
