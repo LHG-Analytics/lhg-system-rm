@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils'
 import type { PriceProposal, ProposedPriceRow } from '@/app/api/agente/proposals/route'
 import { RejectionDialog } from '@/components/agente/rejection-dialog'
 import { useCurrency } from '@/components/currency-context'
+import { getCategoryDisplayName } from '@/lib/pricing/category-display-names'
 
 interface PendingReview {
   id: string
@@ -337,13 +338,15 @@ function SpreadsheetCellTd({
   )
 }
 
-function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
+function SpreadsheetView({ rows, formatMoney, editable, onCellChange, unitSlug }: {
   rows: ProposedPriceRow[]
   formatMoney: (v: number, d?: number) => string
   /** Quando true, as células viram inputs editáveis (mesma planilha da apresentação). */
   editable?: boolean
   /** Edição de uma célula → índice da linha de origem + novo preço. */
   onCellChange?: (rowIndex: number, price: number) => void
+  /** Slug da unidade — usado para traduzir nomes de categoria para exibição. */
+  unitSlug?: string
 }) {
   const [viewMode, setViewMode]   = useState<'proposal' | 'current' | 'delta'>('proposal')
   const [activeCanal, setActiveCanal] = useState<string>('')
@@ -563,7 +566,7 @@ function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
                       return (
                         <tr key={cat} className="group hover:bg-primary/5">
                           <td className="border border-border/40 px-3 py-1.5 font-medium text-[11px] sticky left-0 bg-background z-[5] group-hover:bg-primary/5 whitespace-nowrap">
-                            {cat}
+                            {getCategoryDisplayName(unitSlug ?? '', cat)}
                           </td>
                           {useBands
                             ? GRID_DAYS.flatMap(day => [
@@ -603,7 +606,7 @@ function SpreadsheetView({ rows, formatMoney, editable, onCellChange }: {
               <div className="flex flex-col gap-0.5">
                 {summary.cats.map(({ k, avg }) => (
                   <div key={k} className="flex items-center justify-between text-xs border-b border-border/30 py-0.5">
-                    <span className="truncate text-muted-foreground">{k}</span>
+                    <span className="truncate text-muted-foreground">{getCategoryDisplayName(unitSlug ?? '', k)}</span>
                     <span className={cn('font-semibold tabular-nums shrink-0',
                       avg > 0.5 ? 'text-green-600' : avg < -0.5 ? 'text-red-500' : 'text-amber-600')}>
                       {avg >= 0 ? '+' : ''}{avg.toFixed(1)}%
@@ -1335,10 +1338,11 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                           formatMoney={formatMoney}
                           editable
                           onCellChange={updateEditRow}
+                          unitSlug={unitSlug}
                         />
                       ) : (
                         /* ── Modo visualização: planilha por dia × faixa horária ── */
-                        <SpreadsheetView rows={proposal.rows} formatMoney={formatMoney} />
+                        <SpreadsheetView rows={proposal.rows} formatMoney={formatMoney} unitSlug={unitSlug} />
                       )}
                     </div>
 

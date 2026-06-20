@@ -13,6 +13,7 @@
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
 import type { BandDemand } from '@/lib/automo/band-demand'
+import { isSchedExcluded } from '@/lib/pricing/category-display-names'
 
 // dias "curtos" (formato do modelo) ↔ dias completos (DataTableGiroByWeek)
 const DOW_FULL: Record<string, string> = {
@@ -57,6 +58,8 @@ export interface DayBandParams {
    *  precificar produtos programados (site_programada: day use/pernoite/diária) por gradiente
    *  de volume entre os programados da categoria. Não herda o giro do balcão. */
   schedVol?: Map<string, number>
+  /** Slug da unidade — usado para filtrar categorias excluídas do site_programada. */
+  unitSlug?: string
 }
 
 export interface OverlayRow {
@@ -158,6 +161,8 @@ export function generateDayBandGrid(
 
   const cellRows: GridProposalRow[] = []
   for (const { canal, categoria, periodo } of combos.values()) {
+    // Categorias que não existem no site programado (ex: Hidro Promo/Vip/Diamond na LIV)
+    if (nlow(canal) === 'site_programada' && params.unitSlug && isSchedExcluded(params.unitSlug, categoria)) continue
     const catKey = norm(categoria)
     const days = giroDay.get(catKey) ?? {}
     const bd = bandDemand.get(catKey)

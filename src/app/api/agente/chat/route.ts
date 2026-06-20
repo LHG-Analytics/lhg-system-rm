@@ -880,7 +880,7 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
             activePriceRows,
             kpiPeriods[0]?.company ?? null,
             bandDemand,
-            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium, peakStart, peakEnd, schedVol },
+            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium, peakStart, peakEnd, schedVol, unitSlug: unit.slug },
             rows,  // overlay: ajustes propostos pelo agente sobrescrevem as células correspondentes
           )
         } else {
@@ -1292,7 +1292,7 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
             activePriceRows,
             kpiPeriods[0]?.company ?? null,
             bandDemand,
-            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium, peakStart, peakEnd, schedVol },
+            { dayCap: giroUpliftCap, bandCap: giroUpliftCap, maxVar: maxVariationPct, neverReduce, decimals: 0, primeTime, peakPremium, peakStart, peakEnd, schedVol, unitSlug: unit.slug },
             [],
           )
           if (clampedRows.length) {
