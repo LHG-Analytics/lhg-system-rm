@@ -1297,6 +1297,26 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - Como a proposta tem cobertura total (todos dias×faixas por combo), a tabela aprovada fica 100% dia-a-dia, sem resíduo legado
   - **Armadilha:** se um dia a proposta deixar de cobrir todos os dias de um combo, esse combo perde os dias não-propostos (cobertura total mitiga; o gerador de grade garante isso)
 
+- **fix(agente): toggle "Nunca reduzir preço" não tinha efeito nas propostas** ✅ 2026-06-19 (commit `e642ed0`)
+  - Root cause: `buildSystemPrompt` nunca recebia `neverReduce` — o texto do system prompt era estático e condicional; o LLM precisava deduzir o modo a partir do `agentConfigBlock` posterior (não funcionava)
+  - Fix: `neverReduce` adicionado como 11º parâmetro de `buildSystemPrompt`; texto gerado é DEFINITIVO:
+    - ON → "NUNCA REDUZA PREÇO — REGRA ATIVA: dias fracos MANTENHA (0% variação)"
+    - OFF → "GRADIENTE SIMÉTRICO ATIVO: dias fracos DEVEM ter preço REDUZIDO para estimular demanda"
+  - `chat/route.ts`: lê `never_reduce` do `agentConfigData` (já estava no SELECT) e passa como 11º arg
+  - **Armadilha:** falsos positivos do hook de validação em linhas 807–808 e 990–991 do `chat/route.ts` (strings `"YYYY-MM-DD"` em schemas Zod marcadas como "model slugs com hífen") — sempre ignorar
+
+- **feat(liv): nomes de exibição de suítes + exclusão de categorias do site programado** ✅ 2026-06-20 (commit `88e6aa5`)
+  - `src/lib/pricing/category-display-names.ts`: mapeamento LIV (chaves lowercase para case-insensitive):
+    - Hidro Promo→Lumini Hidro, Vip→Lumini Vip, Diamond→Lumini Diamond
+    - Lounge→LIV, Lounge Hidro→LIV Hidro, Lounge Spa→LIV SPA
+    - Lounge Spa 50 Sombras→LIV SPA 50 Sombra, Lounge Acqua→LIV Acqua
+  - `UNIT_SCHED_EXCLUDED`: Hidro Promo, Vip e Diamond excluídos do `site_programada` (não existem no site agendado da LIV)
+  - `getCategoryDisplayName(unitSlug, categoria)`: fallback = nome original; só afeta display, armazenamento continua com nome interno
+  - `isSchedExcluded(unitSlug, categoria)`: usado no `generateDayBandGrid` para pular combos inválidos
+  - `DayBandParams.unitSlug?`: novo campo; passado em ambas as chamadas de `generateDayBandGrid` em `chat/route.ts`
+  - `SpreadsheetView`: prop `unitSlug?` adicionada; aplica `getCategoryDisplayName` na tabela principal e no painel-resumo lateral
+  - **Para adicionar mapeamento de outra unidade:** adicionar entrada em `UNIT_CATEGORY_MAP` e/ou `UNIT_SCHED_EXCLUDED` em `category-display-names.ts`
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
