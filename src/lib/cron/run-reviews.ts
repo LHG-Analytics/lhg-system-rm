@@ -1,7 +1,4 @@
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { generateText, tool } from 'ai'
-import { z } from 'zod'
-import { PRIMARY_MODEL, gatewayOptions } from '@/lib/agente/model'
 import { refreshEventsForUnit } from '@/lib/agente/events'
 import { recordWeatherObservation } from '@/lib/agente/weather-insight'
 import { recomputeSeasonality } from '@/lib/seasonality/compute'
@@ -11,18 +8,14 @@ import { syncBudgetForUnit } from '@/lib/budget/google-sheets'
 import { generateWeeklyReport } from '@/lib/reports/generate-weekly-report'
 import { updateGuiaCompetitorsForUnit } from '@/lib/competitors/cron-update'
 import { bootstrapPricingLessons } from '@/lib/agente/bootstrap-learning'
-import { trailingYear } from '@/lib/kpis/period'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
-import { buildSystemPrompt } from '@/lib/agente/system-prompt'
 import {
   decomposeLift,
   judgeVerdict,
-  buildLiftDecompositionBlock,
   type LiftDecomposition,
 } from '@/lib/agente/lift-decomposition'
 import type { Database } from '@/types/database.types'
 import type { ParsedPriceRow } from '@/app/api/agente/import-prices/route'
-import type { KPIPeriod } from '@/lib/agente/system-prompt'
 import type { ProposalKpiBaseline } from '@/lib/agente/proposal-baseline'
 import type { CompanyKPIResponse } from '@/lib/kpis/types'
 import type { ProposedPriceRow } from '@/app/api/agente/proposals/route'
@@ -259,99 +252,29 @@ export async function runPendingReviews(): Promise<RunReviewsResult> {
         }
       }
 
-      // ─── KPIs para o prompt da revisão ───────────────────────────────
-      const end = new Date()
-      end.setDate(end.getDate() - 1)
-      const start7d = new Date(end)
-      start7d.setDate(start7d.getDate() - 6)
+      // ─── Gerar relatório completo com o período do checkpoint ────────
+      // Converte DD/MM/YYYY → YYYY-MM-DD para o gerador de relatório.
+      // Usa a mesma janela calculada pelo baseline; fallback para últimos 7d.
+      const toISO = (ddmmyyyy: string) => ddmmyyyy.split('/').reverse().join('-')
 
-      const fmt = (d: Date) => d.toLocaleDateString('pt-BR')
-      const kpiPeriod7d       = { startDate: fmt(start7d), endDate: fmt(end) }
-      const kpiPeriodTrailing = trailingYear()
+      let checkpointStart: string
+      let checkpointEnd: string
+      if (baseline && approvedAtDate) {
+        const cwWin = buildCheckpointWindow(approvedAtDate, baseline.window_days ?? 28, checkpointDays)
+        checkpointStart = toISO(cwWin.startDateApi)
+        checkpointEnd   = toISO(cwWin.endDateApi)
+      } else {
+        const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
+        checkpointEnd   = yesterday.toISOString().slice(0, 10)
+        const s = new Date(yesterday); s.setDate(s.getDate() - 6)
+        checkpointStart = s.toISOString().slice(0, 10)
+      }
 
-      const [c7d, cTrail] = await Promise.allSettled([
-        postKpis ? Promise.resolve(postKpis) : fetchCompanyKPIsFromAutomo(unit.slug, kpiPeriod7d.startDate, kpiPeriod7d.endDate),
-        fetchCompanyKPIsFromAutomo(unit.slug, kpiPeriodTrailing.startDate, kpiPeriodTrailing.endDate),
-      ])
-
-      const kpiPeriods: KPIPeriod[] = [
-        {
-          label: `Janela pós-aprovação (${checkpointDays}d) — ${kpiPeriod7d.startDate} a ${kpiPeriod7d.endDate}`,
-          period: kpiPeriod7d,
-          company: c7d.status === 'fulfilled' ? c7d.value : null,
-          bookings: null,
-        },
-        {
-          label: `Trailing 12 meses — contexto histórico (${kpiPeriodTrailing.startDate} a ${kpiPeriodTrailing.endDate})`,
-          period: kpiPeriodTrailing,
-          company: cTrail.status === 'fulfilled' ? cTrail.value : null,
-          bookings: null,
-        },
-      ]
-
-      const decompositionBlock = decomposition
-        ? buildLiftDecompositionBlock(decomposition, checkpointDays)
-        : ''
-
-      const systemPrompt = buildSystemPrompt(unit.name, kpiPeriods, priceImports) +
-        (decompositionBlock ? `\n\n${decompositionBlock}` : '')
+      const reportId = await generateWeeklyReport(unit.slug, checkpointStart, checkpointEnd)
 
       const scheduledLabel = new Date(review.scheduled_at).toLocaleDateString('pt-BR', {
         day: '2-digit', month: '2-digit', year: 'numeric',
       })
-
-      const noteContext = review.note ? `\n\nFoco desta revisão: ${review.note}` : ''
-      const decompositionPreamble = decomposition
-        ? `\n\nA decomposição de lift acima já está pronta no contexto — referencie os números da atribuição (Pricing, Eventos, Clima, Sazonalidade) na sua análise. NÃO recalcule deltas.`
-        : ''
-
-      const userMessage = `Revisão automática de Revenue Management agendada para ${scheduledLabel} (checkpoint +${checkpointDays}d).${proposalContext}${noteContext}${decompositionPreamble}
-
-Por favor, realize uma análise completa de acompanhamento:
-1. ${decomposition ? 'Comente a decomposição de lift: o RevPAR mudou X%, atribuído majoritariamente a Y. O pricing contribuiu Z%' : 'Diagnóstico dos últimos 7 dias vs histórico de 12 meses'}
-2. Identifique tendências e anomalias desde a aprovação da proposta
-3. Avalie se os preços atuais continuam calibrados para a demanda observada
-4. Se necessário, sugira ajustes em prosa (não use tabela markdown — sugestões, não proposta)
-5. Indique próximos passos e métricas a monitorar até o próximo checkpoint
-
-IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em texto corrido. Não chame nenhuma ferramenta.`
-
-      const agentResult = await generateText({
-        model: PRIMARY_MODEL,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-        tools: {
-          placeholder: tool({
-            description: 'Placeholder — não usar nesta revisão automática.',
-            inputSchema: z.object({ _: z.string().optional() }),
-            execute: async () => ({ ok: true }),
-          }),
-        },
-        maxOutputTokens: 2500,
-        temperature: 0.3,
-        providerOptions: gatewayOptions,
-      })
-
-      const analysisText = agentResult.text ?? '(análise sem conteúdo)'
-      const convTitle = `📅 Revisão +${checkpointDays}d — ${scheduledLabel} · ${unit.name}`
-
-      const messages = [
-        { id: `cron-user-${review.id}`,      role: 'user',      content: userMessage,  parts: [{ type: 'text', text: userMessage  }] },
-        { id: `cron-assistant-${review.id}`, role: 'assistant', content: analysisText, parts: [{ type: 'text', text: analysisText }] },
-      ]
-
-      const { data: conv, error: convError } = await admin
-        .from('rm_conversations')
-        .insert({
-          unit_id:  unit.id,
-          user_id:  review.created_by,
-          title:    convTitle,
-          messages: JSON.parse(JSON.stringify(messages)),
-        })
-        .select('id')
-        .single()
-
-      if (convError) throw new Error(`Erro ao salvar conversa: ${convError.message}`)
 
       const liftSummary = decomposition
         ? ` · pricing ${decomposition.attributed.pricing >= 0 ? '+' : ''}${decomposition.attributed.pricing.toFixed(1)}%`
@@ -361,19 +284,19 @@ IMPORTANTE: esta é uma revisão automática — apresente apenas a análise em 
         user_id: review.created_by,
         type:    'revisao_concluida',
         title:   `📅 Revisão +${checkpointDays}d concluída — ${unit.name}${liftSummary}`,
-        body:    `${lessonsInserted > 0 ? `${lessonsInserted} lições aprendidas registradas. ` : ''}Confira a análise no histórico do Agente RM.`,
-        link:    `/dashboard/agente?unit=${unit.slug}&conv=${conv.id}`,
+        body:    `${lessonsInserted > 0 ? `${lessonsInserted} lições aprendidas registradas. ` : ''}Confira o relatório de acompanhamento.`,
+        link:    `/dashboard/agente/relatorios?unit=${unit.slug}`,
       })
 
       await admin
         .from('scheduled_reviews')
-        .update({ status: 'done', conv_id: conv.id, executed_at: new Date().toISOString() })
+        .update({ status: 'done', conv_id: reportId ?? null, executed_at: new Date().toISOString() })
         .eq('id', review.id)
 
       results.push({
         reviewId: review.id,
         status: 'done',
-        convId: conv.id,
+        convId: reportId ?? undefined,
         liftPricingPct: decomposition?.attributed.pricing,
         lessonsInserted,
       })

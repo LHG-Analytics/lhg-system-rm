@@ -66,7 +66,7 @@ export async function generateWeeklyReport(
   unitSlug: string,
   periodStart: string, // YYYY-MM-DD
   periodEnd: string,   // YYYY-MM-DD
-): Promise<void> {
+): Promise<string | null> {
   const admin = getAdminClient()
 
   const { data: unit } = await admin
@@ -77,7 +77,7 @@ export async function generateWeeklyReport(
 
   if (!unit) {
     console.error('[generateWeeklyReport] Unit not found:', unitSlug)
-    return
+    return null
   }
 
   const { data: reportRow, error: upsertErr } = await admin
@@ -93,7 +93,7 @@ export async function generateWeeklyReport(
 
   if (upsertErr || !reportRow) {
     console.error('[generateWeeklyReport] Upsert failed:', upsertErr)
-    return
+    return null
   }
 
   const reportId = reportRow.id
@@ -983,4 +983,6 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
       })
       .eq('id', reportId)
   }
+
+  return reportId
 }
