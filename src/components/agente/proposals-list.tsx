@@ -658,26 +658,29 @@ function calcImpact(rows: ProposedPriceRow[]) {
   const flat  = rows.filter((r) => Math.abs(r.variacao_pct) <= 0.5)
   const avgCurrent  = rows.reduce((s, r) => s + r.preco_atual,    0) / rows.length
   const avgProposed = rows.reduce((s, r) => s + r.preco_proposto, 0) / rows.length
-  const deltaTicket = avgCurrent > 0 ? ((avgProposed - avgCurrent) / avgCurrent) * 100 : 0
 
   // Detecta proposta com duas faixas horárias (padrão 06–18h + prime 18–06h)
   const standardRows = rows.filter((r) => !r.hora_inicio || r.hora_inicio === '06:00')
   const primeRows    = rows.filter((r) => r.hora_inicio === '18:00')
   const hasBands     = primeRows.length > 0 && standardRows.length > 0
 
-  let bandDelta: { standard: number; prime: number } | null = null
+  // Para propostas de duas faixas: pondera 70% prime / 30% padrão para refletir
+  // que a demanda de motel é predominantemente noturna. Evita que a redistribuição
+  // do premium FDS (ex: Sex 06-18h cai de R$189→R$102) dilua os aumentos do prime.
+  let deltaTicket: number
   if (hasBands) {
     const avgCS  = standardRows.reduce((s, r) => s + r.preco_atual,    0) / standardRows.length
     const avgPS  = standardRows.reduce((s, r) => s + r.preco_proposto, 0) / standardRows.length
     const avgCP  = primeRows.reduce((s, r) => s + r.preco_atual,    0) / primeRows.length
     const avgPP  = primeRows.reduce((s, r) => s + r.preco_proposto, 0) / primeRows.length
-    bandDelta = {
-      standard: avgCS > 0 ? ((avgPS - avgCS) / avgCS) * 100 : 0,
-      prime:    avgCP > 0 ? ((avgPP - avgCP) / avgCP) * 100 : 0,
-    }
+    const dStd   = avgCS > 0 ? ((avgPS - avgCS) / avgCS) * 100 : 0
+    const dPrime = avgCP > 0 ? ((avgPP - avgCP) / avgCP) * 100 : 0
+    deltaTicket  = 0.30 * dStd + 0.70 * dPrime
+  } else {
+    deltaTicket = avgCurrent > 0 ? ((avgProposed - avgCurrent) / avgCurrent) * 100 : 0
   }
 
-  return { up: up.length, down: down.length, flat: flat.length, deltaTicket, avgCurrent, avgProposed, hasBands, bandDelta }
+  return { up: up.length, down: down.length, flat: flat.length, deltaTicket, avgCurrent, avgProposed, hasBands }
 }
 
 function ExpandableText({ text, maxLength = 120 }: { text: string; maxLength?: number }) {
@@ -1184,23 +1187,12 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                             </span>
                           )
                         })()}
-                        {impact.hasBands && impact.bandDelta ? (
-                          <span className="text-[11px] font-medium tabular-nums text-muted-foreground flex gap-2">
-                            <span className={impact.bandDelta.standard > 0 ? 'text-green-600' : impact.bandDelta.standard < 0 ? 'text-red-500' : ''}>
-                              Padrão {impact.bandDelta.standard >= 0 ? '+' : ''}{impact.bandDelta.standard.toFixed(1)}%
-                            </span>
-                            <span className={impact.bandDelta.prime > 0 ? 'text-green-600' : impact.bandDelta.prime < 0 ? 'text-red-500' : ''}>
-                              · Prime {impact.bandDelta.prime >= 0 ? '+' : ''}{impact.bandDelta.prime.toFixed(1)}%
-                            </span>
-                          </span>
-                        ) : (
-                          <span className={cn(
-                            'text-[11px] font-medium tabular-nums',
-                            impact.deltaTicket > 0 ? 'text-green-600' : impact.deltaTicket < 0 ? 'text-red-500' : 'text-muted-foreground'
-                          )}>
-                            · Ticket médio {impact.deltaTicket >= 0 ? '+' : ''}{impact.deltaTicket.toFixed(1)}% (volume constante)
-                          </span>
-                        )}
+                        <span className={cn(
+                          'text-[11px] font-medium tabular-nums',
+                          impact.deltaTicket > 0 ? 'text-green-600' : impact.deltaTicket < 0 ? 'text-red-500' : 'text-muted-foreground'
+                        )}>
+                          · Ticket médio {impact.deltaTicket >= 0 ? '+' : ''}{impact.deltaTicket.toFixed(1)}% (volume constante)
+                        </span>
                       </div>
                     )}
 
@@ -1379,8 +1371,12 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                     {/* Painel de simulação de receita */}
                     {!isEditing && impact && (() => {
                       const baseTicket = realTicket ?? impact.avgCurrent
+                      const projTicket = baseTicket * (1 + impact.deltaTicket / 100)
+                      const label = impact.hasBands
+                        ? 'ponderado 70% prime / 30% padrão'
+                        : 'reajuste médio da tabela'
                       return (
-                      <div className="border-t px-4 py-3 bg-muted/30 flex flex-wrap items-center gap-x-6 gap-y-1.5">
+                      <div className="border-t px-4 py-3 bg-muted/30 flex flex-wrap items-center gap-x-6 gap-y-1">
                         <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                           Simulação (volume constante)
                         </span>
@@ -1388,46 +1384,17 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
                           Ticket atual{realTicket != null ? ' (operacional)' : ''}:{' '}
                           <span className="font-medium text-foreground">{formatMoney(baseTicket, 2)}</span>
                         </span>
-                        {impact.hasBands && impact.bandDelta ? (
-                          /* Proposta com duas faixas — mostrar por banda, sem ticket projetado único
-                             pois o volume de locações por faixa horária não está disponível. */
-                          <>
-                            <span className={cn(
-                              'text-xs font-semibold',
-                              impact.bandDelta.standard > 0 ? 'text-green-600' : impact.bandDelta.standard < 0 ? 'text-red-500' : 'text-muted-foreground'
-                            )}>
-                              {impact.bandDelta.standard >= 0 ? '▲' : '▼'}{' '}
-                              {Math.abs(impact.bandDelta.standard).toFixed(1)}% faixa padrão (06–18h)
-                            </span>
-                            <span className={cn(
-                              'text-xs font-semibold',
-                              impact.bandDelta.prime > 0 ? 'text-green-600' : impact.bandDelta.prime < 0 ? 'text-red-500' : 'text-muted-foreground'
-                            )}>
-                              {impact.bandDelta.prime >= 0 ? '▲' : '▼'}{' '}
-                              {Math.abs(impact.bandDelta.prime).toFixed(1)}% prime time (18–06h)
-                            </span>
-                            <span className="text-[10px] text-muted-foreground">
-                              · ticket projetado omitido — volume por faixa não disponível
-                            </span>
-                          </>
-                        ) : (
-                          /* Proposta legada (faixa única) — ticket projetado disponível */
-                          <>
-                            <span className="text-xs text-muted-foreground">
-                              Projetado:{' '}
-                              <span className="font-medium text-foreground">
-                                {formatMoney(baseTicket * (1 + impact.deltaTicket / 100), 2)}
-                              </span>
-                            </span>
-                            <span className={cn(
-                              'text-xs font-semibold',
-                              impact.deltaTicket > 0 ? 'text-green-600' : impact.deltaTicket < 0 ? 'text-red-500' : 'text-muted-foreground'
-                            )}>
-                              {impact.deltaTicket >= 0 ? '▲' : '▼'}{' '}
-                              {Math.abs(impact.deltaTicket).toFixed(1)}% (reajuste médio da tabela)
-                            </span>
-                          </>
-                        )}
+                        <span className="text-xs text-muted-foreground">
+                          Projetado:{' '}
+                          <span className="font-medium text-foreground">{formatMoney(projTicket, 2)}</span>
+                        </span>
+                        <span className={cn(
+                          'text-xs font-semibold',
+                          impact.deltaTicket > 0 ? 'text-green-600' : impact.deltaTicket < 0 ? 'text-red-500' : 'text-muted-foreground'
+                        )}>
+                          {impact.deltaTicket >= 0 ? '▲' : '▼'}{' '}
+                          {Math.abs(impact.deltaTicket).toFixed(1)}% ({label})
+                        </span>
                       </div>
                       )
                     })()}
