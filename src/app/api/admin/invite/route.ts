@@ -45,26 +45,32 @@ export async function POST(req: NextRequest) {
   const alreadyExists = existingUsers?.users?.some((u) => u.email === email)
   if (alreadyExists) return Response.json({ error: 'Este email já possui acesso.' }, { status: 409 })
 
-  const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { role: targetRole, unit_id: unit_id ?? null },
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://lhg-system-rm.vercel.app'}/auth/callback`,
+  // generateLink cria o usuário + retorna o link de convite sem enviar email.
+  // inviteUserByEmail enviaria email mas não retorna o link; usar os dois invalida o token do email.
+  const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+    type: 'invite',
+    email,
+    options: {
+      data: { role: targetRole, unit_id: unit_id ?? null },
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://lhg-system-rm.vercel.app'}/auth/callback`,
+    },
   })
 
-  if (inviteError) return Response.json({ error: inviteError.message }, { status: 500 })
+  if (linkError || !linkData) return Response.json({ error: linkError?.message ?? 'Erro ao gerar link' }, { status: 500 })
 
   // O trigger on_auth_user_created já cria um profile com role='viewer' quando o
   // usuário é adicionado em auth.users. Usar upsert para sobrescrever com o role correto.
   // Nota: profiles não tem coluna email — não incluir ou o upsert falha silenciosamente.
   await admin.from('profiles').upsert(
     {
-      user_id: invited.user.id,
+      user_id: linkData.user.id,
       role: targetRole as Database['public']['Enums']['user_role'],
       unit_id: unit_id ?? null,
     },
     { onConflict: 'user_id' }
   )
 
-  return Response.json({ ok: true, user_id: invited.user.id })
+  return Response.json({ ok: true, user_id: linkData.user.id, invite_link: linkData.properties.action_link })
 }
 
 // ─── PATCH: atualiza role e/ou unit_id de um usuário existente ───────────────

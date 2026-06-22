@@ -22,7 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Loader2, UserPlus, Trash2, Mail, CheckCircle2, Clock, Pencil, Check, X } from 'lucide-react'
+import { Loader2, UserPlus, Trash2, Mail, CheckCircle2, Clock, Pencil, Check, X, Copy, Link2 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
@@ -263,6 +263,8 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
   const [inviting, setInviting]     = useState(false)
   const [error, setError]           = useState<string | null>(null)
   const [success, setSuccess]       = useState<string | null>(null)
+  const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [copied, setCopied]         = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deleting, setDeleting]     = useState(false)
 
@@ -270,6 +272,8 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
     e.preventDefault()
     setError(null)
     setSuccess(null)
+    setInviteLink(null)
+    setCopied(false)
 
     setInviting(true)
     try {
@@ -280,7 +284,8 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Erro ao convidar')
-      setSuccess(`Convite enviado para ${email}`)
+      setSuccess(`Acesso criado para ${email}`)
+      setInviteLink(data.invite_link ?? null)
       setEmail('')
       setUsers((prev) => [{
         user_id:    data.user_id,
@@ -330,7 +335,7 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
           </div>
           <div>
             <p className="text-sm font-semibold">Convidar novo usuário</p>
-            <p className="text-xs text-muted-foreground">O usuário receberá um email com link de acesso.</p>
+            <p className="text-xs text-muted-foreground">Gera um link de acesso para compartilhar com o usuário.</p>
           </div>
         </div>
 
@@ -338,8 +343,40 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
           <div className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
         )}
         {success && (
-          <div className="rounded-lg bg-emerald-500/10 px-4 py-3 text-sm text-emerald-500 flex items-center gap-2">
-            <Mail className="size-4 shrink-0" />{success}
+          <div className="flex flex-col gap-2">
+            <div className="rounded-lg bg-emerald-500/10 px-4 py-3 text-sm text-emerald-500 flex items-center gap-2">
+              <CheckCircle2 className="size-4 shrink-0" />{success}
+            </div>
+            {inviteLink && (
+              <div className="rounded-lg border bg-muted/50 p-3 flex flex-col gap-2">
+                <p className="text-xs font-medium flex items-center gap-1.5">
+                  <Link2 className="size-3.5" />
+                  Link de convite — válido por 24h
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    value={inviteLink}
+                    readOnly
+                    className="h-8 text-xs font-mono bg-background"
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 shrink-0 gap-1.5"
+                    onClick={() => {
+                      navigator.clipboard.writeText(inviteLink)
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 2000)
+                    }}
+                  >
+                    {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+                    {copied ? 'Copiado!' : 'Copiar'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -394,8 +431,8 @@ export function UsersManager({ initialUsers, units, currentUserId }: UsersManage
 
           <div className="flex justify-end">
             <Button type="submit" size="sm" className="gap-1.5" disabled={inviting}>
-              {inviting ? <Loader2 className="size-3.5 animate-spin" /> : <Mail className="size-3.5" />}
-              Enviar convite
+              {inviting ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
+              Gerar link de convite
             </Button>
           </div>
         </form>
