@@ -54,10 +54,10 @@ export async function POST(req: NextRequest) {
 
   // O trigger on_auth_user_created já cria um profile com role='viewer' quando o
   // usuário é adicionado em auth.users. Usar upsert para sobrescrever com o role correto.
+  // Nota: profiles não tem coluna email — não incluir ou o upsert falha silenciosamente.
   await admin.from('profiles').upsert(
     {
       user_id: invited.user.id,
-      email,
       role: targetRole as Database['public']['Enums']['user_role'],
       unit_id: unit_id ?? null,
     },
