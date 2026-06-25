@@ -57,6 +57,20 @@ const DIA_LABELS: Record<string, string> = {
   fds_feriado:'FDS / Feriado',
   todos:      'Todos',
 }
+const DAY_SHORT: Record<string, string> = {
+  domingo: 'Dom', segunda: 'Seg', terca: 'Ter', quarta: 'Qua',
+  quinta: 'Qui', sexta: 'Sex', sabado: 'Sáb',
+}
+function formatDia(row: ParsedPriceRow): string {
+  if (row.dias?.length) {
+    const days = row.dias.map(d => DAY_SHORT[d] ?? d).join(', ')
+    const time = row.hora_inicio && row.hora_fim
+      ? ` ${row.hora_inicio.slice(0, 5)}–${row.hora_fim.slice(0, 5)}`
+      : ''
+    return `${days}${time}`
+  }
+  return DIA_LABELS[row.dia_tipo] ?? row.dia_tipo
+}
 
 function fmtDate(iso: string) {
   const [y, m, d] = iso.split('-')
@@ -321,7 +335,7 @@ function ImportItem({ imp, onDeleted, onUpdated, importType = 'prices' }: Import
                       </TableCell>
                       <TableCell className="text-sm font-medium">{row.categoria}</TableCell>
                       <TableCell className="text-sm">{row.periodo}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{DIA_LABELS[row.dia_tipo] ?? row.dia_tipo}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{formatDia(row)}</TableCell>
                       <TableCell className="text-sm text-right tabular-nums">
                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(row.preco)}
                       </TableCell>

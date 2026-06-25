@@ -185,7 +185,8 @@ export function IntelligenceSection({ data }: Props) {
                               {insight.topChanges.map((c, j) => (
                                 <div key={j} className="flex items-center justify-between text-xs py-1 border-b border-muted last:border-0">
                                   <span className="text-muted-foreground">
-                                    {c.categoria} · {c.periodo} · {c.diaTipo}
+                                    {c.categoria} · {c.periodo}
+                                    {(c.diaTipo && c.diaTipo !== c.canal) ? ` · ${c.diaTipo}` : ''}
                                   </span>
                                   <span className={cn('font-medium tabular-nums', c.variacaoPct > 0 ? 'text-emerald-600' : 'text-destructive')}>
                                     {c.variacaoPct > 0 ? '+' : ''}{c.variacaoPct.toFixed(1)}%

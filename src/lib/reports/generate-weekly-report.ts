@@ -332,9 +332,11 @@ export async function generateWeeklyReport(
     const monthBudget = budgetYearly?.[String(monthYear)]?.[String(monthNum)]
     const meta = monthBudget?.receita ?? 0
     const daysRemaining = monthDaysTotal - monthDaysElapsed
-    const projecao = realizado + paceDiarioAtual * daysRemaining
     const paceDiarioNecessario = meta > 0 && daysRemaining > 0 ? (meta - realizado) / daysRemaining : 0
     const forecast = computeRevenueForecast(kpis, budgetYearly)
+    // Usa a projeção do ERP (mais precisa — conta reservas confirmadas).
+    // Fallback para ritmo linear caso a projeção do ERP não esteja disponível.
+    const projecao = forecast.months[0]?.projected ?? (realizado + paceDiarioAtual * daysRemaining)
 
     const budgetTracking: WeeklyReportData['budgetTracking'] = {
       monthName: MONTH_PT[monthNum - 1],
@@ -588,39 +590,42 @@ export async function generateWeeklyReport(
           const rowsA = (tblA.parsed_data ?? []) as ParsedPriceRow[]
           const rowsB = (tblB.parsed_data ?? []) as ParsedPriceRow[]
 
-          const mapA: Record<string, number> = {}
-          for (const r of rowsA) {
-            mapA[`${r.categoria}|${r.periodo}|${r.dia_tipo}|${r.canal}`] = r.preco
+          // Compara preços médios por categoria+período+canal — funciona tanto para o
+          // formato legado (dia_tipo: 'semana'/'fds_feriado') quanto para o novo
+          // formato dia-a-dia (dias: ['domingo',...] + hora_inicio/hora_fim) onde dia_tipo=''.
+          const buildAvgMap = (rows: ParsedPriceRow[]): Record<string, number> => {
+            const acc: Record<string, { sum: number; count: number }> = {}
+            for (const r of rows) {
+              const k = `${r.categoria}|${r.periodo}|${r.canal}`
+              if (!acc[k]) acc[k] = { sum: 0, count: 0 }
+              acc[k].sum += r.preco
+              acc[k].count++
+            }
+            return Object.fromEntries(Object.entries(acc).map(([k, v]) => [k, v.sum / v.count]))
           }
+          const mapA = buildAvgMap(rowsA)
+          const mapB = buildAvgMap(rowsB)
 
           const rawChanges: HistoricalInsight['topChanges'] = []
-          for (const r of rowsB) {
-            const key = `${r.categoria}|${r.periodo}|${r.dia_tipo}|${r.canal}`
+          for (const [key, newAvg] of Object.entries(mapB)) {
             const prev = mapA[key]
-            if (prev != null && Math.abs((r.preco - prev) / prev) >= 0.01) {
+            if (prev != null && Math.abs((newAvg - prev) / prev) >= 0.01) {
+              const [categoria, periodo, canal] = key.split('|')
               rawChanges.push({
-                categoria: r.categoria,
-                periodo: r.periodo,
-                diaTipo: r.dia_tipo,
-                canal: r.canal,
+                categoria,
+                periodo,
+                diaTipo: canal,
+                canal,
                 precoAnterior: prev,
-                precoNovo: r.preco,
-                variacaoPct: ((r.preco - prev) / prev) * 100,
+                precoNovo: newAvg,
+                variacaoPct: ((newAvg - prev) / prev) * 100,
               })
             }
           }
 
           if (rawChanges.length === 0) continue
 
-          // Deduplica por categoria+periodo+diaTipo (múltiplos canais geram duplicatas visuais)
-          // Mantém a linha com maior variação absoluta como representativa
-          const dedupMap = new Map<string, typeof rawChanges[0]>()
-          for (const c of rawChanges) {
-            const k = `${c.categoria}|${c.periodo}|${c.diaTipo}`
-            const ex = dedupMap.get(k)
-            if (!ex || Math.abs(c.variacaoPct) > Math.abs(ex.variacaoPct)) dedupMap.set(k, c)
-          }
-          const changes = [...dedupMap.values()]
+          const changes = rawChanges
 
           const snapA = kpiAResult.status === 'fulfilled' ? kpiSnapshotFromResponse(kpiAResult.value) : null
           const snapB = kpiBResult.status === 'fulfilled' ? kpiSnapshotFromResponse(kpiBResult.value) : null
