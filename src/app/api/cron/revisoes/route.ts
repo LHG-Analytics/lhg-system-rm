@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { runPendingReviews } from '@/lib/cron/run-reviews'
 
-export const maxDuration = 60
+export const maxDuration = 300
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
