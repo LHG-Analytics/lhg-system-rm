@@ -96,7 +96,7 @@ export function IntelligenceSection({ data }: Props) {
           <h3 className="font-medium text-sm">⑩ O que o agente aprendeu no período</h3>
           {insights.length > 0 && (
             <span className="text-xs text-muted-foreground">
-              {insights.length} transição{insights.length > 1 ? 'ões' : ''} analisada{insights.length > 1 ? 's' : ''}
+              {insights.length} {insights.length > 1 ? 'transições' : 'transição'} analisada{insights.length > 1 ? 's' : ''}
             </span>
           )}
         </div>
