@@ -186,6 +186,7 @@ export async function PATCH(req: NextRequest) {
           .from('price_imports')
           .select('id')
           .eq('unit_id', proposal.unit_id)
+          .eq('import_type', 'prices')
           .is('valid_until', null)
           .order('valid_from', { ascending: false })
           .limit(1)
@@ -296,6 +297,7 @@ export async function PATCH(req: NextRequest) {
       .from('price_imports')
       .select('id, parsed_data, canals')
       .eq('unit_id', proposal.unit_id)
+      .eq('import_type', 'prices')
       .is('valid_until', null)
       .lte('valid_from', today)
       .order('valid_from', { ascending: false })
@@ -341,6 +343,7 @@ export async function PATCH(req: NextRequest) {
       .insert({
         unit_id:     proposal.unit_id,
         imported_by: user.id,
+        import_type: 'prices',
         raw_content: `[Agente RM — proposta ${id} aprovada em ${today}]`,
         parsed_data: newRows as unknown as Database['public']['Tables']['price_imports']['Insert']['parsed_data'],
         canals:      newCanais,

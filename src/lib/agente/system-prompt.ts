@@ -235,6 +235,26 @@ export interface VigenciaInfo {
   is_asymmetric: boolean
 }
 
+const DAY_SHORT: Record<string, string> = {
+  domingo: 'Dom', segunda: 'Seg', 'terça': 'Ter', quarta: 'Qua',
+  quinta: 'Qui', sexta: 'Sex', 'sábado': 'Sáb',
+}
+
+function getDiaLabel(r: ParsedPriceRow): string {
+  // Formato dia-a-dia: { dias: ['segunda'], hora_inicio: '18:00', hora_fim: '06:00' }
+  if ((r as { dias?: string[] }).dias?.length) {
+    const dias = (r as { dias: string[] }).dias
+    const horaInicio = (r as { hora_inicio?: string }).hora_inicio
+    const horaFim    = (r as { hora_fim?: string }).hora_fim
+    const dayStr = dias.map((d: string) => DAY_SHORT[d.toLowerCase()] ?? d).join('/')
+    return horaInicio && horaFim ? `${dayStr} ${horaInicio}–${horaFim}` : dayStr
+  }
+  // Formato legado: { dia_tipo: 'semana' | 'fds_feriado' }
+  if (r.dia_tipo === 'semana') return 'Semana'
+  if (r.dia_tipo === 'fds_feriado') return 'FDS/Feriado'
+  return 'Todos'
+}
+
 function buildSinglePriceTable(rows: ParsedPriceRow[], validFrom: string, validUntil: string | null, fmtMoney?: (n: number, decimals?: number) => string): string {
   const fmtPrice = fmtMoney
     ? (v: number) => fmtMoney(v, 2)
@@ -252,9 +272,9 @@ function buildSinglePriceTable(rows: ParsedPriceRow[], validFrom: string, validU
     const label = CANAL_LABELS[canal] ?? canal
     const lines = canalRows.map(
       (r) =>
-        `  | ${r.categoria} | ${r.periodo} | ${r.dia_tipo === 'semana' ? 'Semana' : r.dia_tipo === 'fds_feriado' ? 'FDS/Feriado' : 'Todos'} | ${fmtPrice(r.preco)} |`
+        `  | ${r.categoria} | ${r.periodo} | ${getDiaLabel(r)} | ${fmtPrice(r.preco)} |`
     )
-    sections.push(`**${label}**\n  | Categoria | Período | Dia | Preço |\n  |-----------|---------|-----|-------|\n${lines.join('\n')}`)
+    sections.push(`**${label}**\n  | Categoria | Período | Dia/Horário | Preço |\n  |-----------|---------|------------|-------|\n${lines.join('\n')}`)
   }
 
   const vigencia = `${validFrom}${validUntil ? ` → ${validUntil}` : ' → atualmente'}`
