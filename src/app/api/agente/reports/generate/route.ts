@@ -5,6 +5,8 @@ import type { Database } from '@/types/database.types'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { generateWeeklyReport } from '@/lib/reports/generate-weekly-report'
 
+export const maxDuration = 300
+
 function adminClient() {
   return createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,9 +59,24 @@ export async function POST(request: NextRequest) {
   }
 
   // Fire-and-forget — delay opcional para escalonar chamadas paralelas ao OpenRouter
+  const reportId = reportRow.id
   after(async () => {
-    if (delayMs && delayMs > 0) await new Promise(r => setTimeout(r, delayMs))
-    await generateWeeklyReport(unitSlug, dateFrom, dateTo)
+    try {
+      if (delayMs && delayMs > 0) await new Promise(r => setTimeout(r, delayMs))
+      await generateWeeklyReport(unitSlug, dateFrom, dateTo)
+    } catch (err) {
+      console.error('[reports/generate] after() error:', err)
+      // Safety net: generateWeeklyReport tem seu próprio catch, mas se ele mesmo falhar
+      // (ex: erro no admin client do update), marca como failed para desbloquear a UI.
+      await adminClient()
+        .from('rm_weekly_reports')
+        .update({
+          status: 'failed',
+          error_msg: err instanceof Error ? err.message : String(err),
+        })
+        .eq('id', reportId)
+        .eq('status', 'generating')
+    }
   })
 
   return NextResponse.json({ id: reportRow.id, status: 'generating' })

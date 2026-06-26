@@ -34,6 +34,7 @@ interface Props {
   report: FullReport | null
   loading: boolean
   onGenerateNow: () => void
+  onRetry?: () => void
   unitSlug: string
 }
 
@@ -46,10 +47,16 @@ const STEPS = [
   'Escrevendo resumo executivo com o GPT-5 Mini',
 ]
 
-function GeneratingState() {
+function GeneratingState({ onRetry }: { onRetry?: () => void }) {
   const [stepIdx, setStepIdx] = useState(0)
   const [charIdx, setCharIdx] = useState(0)
   const [fading, setFading] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    const t = setInterval(() => setElapsed(s => s + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
 
   useEffect(() => {
     if (fading) return
@@ -68,6 +75,8 @@ function GeneratingState() {
     }, 1600)
     return () => clearTimeout(t)
   }, [charIdx, stepIdx, fading])
+
+  const isStuck = elapsed >= 180
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-10 p-8 select-none">
@@ -110,11 +119,24 @@ function GeneratingState() {
           />
         ))}
       </div>
+
+      {/* Botão de retry — aparece após 3 min sem conclusão */}
+      {isStuck && onRetry && (
+        <div className="text-center space-y-2">
+          <p className="text-xs text-muted-foreground">Isso está demorando mais que o esperado</p>
+          <button
+            onClick={onRetry}
+            className="text-xs text-primary hover:underline underline-offset-2"
+          >
+            Cancelar e tentar novamente
+          </button>
+        </div>
+      )}
     </div>
   )
 }
 
-export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props) {
+export function ReportViewer({ report, loading, onGenerateNow, onRetry, unitSlug }: Props) {
   const [isPrinting, setIsPrinting] = useState(false)
 
   const handlePrint = async () => {
@@ -217,7 +239,7 @@ export function ReportViewer({ report, loading, onGenerateNow, unitSlug }: Props
   }
 
   if (report.status === 'generating') {
-    return <GeneratingState />
+    return <GeneratingState onRetry={onRetry} />
   }
 
   if (report.status === 'failed') {

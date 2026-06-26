@@ -95,6 +95,24 @@ export function RelatoriosPageClient({ initialReports, unitSlug, unitName, unitI
     }
   }
 
+  async function handleRetry() {
+    if (!selectedReport) return
+    const { id, period_start, period_end } = selectedReport
+    // Remove o relatório preso
+    await fetch(`/api/agente/reports/${id}`, { method: 'DELETE' })
+    setReports(prev => prev.filter(r => r.id !== id))
+    setSelectedId(null)
+    setSelectedReport(null)
+    // Re-gera com as mesmas datas
+    const res = await fetch('/api/agente/reports/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unitSlug, dateFrom: period_start, dateTo: period_end }),
+    })
+    const data = await res.json()
+    if (data.id) handleGenerated(data.id)
+  }
+
   // Auto-select first done report on mount
   useEffect(() => {
     const firstDone = reports.find(r => r.status === 'done')
@@ -149,6 +167,7 @@ export function RelatoriosPageClient({ initialReports, unitSlug, unitName, unitI
                 report={selectedReport}
                 loading={loadingReport}
                 onGenerateNow={() => handleGenerated('')}
+                onRetry={handleRetry}
                 unitSlug={unitSlug}
               />
             </div>
