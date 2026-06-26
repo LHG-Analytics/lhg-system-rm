@@ -110,7 +110,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
   ) => {
     // Chave inclui período e status — trocar o filtro do dashboard precisa invalidar o cache.
     // Sem isso, mudar de período devolvia os dados antigos da mesma métrica/categoria.
-    const cacheKey = `${m}-${dt}-${catId ?? ''}-${startDate}-${endDate}-${rentalStatus}`
+    const cacheKey = `${unitSlug}-${m}-${dt}-${catId ?? ''}-${startDate}-${endDate}-${rentalStatus}`
     if (responseCache.current.has(cacheKey)) {
       setRows(responseCache.current.get(cacheKey)!)
       return

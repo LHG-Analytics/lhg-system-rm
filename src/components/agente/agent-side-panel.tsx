@@ -195,19 +195,19 @@ function AgentSidePanelInner({ units, userRole }: AgentSidePanelProps) {
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [selectedConvId, activeUnit?.id, currentUserId, loadConversationById]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Resetar ao trocar de unidade
+  // Resetar ao trocar de unidade — sempre, mesmo com painel fechado.
+  // Sem isso, ao abrir o painel após trocar unidade, o AgenteChat renderiza
+  // com o selectedConvId da unidade anterior antes do fetch async terminar.
   const prevSlugRef = useRef(unitSlug)
   useEffect(() => {
     if (prevSlugRef.current !== unitSlug) {
       prevSlugRef.current = unitSlug
-      if (isOpen) {
-        loadedForRef.current = ''
-        setSelectedConvId(null)
-        setSelectedMessages(undefined)
-        setChatKey(0)
-      }
+      loadedForRef.current = ''
+      setSelectedConvId(null)
+      setSelectedMessages(undefined)
+      setChatKey(0)
     }
-  }, [unitSlug, isOpen])
+  }, [unitSlug])
 
   function handleNewConversation() {
     if (activeUnit) {
