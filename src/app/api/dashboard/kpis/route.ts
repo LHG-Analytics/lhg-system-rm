@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
-import { resolvePreset, toLhgDate } from '@/lib/date-range'
+import { resolvePreset, toLhgDate, toQueryEndDate } from '@/lib/date-range'
 
 const VALID_STATUSES = ['FINALIZADA', 'TRANSFERIDA', 'CANCELADA', 'ABERTA', 'TODAS'] as const
 type RentalStatus = typeof VALID_STATUSES[number]
@@ -40,8 +40,9 @@ export async function GET(req: NextRequest) {
     : 'FINALIZADA'
 
   const dateRange     = resolvePreset(sp.get('preset'), sp.get('start'), sp.get('end'))
+  const queryEndDate  = toQueryEndDate(dateRange.preset, dateRange.startDate, dateRange.endDate)
   const startDDMMYYYY = toLhgDate(dateRange.startDate)
-  const endDDMMYYYY   = toLhgDate(dateRange.endDate)
+  const endDDMMYYYY   = toLhgDate(queryEndDate)
 
   try {
     const [company, channelKPIs] = await Promise.all([

@@ -6,7 +6,7 @@ import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
 import { ComparisonFilter, type ComparisonFilters } from '@/components/dashboard/comparison-filter'
-import { fmtDisplay } from '@/lib/date-range'
+import { fmtDisplay, toQueryEndDate } from '@/lib/date-range'
 import type { CompanyKPIResponse, ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
 import type { HeatmapDateType } from '@/app/api/heatmap/route'
 import { cn } from '@/lib/utils'
@@ -68,7 +68,8 @@ export function ComparisonPanel({ label, accent, unitSlug, initial }: Props) {
     fetchKPIs(newFilters)
   }
 
-  const rangeLabel = `${fmtDisplay(filters.startDate)} → ${fmtDisplay(filters.endDate)}`
+  const rangeLabel     = `${fmtDisplay(filters.startDate)} → ${fmtDisplay(filters.endDate)}`
+  const heatmapEndDate = toQueryEndDate(filters.preset, filters.startDate, filters.endDate)
 
   return (
     <div className="flex flex-col gap-5">
@@ -112,7 +113,7 @@ export function ComparisonPanel({ label, accent, unitSlug, initial }: Props) {
           <OccupancyHeatmap
             unitSlug={unitSlug}
             startDate={filters.startDate}
-            endDate={filters.endDate}
+            endDate={heatmapEndDate}
             rangeLabel={rangeLabel}
             statusOverride={filters.status}
             dateTypeOverride={filters.dateType as HeatmapDateType}

@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { resolvePreset, toLhgDate, fmtDisplay } from '@/lib/date-range'
+import { resolvePreset, toLhgDate, fmtDisplay, toQueryEndDate } from '@/lib/date-range'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
@@ -101,8 +101,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   // Resolve date range from URL preset / custom dates
   const dateRange  = resolvePreset(preset, start, end)
+  const queryEndDate  = toQueryEndDate(dateRange.preset, dateRange.startDate, dateRange.endDate)
   const startDDMMYYYY = toLhgDate(dateRange.startDate)
-  const endDDMMYYYY   = toLhgDate(dateRange.endDate)
+  const endDDMMYYYY   = toLhgDate(queryEndDate)
 
   const { data: agentConfig } = await supabase
     .from('rm_agent_config')
@@ -178,7 +179,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <OccupancyHeatmap
           unitSlug={activeUnit.slug}
           startDate={dateRange.startDate}
-          endDate={dateRange.endDate}
+          endDate={queryEndDate}
           rangeLabel={dateRange.label}
         />
       </Suspense>
