@@ -5,6 +5,7 @@ import { resolvePreset, toLhgDate, fmtDisplay, toQueryEndDate } from '@/lib/date
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
+import { TurnoHeatmap } from '@/components/dashboard/turno-heatmap'
 import { DateRangePicker } from '@/components/dashboard/date-range-picker'
 import { WeatherWidget } from '@/components/dashboard/weather-widget'
 import { AnomaliesWidget } from '@/components/dashboard/anomalies-widget'
@@ -181,6 +182,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           startDate={dateRange.startDate}
           endDate={queryEndDate}
           rangeLabel={dateRange.label}
+        />
+      </Suspense>
+      <Suspense fallback={null}>
+        <TurnoHeatmap
+          unitSlug={activeUnit.slug}
+          startDate={dateRange.startDate}
+          endDate={queryEndDate}
         />
       </Suspense>
     </div>
