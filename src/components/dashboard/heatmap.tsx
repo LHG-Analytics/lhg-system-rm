@@ -59,7 +59,7 @@ function getColor(value: number | undefined, metric: HeatmapMetric, maxVal: numb
     if (ratio < 0.80) return 'bg-blue-500/60'
     return 'bg-blue-400/80'
   }
-  // revpar e trevpar: escala laranja/âmbar → vermelho quente
+  // revpar, trevpar e receita: escala laranja/âmbar → vermelho quente
   if (ratio < 0.15) return 'bg-muted/40'
   if (ratio < 0.35) return 'bg-amber-900/30'
   if (ratio < 0.60) return 'bg-amber-600/50'
@@ -70,7 +70,7 @@ function getColor(value: number | undefined, metric: HeatmapMetric, maxVal: numb
 function formatValue(value: number | undefined, metric: HeatmapMetric, fm: (v: number) => string): string {
   if (value === undefined) return '–'
   if (metric === 'ocupacao') return `${value.toFixed(0)}%`
-  if (metric === 'revpar' || metric === 'trevpar') return fm(value)
+  if (metric === 'revpar' || metric === 'trevpar' || metric === 'receita') return fm(value)
   if (metric === 'locacoes') return value.toFixed(0)
   return value.toFixed(2)
 }
@@ -95,8 +95,10 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
   const [metric,     setMetric]     = useState<HeatmapMetric>('giro')
   const [dateType,   setDateType]   = useState<HeatmapDateType>(urlDateType)
   const [categoryId, setCategoryId] = useState<string | null>(null)
+  const [periodo,    setPeriodo]    = useState<string | null>(null)
   const [rows,       setRows]       = useState<HeatmapCell[]>([])
   const [categories, setCategories] = useState<HeatmapCategory[]>([])
+  const [periodos,   setPeriodos]   = useState<string[]>([])
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState<string | null>(null)
 
@@ -107,10 +109,11 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
     m: HeatmapMetric,
     dt: HeatmapDateType,
     catId: string | null,
+    per: string | null,
   ) => {
     // Chave inclui período e status — trocar o filtro do dashboard precisa invalidar o cache.
     // Sem isso, mudar de período devolvia os dados antigos da mesma métrica/categoria.
-    const cacheKey = `${unitSlug}-${m}-${dt}-${catId ?? ''}-${startDate}-${endDate}-${rentalStatus}`
+    const cacheKey = `${unitSlug}-${m}-${dt}-${catId ?? ''}-${per ?? ''}-${startDate}-${endDate}-${rentalStatus}`
     if (responseCache.current.has(cacheKey)) {
       setRows(responseCache.current.get(cacheKey)!)
       return
@@ -127,6 +130,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
         status:    rentalStatus,
       })
       if (catId) params.set('categoryId', catId)
+      if (per)   params.set('periodo', per)
 
       const res = await fetch(`/api/heatmap?${params}`)
       if (!res.ok) {
@@ -138,6 +142,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
       responseCache.current.set(cacheKey, fetchedRows)
       setRows(fetchedRows)
       if (data.categories?.length) setCategories(data.categories)
+      if (data.periodos?.length)   setPeriodos(data.periodos)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar heatmap')
     } finally {
@@ -146,17 +151,17 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
   }, [unitSlug, startDate, endDate, rentalStatus])
 
   useEffect(() => {
-    fetchData(metric, dateType, categoryId)
-  }, [metric, dateType, categoryId, fetchData])
+    fetchData(metric, dateType, categoryId, periodo)
+  }, [metric, dateType, categoryId, periodo, fetchData])
 
   const matrix    = buildMatrix(rows)
   const allValues = rows.map((r) => r.value).filter((v) => v > 0)
   const maxVal    = allValues.length ? Math.max(...allValues) : 1
 
   const metricLabel: Record<HeatmapMetric, string> = {
-    giro: 'Giro', locacoes: 'Locações', ocupacao: 'Tx. Ocupação', revpar: 'RevPAR', trevpar: 'TRevPAR',
+    giro: 'Giro', locacoes: 'Locações', ocupacao: 'Tx. Ocupação', revpar: 'RevPAR', trevpar: 'TRevPAR', receita: 'Receita',
   }
-  const subtitle = (metric === 'revpar' || metric === 'trevpar')
+  const subtitle = (metric === 'revpar' || metric === 'trevpar' || metric === 'receita')
     ? `${metricLabel[metric]} por hora × dia da semana (${symbol})`
     : dateType === 'all'
       ? 'Dia da semana × hora · entradas e saídas'
@@ -195,6 +200,25 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
               </div>
             )}
 
+            {/* Filtro de período */}
+            {periodos.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
+                  Período
+                </span>
+                <select
+                  value={periodo ?? ''}
+                  onChange={(e) => setPeriodo(e.target.value || null)}
+                  className="h-7 rounded-md border bg-background px-2 text-xs text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="">Todos</option>
+                  {periodos.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Filtro de tipo de data */}
             <div className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
@@ -217,7 +241,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
                 KPI
               </span>
               <div className="flex gap-1 rounded-lg border p-0.5 text-xs">
-                {(['giro', 'locacoes', 'ocupacao', 'revpar', 'trevpar'] as HeatmapMetric[]).map((m) => {
+                {(['giro', 'locacoes', 'ocupacao', 'revpar', 'trevpar', 'receita'] as HeatmapMetric[]).map((m) => {
                   const btnLabel =
                     m === 'ocupacao' ? 'Ocup.' :
                     m === 'locacoes' ? 'Locações' :
@@ -267,7 +291,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
           <div className="h-3 w-8 rounded-sm bg-blue-500/60" />
           <div className="h-3 w-8 rounded-sm bg-blue-400/80" />
         </>}
-        {(metric === 'revpar' || metric === 'trevpar') && <>
+        {(metric === 'revpar' || metric === 'trevpar' || metric === 'receita') && <>
           <div className="h-3 w-8 rounded-sm bg-muted/40" />
           <div className="h-3 w-8 rounded-sm bg-amber-900/30" />
           <div className="h-3 w-8 rounded-sm bg-amber-600/50" />

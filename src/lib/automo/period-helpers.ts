@@ -77,3 +77,31 @@ export function buildPeriodCaseSQL(periodType: 'standard' | 'altana', gateSchedu
             ELSE '12 horas'
           END`
 }
+
+/**
+ * Fragmento WHERE que filtra locações por período (3h/6h/12h/Day Use/etc.), para uso
+ * em queries que ainda não têm `dur`/`h_in`/`is_scheduled` pré-computados (ex: heatmap).
+ * Substitui os identificadores do CASE de `buildPeriodCaseSQL` pelas expressões SQL
+ * reais, então o fragmento pode ser colado direto no WHERE de uma query em `la`.
+ *
+ * Retorna string vazia quando `targetPeriodo` é null/vazio (sem filtro).
+ */
+export function buildPeriodoFilterSQL(
+  periodType: 'standard' | 'altana',
+  targetPeriodo: string | null | undefined,
+  laAlias = 'la',
+): string {
+  if (!targetPeriodo) return ''
+
+  const durExpr      = `(EXTRACT(EPOCH FROM (${laAlias}.datafinaldaocupacao - ${laAlias}.datainicialdaocupacao)) / 3600.0)`
+  const hInExpr       = `EXTRACT(HOUR FROM ${laAlias}.datainicialdaocupacao)::int`
+  const isScheduledExpr = scheduledReservaExistsSQL(laAlias)
+
+  const caseSQL = buildPeriodCaseSQL(periodType, true)
+    .replace(/\bdur\b/g, durExpr)
+    .replace(/\bh_in\b/g, hInExpr)
+    .replace(/\bis_scheduled\b/g, isScheduledExpr)
+
+  const safePeriodo = targetPeriodo.replace(/'/g, "''")
+  return `AND (${caseSQL}) = '${safePeriodo}'`
+}

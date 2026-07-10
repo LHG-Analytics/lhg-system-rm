@@ -1,13 +1,14 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
+import { getAutomPool, getUnitCategoryIds, getUnitPeriodType } from '@/lib/automo/client'
 import {
   cteBaseSuiteDays,
   cteSuiteDaysTotal,
   cteSuiteDaysByCategoryDow,
   cteSuiteDaysByDow,
 } from '@/lib/automo/suite-days'
+import { getValidPeriodsForType, buildPeriodoFilterSQL } from '@/lib/automo/period-helpers'
 import { isValidIsoDate, resolvePreset } from '@/lib/date-range'
 import type { Database } from '@/types/database.types'
 
@@ -18,7 +19,7 @@ function getAdminClient() {
   )
 }
 
-export type HeatmapMetric   = 'giro' | 'locacoes' | 'ocupacao' | 'revpar' | 'trevpar'
+export type HeatmapMetric   = 'giro' | 'locacoes' | 'ocupacao' | 'revpar' | 'trevpar' | 'receita'
 export type HeatmapDateType = 'all' | 'checkin' | 'checkout'
 
 export interface HeatmapCategory {
@@ -37,6 +38,7 @@ export interface HeatmapResponse {
   metric: HeatmapMetric
   dateType: HeatmapDateType
   categories: HeatmapCategory[]
+  periodos: string[]
 }
 
 // ─── SQL helpers ──────────────────────────────────────────────────────────────
@@ -64,6 +66,7 @@ function giroEventsSelect(
   startDate: string, endDate: string,
   extraWhere = '',
   statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
+  periodoFilter = '',
 ) {
   return `
     SELECT
@@ -80,15 +83,16 @@ function giroEventsSelect(
       AND ${col} <  ('${endDate}'::date + INTERVAL '1 day')
       ${statusFilter}
       ${extraWhere}
+      ${periodoFilter}
       AND ca.id IN (${idList})
     GROUP BY ca.id, day_name, dow, hour_of_day`
 }
 
-function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'"): string {
-  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, startDate, endDate, '', statusFilter)
+function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, startDate, endDate, '', statusFilter, periodoFilter)
   const checkoutSel = giroEventsSelect(
     'la.datafinaldaocupacao', idList, startDate, endDate,
-    'AND la.datafinaldaocupacao IS NOT NULL', statusFilter
+    'AND la.datafinaldaocupacao IS NOT NULL', statusFilter, periodoFilter
   )
 
   const eventsCTE =
@@ -114,11 +118,11 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: st
 
 // ─── Locações (contagem crua) por hora × dia ──────────────────────────────────
 // Número absoluto de locações no slot — sem denominador de suítes-dia.
-function buildLocacoesQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'"): string {
-  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, startDate, endDate, '', statusFilter)
+function buildLocacoesQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, startDate, endDate, '', statusFilter, periodoFilter)
   const checkoutSel = giroEventsSelect(
     'la.datafinaldaocupacao', idList, startDate, endDate,
-    'AND la.datafinaldaocupacao IS NOT NULL', statusFilter
+    'AND la.datafinaldaocupacao IS NOT NULL', statusFilter, periodoFilter
   )
 
   const eventsCTE =
@@ -138,7 +142,7 @@ function buildLocacoesQuery(idList: string, dateType: HeatmapDateType, startDate
     ORDER BY ${orderDay('e')}, e.hour_of_day`
 }
 
-function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'"): string {
+function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
   // Filtra locações pelo campo de referência conforme dateType
   const dateFilter =
     dateType === 'checkout'
@@ -166,6 +170,7 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
       ) AS h_ts
       WHERE ${dateFilter}
         ${statusFilter}
+        ${periodoFilter}
         AND la.datafinaldaocupacao IS NOT NULL
         AND ca.id IN (${idList})
       GROUP BY day_name, dow, hour_of_day
@@ -182,7 +187,7 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
 // ─── RevPAR por hora × dia ────────────────────────────────────────────────────
 // RevPAR = receita de locações / total de suítes disponíveis (por dia da semana)
 
-function buildRevparQuery(idList: string, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'"): string {
+function buildRevparQuery(idList: string, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
   return `
     WITH ${cteBaseSuiteDays(idList, `'${startDate}'::date`, `('${endDate}'::date + INTERVAL '1 day')`)},
     ${cteSuiteDaysByDow()},
@@ -199,6 +204,7 @@ function buildRevparQuery(idList: string, startDate: string, endDate: string, st
       WHERE la.datainicialdaocupacao >= '${startDate}'::date
         AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
         ${statusFilter}
+        ${periodoFilter}
         AND ca.id IN (${idList})
       GROUP BY day_name, dow, hour_of_day
     )
@@ -214,7 +220,7 @@ function buildRevparQuery(idList: string, startDate: string, endDate: string, st
 // ─── TRevPAR por hora × dia ───────────────────────────────────────────────────
 // TRevPAR = (receita de locações + receita A&B vinculada) / total de suítes
 
-function buildTrevparQuery(idList: string, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'"): string {
+function buildTrevparQuery(idList: string, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
   return `
     WITH ${cteBaseSuiteDays(idList, `'${startDate}'::date`, `('${endDate}'::date + INTERVAL '1 day')`)},
     ${cteSuiteDaysByDow()},
@@ -249,6 +255,7 @@ function buildTrevparQuery(idList: string, startDate: string, endDate: string, s
       WHERE la.datainicialdaocupacao >= '${startDate}'::date
         AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
         ${statusFilter}
+        ${periodoFilter}
         AND ca.id IN (${idList})
       GROUP BY day_name, dow, hour_of_day
     )
@@ -259,6 +266,32 @@ function buildTrevparQuery(idList: string, startDate: string, endDate: string, s
     FROM revenue_hours rh
     JOIN suite_dias_total_dow sdtd ON sdtd.dow = rh.dow
     ORDER BY ${orderDay('rh')}, rh.hour_of_day`
+}
+
+// ─── Receita (soma bruta) por hora × dia ──────────────────────────────────────
+// Diferente de RevPAR/TRevPAR: não normaliza por suítes-dia — é a soma de valortotal
+// (locação + consumo - desconto), mesma definição de "Faturamento" do dashboard.
+
+function buildReceitaQuery(idList: string, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+  return `
+    SELECT
+      ${dowCase('la.datainicialdaocupacao')} AS day_name,
+      EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
+      ROUND(SUM(COALESCE(CAST(la.valortotal AS DECIMAL(15,4)), 0)), 2)::float AS value
+    FROM locacaoapartamento la
+    INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
+    INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
+    INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
+    WHERE la.datainicialdaocupacao >= '${startDate}'::date
+      AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
+      ${statusFilter}
+      ${periodoFilter}
+      AND ca.id IN (${idList})
+    GROUP BY day_name, hour_of_day
+    ORDER BY CASE day_name
+      WHEN 'Segunda' THEN 1 WHEN 'Terca' THEN 2 WHEN 'Quarta' THEN 3
+      WHEN 'Quinta'  THEN 4 WHEN 'Sexta' THEN 5 WHEN 'Sabado' THEN 6
+      WHEN 'Domingo' THEN 7 END, hour_of_day`
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
@@ -273,6 +306,7 @@ export async function GET(req: NextRequest) {
   const metric     = (sp.get('metric')   ?? 'giro') as HeatmapMetric
   const dateType   = (sp.get('dateType') ?? 'all')  as HeatmapDateType
   const categoryId = sp.get('categoryId')
+  const periodo    = sp.get('periodo')
 
   const VALID_STATUSES = ['FINALIZADA', 'TRANSFERIDA', 'CANCELADA', 'ABERTA', 'TODAS'] as const
   type HeatmapStatus = typeof VALID_STATUSES[number]
@@ -341,6 +375,10 @@ export async function GET(req: NextRequest) {
   const { startDate, endDate } = range
 
   try {
+    const periodType = await getUnitPeriodType(unitSlug)
+    const periodos    = getValidPeriodsForType(periodType)
+    const periodoFilter = buildPeriodoFilterSQL(periodType, periodo)
+
     const catResult = await pool.query<{ id: number; nome: string }>(`
       SELECT ca.id, ca.descricao AS nome
       FROM categoriaapartamento ca
@@ -350,15 +388,16 @@ export async function GET(req: NextRequest) {
     const categories: HeatmapCategory[] = catResult.rows
 
     const sql =
-      metric === 'giro'     ? buildGiroQuery(idList, dateType, startDate, endDate, statusFilter) :
-      metric === 'locacoes' ? buildLocacoesQuery(idList, dateType, startDate, endDate, statusFilter) :
-      metric === 'ocupacao' ? buildOcupacaoQuery(idList, dateType, startDate, endDate, statusFilter) :
-      metric === 'revpar'   ? buildRevparQuery(idList, startDate, endDate, statusFilter) :
-      buildTrevparQuery(idList, startDate, endDate, statusFilter)
+      metric === 'giro'     ? buildGiroQuery(idList, dateType, startDate, endDate, statusFilter, periodoFilter) :
+      metric === 'locacoes' ? buildLocacoesQuery(idList, dateType, startDate, endDate, statusFilter, periodoFilter) :
+      metric === 'ocupacao' ? buildOcupacaoQuery(idList, dateType, startDate, endDate, statusFilter, periodoFilter) :
+      metric === 'revpar'   ? buildRevparQuery(idList, startDate, endDate, statusFilter, periodoFilter) :
+      metric === 'receita'  ? buildReceitaQuery(idList, startDate, endDate, statusFilter, periodoFilter) :
+      buildTrevparQuery(idList, startDate, endDate, statusFilter, periodoFilter)
 
     const result = await pool.query<HeatmapCell>(sql)
 
-    return Response.json({ rows: result.rows, metric, dateType, categories } satisfies HeatmapResponse)
+    return Response.json({ rows: result.rows, metric, dateType, categories, periodos } satisfies HeatmapResponse)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[heatmap] Erro Automo (${unitSlug}):`, msg)
