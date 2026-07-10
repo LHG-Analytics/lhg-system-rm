@@ -77,7 +77,7 @@ export function CompetitorsSection({ data }: Props) {
     return (
       <div className="rounded-xl border bg-card overflow-hidden">
         <div className="px-5 py-3 flex items-center justify-between">
-          <h3 className="font-medium text-sm">⑧ Inteligência competitiva</h3>
+          <h3 className="font-medium text-sm">⑦ Inteligência competitiva</h3>
         </div>
         <div className="px-5 pb-5 flex items-start gap-3 text-sm text-muted-foreground">
           <Globe className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground/60" />
@@ -134,7 +134,7 @@ export function CompetitorsSection({ data }: Props) {
         onClick={() => setOpen(v => !v)}
       >
         <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="font-medium text-sm">⑧ Inteligência competitiva</h3>
+          <h3 className="font-medium text-sm">⑦ Inteligência competitiva</h3>
           <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full', posColor[dominant])}>
             {posLabel[dominant]}
           </span>

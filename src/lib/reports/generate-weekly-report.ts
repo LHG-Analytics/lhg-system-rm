@@ -21,6 +21,7 @@ import { buildLessonsBlockForUnit } from '@/lib/agente/pricing-lessons'
 import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { queryDemandPattern, buildDemandPatternBlock } from '@/lib/automo/demand-pattern'
+import { queryCategoryTurnoKPIs } from '@/lib/automo/category-turno-kpis'
 
 const MONTH_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
@@ -155,6 +156,7 @@ export async function generateWeeklyReport(
       prevReportResult,
       demandPatternResult,
       mtdKpisResult,
+      turnoCategoryResult,
     ] = await Promise.allSettled([
       fetchCompanyKPIsFromAutomo(unitSlug, startDDMM, endDDMM),
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(prevStartStr), isoToDDMMYYYY(prevEndStr)),
@@ -228,6 +230,7 @@ export async function generateWeeklyReport(
         .limit(1),
       queryDemandPattern(unitSlug, 60),
       fetchCompanyKPIsFromAutomo(unitSlug, firstOfBudgetMonthDDMM, mtdEndDDMM),
+      queryCategoryTurnoKPIs(unitSlug, startDDMM, endDDMM),
     ])
 
     const guardrailsResult = await admin
@@ -255,6 +258,7 @@ export async function generateWeeklyReport(
     const suiteAvail = suiteAvailResult.status === 'fulfilled' ? suiteAvailResult.value : []
     const prevReport = prevReportResult.status === 'fulfilled' ? prevReportResult.value.data?.[0] : null
     const demandPattern = demandPatternResult.status === 'fulfilled' ? demandPatternResult.value : null
+    const turnoCategoryRows = turnoCategoryResult.status === 'fulfilled' ? turnoCategoryResult.value : []
     const guardrailsCount = guardrailsResult.count ?? 0
 
     // Recomputa gaps usando snapshots existentes (análise já feita na aba Concorrentes).
@@ -350,64 +354,11 @@ export async function generateWeeklyReport(
       aiLeverageComment: '',
     }
 
-    // pricing — fixed: use dia_tipo from DB and map to diaTipo for WeeklyReportData
+    // Tabela de preços ativa — usada apenas como contexto do prompt de IA (priceTableBlock
+    // abaixo); a seção que renderizava essa tabela no relatório foi removida.
     const activePriceImport = activePriceData?.[0] ?? null
     type ParsedPriceRow = { categoria: string; periodo: string; dia_tipo: string; canal: string; preco: number }
     const activePriceRows = (activePriceImport?.parsed_data ?? []) as ParsedPriceRow[]
-
-    const pricing: WeeklyReportData['pricing'] = {
-      activePriceTable: activePriceImport ? {
-        id: activePriceImport.id,
-        validFrom: activePriceImport.valid_from,
-        rows: activePriceRows.map(r => ({
-          categoria: r.categoria,
-          periodo: r.periodo,
-          diaTipo: r.dia_tipo,
-          canal: r.canal,
-          preco: r.preco,
-        })),
-      } : null,
-      proposalsApprovedThisWeek: approvedProposals.map(p => {
-        const rows = (p.rows as { variacao_pct?: number }[]) ?? []
-        const avg = rows.length > 0
-          ? rows.reduce((s, r) => s + (r.variacao_pct ?? 0), 0) / rows.length
-          : 0
-        return {
-          id: p.id.slice(0, 8),
-          approvedAt: p.approved_at ?? '',
-          rowsCount: rows.length,
-          avgVariacaoPct: avg,
-        }
-      }),
-      // fixed: use delta_revpar_pct / delta_giro_pct (columns as in DB)
-      lessonsCompleted: lessons.map(l => ({
-        categoria: l.categoria ?? '',
-        periodo: l.periodo ?? '',
-        diaTipo: l.dia_tipo ?? '',
-        precoAnterior: l.preco_anterior ?? 0,
-        precoNovo: l.preco_novo ?? 0,
-        variacaoPct: l.variacao_pct ?? 0,
-        deltaRevpar: l.delta_revpar_pct ?? 0,
-        deltaGiro: l.delta_giro_pct ?? 0,
-        verdict: (l.verdict ?? 'neutral') as 'success' | 'neutral' | 'failure',
-        checkpointDays: l.checkpoint_days ?? 7,
-      })),
-      elasticityHighlights: elasticity
-        .filter(e => e.confidence === 'high' || e.confidence === 'medium')
-        .slice(0, 6)
-        .map(e => ({
-          categoria: e.categoria,
-          periodo: e.periodo,
-          diaTipo: e.dia_tipo,
-          elasticity: e.elasticity ?? 0,
-          confidence: e.confidence as 'high' | 'medium' | 'low',
-          interpretation: (e.elasticity ?? 0) < -1
-            ? 'elástico: subida de preço reduz receita'
-            : (e.elasticity ?? 0) < 0
-            ? 'moderadamente elástico'
-            : 'inelástico: preço pode subir sem perder giro',
-        })),
-    }
 
     const discountRows = ((activeDiscountData?.[0]?.parsed_data ?? activeDiscountData?.[0]?.discount_data ?? []) as {
       categoria: string; periodo: string; dia_semana: string; faixa_horaria: string; tipo_desconto: string; valor: number
@@ -448,6 +399,13 @@ export async function generateWeeklyReport(
       peakDow: demandPattern?.highDemandDays[0] ?? 'sexta-feira',
       peakHourRange: demandPattern?.highDemandSlots[0]?.match(/\d{2}:\d{2}-\d{2}:\d{2}/)?.[0] ?? '18:00-23:59',
       valleyDow: demandPattern?.lowDemandSlots[0]?.split(' ')[0] ?? 'quarta-feira',
+      turnoCategoryTable: turnoCategoryRows.map(r => ({
+        categoria: r.categoria,
+        turno: r.turno,
+        locacoes: r.locacoes,
+        giro: r.giro,
+        receita: r.receita,
+      })),
     }
 
     // Carrega amenidades dos concorrentes para calcular vantagem qualitativa
@@ -959,7 +917,6 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
         previousWeek: prevSnapshot,
         sameWeekLastYear: lySnapshot,
       },
-      pricing,
       discounts,
       demand,
       competitors,

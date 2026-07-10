@@ -32,7 +32,7 @@ export function AgentConfigSection({ data }: Props) {
         className="w-full flex items-center justify-between px-5 py-3 hover:bg-muted/30 transition-colors"
         onClick={() => setOpen(v => !v)}
       >
-        <h3 className="font-medium text-sm">⑪ Configuração ativa do agente</h3>
+        <h3 className="font-medium text-sm">⑩ Configuração ativa do agente</h3>
         {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
       </button>
 

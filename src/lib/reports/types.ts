@@ -69,40 +69,6 @@ export interface WeeklyReportData {
     sameWeekLastYear: KPISnapshot | null
   }
 
-  pricing: {
-    activePriceTable: {
-      id: string
-      validFrom: string
-      rows: { categoria: string; periodo: string; diaTipo: string; canal: string; preco: number }[]
-    } | null
-    proposalsApprovedThisWeek: {
-      id: string
-      approvedAt: string
-      rowsCount: number
-      avgVariacaoPct: number
-    }[]
-    lessonsCompleted: {
-      categoria: string
-      periodo: string
-      diaTipo: string
-      precoAnterior: number
-      precoNovo: number
-      variacaoPct: number
-      deltaRevpar: number
-      deltaGiro: number
-      verdict: 'success' | 'neutral' | 'failure'
-      checkpointDays: number
-    }[]
-    elasticityHighlights: {
-      categoria: string
-      periodo: string
-      diaTipo: string
-      elasticity: number
-      confidence: 'high' | 'medium' | 'low'
-      interpretation: string
-    }[]
-  }
-
   discounts: {
     activeDiscounts: {
       categoria: string
@@ -124,6 +90,8 @@ export interface WeeklyReportData {
     peakDow: string
     peakHourRange: string
     valleyDow: string
+    /** Giro e receita por categoria de suíte × turno (Pico/Fora de pico ou Diurno/Noturno) */
+    turnoCategoryTable: { categoria: string; turno: string; locacoes: number; giro: number; receita: number }[]
   }
 
   competitors: {

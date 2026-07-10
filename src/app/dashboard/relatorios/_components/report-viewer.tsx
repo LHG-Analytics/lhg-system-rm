@@ -8,7 +8,6 @@ import { ExecutiveSummary } from './sections/executive-summary'
 import { EvolutionBanner } from './sections/evolution-banner'
 import { BudgetTracking } from './sections/budget-tracking'
 import { KpisSection } from './sections/kpis-section'
-import { PricingSection } from './sections/pricing-section'
 import { DiscountsSection } from './sections/discounts-section'
 import { DemandSection } from './sections/demand-section'
 import { CompetitorsSection } from './sections/competitors-section'
@@ -279,7 +278,6 @@ export function ReportViewer({ report, loading, onGenerateNow, onRetry, unitSlug
       {data.evolution.hasPreviousReport && <EvolutionBanner data={data.evolution} />}
       <BudgetTracking data={data.budgetTracking} />
       <KpisSection data={data.kpis} />
-      <PricingSection data={data.pricing} />
       <DiscountsSection data={data.discounts} />
       <DemandSection data={data.demand} />
       <CompetitorsSection data={data.competitors} />

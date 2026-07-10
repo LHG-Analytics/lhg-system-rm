@@ -24,7 +24,7 @@ export function DiscountsSection({ data }: Props) {
         onClick={() => setOpen(v => !v)}
       >
         <div className="flex items-center gap-2">
-          <h3 className="font-medium text-sm">⑥ Descontos Guia de Motéis</h3>
+          <h3 className="font-medium text-sm">⑤ Descontos Guia de Motéis</h3>
           <span className={cn(
             'text-xs font-medium px-2 py-0.5 rounded-full',
             shareStatus === 'ok'   ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
