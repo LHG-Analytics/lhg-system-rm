@@ -65,7 +65,7 @@ function buildTurnoQuery(
         AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
         ${statusFilter}
         AND ca.id IN (${idList})
-      GROUP BY day_name, dow, turno
+      GROUP BY ${dowCase('la.datainicialdaocupacao')}, EXTRACT(DOW FROM la.datainicialdaocupacao)::int, ${turnoSQL}
     )
     SELECT
       tl.day_name,
@@ -127,12 +127,22 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: `Conexão Automo não configurada para ${unitSlug}.` }, { status: 422 })
   }
 
-  const categoryIds = await getUnitCategoryIds(unitSlug)
-  if (!categoryIds.length) {
+  const allCategoryIds = await getUnitCategoryIds(unitSlug)
+  if (!allCategoryIds.length) {
     return Response.json({ error: 'IDs de categoria não configurados.' }, { status: 422 })
   }
 
-  const idList = categoryIds.join(',')
+  const categoryId = sp.get('categoryId')
+  const selectedIds = categoryId
+    ? allCategoryIds.filter((id) => id === parseInt(categoryId, 10))
+    : allCategoryIds
+
+  if (!selectedIds.length) {
+    return Response.json({ error: 'Categoria inválida para esta unidade.' }, { status: 400 })
+  }
+
+  const idList    = selectedIds.join(',')
+  const allIdList = allCategoryIds.join(',')
   const { startDate, endDate } = range
 
   try {
@@ -141,7 +151,7 @@ export async function GET(req: NextRequest) {
     const catResult = await pool.query<{ id: number; nome: string }>(`
       SELECT ca.id, ca.descricao AS nome
       FROM categoriaapartamento ca
-      WHERE ca.id IN (${idList})
+      WHERE ca.id IN (${allIdList})
       ORDER BY ca.descricao
     `)
 

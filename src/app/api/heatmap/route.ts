@@ -276,6 +276,7 @@ function buildReceitaQuery(idList: string, startDate: string, endDate: string, s
   return `
     SELECT
       ${dowCase('la.datainicialdaocupacao')} AS day_name,
+      EXTRACT(DOW  FROM la.datainicialdaocupacao)::int AS dow,
       EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
       ROUND(SUM(COALESCE(CAST(la.valortotal AS DECIMAL(15,4)), 0)), 2)::float AS value
     FROM locacaoapartamento la
@@ -287,11 +288,8 @@ function buildReceitaQuery(idList: string, startDate: string, endDate: string, s
       ${statusFilter}
       ${periodoFilter}
       AND ca.id IN (${idList})
-    GROUP BY day_name, hour_of_day
-    ORDER BY CASE day_name
-      WHEN 'Segunda' THEN 1 WHEN 'Terca' THEN 2 WHEN 'Quarta' THEN 3
-      WHEN 'Quinta'  THEN 4 WHEN 'Sexta' THEN 5 WHEN 'Sabado' THEN 6
-      WHEN 'Domingo' THEN 7 END, hour_of_day`
+    GROUP BY EXTRACT(DOW FROM la.datainicialdaocupacao), EXTRACT(HOUR FROM la.datainicialdaocupacao)
+    ORDER BY 2, hour_of_day`
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
