@@ -42,19 +42,19 @@ function dowCase(col: string) {
 
 function buildTurnoQuery(
   idList: string,
-  startDate: string,
-  endDate: string,
+  isoStart: string,
+  isoEnd: string,
   statusFilter: string,
   turnos: [TurnoBand, TurnoBand],
 ): string {
   const turnoSQL = buildTurnoCaseSQL(turnos, 'EXTRACT(HOUR FROM la.datainicialdaocupacao)::int')
   return `
-    WITH ${cteBaseSuiteDays(idList, `'${startDate}'::date`, `('${endDate}'::date + INTERVAL '1 day')`)},
+    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`)},
     ${cteSuiteDaysByDow()},
     turno_locacoes AS (
       SELECT
-        ${dowCase('la.datainicialdaocupacao')} AS day_name,
-        EXTRACT(DOW FROM la.datainicialdaocupacao)::int AS dow,
+        ${dowCase(opTs('la.datainicialdaocupacao'))} AS day_name,
+        EXTRACT(DOW FROM ${opTs('la.datainicialdaocupacao')})::int AS dow,
         ${turnoSQL} AS turno,
         COUNT(*) AS locacoes,
         SUM(COALESCE(CAST(la.valortotal AS DECIMAL(15,4)), 0)) AS receita
@@ -62,11 +62,11 @@ function buildTurnoQuery(
       INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
       INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      WHERE la.datainicialdaocupacao >= '${startDate}'::date
-        AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
+      WHERE la.datainicialdaocupacao >= '${isoStart}'
+        AND la.datainicialdaocupacao <= '${isoEnd}'
         ${statusFilter}
         AND ca.id IN (${idList})
-      GROUP BY ${dowCase('la.datainicialdaocupacao')}, EXTRACT(DOW FROM la.datainicialdaocupacao)::int, ${turnoSQL}
+      GROUP BY ${dowCase(opTs('la.datainicialdaocupacao'))}, EXTRACT(DOW FROM ${opTs('la.datainicialdaocupacao')})::int, ${turnoSQL}
     )
     SELECT
       tl.day_name,
@@ -145,6 +145,7 @@ export async function GET(req: NextRequest) {
   const idList    = selectedIds.join(',')
   const allIdList = allCategoryIds.join(',')
   const { startDate, endDate } = range
+  const { isoStart, isoEnd } = resolveOperationalRange(startDate, endDate)
 
   try {
     const turnos = await getUnitTurnos(unitSlug)
@@ -156,7 +157,7 @@ export async function GET(req: NextRequest) {
       ORDER BY ca.descricao
     `)
 
-    const sql = buildTurnoQuery(idList, startDate, endDate, statusFilter, turnos)
+    const sql = buildTurnoQuery(idList, isoStart, isoEnd, statusFilter, turnos)
     const result = await pool.query<{ day_name: string; turno: string; locacoes: string; receita: string; suite_dias: string }>(sql)
 
     const turnoHours = (label: string) => {
