@@ -829,14 +829,50 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
       },
     }),
 
+    buscar_kpis_datas_especificas: tool({
+      description:
+        'Busca um RESUMO de KPIs (receita, locações, giro, RevPAR, ticket médio) para uma LISTA de ' +
+        'datas específicas não-contíguas — 1 única chamada, mesmo para até 12 datas. ' +
+        'USE ESTA TOOL (nunca buscar_kpis_periodo repetidamente) para pedidos como "receita de cada ' +
+        'sábado das últimas N semanas": chame resolver_datas_dia_semana primeiro para obter as datas, ' +
+        'depois passe TODAS elas de uma vez aqui. Chamar buscar_kpis_periodo uma vez por data esgota ' +
+        'o limite de passos do agente antes de terminar (N datas = N chamadas = erro).',
+      inputSchema: z.object({
+        datas: z.array(z.string()).min(1).max(12)
+          .describe('Lista de datas no formato DD/MM/YYYY, ex: ["11/07/2026", "04/07/2026"]'),
+      }),
+      execute: async ({ datas }) => {
+        const results = await Promise.all(
+          datas.map(async (data) => {
+            try {
+              const company = await fetchCompanyKPIsFromAutomo(unit.slug, data, data)
+              const t = company.TotalResult
+              return {
+                data,
+                receita: t.totalAllValue,
+                locacoes: t.totalAllRentalsApartments,
+                giro: t.totalGiro,
+                revpar: t.totalRevpar,
+                ticketMedio: t.totalAllTicketAverage,
+              }
+            } catch {
+              return { data, erro: 'Falha ao buscar dados para esta data' }
+            }
+          })
+        )
+        return { unidade: unit.name, resultados: results }
+      },
+    }),
+
     buscar_kpis_periodo: tool({
       description:
         'Busca KPIs operacionais completos (giro, RevPAR, ticket médio, ocupação, tabelas semanais) ' +
-        'para qualquer período específico via ERP Automo. ' +
-        'Use sempre que o usuário mencionar datas específicas, pedir monitoramento de uma semana, ' +
-        'ou quando os dados do contexto não cobrirem o período solicitado. ' +
-        'Para pedidos por dia da semana específico (ex: "cada sábado das últimas 4 semanas"), chame ' +
-        'resolver_datas_dia_semana PRIMEIRO e use as datas retornadas — nunca calcule você mesmo. ' +
+        'para UM período contínuo específico via ERP Automo. ' +
+        'Use sempre que o usuário mencionar um período contínuo (uma semana, um mês), ou quando os ' +
+        'dados do contexto não cobrirem o período solicitado. ' +
+        'Para pedidos por dia da semana específico com MÚLTIPLAS datas não-contíguas ' +
+        '(ex: "cada sábado das últimas 4 semanas"), NÃO chame esta tool repetidamente — chame ' +
+        'resolver_datas_dia_semana e depois buscar_kpis_datas_especificas (1 chamada só, todas as datas). ' +
         'Nunca diga que não tem acesso — use este tool.',
       inputSchema: z.object({
         startDate: z.string().describe('Data inicial no formato DD/MM/YYYY, ex: "01/04/2026"'),
