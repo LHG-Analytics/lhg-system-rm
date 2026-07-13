@@ -5,6 +5,7 @@ import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
 import { cteBaseSuiteDays, cteSuiteDaysByDow } from '@/lib/automo/suite-days'
 import { getUnitTurnos, buildTurnoCaseSQL } from '@/lib/automo/turno-helpers'
 import type { TurnoBand } from '@/lib/automo/turno-helpers'
+import { resolveOperationalRange, opTs } from '@/lib/automo/operational-day'
 import { isValidIsoDate, resolvePreset } from '@/lib/date-range'
 import type { Database } from '@/types/database.types'
 

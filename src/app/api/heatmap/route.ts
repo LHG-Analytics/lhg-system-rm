@@ -9,6 +9,7 @@ import {
   cteSuiteDaysByDow,
 } from '@/lib/automo/suite-days'
 import { getValidPeriodsForType, buildPeriodoFilterSQL } from '@/lib/automo/period-helpers'
+import { resolveOperationalRange, opTs } from '@/lib/automo/operational-day'
 import { isValidIsoDate, resolvePreset } from '@/lib/date-range'
 import type { Database } from '@/types/database.types'
 
@@ -43,7 +44,7 @@ export interface HeatmapResponse {
 
 // ─── SQL helpers ──────────────────────────────────────────────────────────────
 
-/** CASE expression que mapeia DOW de um timestamp para nome do dia (hora calendário pura) */
+/** CASE expression que mapeia DOW de um timestamp (já ajustado ao dia operacional) para nome do dia */
 function dowCase(col: string) {
   return `CASE EXTRACT(DOW FROM ${col})
       WHEN 0 THEN 'Domingo' WHEN 1 THEN 'Segunda' WHEN 2 THEN 'Terca'
@@ -63,7 +64,7 @@ END`
 
 function giroEventsSelect(
   col: string, idList: string,
-  startDate: string, endDate: string,
+  isoStart: string, isoEnd: string,
   extraWhere = '',
   statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
   periodoFilter = '',
@@ -71,16 +72,16 @@ function giroEventsSelect(
   return `
     SELECT
       ca.id  AS category_id,
-      ${dowCase(col)} AS day_name,
-      EXTRACT(DOW FROM ${col})::int AS dow,
+      ${dowCase(opTs(col))} AS day_name,
+      EXTRACT(DOW FROM ${opTs(col)})::int AS dow,
       EXTRACT(HOUR FROM ${col})::INT AS hour_of_day,
       COUNT(*) AS rentals
     FROM locacaoapartamento la
     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
     INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-    WHERE ${col} >= '${startDate}'::date
-      AND ${col} <  ('${endDate}'::date + INTERVAL '1 day')
+    WHERE ${col} >= '${isoStart}'
+      AND ${col} <= '${isoEnd}'
       ${statusFilter}
       ${extraWhere}
       ${periodoFilter}
@@ -88,10 +89,10 @@ function giroEventsSelect(
     GROUP BY ca.id, day_name, dow, hour_of_day`
 }
 
-function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
-  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, startDate, endDate, '', statusFilter, periodoFilter)
+function buildGiroQuery(idList: string, dateType: HeatmapDateType, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, isoStart, isoEnd, '', statusFilter, periodoFilter)
   const checkoutSel = giroEventsSelect(
-    'la.datafinaldaocupacao', idList, startDate, endDate,
+    'la.datafinaldaocupacao', idList, isoStart, isoEnd,
     'AND la.datafinaldaocupacao IS NOT NULL', statusFilter, periodoFilter
   )
 
@@ -102,7 +103,7 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: st
 
   // Denominador: suite_dias_cat_dow (suítes-dia daquela categoria nesse DOW, descontando bloqueios)
   return `
-    WITH ${cteBaseSuiteDays(idList, `'${startDate}'::date`, `('${endDate}'::date + INTERVAL '1 day')`)},
+    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`)},
     ${cteSuiteDaysByCategoryDow()},
     events AS (${eventsCTE}
     )
@@ -118,10 +119,10 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, startDate: st
 
 // ─── Locações (contagem crua) por hora × dia ──────────────────────────────────
 // Número absoluto de locações no slot — sem denominador de suítes-dia.
-function buildLocacoesQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
-  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, startDate, endDate, '', statusFilter, periodoFilter)
+function buildLocacoesQuery(idList: string, dateType: HeatmapDateType, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, isoStart, isoEnd, '', statusFilter, periodoFilter)
   const checkoutSel = giroEventsSelect(
-    'la.datafinaldaocupacao', idList, startDate, endDate,
+    'la.datafinaldaocupacao', idList, isoStart, isoEnd,
     'AND la.datafinaldaocupacao IS NOT NULL', statusFilter, periodoFilter
   )
 
@@ -142,21 +143,21 @@ function buildLocacoesQuery(idList: string, dateType: HeatmapDateType, startDate
     ORDER BY ${orderDay('e')}, e.hour_of_day`
 }
 
-function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
   // Filtra locações pelo campo de referência conforme dateType
   const dateFilter =
     dateType === 'checkout'
-      ? `la.datafinaldaocupacao >= '${startDate}'::date AND la.datafinaldaocupacao < ('${endDate}'::date + INTERVAL '1 day')`
-      : `la.datainicialdaocupacao >= '${startDate}'::date AND la.datainicialdaocupacao < ('${endDate}'::date + INTERVAL '1 day')`
+      ? `la.datafinaldaocupacao >= '${isoStart}' AND la.datafinaldaocupacao <= '${isoEnd}'`
+      : `la.datainicialdaocupacao >= '${isoStart}' AND la.datainicialdaocupacao <= '${isoEnd}'`
 
   // Denominador: suite_dias_total_dow (suítes-dia totais do DOW, descontando bloqueios)
   return `
-    WITH ${cteBaseSuiteDays(idList, `'${startDate}'::date`, `('${endDate}'::date + INTERVAL '1 day')`)},
+    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`)},
     ${cteSuiteDaysByDow()},
     occupied_hours AS (
       SELECT
-        ${dowCase('h_ts')} AS day_name,
-        EXTRACT(DOW FROM h_ts)::int AS dow,
+        ${dowCase(opTs('h_ts'))} AS day_name,
+        EXTRACT(DOW FROM ${opTs('h_ts')})::int AS dow,
         EXTRACT(HOUR FROM h_ts)::INT AS hour_of_day,
         COUNT(*) AS suite_hours
       FROM locacaoapartamento la
@@ -187,22 +188,22 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, startDate
 // ─── RevPAR por hora × dia ────────────────────────────────────────────────────
 // RevPAR = receita de locações / total de suítes disponíveis (por dia da semana)
 
-function buildRevparQuery(idList: string, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+function buildRevparQuery(idList: string, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
   return `
-    WITH ${cteBaseSuiteDays(idList, `'${startDate}'::date`, `('${endDate}'::date + INTERVAL '1 day')`)},
+    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`)},
     ${cteSuiteDaysByDow()},
     revenue_hours AS (
       SELECT
-        ${dowCase('la.datainicialdaocupacao')} AS day_name,
-        EXTRACT(DOW FROM la.datainicialdaocupacao)::int AS dow,
+        ${dowCase(opTs('la.datainicialdaocupacao'))} AS day_name,
+        EXTRACT(DOW FROM ${opTs('la.datainicialdaocupacao')})::int AS dow,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
         SUM(CAST(la.valorliquidolocacao AS DECIMAL(15,4))) AS receita
       FROM locacaoapartamento la
       INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
       INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-      WHERE la.datainicialdaocupacao >= '${startDate}'::date
-        AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
+      WHERE la.datainicialdaocupacao >= '${isoStart}'
+        AND la.datainicialdaocupacao <= '${isoEnd}'
         ${statusFilter}
         ${periodoFilter}
         AND ca.id IN (${idList})
@@ -220,9 +221,9 @@ function buildRevparQuery(idList: string, startDate: string, endDate: string, st
 // ─── TRevPAR por hora × dia ───────────────────────────────────────────────────
 // TRevPAR = (receita de locações + receita A&B vinculada) / total de suítes
 
-function buildTrevparQuery(idList: string, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+function buildTrevparQuery(idList: string, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
   return `
-    WITH ${cteBaseSuiteDays(idList, `'${startDate}'::date`, `('${endDate}'::date + INTERVAL '1 day')`)},
+    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`)},
     ${cteSuiteDaysByDow()},
     ab_por_locacao AS (
       SELECT
@@ -238,8 +239,8 @@ function buildTrevparQuery(idList: string, startDate: string, endDate: string, s
     ),
     revenue_hours AS (
       SELECT
-        ${dowCase('la.datainicialdaocupacao')} AS day_name,
-        EXTRACT(DOW FROM la.datainicialdaocupacao)::int AS dow,
+        ${dowCase(opTs('la.datainicialdaocupacao'))} AS day_name,
+        EXTRACT(DOW FROM ${opTs('la.datainicialdaocupacao')})::int AS dow,
         EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
         SUM(
           COALESCE(CAST(la.valortotalpermanencia   AS DECIMAL(15,4)), 0) +
@@ -252,8 +253,8 @@ function buildTrevparQuery(idList: string, startDate: string, endDate: string, s
       INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
       INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
       LEFT JOIN ab_por_locacao ab ON ab.id_locacaoapartamento = la.id_apartamentostate
-      WHERE la.datainicialdaocupacao >= '${startDate}'::date
-        AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
+      WHERE la.datainicialdaocupacao >= '${isoStart}'
+        AND la.datainicialdaocupacao <= '${isoEnd}'
         ${statusFilter}
         ${periodoFilter}
         AND ca.id IN (${idList})
@@ -272,23 +273,23 @@ function buildTrevparQuery(idList: string, startDate: string, endDate: string, s
 // Diferente de RevPAR/TRevPAR: não normaliza por suítes-dia — é a soma de valortotal
 // (locação + consumo - desconto), mesma definição de "Faturamento" do dashboard.
 
-function buildReceitaQuery(idList: string, startDate: string, endDate: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+function buildReceitaQuery(idList: string, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
   return `
     SELECT
-      ${dowCase('la.datainicialdaocupacao')} AS day_name,
-      EXTRACT(DOW  FROM la.datainicialdaocupacao)::int AS dow,
+      ${dowCase(opTs('la.datainicialdaocupacao'))} AS day_name,
+      EXTRACT(DOW  FROM ${opTs('la.datainicialdaocupacao')})::int AS dow,
       EXTRACT(HOUR FROM la.datainicialdaocupacao)::INT AS hour_of_day,
       ROUND(SUM(COALESCE(CAST(la.valortotal AS DECIMAL(15,4)), 0)), 2)::float AS value
     FROM locacaoapartamento la
     INNER JOIN apartamentostate aps ON la.id_apartamentostate = aps.id
     INNER JOIN apartamento       a  ON aps.id_apartamento     = a.id
     INNER JOIN categoriaapartamento ca ON a.id_categoriaapartamento = ca.id
-    WHERE la.datainicialdaocupacao >= '${startDate}'::date
-      AND la.datainicialdaocupacao <  ('${endDate}'::date + INTERVAL '1 day')
+    WHERE la.datainicialdaocupacao >= '${isoStart}'
+      AND la.datainicialdaocupacao <= '${isoEnd}'
       ${statusFilter}
       ${periodoFilter}
       AND ca.id IN (${idList})
-    GROUP BY EXTRACT(DOW FROM la.datainicialdaocupacao), EXTRACT(HOUR FROM la.datainicialdaocupacao)
+    GROUP BY EXTRACT(DOW FROM ${opTs('la.datainicialdaocupacao')}), EXTRACT(HOUR FROM la.datainicialdaocupacao)
     ORDER BY 2, hour_of_day`
 }
 
@@ -371,6 +372,7 @@ export async function GET(req: NextRequest) {
   const idList    = selectedIds.join(',')
   const allIdList = allCategoryIds.join(',')
   const { startDate, endDate } = range
+  const { isoStart, isoEnd } = resolveOperationalRange(startDate, endDate)
 
   try {
     const periodType = await getUnitPeriodType(unitSlug)
@@ -386,12 +388,12 @@ export async function GET(req: NextRequest) {
     const categories: HeatmapCategory[] = catResult.rows
 
     const sql =
-      metric === 'giro'     ? buildGiroQuery(idList, dateType, startDate, endDate, statusFilter, periodoFilter) :
-      metric === 'locacoes' ? buildLocacoesQuery(idList, dateType, startDate, endDate, statusFilter, periodoFilter) :
-      metric === 'ocupacao' ? buildOcupacaoQuery(idList, dateType, startDate, endDate, statusFilter, periodoFilter) :
-      metric === 'revpar'   ? buildRevparQuery(idList, startDate, endDate, statusFilter, periodoFilter) :
-      metric === 'receita'  ? buildReceitaQuery(idList, startDate, endDate, statusFilter, periodoFilter) :
-      buildTrevparQuery(idList, startDate, endDate, statusFilter, periodoFilter)
+      metric === 'giro'     ? buildGiroQuery(idList, dateType, isoStart, isoEnd, statusFilter, periodoFilter) :
+      metric === 'locacoes' ? buildLocacoesQuery(idList, dateType, isoStart, isoEnd, statusFilter, periodoFilter) :
+      metric === 'ocupacao' ? buildOcupacaoQuery(idList, dateType, isoStart, isoEnd, statusFilter, periodoFilter) :
+      metric === 'revpar'   ? buildRevparQuery(idList, isoStart, isoEnd, statusFilter, periodoFilter) :
+      metric === 'receita'  ? buildReceitaQuery(idList, isoStart, isoEnd, statusFilter, periodoFilter) :
+      buildTrevparQuery(idList, isoStart, isoEnd, statusFilter, periodoFilter)
 
     const result = await pool.query<HeatmapCell>(sql)
 
