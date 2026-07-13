@@ -1,7 +1,7 @@
 'use client'
 
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
-import { useState, useEffect, useTransition } from 'react'
+import { useState, useEffect, useTransition, useRef } from 'react'
 import { CalendarIcon, Loader2 } from 'lucide-react'
 import { format, parse } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -184,16 +184,40 @@ export function DateRangePicker() {
     navigateWith({ preset: value, start: resolved.startDate, end: resolved.endDate })
   }
 
+  // react-day-picker (sem prop `min`) auto-completa o range no 1º clique
+  // (from=to=dia clicado) — sem esse ref, isso disparava a busca imediatamente,
+  // sem esperar o usuário clicar na data final. Só tratamos como "completo"
+  // a partir do 2º clique após abrir o calendário.
+  const rangeInProgressRef = useRef(false)
+
   function handleRangeSelect(range: DateRange | undefined) {
-    const from = range?.from ? format(range.from, 'yyyy-MM-dd') : ''
-    const to   = range?.to   ? format(range.to,   'yyyy-MM-dd') : ''
-    setLocalStart(from)
-    setLocalEnd(to)
-    if (from && to) {
-      setCalendarOpen(false)
-      setPendingFilter('preset-custom')
-      navigateWith({ preset: 'custom', start: from, end: to })
+    if (!range?.from) {
+      rangeInProgressRef.current = false
+      setLocalStart('')
+      setLocalEnd('')
+      return
     }
+
+    const from = format(range.from, 'yyyy-MM-dd')
+
+    if (!rangeInProgressRef.current) {
+      // 1º clique — grava só o início e força "incompleto" para o próximo
+      // clique ser tratado como extensão do range, não como um novo range.
+      rangeInProgressRef.current = true
+      setLocalStart(from)
+      setLocalEnd('')
+      return
+    }
+
+    // 2º clique em diante — completa o range (mesmo dia = 1 dia só; dia
+    // diferente = range de fato) e já dispara a busca.
+    const to = range.to ? format(range.to, 'yyyy-MM-dd') : from
+    rangeInProgressRef.current = false
+    setLocalStart(from < to ? from : to)
+    setLocalEnd(from < to ? to : from)
+    setCalendarOpen(false)
+    setPendingFilter('preset-custom')
+    navigateWith({ preset: 'custom', start: from < to ? from : to, end: from < to ? to : from })
   }
 
   const isCustom = preset === 'custom'
@@ -234,7 +258,10 @@ export function DateRangePicker() {
           <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
           {/* Personalizado — abre calendar em popover */}
-          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+          <Popover
+            open={calendarOpen}
+            onOpenChange={(open) => { rangeInProgressRef.current = false; setCalendarOpen(open) }}
+          >
             <PopoverTrigger asChild>
               <Button
                 size="sm"

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { CalendarIcon, Search } from 'lucide-react'
 import { format, parse } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -91,11 +91,29 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
     update({ preset: value, startDate: r.startDate, endDate: r.endDate })
   }
 
+  // Mesma ressalva do date-range-picker.tsx: react-day-picker (sem prop `min`)
+  // auto-completa o range no 1º clique (from=to=dia clicado) — sem esse ref,
+  // o popover fechava imediatamente, sem esperar o 2º clique na data final.
+  const rangeInProgressRef = useRef(false)
+
   function handleRange(range: DayPickerRange | undefined) {
-    const from = range?.from ? format(range.from, 'yyyy-MM-dd') : ''
-    const to   = range?.to   ? format(range.to,   'yyyy-MM-dd') : ''
-    if (from) update({ startDate: from, endDate: to || from, preset: 'custom' })
-    if (from && to) setCalOpen(false)
+    if (!range?.from) {
+      rangeInProgressRef.current = false
+      return
+    }
+
+    const from = format(range.from, 'yyyy-MM-dd')
+
+    if (!rangeInProgressRef.current) {
+      rangeInProgressRef.current = true
+      update({ startDate: from, endDate: '', preset: 'custom' })
+      return
+    }
+
+    const to = range.to ? format(range.to, 'yyyy-MM-dd') : from
+    rangeInProgressRef.current = false
+    update({ startDate: from < to ? from : to, endDate: from < to ? to : from, preset: 'custom' })
+    setCalOpen(false)
   }
 
   function toggleWeekday(day: number) {
@@ -130,7 +148,10 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
               {p.label}
             </Button>
           ))}
-          <Popover open={calOpen} onOpenChange={setCalOpen}>
+          <Popover
+            open={calOpen}
+            onOpenChange={(open) => { rangeInProgressRef.current = false; setCalOpen(open) }}
+          >
             <PopoverTrigger asChild>
               <Button
                 size="sm"
