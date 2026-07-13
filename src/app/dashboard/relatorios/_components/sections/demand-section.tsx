@@ -13,7 +13,8 @@ export function DemandSection({ data }: Props) {
   const [open, setOpen] = useState(true)
   const { formatMoney: fm } = useCurrency()
 
-  const hasData = data.channelMix.length > 0 || data.periodMix.length > 0 || data.turnoCategoryTable.length > 0
+  const turnoCategoryTable = data.turnoCategoryTable ?? []
+  const hasData = data.channelMix.length > 0 || data.periodMix.length > 0 || turnoCategoryTable.length > 0
 
   if (!hasData) return null
 
@@ -120,7 +121,7 @@ export function DemandSection({ data }: Props) {
             </div>
           )}
 
-          {data.turnoCategoryTable.length > 0 && (
+          {turnoCategoryTable.length > 0 && (
             <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Giro e receita por turno × categoria</p>
               <table className="w-full text-sm">
@@ -134,7 +135,7 @@ export function DemandSection({ data }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.turnoCategoryTable.map((r, i) => (
+                  {turnoCategoryTable.map((r, i) => (
                     <tr key={i} className="border-b last:border-0">
                       <td className="py-1.5 font-medium">{r.categoria}</td>
                       <td>{r.turno}</td>
