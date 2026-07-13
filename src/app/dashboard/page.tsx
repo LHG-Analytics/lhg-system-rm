@@ -27,14 +27,22 @@ interface DashboardPageProps {
     endHour?:    string
     dateType?:   string
     status?:     string
+    weekdays?:   string
   }>
+}
+
+/** "0,3,6" → [0,3,6]. Vazio/ausente/inválido → undefined (sem filtro). */
+function parseWeekdays(raw: string | undefined): number[] | undefined {
+  if (!raw) return undefined
+  const days = raw.split(',').map((d) => parseInt(d, 10)).filter((d) => d >= 0 && d <= 6)
+  return days.length > 0 && days.length < 7 ? days : undefined
 }
 
 const VALID_STATUSES = ['FINALIZADA', 'TRANSFERIDA', 'CANCELADA', 'ABERTA', 'TODAS'] as const
 type RentalStatus = typeof VALID_STATUSES[number]
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-  const { unit: unitSlug, preset, start, end, startHour: shParam, endHour: ehParam, dateType: dtParam, status: statusParam } = await searchParams
+  const { unit: unitSlug, preset, start, end, startHour: shParam, endHour: ehParam, dateType: dtParam, status: statusParam, weekdays: weekdaysParam } = await searchParams
 
   const startHour    = Math.min(23, Math.max(0, shParam !== undefined ? (parseInt(shParam) || 0) : 6))
   const endHour      = Math.min(23, Math.max(0, ehParam !== undefined ? (parseInt(ehParam) || 0) : 5))
@@ -44,6 +52,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const rentalStatus: RentalStatus = VALID_STATUSES.includes(statusParam as RentalStatus)
     ? (statusParam as RentalStatus)
     : 'FINALIZADA'
+  const weekdays = parseWeekdays(weekdaysParam)
 
   const supabase = await createClient()
   const { data: profile } = await supabase
@@ -121,12 +130,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       endHour,
       rentalStatus,
       dateType,
+      weekdays,
     ).catch((e) => {
       console.error(`[Dashboard/KPIs] Falha para ${activeUnit.slug} (${startDDMMYYYY}→${endDDMMYYYY} ${startHour}h-${endHour}h dateType=${dateType} status=${rentalStatus}):`, e)
       return null
     }),
     agentConfig?.city ? fetchWeatherData(agentConfig.city) : Promise.resolve({ status: 'unconfigured' as const }),
-    cachedChannelKPIs(activeUnit.slug, startDDMMYYYY, endDDMMYYYY).catch(() => [] as ChannelKPIRow[]),
+    cachedChannelKPIs(activeUnit.slug, startDDMMYYYY, endDDMMYYYY, weekdays).catch(() => [] as ChannelKPIRow[]),
   ])
 
   // Insight IA clima × demanda — usa cache de 4h; regenera em background se vencido
@@ -163,6 +173,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               endHour,
               dateType,
               status:    rentalStatus,
+              weekdays:  weekdays ?? [],
             }}
           />
         </div>

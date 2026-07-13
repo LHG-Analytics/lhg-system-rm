@@ -26,16 +26,18 @@ function getColor(ratio: number): string {
 }
 
 interface Props {
-  unitSlug:        string
-  startDate:       string
-  endDate:         string
-  statusOverride?: string
+  unitSlug:          string
+  startDate:         string
+  endDate:           string
+  statusOverride?:   string
+  weekdaysOverride?: number[]
 }
 
-export function TurnoHeatmap({ unitSlug, startDate, endDate, statusOverride }: Props) {
+export function TurnoHeatmap({ unitSlug, startDate, endDate, statusOverride, weekdaysOverride }: Props) {
   const searchParams = useSearchParams()
   const { formatMoney: fm } = useCurrency()
   const rentalStatus = statusOverride ?? searchParams.get('status') ?? 'FINALIZADA'
+  const weekdays = weekdaysOverride ?? (searchParams.get('weekdays') ?? '').split(',').filter(Boolean).map(Number)
 
   const [metric,     setMetric]     = useState<TurnoMetric>('giro')
   const [categoryId, setCategoryId] = useState<string | null>(null)
@@ -48,7 +50,7 @@ export function TurnoHeatmap({ unitSlug, startDate, endDate, statusOverride }: P
   const responseCache = useRef(new Map<string, { rows: TurnoHeatmapCell[]; turnos: TurnoBand[]; categories: Category[] }>())
 
   const fetchData = useCallback(async (catId: string | null) => {
-    const cacheKey = `${unitSlug}-${startDate}-${endDate}-${rentalStatus}-${catId ?? ''}`
+    const cacheKey = `${unitSlug}-${startDate}-${endDate}-${rentalStatus}-${catId ?? ''}-${weekdays.join(',')}`
     const cached = responseCache.current.get(cacheKey)
     if (cached) {
       setRows(cached.rows)
@@ -61,6 +63,7 @@ export function TurnoHeatmap({ unitSlug, startDate, endDate, statusOverride }: P
     try {
       const params = new URLSearchParams({ unitSlug, startDate, endDate, status: rentalStatus })
       if (catId) params.set('categoryId', catId)
+      if (weekdays.length) params.set('weekdays', weekdays.join(','))
       const res = await fetch(`/api/heatmap/turno?${params}`)
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -79,7 +82,7 @@ export function TurnoHeatmap({ unitSlug, startDate, endDate, statusOverride }: P
     } finally {
       setLoading(false)
     }
-  }, [unitSlug, startDate, endDate, rentalStatus])
+  }, [unitSlug, startDate, endDate, rentalStatus, weekdays.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchData(categoryId) }, [categoryId, fetchData])
 

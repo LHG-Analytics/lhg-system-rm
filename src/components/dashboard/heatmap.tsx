@@ -78,18 +78,20 @@ function formatValue(value: number | undefined, metric: HeatmapMetric, fm: (v: n
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 interface HeatmapProps {
-  unitSlug:          string
-  startDate:         string  // YYYY-MM-DD
-  endDate:           string  // YYYY-MM-DD
-  rangeLabel:        string
-  statusOverride?:   string
-  dateTypeOverride?: HeatmapDateType
+  unitSlug:           string
+  startDate:          string  // YYYY-MM-DD
+  endDate:            string  // YYYY-MM-DD
+  rangeLabel:         string
+  statusOverride?:    string
+  dateTypeOverride?:  HeatmapDateType
+  weekdaysOverride?:  number[]
 }
 
-export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, statusOverride, dateTypeOverride }: HeatmapProps) {
+export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, statusOverride, dateTypeOverride, weekdaysOverride }: HeatmapProps) {
   const searchParams = useSearchParams()
   const { formatMoney: fm, symbol } = useCurrency()
   const rentalStatus = statusOverride ?? searchParams.get('status') ?? 'FINALIZADA'
+  const weekdays = weekdaysOverride ?? (searchParams.get('weekdays') ?? '').split(',').filter(Boolean).map(Number)
 
   const urlDateType = dateTypeOverride ?? (searchParams.get('dateType') ?? 'all') as HeatmapDateType
   const [metric,     setMetric]     = useState<HeatmapMetric>('giro')
@@ -113,7 +115,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
   ) => {
     // Chave inclui período e status — trocar o filtro do dashboard precisa invalidar o cache.
     // Sem isso, mudar de período devolvia os dados antigos da mesma métrica/categoria.
-    const cacheKey = `${unitSlug}-${m}-${dt}-${catId ?? ''}-${per ?? ''}-${startDate}-${endDate}-${rentalStatus}`
+    const cacheKey = `${unitSlug}-${m}-${dt}-${catId ?? ''}-${per ?? ''}-${startDate}-${endDate}-${rentalStatus}-${weekdays.join(',')}`
     if (responseCache.current.has(cacheKey)) {
       setRows(responseCache.current.get(cacheKey)!)
       return
@@ -131,6 +133,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
       })
       if (catId) params.set('categoryId', catId)
       if (per)   params.set('periodo', per)
+      if (weekdays.length) params.set('weekdays', weekdays.join(','))
 
       const res = await fetch(`/api/heatmap?${params}`)
       if (!res.ok) {
@@ -148,7 +151,7 @@ export function OccupancyHeatmap({ unitSlug, startDate, endDate, rangeLabel, sta
     } finally {
       setLoading(false)
     }
-  }, [unitSlug, startDate, endDate, rentalStatus])
+  }, [unitSlug, startDate, endDate, rentalStatus, weekdays.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchData(metric, dateType, categoryId, periodo)

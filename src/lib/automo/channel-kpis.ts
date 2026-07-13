@@ -1,6 +1,7 @@
 import { getAutomPool, getUnitCategoryIds, getUnitPeriodType } from './client'
 import { ddmmyyyyToIso, ddmmyyyyToIsoEnd, addDays, buildDateRangeFilter, buildStatusFilter, buildTimeFilter } from './company-kpis'
 import { buildPeriodCaseSQL, getValidPeriodsForType, scheduledReservaExistsSQL } from './period-helpers'
+import { buildWeekdayFilterSQL } from './operational-day'
 import type { ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
 
 // ─── Labels legíveis por tipo de canal ────────────────────────────────────────
@@ -43,6 +44,7 @@ export async function queryChannelKPIs(
   unitSlug: string,
   startDateDDMMYYYY: string,
   endDateDDMMYYYY: string,
+  weekdays?: number[],
 ): Promise<ChannelKPIRow[]> {
   const pool = await getAutomPool(unitSlug)
   if (!pool) return []
@@ -53,6 +55,8 @@ export async function queryChannelKPIs(
   // então o check-in cai em dias futuros e a contagem divergia do Mix por Período.
   const startDate = ddmmyyyyToIso(startDateDDMMYYYY)        // YYYY-MM-DD 06:00:00
   const endDate   = buildIsoEnd(endDateDDMMYYYY)            // próximo dia 05:59:59 (operacional, inclusivo)
+  const weekdayFilter      = buildWeekdayFilterSQL(weekdays, 'r.datainicio')
+  const weekdayFilterTotal = buildWeekdayFilterSQL(weekdays, 'ast.datainicio')
 
   const sql = `
     WITH canal_classificado AS (
@@ -83,6 +87,7 @@ export async function queryChannelKPIs(
         AND (r.valorcontratado IS NOT NULL OR la.valortotalpermanencia IS NOT NULL)
         AND r.id_tipoorigemreserva IN (1, 3, 4, 6, 7, 8)
         AND r.datainicio >= $1 AND r.datainicio <= $2
+        ${weekdayFilter}
     ),
     -- Canais não-site: valorcontratado com desconto Guia Go (igual ao Analytics)
     valores_outros_canais AS (
@@ -126,6 +131,7 @@ export async function queryChannelKPIs(
       JOIN apartamentostate ast ON la2.id_apartamentostate = ast.id
       WHERE ast.datainicio >= $1 AND ast.datainicio <= $2
         AND la2.fimocupacaotipo = 'FINALIZADA'
+        ${weekdayFilterTotal}
     )
     SELECT
       canal,

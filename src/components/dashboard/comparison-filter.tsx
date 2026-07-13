@@ -27,6 +27,7 @@ export interface ComparisonFilters {
   endHour:   number
   dateType:  CompDateType
   status:    CompRentalStatus
+  weekdays:  number[]          // 0=domingo…6=sábado; [] = todos
 }
 
 interface Props {
@@ -55,6 +56,11 @@ const STATUS_OPTIONS: { value: CompRentalStatus; label: string }[] = [
   { value: 'CANCELADA',   label: 'Canceladas'   },
   { value: 'ABERTA',      label: 'Em aberto'    },
   { value: 'TODAS',       label: 'Todas'        },
+]
+
+const WEEKDAY_OPTIONS = [
+  { value: 1, label: 'Seg' }, { value: 2, label: 'Ter' }, { value: 3, label: 'Qua' },
+  { value: 4, label: 'Qui' }, { value: 5, label: 'Sex' }, { value: 6, label: 'Sáb' }, { value: 0, label: 'Dom' },
 ]
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
@@ -90,6 +96,13 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
     const to   = range?.to   ? format(range.to,   'yyyy-MM-dd') : ''
     if (from) update({ startDate: from, endDate: to || from, preset: 'custom' })
     if (from && to) setCalOpen(false)
+  }
+
+  function toggleWeekday(day: number) {
+    const next = filters.weekdays.includes(day)
+      ? filters.weekdays.filter((d) => d !== day)
+      : [...filters.weekdays, day]
+    update({ weekdays: next.length === 7 ? [] : next })
   }
 
   const isCustom    = filters.preset === 'custom'
@@ -219,9 +232,29 @@ export function ComparisonFilter({ initial, onSearch, loading }: Props) {
           </div>
         </div>
 
+        {/* Dia da semana — multi-select; nenhum marcado = todos */}
+        <div className="flex flex-col gap-1 col-span-2">
+          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Dia da semana</Label>
+          <div className="flex gap-1">
+            {WEEKDAY_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                onClick={() => toggleWeekday(o.value)}
+                className={cn(
+                  'flex-1 h-7 rounded-md border text-xs font-medium transition-colors',
+                  (filters.weekdays.length === 0 || filters.weekdays.includes(o.value))
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-background text-muted-foreground border-input hover:text-foreground hover:bg-muted/50',
+                )}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Botão Buscar */}
-        <div className="flex flex-col gap-1">
-          <Label className="text-[10px] uppercase tracking-wide text-transparent select-none">-</Label>
+        <div className="flex flex-col gap-1 col-span-2">
           <Button
             size="sm"
             onClick={() => onSearch(filters)}

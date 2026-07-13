@@ -31,7 +31,14 @@
  *
  * As CTEs derivadas (totais, por categoria, por DOW) consomem `suite_dias`.
  */
-export function cteBaseSuiteDays(catIds: string, startExpr = '$1', endExpr = '$2'): string {
+export function cteBaseSuiteDays(catIds: string, startExpr = '$1', endExpr = '$2', weekdays?: number[]): string {
+  // Filtra os próprios dias gerados por dia da semana (0=domingo…6=sábado) — necessário
+  // para o denominador de suítes-dia refletir SÓ os dias selecionados quando o dashboard
+  // filtra por dia da semana (ex: "só sábado e domingo"). `dia` já é a data operacional
+  // (vem de startExpr/endExpr já cortados às 06:00 antes do ::date), sem precisar de rollback.
+  const weekdayFilter = (weekdays && weekdays.length > 0 && weekdays.length < 7)
+    ? `AND EXTRACT(DOW FROM d.dia) IN (${weekdays.filter((d) => d >= 0 && d <= 6).join(',')})`
+    : ''
   return `
     dias_periodo AS (
       -- CRÍTICO: cast via ::timestamp ANTES de ::date. Casar o parâmetro direto para ::date
@@ -64,6 +71,7 @@ export function cteBaseSuiteDays(catIds: string, startExpr = '$1', endExpr = '$2
           WHERE bi.id_apartamento = a.id
             AND d.dia BETWEEN bi.bloq_inicio AND bi.bloq_fim
         )
+        ${weekdayFilter}
     )
   `
 }

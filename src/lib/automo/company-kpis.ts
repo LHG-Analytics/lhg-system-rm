@@ -19,6 +19,7 @@ import {
   cteSuiteDaysByCategoryDow,
   cteSuiteDaysByDow,
 } from './suite-days'
+import { buildWeekdayFilterSQL } from './operational-day'
 
 // ─── Date helpers (exportados para uso em channel-kpis.ts) ────────────────────
 
@@ -164,13 +165,16 @@ async function queryBigNumbers(
   timeFilter = '',
   statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
   dateCol = 'la.datainicialdaocupacao',
+  weekdays?: number[],
 ) {
   if (!pool) throw new Error('pool is null')
+
+  const weekdayFilter = buildWeekdayFilterSQL(weekdays, dateCol)
 
   // la.valortotal = locação + consumo - desconto (campo pré-calculado pelo ERP).
   // Analytics soma ainda vendas_diretas (vendadireta) com os mesmos $1/$2 — replicado aqui.
   const sql = `
-    WITH ${cteBaseSuiteDays(catIds)},
+    WITH ${cteBaseSuiteDays(catIds, '$1', '$2', weekdays)},
     ${cteSuiteDaysTotal()},
     vendas_diretas AS (
       SELECT COALESCE(SUM(receita_item - desconto_proporcional), 0) AS total_sale_direct
@@ -211,6 +215,7 @@ async function queryBigNumbers(
       ${statusFilter}
       AND ca.id IN (${catIds})
       ${timeFilter}
+      ${weekdayFilter}
   `
 
   const { rows } = await pool.query<BigNumbersRow>(sql, [isoStart, isoEnd])
@@ -257,9 +262,11 @@ async function queryDataTableSuiteCategory(
   timeFilter = '',
   statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
   dateCol = 'la.datainicialdaocupacao',
+  weekdays?: number[],
 ): Promise<DataTableSuiteCategory[]> {
+  const weekdayFilter = buildWeekdayFilterSQL(weekdays, dateCol)
   const sql = `
-    WITH ${cteBaseSuiteDays(catIds)},
+    WITH ${cteBaseSuiteDays(catIds, '$1', '$2', weekdays)},
     ${cteSuiteDaysByCategory()}
     SELECT
       ca.descricao                       AS category,
@@ -288,6 +295,7 @@ async function queryDataTableSuiteCategory(
       ${statusFilter}
       AND ca.id IN (${catIds})
       ${timeFilter}
+      ${weekdayFilter}
     GROUP BY ca.descricao, sc.suite_dias
     ORDER BY total_value DESC
   `
@@ -347,11 +355,13 @@ async function queryWeekTables(
   timeFilter = '',
   statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
   dateCol = 'la.datainicialdaocupacao',
+  weekdays?: number[],
 ): Promise<{ giro: DataTableGiroByWeek[]; revpar: DataTableRevparByWeek[] }> {
+  const weekdayFilter = buildWeekdayFilterSQL(weekdays, dateCol)
   // CROSS JOIN entre categorias ativas × todos os DOW do período.
   // LEFT JOIN nos dados reais → dias sem locação aparecem com 0 (comportamento original).
   const sql = `
-    WITH ${cteBaseSuiteDays(catIds)},
+    WITH ${cteBaseSuiteDays(catIds, '$1', '$2', weekdays)},
     ${cteSuiteDaysByCategoryDow()},
     ${cteSuiteDaysByDow()},
     categories_in_period AS (
@@ -366,6 +376,7 @@ async function queryWeekTables(
         ${statusFilter}
         AND ca.id IN (${catIds})
         ${timeFilter}
+        ${weekdayFilter}
     ),
     rentals_cat_dow AS (
       SELECT
@@ -388,6 +399,7 @@ async function queryWeekTables(
         ${statusFilter}
         AND ca.id IN (${catIds})
         ${timeFilter}
+        ${weekdayFilter}
       GROUP BY ca.descricao, dow
     ),
     totals_by_dow AS (
@@ -474,9 +486,11 @@ async function queryTotalRevOcc(
   timeFilter = '',
   statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
   dateCol = 'la.datainicialdaocupacao',
+  weekdays?: number[],
 ): Promise<{ totalRevpar: number; totalOccupancyRate: number }> {
+  const weekdayFilter = buildWeekdayFilterSQL(weekdays, dateCol)
   const sql = `
-    WITH ${cteBaseSuiteDays(catIds)},
+    WITH ${cteBaseSuiteDays(catIds, '$1', '$2', weekdays)},
     ${cteSuiteDaysTotal()}
     SELECT
       COALESCE(SUM(CAST(la.valorliquidolocacao AS DECIMAL(15,4))), 0) AS rental_revenue,
@@ -491,6 +505,7 @@ async function queryTotalRevOcc(
       ${statusFilter}
       AND ca.id IN (${catIds})
       ${timeFilter}
+      ${weekdayFilter}
   `
 
   const { rows } = await pool.query<TotalRevOccRow>(sql, [isoStart, isoEnd])
@@ -517,12 +532,14 @@ async function queryPeriodMixInline(
   timeFilter: string,
   statusFilter: string,
   dateCol: string,
+  weekdays?: number[],
 ): Promise<BillingRentalTypeItem[]> {
   const periodCase   = buildPeriodCaseSQL(periodType, true)
   const validPeriods = getValidPeriodsForType(periodType)
+  const weekdayFilter = buildWeekdayFilterSQL(weekdays, dateCol)
 
   const sql = `
-    WITH ${cteBaseSuiteDays(catIds)},
+    WITH ${cteBaseSuiteDays(catIds, '$1', '$2', weekdays)},
     ${cteSuiteDaysByCategory()},
     base AS (
       SELECT
@@ -540,6 +557,7 @@ async function queryPeriodMixInline(
         ${statusFilter}
         AND ca.id IN (${catIds})
         ${timeFilter}
+        ${weekdayFilter}
     ),
     classificado AS (
       SELECT ${periodCase} AS periodo, receita FROM base
@@ -609,6 +627,7 @@ export async function fetchCompanyKPIsFromAutomo(
   endHour   = 23,              // 0–23, inclusive; 0+23 = sem filtro
   rentalStatus = 'FINALIZADA', // FINALIZADA | TRANSFERIDA | CANCELADA | ABERTA | TODAS
   dateType = 'checkin',        // checkin | checkout | all
+  weekdays?: number[],         // 0=domingo…6=sábado; undefined/vazio/7 dias = sem filtro
 ): Promise<CompanyKPIResponse> {
   const pool = await getAutomPool(unitSlug)
   if (!pool) throw new Error(`Automo pool indisponível para ${unitSlug}`)
@@ -667,17 +686,17 @@ export async function fetchCompanyKPIsFromAutomo(
   }
 
   const [currentBN, prevBN, prevMonBN, monthBN, revOcc, prevRevOcc, prevMonRevOcc, monthRevOcc, suiteCatTable, weekTables, periodMix] = await Promise.all([
-    queryBigNumbers(pool, catIds, isoStart,         isoEnd,         daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/current')),
-    queryBigNumbers(pool, catIds, prevIsoStart,     prevIsoEnd,     daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prev')),
-    queryBigNumbers(pool, catIds, prevMonIsoStart,  prevMonIsoEnd,  daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/prevMonth')),
-    queryBigNumbers(pool, catIds, monIsoStart,      monIsoEnd,      daysElapsed || 1,   timeFilter, statusFilter, dateCol).catch(tagError('BigNumbers/month')),
-    queryTotalRevOcc(pool, catIds, isoStart,        isoEnd,         daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc')),
-    queryTotalRevOcc(pool, catIds, prevIsoStart,    prevIsoEnd,     daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc/prev')),
-    queryTotalRevOcc(pool, catIds, prevMonIsoStart, prevMonIsoEnd,  daysDiff,           timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc/prevMonth')),
-    queryTotalRevOcc(pool, catIds, monIsoStart,     monIsoEnd,      daysElapsed || 1,   timeFilter, statusFilter, dateCol).catch(tagError('TotalRevOcc/month')),
-    queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff,              timeFilter, statusFilter, dateCol).catch(tagError('DataTableSuiteCategory')),
-    queryWeekTables(pool, catIds, isoStart, isoEnd,                                     timeFilter, statusFilter, dateCol).catch(tagError('WeekTables')),
-    queryPeriodMixInline(pool, periodType, catIds, isoStart, isoEnd,                    timeFilter, statusFilter, dateCol),
+    queryBigNumbers(pool, catIds, isoStart,         isoEnd,         daysDiff,           timeFilter, statusFilter, dateCol, weekdays).catch(tagError('BigNumbers/current')),
+    queryBigNumbers(pool, catIds, prevIsoStart,     prevIsoEnd,     daysDiff,           timeFilter, statusFilter, dateCol, weekdays).catch(tagError('BigNumbers/prev')),
+    queryBigNumbers(pool, catIds, prevMonIsoStart,  prevMonIsoEnd,  daysDiff,           timeFilter, statusFilter, dateCol, weekdays).catch(tagError('BigNumbers/prevMonth')),
+    queryBigNumbers(pool, catIds, monIsoStart,      monIsoEnd,      daysElapsed || 1,   timeFilter, statusFilter, dateCol, weekdays).catch(tagError('BigNumbers/month')),
+    queryTotalRevOcc(pool, catIds, isoStart,        isoEnd,         daysDiff,           timeFilter, statusFilter, dateCol, weekdays).catch(tagError('TotalRevOcc')),
+    queryTotalRevOcc(pool, catIds, prevIsoStart,    prevIsoEnd,     daysDiff,           timeFilter, statusFilter, dateCol, weekdays).catch(tagError('TotalRevOcc/prev')),
+    queryTotalRevOcc(pool, catIds, prevMonIsoStart, prevMonIsoEnd,  daysDiff,           timeFilter, statusFilter, dateCol, weekdays).catch(tagError('TotalRevOcc/prevMonth')),
+    queryTotalRevOcc(pool, catIds, monIsoStart,     monIsoEnd,      daysElapsed || 1,   timeFilter, statusFilter, dateCol, weekdays).catch(tagError('TotalRevOcc/month')),
+    queryDataTableSuiteCategory(pool, catIds, isoStart, isoEnd, daysDiff,              timeFilter, statusFilter, dateCol, weekdays).catch(tagError('DataTableSuiteCategory')),
+    queryWeekTables(pool, catIds, isoStart, isoEnd,                                     timeFilter, statusFilter, dateCol, weekdays).catch(tagError('WeekTables')),
+    queryPeriodMixInline(pool, periodType, catIds, isoStart, isoEnd,                    timeFilter, statusFilter, dateCol, weekdays),
   ])
 
   // Previsão de fechamento do mês

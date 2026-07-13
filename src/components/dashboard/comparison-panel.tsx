@@ -45,6 +45,7 @@ export function ComparisonPanel({ label, accent, unitSlug, initial }: Props) {
         dateType:  f.dateType,
         status:    f.status,
       })
+      if (f.weekdays.length) params.set('weekdays', f.weekdays.join(','))
       const res = await fetch(`/api/dashboard/kpis?${params}`)
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -118,12 +119,14 @@ export function ComparisonPanel({ label, accent, unitSlug, initial }: Props) {
             rangeLabel={rangeLabel}
             statusOverride={filters.status}
             dateTypeOverride={filters.dateType as HeatmapDateType}
+            weekdaysOverride={filters.weekdays}
           />
           <TurnoHeatmap
             unitSlug={unitSlug}
             startDate={filters.startDate}
             endDate={heatmapEndDate}
             statusOverride={filters.status}
+            weekdaysOverride={filters.weekdays}
           />
         </div>
       )}

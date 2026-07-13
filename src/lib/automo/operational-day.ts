@@ -40,3 +40,16 @@ export function resolveOperationalRange(startDate: string, endDate: string): { i
 export function opTs(col: string): string {
   return `(CASE WHEN EXTRACT(HOUR FROM ${col}) >= 6 THEN ${col} ELSE ${col} - INTERVAL '1 day' END)`
 }
+
+/**
+ * Fragmento WHERE que filtra locações por dia da semana operacional (0=domingo…6=sábado).
+ * Usa o mesmo rollback de opTs() — uma locação às 02h de terça conta como "segunda"
+ * (pertence à noite de segunda). Retorna '' quando weekdays é null/vazio/todos os 7 dias
+ * (nenhum filtro necessário).
+ */
+export function buildWeekdayFilterSQL(weekdays: number[] | null | undefined, col = 'la.datainicialdaocupacao'): string {
+  if (!weekdays || weekdays.length === 0 || weekdays.length >= 7) return ''
+  const list = weekdays.filter((d) => d >= 0 && d <= 6).join(',')
+  if (!list) return ''
+  return `AND EXTRACT(DOW FROM ${opTs(col)}) IN (${list})`
+}

@@ -39,6 +39,11 @@ export async function GET(req: NextRequest) {
     ? (stParam as RentalStatus)
     : 'FINALIZADA'
 
+  const weekdaysRaw = sp.get('weekdays')
+  const weekdays    = weekdaysRaw
+    ? weekdaysRaw.split(',').map((d) => parseInt(d, 10)).filter((d) => d >= 0 && d <= 6)
+    : undefined
+
   const dateRange     = resolvePreset(sp.get('preset'), sp.get('start'), sp.get('end'))
   const queryEndDate  = toQueryEndDate(dateRange.preset, dateRange.startDate, dateRange.endDate)
   const startDDMMYYYY = toLhgDate(dateRange.startDate)
@@ -54,8 +59,9 @@ export async function GET(req: NextRequest) {
         endHour,
         rentalStatus,
         dateType,
+        weekdays,
       ),
-      queryChannelKPIs(unitSlug, startDDMMYYYY, endDDMMYYYY).catch(() => []),
+      queryChannelKPIs(unitSlug, startDDMMYYYY, endDDMMYYYY, weekdays).catch(() => []),
     ])
     const periodMix = company.BillingRentalType
     return NextResponse.json({ company, channelKPIs, periodMix, dateRange }, { headers: { 'Cache-Control': 'no-store' } })

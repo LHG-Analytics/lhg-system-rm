@@ -9,7 +9,7 @@ import {
   cteSuiteDaysByDow,
 } from '@/lib/automo/suite-days'
 import { getValidPeriodsForType, buildPeriodoFilterSQL } from '@/lib/automo/period-helpers'
-import { resolveOperationalRange, opTs } from '@/lib/automo/operational-day'
+import { resolveOperationalRange, opTs, buildWeekdayFilterSQL } from '@/lib/automo/operational-day'
 import { isValidIsoDate, resolvePreset } from '@/lib/date-range'
 import type { Database } from '@/types/database.types'
 
@@ -68,7 +68,9 @@ function giroEventsSelect(
   extraWhere = '',
   statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
   periodoFilter = '',
+  weekdays?: number[],
 ) {
+  const weekdayFilter = buildWeekdayFilterSQL(weekdays, col)
   return `
     SELECT
       ca.id  AS category_id,
@@ -85,15 +87,16 @@ function giroEventsSelect(
       ${statusFilter}
       ${extraWhere}
       ${periodoFilter}
+      ${weekdayFilter}
       AND ca.id IN (${idList})
     GROUP BY ca.id, day_name, dow, hour_of_day`
 }
 
-function buildGiroQuery(idList: string, dateType: HeatmapDateType, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
-  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, isoStart, isoEnd, '', statusFilter, periodoFilter)
+function buildGiroQuery(idList: string, dateType: HeatmapDateType, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = '', weekdays?: number[]): string {
+  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, isoStart, isoEnd, '', statusFilter, periodoFilter, weekdays)
   const checkoutSel = giroEventsSelect(
     'la.datafinaldaocupacao', idList, isoStart, isoEnd,
-    'AND la.datafinaldaocupacao IS NOT NULL', statusFilter, periodoFilter
+    'AND la.datafinaldaocupacao IS NOT NULL', statusFilter, periodoFilter, weekdays
   )
 
   const eventsCTE =
@@ -103,7 +106,7 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, isoStart: str
 
   // Denominador: suite_dias_cat_dow (suítes-dia daquela categoria nesse DOW, descontando bloqueios)
   return `
-    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`)},
+    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`, weekdays)},
     ${cteSuiteDaysByCategoryDow()},
     events AS (${eventsCTE}
     )
@@ -119,11 +122,11 @@ function buildGiroQuery(idList: string, dateType: HeatmapDateType, isoStart: str
 
 // ─── Locações (contagem crua) por hora × dia ──────────────────────────────────
 // Número absoluto de locações no slot — sem denominador de suítes-dia.
-function buildLocacoesQuery(idList: string, dateType: HeatmapDateType, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
-  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, isoStart, isoEnd, '', statusFilter, periodoFilter)
+function buildLocacoesQuery(idList: string, dateType: HeatmapDateType, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = '', weekdays?: number[]): string {
+  const checkinSel  = giroEventsSelect('la.datainicialdaocupacao', idList, isoStart, isoEnd, '', statusFilter, periodoFilter, weekdays)
   const checkoutSel = giroEventsSelect(
     'la.datafinaldaocupacao', idList, isoStart, isoEnd,
-    'AND la.datafinaldaocupacao IS NOT NULL', statusFilter, periodoFilter
+    'AND la.datafinaldaocupacao IS NOT NULL', statusFilter, periodoFilter, weekdays
   )
 
   const eventsCTE =
@@ -143,16 +146,17 @@ function buildLocacoesQuery(idList: string, dateType: HeatmapDateType, isoStart:
     ORDER BY ${orderDay('e')}, e.hour_of_day`
 }
 
-function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = '', weekdays?: number[]): string {
   // Filtra locações pelo campo de referência conforme dateType
   const dateFilter =
     dateType === 'checkout'
       ? `la.datafinaldaocupacao >= '${isoStart}' AND la.datafinaldaocupacao <= '${isoEnd}'`
       : `la.datainicialdaocupacao >= '${isoStart}' AND la.datainicialdaocupacao <= '${isoEnd}'`
+  const weekdayFilter = buildWeekdayFilterSQL(weekdays, 'h_ts')
 
   // Denominador: suite_dias_total_dow (suítes-dia totais do DOW, descontando bloqueios)
   return `
-    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`)},
+    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`, weekdays)},
     ${cteSuiteDaysByDow()},
     occupied_hours AS (
       SELECT
@@ -172,6 +176,7 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, isoStart:
       WHERE ${dateFilter}
         ${statusFilter}
         ${periodoFilter}
+        ${weekdayFilter}
         AND la.datafinaldaocupacao IS NOT NULL
         AND ca.id IN (${idList})
       GROUP BY day_name, dow, hour_of_day
@@ -188,9 +193,10 @@ function buildOcupacaoQuery(idList: string, dateType: HeatmapDateType, isoStart:
 // ─── RevPAR por hora × dia ────────────────────────────────────────────────────
 // RevPAR = receita de locações / total de suítes disponíveis (por dia da semana)
 
-function buildRevparQuery(idList: string, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+function buildRevparQuery(idList: string, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = '', weekdays?: number[]): string {
+  const weekdayFilter = buildWeekdayFilterSQL(weekdays, 'la.datainicialdaocupacao')
   return `
-    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`)},
+    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`, weekdays)},
     ${cteSuiteDaysByDow()},
     revenue_hours AS (
       SELECT
@@ -206,6 +212,7 @@ function buildRevparQuery(idList: string, isoStart: string, isoEnd: string, stat
         AND la.datainicialdaocupacao <= '${isoEnd}'
         ${statusFilter}
         ${periodoFilter}
+        ${weekdayFilter}
         AND ca.id IN (${idList})
       GROUP BY day_name, dow, hour_of_day
     )
@@ -221,9 +228,10 @@ function buildRevparQuery(idList: string, isoStart: string, isoEnd: string, stat
 // ─── TRevPAR por hora × dia ───────────────────────────────────────────────────
 // TRevPAR = (receita de locações + receita A&B vinculada) / total de suítes
 
-function buildTrevparQuery(idList: string, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+function buildTrevparQuery(idList: string, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = '', weekdays?: number[]): string {
+  const weekdayFilter = buildWeekdayFilterSQL(weekdays, 'la.datainicialdaocupacao')
   return `
-    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`)},
+    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`, weekdays)},
     ${cteSuiteDaysByDow()},
     ab_por_locacao AS (
       SELECT
@@ -257,6 +265,7 @@ function buildTrevparQuery(idList: string, isoStart: string, isoEnd: string, sta
         AND la.datainicialdaocupacao <= '${isoEnd}'
         ${statusFilter}
         ${periodoFilter}
+        ${weekdayFilter}
         AND ca.id IN (${idList})
       GROUP BY day_name, dow, hour_of_day
     )
@@ -273,7 +282,8 @@ function buildTrevparQuery(idList: string, isoStart: string, isoEnd: string, sta
 // Diferente de RevPAR/TRevPAR: não normaliza por suítes-dia — é a soma de valortotal
 // (locação + consumo - desconto), mesma definição de "Faturamento" do dashboard.
 
-function buildReceitaQuery(idList: string, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = ''): string {
+function buildReceitaQuery(idList: string, isoStart: string, isoEnd: string, statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'", periodoFilter = '', weekdays?: number[]): string {
+  const weekdayFilter = buildWeekdayFilterSQL(weekdays, 'la.datainicialdaocupacao')
   return `
     SELECT
       ${dowCase(opTs('la.datainicialdaocupacao'))} AS day_name,
@@ -287,6 +297,7 @@ function buildReceitaQuery(idList: string, isoStart: string, isoEnd: string, sta
     WHERE la.datainicialdaocupacao >= '${isoStart}'
       AND la.datainicialdaocupacao <= '${isoEnd}'
       ${statusFilter}
+      ${weekdayFilter}
       ${periodoFilter}
       AND ca.id IN (${idList})
     GROUP BY EXTRACT(DOW FROM ${opTs('la.datainicialdaocupacao')}), EXTRACT(HOUR FROM la.datainicialdaocupacao)
@@ -306,6 +317,10 @@ export async function GET(req: NextRequest) {
   const dateType   = (sp.get('dateType') ?? 'all')  as HeatmapDateType
   const categoryId = sp.get('categoryId')
   const periodo    = sp.get('periodo')
+  const weekdaysRaw = sp.get('weekdays')
+  const weekdays    = weekdaysRaw
+    ? weekdaysRaw.split(',').map((d) => parseInt(d, 10)).filter((d) => d >= 0 && d <= 6)
+    : undefined
 
   const VALID_STATUSES = ['FINALIZADA', 'TRANSFERIDA', 'CANCELADA', 'ABERTA', 'TODAS'] as const
   type HeatmapStatus = typeof VALID_STATUSES[number]
@@ -388,12 +403,12 @@ export async function GET(req: NextRequest) {
     const categories: HeatmapCategory[] = catResult.rows
 
     const sql =
-      metric === 'giro'     ? buildGiroQuery(idList, dateType, isoStart, isoEnd, statusFilter, periodoFilter) :
-      metric === 'locacoes' ? buildLocacoesQuery(idList, dateType, isoStart, isoEnd, statusFilter, periodoFilter) :
-      metric === 'ocupacao' ? buildOcupacaoQuery(idList, dateType, isoStart, isoEnd, statusFilter, periodoFilter) :
-      metric === 'revpar'   ? buildRevparQuery(idList, isoStart, isoEnd, statusFilter, periodoFilter) :
-      metric === 'receita'  ? buildReceitaQuery(idList, isoStart, isoEnd, statusFilter, periodoFilter) :
-      buildTrevparQuery(idList, isoStart, isoEnd, statusFilter, periodoFilter)
+      metric === 'giro'     ? buildGiroQuery(idList, dateType, isoStart, isoEnd, statusFilter, periodoFilter, weekdays) :
+      metric === 'locacoes' ? buildLocacoesQuery(idList, dateType, isoStart, isoEnd, statusFilter, periodoFilter, weekdays) :
+      metric === 'ocupacao' ? buildOcupacaoQuery(idList, dateType, isoStart, isoEnd, statusFilter, periodoFilter, weekdays) :
+      metric === 'revpar'   ? buildRevparQuery(idList, isoStart, isoEnd, statusFilter, periodoFilter, weekdays) :
+      metric === 'receita'  ? buildReceitaQuery(idList, isoStart, isoEnd, statusFilter, periodoFilter, weekdays) :
+      buildTrevparQuery(idList, isoStart, isoEnd, statusFilter, periodoFilter, weekdays)
 
     const result = await pool.query<HeatmapCell>(sql)
 

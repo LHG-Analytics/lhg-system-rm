@@ -66,6 +66,12 @@ const STATUS_OPTIONS: { value: RentalStatus; label: string }[] = [
   { value: 'TODAS',       label: 'Todas'        },
 ]
 
+// Segunda primeiro (mesma ordem de exibição do resto do dashboard); valor = DOW Postgres (0=domingo)
+const WEEKDAY_OPTIONS = [
+  { value: '1', label: 'Seg' }, { value: '2', label: 'Ter' }, { value: '3', label: 'Qua' },
+  { value: '4', label: 'Qui' }, { value: '5', label: 'Sex' }, { value: '6', label: 'Sáb' }, { value: '0', label: 'Dom' },
+]
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function DateRangePicker() {
@@ -88,6 +94,9 @@ export function DateRangePicker() {
   )
   const [localStatus, setLocalStatus] = useState<RentalStatus>(
     () => (searchParams.get('status') as RentalStatus) ?? 'FINALIZADA'
+  )
+  const [localWeekdays, setLocalWeekdays] = useState<string[]>(
+    () => (searchParams.get('weekdays') ?? '').split(',').filter(Boolean)
   )
   const [calendarOpen,  setCalendarOpen]  = useState(false)
   const [pendingFilter, setPendingFilter] = useState<string | null>(null)
@@ -125,11 +134,12 @@ export function DateRangePicker() {
     setLocalEndHour(clampHour(searchParams.get('endHour'),     5))
     setLocalDateType((searchParams.get('dateType') as DateType) ?? 'checkin')
     setLocalStatus((searchParams.get('status') as RentalStatus) ?? 'FINALIZADA')
+    setLocalWeekdays((searchParams.get('weekdays') ?? '').split(',').filter(Boolean))
   }, [searchParams])
 
   function navigate(extra: Record<string, string>) {
     const params = new URLSearchParams()
-    const DATE_KEYS = new Set(['preset', 'start', 'end', 'startHour', 'endHour', 'dateType', 'status'])
+    const DATE_KEYS = new Set(['preset', 'start', 'end', 'startHour', 'endHour', 'dateType', 'status', 'weekdays'])
     for (const [k, v] of searchParams.entries()) {
       if (!DATE_KEYS.has(k)) params.set(k, v)
     }
@@ -150,8 +160,20 @@ export function DateRangePicker() {
       endHour:   String(localEndHour),
       dateType:  localDateType,
       status:    localStatus,
+      weekdays:  localWeekdays.join(','),
       ...overrides,
     })
+  }
+
+  function toggleWeekday(day: string) {
+    const next = localWeekdays.includes(day)
+      ? localWeekdays.filter((d) => d !== day)
+      : [...localWeekdays, day]
+    // Selecionar todos os 7 equivale a nenhum filtro — normaliza para "Todos"
+    const normalized = next.length === 7 ? [] : next
+    setLocalWeekdays(normalized)
+    setPendingFilter('weekdays')
+    navigateWith({ weekdays: normalized.join(',') })
   }
 
   function handlePresetClick(value: Exclude<DatePreset, 'custom'>) {
@@ -320,6 +342,29 @@ export function DateRangePicker() {
               ))}
             </SelectContent>
           </Select>
+        </div>
+      </div>
+
+      <Separator orientation="vertical" className="h-8 shrink-0" />
+
+      {/* Dia da semana — multi-select; nenhum marcado = todos */}
+      <div className="flex flex-col gap-1.5 shrink-0">
+        <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Dia da semana</Label>
+        <div className={cn('flex items-center gap-1', spin('weekdays') && 'opacity-60')}>
+          {WEEKDAY_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              onClick={() => toggleWeekday(o.value)}
+              className={cn(
+                'h-7 w-9 rounded-md border text-xs font-medium transition-colors',
+                (localWeekdays.length === 0 || localWeekdays.includes(o.value))
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background text-muted-foreground border-input hover:text-foreground hover:bg-muted/50',
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
         </div>
       </div>
     </div>

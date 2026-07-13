@@ -5,7 +5,7 @@ import { getAutomPool, getUnitCategoryIds } from '@/lib/automo/client'
 import { cteBaseSuiteDays, cteSuiteDaysByDow } from '@/lib/automo/suite-days'
 import { getUnitTurnos, buildTurnoCaseSQL } from '@/lib/automo/turno-helpers'
 import type { TurnoBand } from '@/lib/automo/turno-helpers'
-import { resolveOperationalRange, opTs } from '@/lib/automo/operational-day'
+import { resolveOperationalRange, opTs, buildWeekdayFilterSQL } from '@/lib/automo/operational-day'
 import { isValidIsoDate, resolvePreset } from '@/lib/date-range'
 import type { Database } from '@/types/database.types'
 
@@ -46,10 +46,12 @@ function buildTurnoQuery(
   isoEnd: string,
   statusFilter: string,
   turnos: [TurnoBand, TurnoBand],
+  weekdays?: number[],
 ): string {
   const turnoSQL = buildTurnoCaseSQL(turnos, 'EXTRACT(HOUR FROM la.datainicialdaocupacao)::int')
+  const weekdayFilter = buildWeekdayFilterSQL(weekdays, 'la.datainicialdaocupacao')
   return `
-    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`)},
+    WITH ${cteBaseSuiteDays(idList, `'${isoStart}'`, `'${isoEnd}'`, weekdays)},
     ${cteSuiteDaysByDow()},
     turno_locacoes AS (
       SELECT
@@ -65,6 +67,7 @@ function buildTurnoQuery(
       WHERE la.datainicialdaocupacao >= '${isoStart}'
         AND la.datainicialdaocupacao <= '${isoEnd}'
         ${statusFilter}
+        ${weekdayFilter}
         AND ca.id IN (${idList})
       GROUP BY ${dowCase(opTs('la.datainicialdaocupacao'))}, EXTRACT(DOW FROM ${opTs('la.datainicialdaocupacao')})::int, ${turnoSQL}
     )
@@ -138,6 +141,11 @@ export async function GET(req: NextRequest) {
     ? allCategoryIds.filter((id) => id === parseInt(categoryId, 10))
     : allCategoryIds
 
+  const weekdaysRaw = sp.get('weekdays')
+  const weekdays    = weekdaysRaw
+    ? weekdaysRaw.split(',').map((d) => parseInt(d, 10)).filter((d) => d >= 0 && d <= 6)
+    : undefined
+
   if (!selectedIds.length) {
     return Response.json({ error: 'Categoria inválida para esta unidade.' }, { status: 400 })
   }
@@ -157,7 +165,7 @@ export async function GET(req: NextRequest) {
       ORDER BY ca.descricao
     `)
 
-    const sql = buildTurnoQuery(idList, isoStart, isoEnd, statusFilter, turnos)
+    const sql = buildTurnoQuery(idList, isoStart, isoEnd, statusFilter, turnos, weekdays)
     const result = await pool.query<{ day_name: string; turno: string; locacoes: string; receita: string; suite_dias: string }>(sql)
 
     const turnoHours = (label: string) => {
