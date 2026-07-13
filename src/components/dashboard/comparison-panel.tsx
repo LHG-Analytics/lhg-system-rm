@@ -5,6 +5,7 @@ import { Loader2, AlertCircle } from 'lucide-react'
 import { DashboardKPICards } from '@/components/dashboard/kpi-cards'
 import { DashboardCharts } from '@/components/dashboard/charts'
 import { OccupancyHeatmap } from '@/components/dashboard/heatmap'
+import { TurnoHeatmap } from '@/components/dashboard/turno-heatmap'
 import { ComparisonFilter, type ComparisonFilters } from '@/components/dashboard/comparison-filter'
 import { fmtDisplay, toQueryEndDate } from '@/lib/date-range'
 import type { CompanyKPIResponse, ChannelKPIRow, BillingRentalTypeItem } from '@/lib/kpis/types'
@@ -117,6 +118,12 @@ export function ComparisonPanel({ label, accent, unitSlug, initial }: Props) {
             rangeLabel={rangeLabel}
             statusOverride={filters.status}
             dateTypeOverride={filters.dateType as HeatmapDateType}
+          />
+          <TurnoHeatmap
+            unitSlug={unitSlug}
+            startDate={filters.startDate}
+            endDate={heatmapEndDate}
+            statusOverride={filters.status}
           />
         </div>
       )}
