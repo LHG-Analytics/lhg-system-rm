@@ -747,6 +747,14 @@ Ignore qualquer regra geral sobre descontos do Guia: ela NÃO se aplica a esta u
 Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento proposto é baseado SÓ no giro interno — **não validado contra o mercado**. Declare isso explicitamente e seja conservador: não justifique aumentos por "vs mercado" e não vá ao teto de variação sem evidência de demanda inelástica clara.`
     : ''
 
+  // "Hoje é X" explícito — LLM erra aritmética de calendário (ex: calculou "últimos 4 sábados"
+  // como se hoje fosse sábado, quando era segunda). Reforço textual + tool determinística
+  // (resolver_datas_dia_semana) abaixo, que faz a conta em JS em vez do modelo "de cabeça".
+  const WEEKDAY_PT = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
+  const todayWeekday = WEEKDAY_PT[nowBRT.getUTCDay()]
+  const [todayY, todayM, todayD] = todayIso.split('-')
+  const todayBlock = `\n\n## 📅 Hoje\nHoje é **${todayWeekday}**, ${todayD}/${todayM}/${todayY}. Para pedidos como "os últimos N sábados/domingos/segundas/etc", SEMPRE chame a tool \`resolver_datas_dia_semana\` primeiro — NUNCA calcule essas datas de cabeça (aritmética de calendário é proibida e você já errou isso antes).`
+
   const systemPrompt =
     buildSystemPrompt(
       unit.name, kpiPeriods, priceImports, vigenciaInfo, weatherContext,
@@ -756,6 +764,7 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
       fmtMoney,
       neverReduce,
     ) +
+    todayBlock +
     noGuiaGuard +
     noMarketGuard +
     `\n\n${agentConfigBlock}` +
@@ -776,12 +785,58 @@ Não há análise de concorrentes/gap de mercado no contexto. Qualquer aumento p
     (strategicMemoryBlock ? `\n\n${strategicMemoryBlock}` : '')
 
   const agentTools = {
+    resolver_datas_dia_semana: tool({
+      description:
+        'Calcula datas EXATAS para pedidos do tipo "os últimos N sábados/domingos/segundas/etc" ' +
+        'ou "toda quinta-feira do último mês". OBRIGATÓRIO chamar esta tool ANTES de qualquer ' +
+        'busca de KPI por dia da semana específico (buscar_kpis_periodo, gerar_heatmap, etc) — ' +
+        'NUNCA calcule essas datas de cabeça. A conta é feita em JS no servidor, sem risco de erro ' +
+        'de aritmética de calendário. Retorna as datas prontas em DD/MM/YYYY, da mais recente para ' +
+        'a mais antiga — use-as literalmente (ex: buscar_kpis_periodo com startDate=endDate=data).',
+      inputSchema: z.object({
+        dia_semana: z.enum(['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'])
+          .describe('Dia da semana pedido pelo usuário'),
+        quantidade: z.number().int().min(1).max(12)
+          .describe('Quantas ocorrências mais recentes retornar (ex: 4 para "últimas 4 semanas")'),
+        incluirHoje: z.boolean().optional()
+          .describe('Se hoje for o dia da semana pedido, incluir hoje como a ocorrência mais recente. Padrão: true.'),
+      }),
+      execute: async ({ dia_semana, quantidade, incluirHoje = true }) => {
+        const DOW_MAP: Record<string, number> = { domingo: 0, segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6 }
+        const WEEKDAY_LABEL = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
+        const target  = DOW_MAP[dia_semana]
+        const hojeDow = nowBRT.getUTCDay()
+
+        let diff = (hojeDow - target + 7) % 7
+        if (diff === 0 && !incluirHoje) diff = 7
+
+        const cursor = new Date(nowBRT)
+        cursor.setUTCDate(cursor.getUTCDate() - diff)
+
+        const datas: string[] = []
+        for (let i = 0; i < quantidade; i++) {
+          const d = new Date(cursor)
+          d.setUTCDate(cursor.getUTCDate() - i * 7)
+          datas.push(`${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`)
+        }
+
+        return {
+          hoje: todayIso,
+          hojeDiaSemana: WEEKDAY_LABEL[hojeDow],
+          diaSemanaSolicitado: dia_semana,
+          datas,
+        }
+      },
+    }),
+
     buscar_kpis_periodo: tool({
       description:
         'Busca KPIs operacionais completos (giro, RevPAR, ticket médio, ocupação, tabelas semanais) ' +
         'para qualquer período específico via ERP Automo. ' +
         'Use sempre que o usuário mencionar datas específicas, pedir monitoramento de uma semana, ' +
         'ou quando os dados do contexto não cobrirem o período solicitado. ' +
+        'Para pedidos por dia da semana específico (ex: "cada sábado das últimas 4 semanas"), chame ' +
+        'resolver_datas_dia_semana PRIMEIRO e use as datas retornadas — nunca calcule você mesmo. ' +
         'Nunca diga que não tem acesso — use este tool.',
       inputSchema: z.object({
         startDate: z.string().describe('Data inicial no formato DD/MM/YYYY, ex: "01/04/2026"'),
