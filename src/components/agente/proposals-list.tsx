@@ -25,7 +25,7 @@ import { Label } from '@/components/ui/label'
 import {
   Loader2, Sparkles, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, Clock, Pencil, Trash2, Save, X,
-  CalendarPlus, CalendarClock, TrendingUp, TrendingDown, Minus, Shield,
+  CalendarPlus, CalendarClock, TrendingUp, TrendingDown, Minus, Shield, Copy,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { format, parseISO } from 'date-fns'
@@ -731,6 +731,9 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
   const [onlyClamped, setOnlyClamped] = useState(false)
 
+  // Clonar tabela ativa como proposta pendente (sem IA) para ajustes manuais pontuais
+  const [cloning, setCloning] = useState(false)
+
   // Ticket médio operacional REAL do mês (receita ÷ locações) — baseline da simulação.
   // A média simples dos preços da tabela não reflete o mix real de vendas.
   const [realTicket, setRealTicket] = useState<number | null>(null)
@@ -1029,6 +1032,28 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
     }
   }, [confirmDelete, editing, proposals, onPendingDeleted])
 
+  const handleCloneActive = useCallback(async () => {
+    setCloning(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/agente/proposals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unitSlug }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Erro ao clonar tabela ativa')
+      const created = data as PriceProposal
+      setProposals((prev) => [created, ...prev])
+      setStatusFilter('pending')
+      startEditing(created)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro desconhecido')
+    } finally {
+      setCloning(false)
+    }
+  }, [unitSlug, startEditing])
+
   return (
     <div className="flex flex-col gap-4">
       {/* Header — mesmo padrão do DiscountProposalsList */}
@@ -1079,6 +1104,19 @@ export function ProposalsList({ unitSlug, unitId, initialProposals, refreshKey, 
           })()}
         </div>
 
+        {canManage && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCloneActive}
+            disabled={cloning}
+            className="gap-1.5 shrink-0"
+            title="Cria uma proposta pendente idêntica à tabela vigente, sem passar pelo agente — ajuste manualmente só os preços que precisar."
+          >
+            {cloning ? <Loader2 className="size-3.5 animate-spin" /> : <Copy className="size-3.5" />}
+            Clonar tabela ativa
+          </Button>
+        )}
       </div>
 
       {error && (

@@ -92,6 +92,100 @@ export async function GET(req: NextRequest) {
   return Response.json(enriched as unknown as PriceProposal[])
 }
 
+// ─── POST: clona a tabela de preços ativa como uma proposta pendente ─────────
+// Sem IA — copia a tabela vigente linha a linha (preco_atual = preco_proposto,
+// variação 0%) para o gestor ajustar manualmente só as células que precisa,
+// na mesma planilha editável usada para revisar propostas geradas pelo agente.
+
+export async function POST(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return new Response('Não autorizado', { status: 401 })
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, unit_id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!profile || !['super_admin', 'admin', 'manager'].includes(profile.role)) {
+    return new Response('Permissão negada', { status: 403 })
+  }
+
+  const body = await req.json() as { unitSlug?: string }
+  const { unitSlug } = body
+  if (!unitSlug) return new Response('unitSlug obrigatório', { status: 400 })
+
+  const admin = getAdminClient()
+  const { data: unit } = await admin
+    .from('units')
+    .select('id')
+    .eq('slug', unitSlug)
+    .eq('is_active', true)
+    .single()
+
+  if (!unit) return new Response('Unidade não encontrada', { status: 404 })
+
+  if (!(['super_admin', 'admin'].includes(profile.role ?? '') && !profile.unit_id) && profile.unit_id !== unit.id) {
+    return new Response('Sem acesso a essa unidade', { status: 403 })
+  }
+
+  const today = new Date().toISOString().slice(0, 10)
+  const { data: activeImport } = await admin
+    .from('price_imports')
+    .select('id, valid_from, parsed_data')
+    .eq('unit_id', unit.id)
+    .eq('import_type', 'prices')
+    .is('valid_until', null)
+    .lte('valid_from', today)
+    .order('valid_from', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!activeImport) {
+    return Response.json({ error: 'Nenhuma tabela de preços ativa para clonar nesta unidade.' }, { status: 422 })
+  }
+
+  const baseRows = (activeImport.parsed_data as unknown as ParsedPriceRow[]) ?? []
+  if (!baseRows.length) {
+    return Response.json({ error: 'A tabela ativa não tem linhas para clonar.' }, { status: 422 })
+  }
+
+  const rows: ProposedPriceRow[] = baseRows.map((r) => ({
+    ...r,
+    preco_atual: r.preco,
+    preco_proposto: r.preco,
+    variacao_pct: 0,
+    justificativa: 'Igual à tabela vigente — ajuste manualmente as células que precisar.',
+  }))
+
+  const validFromLabel = new Date(activeImport.valid_from + 'T12:00:00Z').toLocaleDateString('pt-BR')
+
+  const { data: inserted, error } = await admin
+    .from('price_proposals')
+    .insert({
+      unit_id: unit.id,
+      created_by: user.id,
+      context: `Clonada da tabela ativa (vigente desde ${validFromLabel}) para ajustes manuais pontuais — nenhum preço foi alterado ainda.`,
+      rows: rows as unknown as Database['public']['Tables']['price_proposals']['Insert']['rows'],
+      status: 'pending',
+    })
+    .select('*')
+    .single()
+
+  if (error || !inserted) {
+    return Response.json({ error: error?.message ?? 'Falha ao clonar tabela ativa' }, { status: 500 })
+  }
+
+  const { data: creatorProfile } = await admin
+    .from('profiles')
+    .select('display_name')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  return Response.json({ ...inserted, creator_name: creatorProfile?.display_name ?? null } as unknown as PriceProposal)
+}
+
 // ─── PATCH: aprovar, rejeitar ou editar proposta ──────────────────────────────
 
 export async function PATCH(req: NextRequest) {
