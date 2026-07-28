@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { runPendingReviews } from '@/lib/cron/run-reviews'
 
-export const maxDuration = 300
+// 800s = teto GA do plano Pro (era 300s, teto do Hobby). Mais margem para
+// processar o lote de revisões + manutenção diária sem ser matado no meio.
+export const maxDuration = 800
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')

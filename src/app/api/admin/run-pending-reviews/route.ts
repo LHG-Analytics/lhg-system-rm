@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { runPendingReviews } from '@/lib/cron/run-reviews'
 
-// Aumenta o timeout para 60s — geração de IA pode demorar
-export const maxDuration = 60
+// 800s = teto GA do plano Pro (era 60s — menor até que o próprio cron, que já
+// tinha 300s; inconsistente e insuficiente para o mesmo processamento).
+export const maxDuration = 800
 
 export async function POST() {
   const supabase = await createClient()

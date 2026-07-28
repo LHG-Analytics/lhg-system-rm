@@ -150,12 +150,14 @@ async function insertLessons(
 // ─── Loop principal ─────────────────────────────────────────────────────────
 
 // Limite de revisões processadas POR EXECUÇÃO do cron. O processamento é sequencial
-// (relatório completo + IA por revisão) e o cron tem 300s (máximo do plano Hobby) —
-// sem esse limite, um dia com muitos checkpoints vencidos numa mesma unidade estoura
-// o tempo e mata o processo no meio de uma revisão, deixando-a travada em 'running'
-// para sempre (a query abaixo só busca status='pending', então uma vez travada em
-// 'running' ela nunca mais era retentada). O resto do backlog é pego no dia seguinte.
-const MAX_REVIEWS_PER_RUN = 5
+// (relatório completo + IA por revisão) — sem esse limite, um dia com muitos
+// checkpoints vencidos numa mesma unidade pode estourar o tempo e matar o processo
+// no meio de uma revisão, deixando-a travada em 'running' para sempre (a query abaixo
+// só busca status='pending', então uma vez travada em 'running' ela nunca mais era
+// retentada). O resto do backlog é pego no dia seguinte.
+// Plano Pro = 800s de teto (era 300s no Hobby) — folga maior, mas o limite continua
+// existindo como proteção contra qualquer backlog fora do comum.
+const MAX_REVIEWS_PER_RUN = 10
 
 export async function runPendingReviews(): Promise<RunReviewsResult> {
   const admin = getAdminClient()
