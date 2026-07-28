@@ -149,8 +149,29 @@ async function insertLessons(
 
 // ─── Loop principal ─────────────────────────────────────────────────────────
 
+// Limite de revisões processadas POR EXECUÇÃO do cron. O processamento é sequencial
+// (relatório completo + IA por revisão) e o cron tem 300s (máximo do plano Hobby) —
+// sem esse limite, um dia com muitos checkpoints vencidos numa mesma unidade estoura
+// o tempo e mata o processo no meio de uma revisão, deixando-a travada em 'running'
+// para sempre (a query abaixo só busca status='pending', então uma vez travada em
+// 'running' ela nunca mais era retentada). O resto do backlog é pego no dia seguinte.
+const MAX_REVIEWS_PER_RUN = 5
+
 export async function runPendingReviews(): Promise<RunReviewsResult> {
   const admin = getAdminClient()
+
+  // Recupera revisões travadas em 'running' — só ficam assim se a execução anterior
+  // foi interrompida (timeout/crash) antes de marcar 'done'/'failed'. Uma nova chamada
+  // desta função só começa depois que a anterior já terminou (com sucesso ou não), então
+  // qualquer linha ainda em 'running' agora é órfã e precisa voltar para a fila.
+  const { data: stuck } = await admin
+    .from('scheduled_reviews')
+    .update({ status: 'pending' })
+    .eq('status', 'running')
+    .select('id')
+  if (stuck?.length) {
+    console.warn(`[run-reviews] Recuperadas ${stuck.length} revisão(ões) travada(s) em 'running' (execução anterior não concluiu): ${stuck.map(s => s.id).join(', ')}`)
+  }
 
   const endOfToday = new Date()
   endOfToday.setUTCHours(23, 59, 59, 999)
@@ -160,6 +181,8 @@ export async function runPendingReviews(): Promise<RunReviewsResult> {
     .select('id, unit_id, created_by, note, scheduled_at, proposal_id, checkpoint_days')
     .lte('scheduled_at', endOfToday.toISOString())
     .eq('status', 'pending')
+    .order('scheduled_at', { ascending: true })
+    .limit(MAX_REVIEWS_PER_RUN)
 
   if (fetchError) throw new Error(`Erro ao buscar revisões: ${fetchError.message}`)
 

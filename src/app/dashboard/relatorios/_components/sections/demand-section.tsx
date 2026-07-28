@@ -1,12 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { WeeklyReportData } from '@/lib/reports/types'
 import { useCurrency } from '@/components/currency-context'
 
 interface Props {
   data: WeeklyReportData['demand']
+}
+
+// Pico/Diurno sempre antes de Fora de pico/Noturno — mesma ordem do widget do dashboard.
+function turnoOrder(label: string): number {
+  const l = label.toLowerCase()
+  if (l.includes('pico') && !l.includes('fora')) return 0
+  if (l.includes('diurno')) return 0
+  return 1
 }
 
 export function DemandSection({ data }: Props) {
@@ -121,33 +129,92 @@ export function DemandSection({ data }: Props) {
             </div>
           )}
 
-          {turnoCategoryTable.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Giro e receita por turno × categoria</p>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-muted-foreground border-b">
-                    <th className="text-left pb-1 font-medium">Categoria</th>
-                    <th className="text-left pb-1 font-medium">Turno</th>
-                    <th className="text-right pb-1 font-medium">Locações</th>
-                    <th className="text-right pb-1 font-medium">Giro</th>
-                    <th className="text-right pb-1 font-medium">Receita</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {turnoCategoryTable.map((r, i) => (
-                    <tr key={i} className="border-b last:border-0">
-                      <td className="py-1.5 font-medium">{r.categoria}</td>
-                      <td>{r.turno}</td>
-                      <td className="text-right">{r.locacoes}</td>
-                      <td className="text-right">{r.giro.toFixed(2)}</td>
-                      <td className="text-right">{fm(r.receita)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {turnoCategoryTable.length > 0 && (() => {
+            // Pivot: categoria nas linhas, turno agrupado nas colunas (Loc./Giro/Receita
+            // por turno) — a listagem flat anterior (2 linhas por categoria, turno repetido)
+            // dificultava comparar Diurno vs Noturno de uma mesma categoria.
+            const turnos = [...new Set(turnoCategoryTable.map((r) => r.turno))]
+              .sort((a, b) => turnoOrder(a) - turnoOrder(b))
+
+            const byCategoria = new Map<string, Map<string, { locacoes: number; giro: number; receita: number }>>()
+            for (const r of turnoCategoryTable) {
+              if (!byCategoria.has(r.categoria)) byCategoria.set(r.categoria, new Map())
+              byCategoria.get(r.categoria)!.set(r.turno, { locacoes: r.locacoes, giro: r.giro, receita: r.receita })
+            }
+
+            const categorias = [...byCategoria.keys()].sort((a, b) => {
+              const totalA = [...byCategoria.get(a)!.values()].reduce((s, v) => s + v.receita, 0)
+              const totalB = [...byCategoria.get(b)!.values()].reduce((s, v) => s + v.receita, 0)
+              return totalB - totalA
+            })
+
+            const totalByTurno = new Map(turnos.map((t) => [
+              t,
+              categorias.reduce((acc, cat) => {
+                const cell = byCategoria.get(cat)?.get(t)
+                return { locacoes: acc.locacoes + (cell?.locacoes ?? 0), receita: acc.receita + (cell?.receita ?? 0) }
+              }, { locacoes: 0, receita: 0 }),
+            ]))
+
+            return (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Giro e receita por turno × categoria</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-muted-foreground border-b">
+                        <th rowSpan={2} className="text-left pb-1 font-medium align-bottom">Categoria</th>
+                        {turnos.map((t) => (
+                          <th key={t} colSpan={3} className="text-center pb-1 font-medium border-l">{t}</th>
+                        ))}
+                      </tr>
+                      <tr className="text-[11px] text-muted-foreground border-b">
+                        {turnos.map((t) => (
+                          <Fragment key={t}>
+                            <th className="text-right pb-1 font-normal border-l">Loc.</th>
+                            <th className="text-right pb-1 font-normal">Giro</th>
+                            <th className="text-right pb-1 font-normal">Receita</th>
+                          </Fragment>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {categorias.map((cat) => (
+                        <tr key={cat} className="border-b last:border-0">
+                          <td className="py-1.5 font-medium whitespace-nowrap">{cat}</td>
+                          {turnos.map((t) => {
+                            const cell = byCategoria.get(cat)?.get(t)
+                            return (
+                              <Fragment key={t}>
+                                <td className="text-right border-l">{cell ? cell.locacoes : '—'}</td>
+                                <td className="text-right">{cell ? cell.giro.toFixed(2) : '—'}</td>
+                                <td className="text-right">{cell ? fm(cell.receita) : '—'}</td>
+                              </Fragment>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t font-semibold text-xs">
+                        <td className="pt-1.5">Total</td>
+                        {turnos.map((t) => {
+                          const tot = totalByTurno.get(t)!
+                          return (
+                            <Fragment key={t}>
+                              <td className="text-right pt-1.5 border-l">{tot.locacoes}</td>
+                              <td className="text-right pt-1.5">—</td>
+                              <td className="text-right pt-1.5">{fm(tot.receita)}</td>
+                            </Fragment>
+                          )
+                        })}
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )
+          })()}
         </div>
       )}
     </div>
