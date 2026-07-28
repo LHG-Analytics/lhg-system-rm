@@ -92,7 +92,7 @@ export interface WeeklyReportData {
     valleyDow: string
     /** Giro e receita por categoria de suíte × turno (Pico/Fora de pico ou Diurno/Noturno).
      *  Opcional — relatórios gerados antes desse campo existir não o têm no JSONB salvo. */
-    turnoCategoryTable?: { categoria: string; turno: string; locacoes: number; giro: number; receita: number }[]
+    turnoCategoryTable?: { categoria: string; turno: string; locacoes: number; giro: number; receita: number; capacidade: number }[]
   }
 
   competitors: {

@@ -4,11 +4,12 @@ import { cteBaseSuiteDays, cteSuiteDaysByCategory } from './suite-days'
 import { getUnitTurnos, buildTurnoCaseSQL } from './turno-helpers'
 
 export interface CategoryTurnoKPIRow {
-  categoria: string
-  turno:     string
-  locacoes:  number
-  giro:      number   // locações / suíte-dias-categoria prorateado pelas horas do turno
-  receita:   number   // SUM(valortotal)
+  categoria:  string
+  turno:      string
+  locacoes:   number
+  giro:       number   // locações / suíte-dias-categoria prorateado pelas horas do turno
+  receita:    number   // SUM(valortotal)
+  capacidade: number   // suítes-dia disponíveis no turno (denominador do giro) — necessário para agregar giro total corretamente (soma das capacidades, não média das taxas)
 }
 
 interface RawRow {
@@ -96,7 +97,7 @@ export async function queryCategoryTurnoKPIs(
       const suiteDias = Number(r.suite_dias_cat) || 1
       const capacidadeTurno = suiteDias * (turnoHours(r.turno) / 24)
       const giro = capacidadeTurno > 0 ? +(locacoes / capacidadeTurno).toFixed(3) : 0
-      return { categoria: r.categoria, turno: r.turno, locacoes, giro, receita: +receita.toFixed(2) }
+      return { categoria: r.categoria, turno: r.turno, locacoes, giro, receita: +receita.toFixed(2), capacidade: +capacidadeTurno.toFixed(3) }
     })
   } catch {
     return []

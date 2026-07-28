@@ -405,6 +405,7 @@ export async function generateWeeklyReport(
         locacoes: r.locacoes,
         giro: r.giro,
         receita: r.receita,
+        capacidade: r.capacidade,
       })),
     }
 

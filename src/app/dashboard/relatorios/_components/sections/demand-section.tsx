@@ -136,10 +136,10 @@ export function DemandSection({ data }: Props) {
             const turnos = [...new Set(turnoCategoryTable.map((r) => r.turno))]
               .sort((a, b) => turnoOrder(a) - turnoOrder(b))
 
-            const byCategoria = new Map<string, Map<string, { locacoes: number; giro: number; receita: number }>>()
+            const byCategoria = new Map<string, Map<string, { locacoes: number; giro: number; receita: number; capacidade: number }>>()
             for (const r of turnoCategoryTable) {
               if (!byCategoria.has(r.categoria)) byCategoria.set(r.categoria, new Map())
-              byCategoria.get(r.categoria)!.set(r.turno, { locacoes: r.locacoes, giro: r.giro, receita: r.receita })
+              byCategoria.get(r.categoria)!.set(r.turno, { locacoes: r.locacoes, giro: r.giro, receita: r.receita, capacidade: r.capacidade ?? 0 })
             }
 
             const categorias = [...byCategoria.keys()].sort((a, b) => {
@@ -148,13 +148,21 @@ export function DemandSection({ data }: Props) {
               return totalB - totalA
             })
 
-            const totalByTurno = new Map(turnos.map((t) => [
-              t,
-              categorias.reduce((acc, cat) => {
+            // Giro total do turno = soma das locações ÷ soma das capacidades (suítes-dia) de
+            // todas as categorias — nunca a média/soma dos giros já arredondados por categoria,
+            // que distorceria o resultado (cada categoria tem capacidade diferente).
+            const totalByTurno = new Map(turnos.map((t) => {
+              const agg = categorias.reduce((acc, cat) => {
                 const cell = byCategoria.get(cat)?.get(t)
-                return { locacoes: acc.locacoes + (cell?.locacoes ?? 0), receita: acc.receita + (cell?.receita ?? 0) }
-              }, { locacoes: 0, receita: 0 }),
-            ]))
+                return {
+                  locacoes: acc.locacoes + (cell?.locacoes ?? 0),
+                  receita: acc.receita + (cell?.receita ?? 0),
+                  capacidade: acc.capacidade + (cell?.capacidade ?? 0),
+                }
+              }, { locacoes: 0, receita: 0, capacidade: 0 })
+              const giro = agg.capacidade > 0 ? agg.locacoes / agg.capacidade : null
+              return [t, { ...agg, giro }] as const
+            }))
 
             return (
               <div>
@@ -203,7 +211,7 @@ export function DemandSection({ data }: Props) {
                           return (
                             <Fragment key={t}>
                               <td className="text-right pt-1.5 border-l">{tot.locacoes}</td>
-                              <td className="text-right pt-1.5">—</td>
+                              <td className="text-right pt-1.5">{tot.giro !== null ? tot.giro.toFixed(2) : '—'}</td>
                               <td className="text-right pt-1.5">{fm(tot.receita)}</td>
                             </Fragment>
                           )
