@@ -5,7 +5,7 @@ import type { WeeklyReportData, KPISnapshot } from './types'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
 import { queryChannelKPIs } from '@/lib/automo/channel-kpis'
 import { getSuiteAvailabilityByCategory } from '@/lib/automo/suite-availability'
-import { getUpcomingSeasonalFactors, buildSeasonalityBlock } from '@/lib/seasonality/compute'
+import { getUpcomingSeasonalFactors, buildSeasonalityBlock, getSeasonalFactorsForPeriod, buildPastSeasonalityBlock } from '@/lib/seasonality/compute'
 import { getElasticityForUnit, buildElasticityBlock } from '@/lib/pricing/elasticity'
 import { computeRevenueForecast, buildForecastBlock } from '@/lib/forecast/revenue-forecast'
 import { ANALYSIS_MODEL } from '@/lib/agente/model'
@@ -167,6 +167,7 @@ export async function generateWeeklyReport(
       turnoCategoryResult,
       monthAgoKpisResult,
       categoryPeriodResult,
+      pastSeasonalResult,
     ] = await Promise.allSettled([
       fetchCompanyKPIsFromAutomo(unitSlug, startDDMM, endDDMM),
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(prevStartStr), isoToDDMMYYYY(prevEndStr)),
@@ -243,6 +244,7 @@ export async function generateWeeklyReport(
       queryCategoryTurnoKPIs(unitSlug, startDDMM, endDDMM),
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(moStart.toISOString().slice(0, 10)), isoToDDMMYYYY(moEnd.toISOString().slice(0, 10))),
       queryCategoryPeriodKPIs(unitSlug, startDDMM, endDDMM),
+      getSeasonalFactorsForPeriod(unit.id, periodStart, new Date(new Date(periodEnd + 'T12:00:00Z').getTime() + 86400000).toISOString().slice(0, 10)),
     ])
 
     const guardrailsResult = await admin
@@ -273,6 +275,7 @@ export async function generateWeeklyReport(
     const turnoCategoryRows = turnoCategoryResult.status === 'fulfilled' ? turnoCategoryResult.value : []
     const monthAgoKpis = monthAgoKpisResult.status === 'fulfilled' ? monthAgoKpisResult.value : null
     const categoryPeriodKPIs = categoryPeriodResult.status === 'fulfilled' ? categoryPeriodResult.value : []
+    const pastSeasonalSummary = pastSeasonalResult.status === 'fulfilled' ? pastSeasonalResult.value : null
     const guardrailsCount = guardrailsResult.count ?? 0
 
     // Recomputa gaps usando snapshots existentes (análise já feita na aba Concorrentes).
@@ -822,6 +825,7 @@ ${historicalInsights.map(h => `- ${h.fromDate}→${h.toDate}: ${h.changesCount} 
       perBlock,
       competitorBlock || null,
       seasonalityBlock || null,
+      buildPastSeasonalityBlock(pastSeasonalSummary) || null,
       forecastBlock || null,
       historicalCtx || null,
       opportunitiesBlock,
@@ -848,9 +852,11 @@ PERÍODOS DE REFERÊNCIA (cite SEMPRE ao mencionar variações — use APENAS o 
 
 Você é um especialista de Revenue Management experiente explicando o período para o DONO do negócio — alguém sem tempo de juntar dados na mão. Ele não quer uma lista de números soltos, quer entender o que aconteceu, por que aconteceu, e o que fazer. Interprete, não apenas relate.
 
+Todos os números que você recebe abaixo (KPIs, sazonalidade, elasticidade, previsão, oportunidades) vêm de queries diretas no banco do ERP — são reais e atualizados, não estimativas. Escreva com confiança sobre eles; não invente números novos, mas também não hedge sobre os que já são dados.
+
 REGRAS INVIOLÁVEIS para o JSON:
 1. "headline": inclua o período atual em DD/MM e um dado numérico chave.
-2. "diagnosis": 3 a 5 frases interpretando o período como um especialista — não apenas cite números, explique a causa provável e a direção (melhorando/estável/piorando). Compare com semana anterior, mês anterior e ano anterior quando relevante (use "vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})" etc — NUNCA siglas como "LY" ou "yoy"). Se houver "Oportunidades detectadas" no contexto, cite a mais relevante pelo nome (categoria + recorte específico) e explique a causa provável do desvio.
+2. "diagnosis": 3 a 5 frases interpretando o período como um especialista. SEMPRE inclua as DUAS comparações, nunca só uma: (a) vs semana anterior (${fmtPrevStart}–${fmtPrevEnd}) — mostra o momentum recente; (b) vs mesmo período do ano anterior (${fmtLyStart}–${fmtLyEnd}) — controla sazonalidade (feriados, época do ano, clima), é o sinal de se a unidade está genuinamente melhor ou só repetindo o padrão esperado pra essa época. Se as duas comparações contarem histórias diferentes (ex: subiu vs semana passada mas ainda abaixo do ano passado), diga isso explicitamente — é a informação mais importante do diagnóstico. Se houver o bloco "Sazonalidade esperada para este período" no contexto, USE-O SEMPRE: diga se o resultado bate com o que já era esperado pra essa época do ano (não é motivo de destaque nem alarme) ou se é um desvio real que merece atenção — essa distinção é o que separa uma leitura de especialista de uma leitura ingênua dos números. NUNCA use siglas como "LY" ou "yoy" — escreva "vs ano anterior (${fmtLyStart}–${fmtLyEnd})". Se houver "Oportunidades detectadas" no contexto, cite a mais relevante pelo nome (categoria + recorte específico) e explique a causa provável do desvio.
 3. "keyPoints": 2 bullets curtos e factuais (evidência numérica de apoio ao diagnosis) — não repita o que já está no diagnosis, complemente.
 4. "priorityAction": use dados REAIS. NUNCA sugira variação > ${maxVar}% — se o mercado exigir mais, diga "ajustar em ${maxVar}% agora e reavaliar". Pode propor novo tier de dia se o padrão horário justificar. Se houver "Oportunidades detectadas" no contexto, baseie a priorityAction na de maior impacto — não invente uma oportunidade diferente das listadas. NUNCA proponha um valor percentual específico de reajuste (ex: "reduza 8%") — isso é calculado depois no Agente RM respeitando guardrails; fale em direção e recorte (categoria, dia, período), não em número.
 5. "watchNextWeek": 1-2 frases sobre o que merece atenção na próxima semana (evento futuro, tendência a confirmar, risco a monitorar). Se não houver nada específico, diga o que acompanhar da própria oportunidade prioritária.
@@ -904,8 +910,9 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
     }
     let aiLeverageComment = ''
 
-    // 1 tentativa — contexto compacto torna desnecessário retry lento (era 2×8s = +16s)
-    for (let attempt = 0; attempt < 1; attempt++) {
+    // 2 tentativas — a IA escreve o diagnóstico interpretativo (não é texto estático);
+    // uma falha transitória de API não deve degradar pro fallback sem pelo menos 1 retry.
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const { text } = await generateText({
           model: ANALYSIS_MODEL,

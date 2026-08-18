@@ -285,6 +285,69 @@ export async function getSeasonalFactorFor(unitId: string, date: Date): Promise<
   return factors[0] ?? null
 }
 
+export interface PeriodSeasonalSummary {
+  avgRevparFactor:   number
+  avgGiroFactor:     number
+  daysWithData:      number
+  daysTotal:         number
+  confidence:        'low' | 'medium' | 'high'
+  label:             'quente' | 'frio' | 'normal'
+}
+
+/**
+ * Fator sazonal médio de um período JÁ FECHADO (ex: a semana do relatório) — diferente
+ * de getUpcomingSeasonalFactors (que olha pra frente). Usado pro resumo executivo
+ * responder "esse resultado é normal pra essa época do ano, ou é um desvio real?".
+ * Sem dados suficientes (< 30 dias trailing year) retorna null.
+ */
+export async function getSeasonalFactorsForPeriod(
+  unitId: string,
+  startIso: string, // YYYY-MM-DD
+  endIsoExclusive: string, // YYYY-MM-DD
+): Promise<PeriodSeasonalSummary | null> {
+  const admin = getAdmin()
+
+  const mmdds: string[] = []
+  const cursor = new Date(startIso + 'T00:00:00Z')
+  const end = new Date(endIsoExclusive + 'T00:00:00Z')
+  while (cursor < end) {
+    mmdds.push(cursor.toISOString().slice(5, 10))
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+  if (!mmdds.length) return null
+
+  const { data } = await admin
+    .from('unit_seasonality')
+    .select('revpar_factor, giro_factor, n_observations')
+    .eq('unit_id', unitId)
+    .eq('date_key_type', 'annual_recurring')
+    .in('date_key', mmdds)
+
+  if (!data || !data.length) return null
+
+  const avgRevparFactor = data.reduce((s, r) => s + (Number(r.revpar_factor) || 1), 0) / data.length
+  const avgGiroFactor = data.reduce((s, r) => s + (Number(r.giro_factor) || 1), 0) / data.length
+  const avgObservations = data.reduce((s, r) => s + (r.n_observations ?? 0), 0) / data.length
+
+  return {
+    avgRevparFactor,
+    avgGiroFactor,
+    daysWithData: data.length,
+    daysTotal: mmdds.length,
+    confidence: avgObservations >= 3 ? 'high' : avgObservations >= 2 ? 'medium' : 'low',
+    label: avgRevparFactor > 1.15 ? 'quente' : avgRevparFactor < 0.85 ? 'frio' : 'normal',
+  }
+}
+
+/** Bloco markdown pro resumo executivo — sazonalidade do período que JÁ passou (não os próximos 30 dias). */
+export function buildPastSeasonalityBlock(summary: PeriodSeasonalSummary | null): string {
+  if (!summary) return ''
+  const confNote = summary.confidence === 'low' ? ' (confiança baixa — pouco histórico ainda)' : ''
+  return `## Sazonalidade esperada para este período (histórico da própria unidade)
+Época historicamente **${summary.label}** pra essa unidade — fator RevPAR médio ${summary.avgRevparFactor.toFixed(2)}x, fator Giro ${summary.avgGiroFactor.toFixed(2)}x sobre a média do ano${confNote}.
+> Use isso para separar "o resultado foi bom/ruim por causa da época do ano" de "o resultado foi bom/ruim por um motivo real (preço, concorrência, evento)". Se o desempenho do período bateu com o fator esperado, diga que é dentro do padrão sazonal — não é motivo de comemoração nem alarme por si só.`
+}
+
 /**
  * Bloco markdown injetado no prompt: próximos 30 dias com factor.
  * Vazio quando a unidade ainda não tem dados de sazonalidade computados.
