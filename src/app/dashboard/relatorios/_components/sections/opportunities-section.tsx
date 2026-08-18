@@ -19,7 +19,11 @@ const DIMENSION_LABEL: Record<string, string> = {
 export function OpportunitiesSection({ data }: Props) {
   const [open, setOpen] = useState(true)
 
-  if (!data.length) return null
+  // As 4 primeiras (a ação prioritária + as 3 "outras oportunidades") já aparecem no
+  // resumo executivo, no topo do relatório — aqui mostramos só o restante, pra não repetir
+  // a mesma informação duas vezes na mesma página.
+  const rest = data.slice(4)
+  if (!rest.length) return null
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
@@ -27,17 +31,17 @@ export function OpportunitiesSection({ data }: Props) {
         className="w-full flex items-center justify-between px-5 py-3 hover:bg-muted/30 transition-colors"
         onClick={() => setOpen(v => !v)}
       >
-        <h3 className="font-medium text-sm">⑦ Oportunidades e plano de ação</h3>
+        <h3 className="font-medium text-sm">⑦ Mais oportunidades identificadas</h3>
         {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
       </button>
 
       {open && (
         <div className="px-5 pb-5 space-y-2">
           <p className="text-xs text-muted-foreground mb-2">
-            Desvios de giro/RevPAR de pelo menos 25% em relação à média da própria categoria — calculados a partir dos dados do período, não gerados pela IA.
+            As oportunidades de maior impacto já aparecem no resumo executivo, no topo do relatório. Aqui estão as demais — cada uma compara o giro ou RevPAR desse recorte com o normal da própria categoria neste período (desvio de pelo menos 25%).
           </p>
 
-          {data.map((o, i) => {
+          {rest.map((o, i) => {
             const isBelow = o.direction === 'below'
             const Icon = isBelow ? TrendingDown : TrendingUp
             return (

@@ -1,5 +1,5 @@
 import type { CategoryPeriodKPIRow } from '@/lib/automo/category-period-kpis'
-import type { DataTableGiroByWeek } from '@/lib/kpis/types'
+import type { CategoryDiaSemanaKPIRow } from '@/lib/automo/category-diasemana-kpis'
 
 /**
  * Motor de detecção de oportunidades para o relatório semanal.
@@ -131,8 +131,10 @@ function detectByTurno(rows: TurnoCategoryRow[], fmtMoney: (v: number) => string
 const FDS_DAYS = new Set(['sexta-feira', 'sábado'])
 
 /**
- * Categoria × dia da semana: usa a mesma tabela giro-por-categoria×dia já calculada
- * para o chat do agente (DataTableGiroByWeek) — sem query nova.
+ * Categoria × dia da semana: usa contagem REAL de locações (queryCategoryDiaSemanaKPIs)
+ * — diferente da versão anterior, que reaproveitava DataTableGiroByWeek (giro sem
+ * contagem) e por isso não conseguia filtrar amostra pequena; um único aluguel num dia
+ * fraco podia disparar um "desvio" que era só ruído.
  *
  * Compara cada dia com a média do seu PRÓPRIO grupo (dias de semana entre si, FDS entre
  * si) — não com a média dos 7 dias juntos. Comparar com a média geral sempre aponta
@@ -141,26 +143,30 @@ const FDS_DAYS = new Set(['sexta-feira', 'sábado'])
  * (ex: quinta anormalmente fraca entre os dias de semana, ou sexta muito abaixo de sábado
  * dentro do FDS).
  */
-function detectByDiaSemana(giroByWeek: DataTableGiroByWeek[], fmtMoney: (v: number) => string): Opportunity[] {
+function detectByDiaSemana(rows: CategoryDiaSemanaKPIRow[], fmtMoney: (v: number) => string): Opportunity[] {
   const out: Opportunity[] = []
+  const byCategoria = new Map<string, CategoryDiaSemanaKPIRow[]>()
+  for (const r of rows) {
+    if (r.giro <= 0) continue
+    if (!byCategoria.has(r.categoria)) byCategoria.set(r.categoria, [])
+    byCategoria.get(r.categoria)!.push(r)
+  }
 
-  for (const entry of giroByWeek) {
-    for (const [categoria, days] of Object.entries(entry)) {
-      const entries = Object.entries(days).filter(([, v]) => v.giro > 0)
-      if (entries.length < 2) continue
+  for (const [categoria, catRows] of byCategoria) {
+    if (catRows.length < 2) continue
 
-      const groups = [
-        entries.filter(([day]) => FDS_DAYS.has(day)),
-        entries.filter(([day]) => !FDS_DAYS.has(day)),
-      ]
+    const groups = [
+      catRows.filter((r) => FDS_DAYS.has(r.diaSemana)),
+      catRows.filter((r) => !FDS_DAYS.has(r.diaSemana)),
+    ]
 
-      for (const group of groups) {
-        if (group.length < 2) continue // precisa de ao menos 2 dias no mesmo grupo para comparar
-        const avgGiro = group.reduce((s, [, v]) => s + v.giro, 0) / group.length
-        for (const [dayName, v] of group) {
-          // Sem contagem de locações aqui — usa MIN_SAMPLE=0 (giro>0 já indica que houve alguma locação)
-          pushIfSignificant(out, 'dia_semana', categoria, dayName, 'giro', v.giro, avgGiro, MIN_SAMPLE, fmtMoney)
-        }
+    for (const group of groups) {
+      if (group.length < 2) continue // precisa de ao menos 2 dias no mesmo grupo para comparar
+      const totalLocacoes = group.reduce((s, r) => s + r.locacoes, 0)
+      if (totalLocacoes < MIN_SAMPLE) continue // grupo inteiro com poucas locações — ruído, não padrão
+      const avgGiro = group.reduce((s, r) => s + r.giro, 0) / group.length
+      for (const r of group) {
+        pushIfSignificant(out, 'dia_semana', categoria, r.diaSemana, 'giro', r.giro, avgGiro, r.locacoes, fmtMoney)
       }
     }
   }
@@ -170,14 +176,14 @@ function detectByDiaSemana(giroByWeek: DataTableGiroByWeek[], fmtMoney: (v: numb
 export function detectOpportunities(
   categoryPeriodKPIs: CategoryPeriodKPIRow[],
   turnoCategoryTable: TurnoCategoryRow[],
-  giroByWeek: DataTableGiroByWeek[],
+  diaSemanaRows: CategoryDiaSemanaKPIRow[],
   fmtMoney: (v: number) => string,
   maxItems = 8,
 ): Opportunity[] {
   const all = [
     ...detectByPeriodo(categoryPeriodKPIs, fmtMoney),
     ...detectByTurno(turnoCategoryTable, fmtMoney),
-    ...detectByDiaSemana(giroByWeek, fmtMoney),
+    ...detectByDiaSemana(diaSemanaRows, fmtMoney),
   ]
 
   return all

@@ -23,6 +23,7 @@ import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { queryDemandPattern, buildDemandPatternBlock } from '@/lib/automo/demand-pattern'
 import { queryCategoryTurnoKPIs } from '@/lib/automo/category-turno-kpis'
 import { queryCategoryPeriodKPIs } from '@/lib/automo/category-period-kpis'
+import { queryCategoryDiaSemanaKPIs } from '@/lib/automo/category-diasemana-kpis'
 import { detectOpportunities } from '@/lib/reports/opportunities'
 
 const MONTH_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
@@ -168,6 +169,7 @@ export async function generateWeeklyReport(
       monthAgoKpisResult,
       categoryPeriodResult,
       pastSeasonalResult,
+      diaSemanaResult,
     ] = await Promise.allSettled([
       fetchCompanyKPIsFromAutomo(unitSlug, startDDMM, endDDMM),
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(prevStartStr), isoToDDMMYYYY(prevEndStr)),
@@ -245,6 +247,7 @@ export async function generateWeeklyReport(
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(moStart.toISOString().slice(0, 10)), isoToDDMMYYYY(moEnd.toISOString().slice(0, 10))),
       queryCategoryPeriodKPIs(unitSlug, startDDMM, endDDMM),
       getSeasonalFactorsForPeriod(unit.id, periodStart, new Date(new Date(periodEnd + 'T12:00:00Z').getTime() + 86400000).toISOString().slice(0, 10)),
+      queryCategoryDiaSemanaKPIs(unitSlug, startDDMM, endDDMM),
     ])
 
     const guardrailsResult = await admin
@@ -276,6 +279,7 @@ export async function generateWeeklyReport(
     const monthAgoKpis = monthAgoKpisResult.status === 'fulfilled' ? monthAgoKpisResult.value : null
     const categoryPeriodKPIs = categoryPeriodResult.status === 'fulfilled' ? categoryPeriodResult.value : []
     const pastSeasonalSummary = pastSeasonalResult.status === 'fulfilled' ? pastSeasonalResult.value : null
+    const diaSemanaRows = diaSemanaResult.status === 'fulfilled' ? diaSemanaResult.value : []
     const guardrailsCount = guardrailsResult.count ?? 0
 
     // Recomputa gaps usando snapshots existentes (análise já feita na aba Concorrentes).
@@ -710,12 +714,13 @@ export async function generateWeeklyReport(
     const { formatMoney: fmtMoney } = makeCurrencyFormatter(unitSlug)
     const unitStructureBlock = buildUnitStructureBlock(suiteAvail, [], [])
 
-    // Oportunidades por categoria × período/turno/dia da semana — calculadas a partir de
-    // dados já buscados (sem query extra), com link direto pro Agente RM em cada item.
+    // Oportunidades por categoria × período/turno/dia da semana, com link direto pro
+    // Agente RM em cada item. dia_semana usa contagem real de locações (diaSemanaRows) —
+    // sem isso, um único aluguel num dia fraco podia disparar um "desvio" de puro ruído.
     const opportunities: WeeklyReportData['opportunities'] = detectOpportunities(
       categoryPeriodKPIs,
       turnoCategoryRows,
-      kpis?.DataTableGiroByWeek ?? [],
+      diaSemanaRows,
       fmtMoney,
     ).map(o => ({
       dimension: o.dimension,

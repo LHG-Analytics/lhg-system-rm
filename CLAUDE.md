@@ -1367,6 +1367,15 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Retry da chamada de IA:** 1 tentativa → 2 tentativas — antes, qualquer falha transitória de API já derrubava pro fallback determinístico sem 2ª chance
   - **Armadilha:** `unit_seasonality` só tem dados após `recomputeSeasonality` rodar (cron semanal, domingo) por pelo menos 30 dias de trailing year — unidades novas ou recém-migradas não têm sazonalidade histórica ainda; `getSeasonalFactorsForPeriod` retorna `null` graciosamente nesse caso (bloco simplesmente não aparece no prompt)
 
+- **fix(relatorios): contagem real de locações pra dia da semana + texto de metodologia desatualizado + seção de oportunidades confusa** ✅ 2026-07-28
+  - **Bug de confiabilidade achado ao auditar:** `detectByDiaSemana` filtrava amostra mínima passando `MIN_SAMPLE` como o próprio valor de amostra (`sample < MIN_SAMPLE` com `sample = MIN_SAMPLE` nunca é verdadeiro) — o filtro nunca rodava de verdade. Um único aluguel num dia fraco podia gerar um "desvio de 60%" que era só ruído estatístico
+  - `src/lib/automo/category-diasemana-kpis.ts`: NOVO — `queryCategoryDiaSemanaKPIs` traz giro **com contagem real de locações** por categoria × dia da semana (mesma CTE de suítes-dia por categoria×dow já usada em `queryWeekTables`). Substitui o uso de `DataTableGiroByWeek` (do chat do agente) nesse motor — aquele tipo só tem a taxa de giro, sem contagem, por isso nunca dava pra filtrar amostra de verdade
+  - `detectByDiaSemana` agora filtra em 2 níveis: total de locações do GRUPO (FDS ou semana) ≥ 3, e locações do PRÓPRIO DIA ≥ 3 — antes nenhum dos dois filtrava
+  - **Metodologia do Outlook desatualizada:** o texto "mês atual = projeção do ERP com base no ritmo diário acumulado × dias restantes" descrevia o método antigo (extrapolação linear) — desde a previsão ponderada por dia da semana isso mudou. Texto do `outlook-section.tsx` atualizado pra descrever o método real (giro/ticket das últimas 4 ocorrências de cada dia × suítes disponíveis)
+  - **Seção "⑦ Oportunidades" redesenhada:** título e descrição confundiam por repetir a mesma linguagem de "plano de ação" do resumo executivo (que já mostra os 4 principais) e por expor jargão técnico ("não gerados pela IA") sem explicar o porquê. Agora mostra só os itens 5+ (`data.slice(4)`, pula os já destacados no topo), renomeada pra "Mais oportunidades identificadas", com descrição em linguagem direta sobre o que cada item significa
+  - **Armadilha:** `queryCategoryDiaSemanaKPIs` faz uma query própria — não elimina `kpis?.DataTableGiroByWeek` de outros usos (chat do agente continua usando a versão antiga, que não precisa de contagem pra esse propósito)
+
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)

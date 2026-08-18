@@ -88,9 +88,12 @@ export function OutlookSection({ data }: Props) {
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                Metodologia: mês atual = projeção do ERP com base no ritmo diário acumulado × dias restantes.
-                Meses seguintes = orçamento ajustado pelo ritmo atual com amortecimento 50% → 25%
-                (desvio não é extrapolado — evita superestimar anomalias pontuais).
+                Metodologia: mês atual = para cada dia que falta, usa o giro e o ticket médio das
+                últimas 4 ocorrências daquele mesmo dia da semana (ex: últimos 4 sábados), aplicados
+                às suítes já sabidamente disponíveis nesse dia futuro — não é mais uma média linear
+                dos dias já passados. Meses seguintes = orçamento ajustado pelo ritmo atual do mês
+                corrente, com amortecimento 50% → 25% (desvio não é extrapolado — evita superestimar
+                anomalias pontuais).
               </p>
             </div>
           )}
