@@ -19,7 +19,9 @@ export function ExecutiveSummary({ data, opportunities, aiSummary }: Props) {
   }
   const config = toneConfig[data.tone]
   const Icon = config.icon
-  const topOpportunities = opportunities.slice(0, 3)
+  // opportunities[0] já é a base da "priorityAction" acima — mostrar de novo seria repetir
+  // a mesma frase duas vezes. As "outras oportunidades" começam do índice 1.
+  const restOpportunities = opportunities.slice(1, 4)
 
   return (
     <div className="space-y-3">
@@ -53,7 +55,7 @@ export function ExecutiveSummary({ data, opportunities, aiSummary }: Props) {
         )}
       </div>
 
-      {(data.priorityAction || topOpportunities.length > 0) && (
+      {(data.priorityAction || restOpportunities.length > 0) && (
         <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3">
           <p className="text-xs font-semibold text-primary uppercase tracking-wide">Plano de ação — o que fazer agora</p>
 
@@ -61,7 +63,7 @@ export function ExecutiveSummary({ data, opportunities, aiSummary }: Props) {
             <div className="flex items-start gap-3">
               <ArrowRight className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">{data.priorityAction}</p>
+                <span className="text-sm font-medium">{data.priorityAction}</span>
               </div>
             </div>
           )}
@@ -81,16 +83,17 @@ export function ExecutiveSummary({ data, opportunities, aiSummary }: Props) {
             </Link>
           )}
 
-          {topOpportunities.length > 0 && (
+          {restOpportunities.length > 0 && (
             <div className="space-y-1.5 pt-1">
-              {topOpportunities.map((o, i) => {
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Outras oportunidades</p>
+              {restOpportunities.map((o, i) => {
                 const isBelow = o.direction === 'below'
                 const DirIcon = isBelow ? TrendingDown : TrendingUp
                 return (
                   <div key={i} className="flex items-start gap-2.5 rounded-lg bg-background/60 border border-border/60 p-2.5">
                     <span className="flex items-center justify-center size-5 rounded-full bg-muted text-[11px] font-semibold shrink-0 mt-0.5">{i + 1}</span>
                     <DirIcon className={cn('w-3.5 h-3.5 mt-1 shrink-0', isBelow ? 'text-amber-600' : 'text-emerald-600')} />
-                    <p className="text-xs flex-1 min-w-0">{o.suggestion}</p>
+                    <p className="text-xs flex-1 min-w-0"><span className="font-medium">{o.categoria}</span> — {o.suggestion}</p>
                     <Link href={o.agentPromptLink} className="text-[11px] font-medium text-primary hover:underline shrink-0 whitespace-nowrap mt-0.5">
                       Analisar →
                     </Link>

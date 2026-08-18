@@ -727,7 +727,7 @@ export async function generateWeeklyReport(
       agentPromptLink: `/dashboard/agente?unit=${unitSlug}&q=${encodeURIComponent(`[Relatório ${startDDMM}–${endDDMM}] ${o.agentPrompt}`)}`,
     }))
     const opportunitiesBlock = opportunities.length > 0
-      ? `## Oportunidades detectadas (top ${opportunities.length})\n` + opportunities.map(o => `- ${o.suggestion}`).join('\n')
+      ? `## Oportunidades detectadas (top ${opportunities.length})\n` + opportunities.map(o => `- ${o.categoria} — ${o.suggestion}`).join('\n')
       : null
 
     // Contexto analítico
@@ -881,8 +881,12 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
         ? `Receita ${fmtMoney(currentSnapshot.receita)}, ${currentSnapshot.locacoes} locações`
         : null,
     ].filter(Boolean) as string[]
+    // Não repete o texto de opportunities[0] aqui — ele já aparece como priorityAction
+    // abaixo. O diagnosis do fallback só aponta ONDE está o maior desvio (categoria +
+    // recorte), o texto completo da sugestão fica só na ação prioritária.
+    const dimensionLabelPt: Record<string, string> = { periodo: 'período', turno: 'turno', dia_semana: 'dia' }
     const fallbackDiagnosis = currentSnapshot.revpar > 0
-      ? `RevPAR de ${fmtMoney(currentSnapshot.revpar)} no período${fallbackRevparDelta !== null ? ` — ${fallbackRevparDelta >= 0 ? 'alta' : 'queda'} de ${Math.abs(fallbackRevparDelta).toFixed(1)}% vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})` : ''}.${opportunities.length > 0 ? ` A oportunidade de maior impacto identificada: ${opportunities[0].suggestion}` : ' Não foi possível gerar a leitura interpretativa completa — os dados numéricos abaixo estão corretos, mas a IA não respondeu a tempo.'}`
+      ? `RevPAR de ${fmtMoney(currentSnapshot.revpar)} no período${fallbackRevparDelta !== null ? ` — ${fallbackRevparDelta >= 0 ? 'alta' : 'queda'} de ${Math.abs(fallbackRevparDelta).toFixed(1)}% vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})` : ''}.${opportunities.length > 0 ? ` Maior desvio do período: ${opportunities[0].categoria}, ${dimensionLabelPt[opportunities[0].dimension] ?? opportunities[0].dimension} "${opportunities[0].label}" — detalhes na ação prioritária abaixo.` : ' Não foi possível gerar a leitura interpretativa completa — os dados numéricos abaixo estão corretos, mas a IA não respondeu a tempo.'}`
       : 'Sem dados suficientes para o período.'
 
     // Link genérico sempre presente — garante que todo relatório tem caminho para o agente
@@ -892,7 +896,7 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
       headline: `${fmtPeriodStart}–${fmtPeriodEnd}: RevPAR ${fmtMoney(currentSnapshot.revpar)}`,
       diagnosis: fallbackDiagnosis,
       keyPoints: fallbackKeyPoints.length > 0 ? fallbackKeyPoints : ['Dados do período coletados'],
-      priorityAction: opportunities[0]?.suggestion ?? '',
+      priorityAction: opportunities[0] ? `${opportunities[0].categoria} — ${opportunities[0].suggestion}` : '',
       watchNextWeek: '',
       tone: fallbackRevparDelta !== null && fallbackRevparDelta > 2 ? 'positive' : fallbackRevparDelta !== null && fallbackRevparDelta < -3 ? 'warning' : 'neutral',
       actionType: opportunities.length > 0 ? 'price_proposal' : 'none',

@@ -62,9 +62,11 @@ function pushIfSignificant(
   const valueLabel = metric === 'giro' ? value.toFixed(2) : fmtMoney(value)
   const benchmarkLabel = metric === 'giro' ? benchmark.toFixed(2) : fmtMoney(benchmark)
 
+  // Sem o nome da categoria aqui de propósito — quem renderiza (UI/e-mail) já mostra
+  // a categoria como rótulo separado; incluir aqui duplicava o nome duas vezes.
   const suggestion = direction === 'below'
-    ? `${categoria} — ${label}: ${metricLabel} ${dimLabel} é ${Math.abs(gapPct).toFixed(0)}% menor que a média da categoria (${valueLabel} vs ${benchmarkLabel}). Vale avaliar promoção, desconto extra ou reposicionamento de preço nesse recorte para estimular demanda.`
-    : `${categoria} — ${label}: ${metricLabel} ${dimLabel} é ${Math.abs(gapPct).toFixed(0)}% maior que a média da categoria (${valueLabel} vs ${benchmarkLabel}). A demanda já está forte — há espaço para reajustar o preço nesse recorte sem perder volume.`
+    ? `${label}: ${metricLabel} ${dimLabel} é ${Math.abs(gapPct).toFixed(0)}% menor que a referência de comparação (${valueLabel} vs ${benchmarkLabel}). Vale avaliar promoção, desconto extra ou reposicionamento de preço nesse recorte para estimular demanda.`
+    : `${label}: ${metricLabel} ${dimLabel} é ${Math.abs(gapPct).toFixed(0)}% maior que a referência de comparação (${valueLabel} vs ${benchmarkLabel}). A demanda já está forte — há espaço para reajustar o preço nesse recorte sem perder volume.`
 
   const agentPrompt = direction === 'below'
     ? `Analisar por que ${categoria} tem ${metricLabel.toLowerCase()} mais baixo que a média ${dimLabel} (${label}) e propor uma ação para reduzir esse gap.`
@@ -123,25 +125,42 @@ function detectByTurno(rows: TurnoCategoryRow[], fmtMoney: (v: number) => string
   return out
 }
 
+// FDS = sexta+sábado (mesma convenção usada em toda a precificação — day-band-grid.ts).
+// Domingo entra em "semana": nas motéis o padrão de domingo já se parece mais com dia
+// de semana do que com sexta/sábado.
+const FDS_DAYS = new Set(['sexta-feira', 'sábado'])
+
 /**
  * Categoria × dia da semana: usa a mesma tabela giro-por-categoria×dia já calculada
  * para o chat do agente (DataTableGiroByWeek) — sem query nova.
+ *
+ * Compara cada dia com a média do seu PRÓPRIO grupo (dias de semana entre si, FDS entre
+ * si) — não com a média dos 7 dias juntos. Comparar com a média geral sempre aponta
+ * "sábado/sexta estão acima da média" pra toda categoria, o que já é óbvio e não é uma
+ * oportunidade de verdade — o sinal útil é um dia fora do padrão DENTRO do próprio grupo
+ * (ex: quinta anormalmente fraca entre os dias de semana, ou sexta muito abaixo de sábado
+ * dentro do FDS).
  */
 function detectByDiaSemana(giroByWeek: DataTableGiroByWeek[], fmtMoney: (v: number) => string): Opportunity[] {
   const out: Opportunity[] = []
 
   for (const entry of giroByWeek) {
     for (const [categoria, days] of Object.entries(entry)) {
-      const entries = Object.entries(days)
+      const entries = Object.entries(days).filter(([, v]) => v.giro > 0)
       if (entries.length < 2) continue
-      const giros = entries.map(([, v]) => v.giro).filter((g) => g > 0)
-      if (giros.length < 2) continue
-      const avgGiro = giros.reduce((s, g) => s + g, 0) / giros.length
 
-      for (const [dayName, v] of entries) {
-        if (v.giro <= 0) continue
-        // Sem contagem de locações aqui — usa MIN_SAMPLE=0 (giro>0 já indica que houve alguma locação)
-        pushIfSignificant(out, 'dia_semana', categoria, dayName, 'giro', v.giro, avgGiro, MIN_SAMPLE, fmtMoney)
+      const groups = [
+        entries.filter(([day]) => FDS_DAYS.has(day)),
+        entries.filter(([day]) => !FDS_DAYS.has(day)),
+      ]
+
+      for (const group of groups) {
+        if (group.length < 2) continue // precisa de ao menos 2 dias no mesmo grupo para comparar
+        const avgGiro = group.reduce((s, [, v]) => s + v.giro, 0) / group.length
+        for (const [dayName, v] of group) {
+          // Sem contagem de locações aqui — usa MIN_SAMPLE=0 (giro>0 já indica que houve alguma locação)
+          pushIfSignificant(out, 'dia_semana', categoria, dayName, 'giro', v.giro, avgGiro, MIN_SAMPLE, fmtMoney)
+        }
       }
     }
   }
