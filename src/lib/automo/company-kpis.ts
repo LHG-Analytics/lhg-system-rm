@@ -488,7 +488,7 @@ async function queryTotalRevOcc(
   statusFilter = "AND la.fimocupacaotipo = 'FINALIZADA'",
   dateCol = 'la.datainicialdaocupacao',
   weekdays?: number[],
-): Promise<{ totalRevpar: number; totalOccupancyRate: number }> {
+): Promise<{ totalRevpar: number; totalOccupancyRate: number; rentalRevenue: number; occupiedTime: number; totalSuiteDias: number }> {
   const weekdayFilter = buildWeekdayFilterSQL(weekdays, dateCol)
   const sql = `
     WITH ${cteBaseSuiteDays(catIds, '$1', '$2', weekdays)},
@@ -519,7 +519,7 @@ async function queryTotalRevOcc(
   const availableTime    = totalSuiteDias * 86_400
   const totalOccupancyRate = availableTime > 0 ? +((occupiedTime / availableTime) * 100).toFixed(2) : 0
 
-  return { totalRevpar, totalOccupancyRate }
+  return { totalRevpar, totalOccupancyRate, rentalRevenue, occupiedTime, totalSuiteDias }
 }
 
 // ─── Period Mix (inline — mesmos params que queryBigNumbers) ─────────────────
@@ -711,15 +711,19 @@ export async function fetchCompanyKPIsFromAutomo(
   ])
   const remainder = computeWeekdayWeightedRemainder(weekdayBasis, futureSuiteDaysByDow)
 
-  const forecastValue   = monthBN.totalAllValue + remainder.remainingValue
-  const forecastRentals = monthBN.totalRentals  + remainder.remainingLocacoes
-  const forecastSuiteDias = monthBN.totalSuiteDias + remainder.remainingSuiteDias
+  const forecastValue          = monthBN.totalAllValue      + remainder.remainingValue
+  const forecastRentals        = monthBN.totalRentals       + remainder.remainingLocacoes
+  const forecastSuiteDias      = monthBN.totalSuiteDias     + remainder.remainingSuiteDias
+  // RevPAR/Ocupação/TMO previstos: mesmo princípio, mas usando a receita de locação pura
+  // (valorliquidolocacao) e o tempo ocupado — bases diferentes de faturamento/giro, por
+  // isso vêm de monthRevOcc (elapsed) em vez de monthBN.
+  const forecastRentalRevenue  = monthRevOcc.rentalRevenue  + remainder.remainingRentalRevenue
+  const forecastOccupiedSec    = monthRevOcc.occupiedTime   + remainder.remainingOccupiedSec
 
-  // RevPAR/Ocupação forecast: ainda usam a taxa corrente do mês (não ponderada por dia da
-  // semana) — dependem de uma base de receita diferente (valorliquidolocacao/tempo ocupado)
-  // que não está coberta por esta primeira iteração da previsão ponderada.
-  const revparForecast     = +monthRevOcc.totalRevpar.toFixed(2)
-  const occupancyForecast  = +monthRevOcc.totalOccupancyRate.toFixed(2)
+  const revparForecast     = forecastSuiteDias > 0 ? +(forecastRentalRevenue / forecastSuiteDias).toFixed(2) : 0
+  const availableSecForecast = forecastSuiteDias * 86_400
+  const occupancyForecast  = availableSecForecast > 0 ? +((forecastOccupiedSec / availableSecForecast) * 100).toFixed(2) : 0
+  const tmoForecast         = forecastRentals > 0 ? secondsToHMS(forecastOccupiedSec / forecastRentals) : '00:00:00'
 
   const monthlyForecast: CompanyBigNumbers['monthlyForecast'] = {
     totalAllValueForecast:              +forecastValue.toFixed(2),
@@ -728,7 +732,7 @@ export async function fetchCompanyKPIsFromAutomo(
     totalAllTrevparForecast:            forecastSuiteDias > 0 ? +(forecastValue / forecastSuiteDias).toFixed(2) : 0,
     totalAllRevparForecast:             revparForecast,
     totalAllGiroForecast:               forecastSuiteDias > 0 ? +(forecastRentals / forecastSuiteDias).toFixed(2) : 0,
-    totalAverageOccupationTimeForecast: monthBN.avgOccTime,
+    totalAverageOccupationTimeForecast: tmoForecast,
     totalAllOccupancyRateForecast:      occupancyForecast,
   }
 
