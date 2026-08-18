@@ -87,7 +87,8 @@ function buildEmailHtml(params: {
             <tr>
               <td style="padding:14px 16px;">
                 <p style="margin:0;font-size:14px;font-weight:600;color:#18181b;">${summary.headline}</p>
-                ${summary.keyPoints.map((p) => `<p style="margin:6px 0 0 0;font-size:13px;color:#3f3f46;">• ${p}</p>`).join('')}
+                ${summary.diagnosis ? `<p style="margin:8px 0 0 0;font-size:13px;color:#3f3f46;line-height:1.5;">${summary.diagnosis}</p>` : ''}
+                ${summary.keyPoints.map((p) => `<p style="margin:6px 0 0 0;font-size:12px;color:#71717a;">• ${p}</p>`).join('')}
               </td>
             </tr>
           </table>
@@ -115,6 +116,13 @@ function buildEmailHtml(params: {
           <table role="presentation" width="100%">
             ${top3.map(opportunityItem).join('')}
           </table>
+        </td>
+      </tr>` : ''}
+
+      ${summary.watchNextWeek ? `
+      <tr>
+        <td style="padding:0 28px 16px 28px;">
+          <p style="margin:0;font-size:12px;color:#71717a;"><strong style="color:#3f3f46;">Observar na próxima semana:</strong> ${summary.watchNextWeek}</p>
         </td>
       </tr>` : ''}
 
@@ -191,7 +199,7 @@ export async function sendWeeklyReportEmail(params: SendWeeklyReportEmailParams)
     periodLabel,
     reportUrl,
     summary: params.reportData.executiveSummary,
-    opportunities: params.reportData.opportunities,
+    opportunities: params.reportData.opportunities ?? [],
     kpis: params.reportData.kpis,
     fmtMoney,
   })

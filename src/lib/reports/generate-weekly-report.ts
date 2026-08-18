@@ -846,20 +846,24 @@ PERÍODOS DE REFERÊNCIA (cite SEMPRE ao mencionar variações — use APENAS o 
 - Semana anterior (mesma duração): ${fmtPrevStart} a ${fmtPrevEnd}
 - Mesmo período do ano anterior: ${fmtLyStart} a ${fmtLyEnd}
 
+Você é um especialista de Revenue Management experiente explicando o período para o DONO do negócio — alguém sem tempo de juntar dados na mão. Ele não quer uma lista de números soltos, quer entender o que aconteceu, por que aconteceu, e o que fazer. Interprete, não apenas relate.
+
 REGRAS INVIOLÁVEIS para o JSON:
 1. "headline": inclua o período atual em DD/MM e um dado numérico chave.
-2. "keyPoints": termine cada bullet com o período de referência. Use "vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})" ou "vs ano anterior (${fmtLyStart}–${fmtLyEnd})". NUNCA use siglas como "LY" ou "yoy".
-3. "priorityAction": use dados REAIS. NUNCA sugira variação > ${maxVar}% — se o mercado exigir mais, diga "ajustar em ${maxVar}% agora e reavaliar". Pode propor novo tier de dia se o padrão horário justificar. Se houver "Oportunidades detectadas" no contexto, baseie a priorityAction na de maior impacto — não invente uma oportunidade diferente das listadas.
-4. "agentPrompt": instrução cirúrgica (máx 280 chars) que NÃO mencione percentual fixo — cite categorias específicas, padrão de dia (semana vs FDS) e objetivo de KPI. Exemplos: "Analise RevPAR por categoria e reduza seletivamente semana para categorias com giro <2 e eleve FDS premium 3-5%." NÃO escreva "ajuste de até X%" — isso faz o agente aplicar o mesmo % em tudo. SEMPRE preencha este campo — nunca deixe null.
-5. "actionType": "price_proposal" | "discount_proposal" | "agent_config" | "none". Use "none" SOMENTE se os KPIs estão dentro da meta E sem variação relevante — na prática quase sempre há uma ação útil.
+2. "diagnosis": 3 a 5 frases interpretando o período como um especialista — não apenas cite números, explique a causa provável e a direção (melhorando/estável/piorando). Compare com semana anterior, mês anterior e ano anterior quando relevante (use "vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})" etc — NUNCA siglas como "LY" ou "yoy"). Se houver "Oportunidades detectadas" no contexto, cite a mais relevante pelo nome (categoria + recorte específico) e explique a causa provável do desvio.
+3. "keyPoints": 2 bullets curtos e factuais (evidência numérica de apoio ao diagnosis) — não repita o que já está no diagnosis, complemente.
+4. "priorityAction": use dados REAIS. NUNCA sugira variação > ${maxVar}% — se o mercado exigir mais, diga "ajustar em ${maxVar}% agora e reavaliar". Pode propor novo tier de dia se o padrão horário justificar. Se houver "Oportunidades detectadas" no contexto, baseie a priorityAction na de maior impacto — não invente uma oportunidade diferente das listadas. NUNCA proponha um valor percentual específico de reajuste (ex: "reduza 8%") — isso é calculado depois no Agente RM respeitando guardrails; fale em direção e recorte (categoria, dia, período), não em número.
+5. "watchNextWeek": 1-2 frases sobre o que merece atenção na próxima semana (evento futuro, tendência a confirmar, risco a monitorar). Se não houver nada específico, diga o que acompanhar da própria oportunidade prioritária.
+6. "agentPrompt": instrução cirúrgica (máx 280 chars) que NÃO mencione percentual fixo — cite categorias específicas, padrão de dia (semana vs FDS) e objetivo de KPI. Exemplos: "Analise RevPAR por categoria e reduza seletivamente semana para categorias com giro <2 e eleve FDS premium 3-5%." NÃO escreva "ajuste de até X%" — isso faz o agente aplicar o mesmo % em tudo. SEMPRE preencha este campo — nunca deixe null.
+7. "actionType": "price_proposal" | "discount_proposal" | "agent_config" | "none". Use "none" SOMENTE se os KPIs estão dentro da meta E sem variação relevante — na prática quase sempre há uma ação útil.
 
 Retorne APENAS o JSON (sem markdown fence, sem texto extra):
 {
   "headline": "string",
-  "keyPoints": ["string", "string", "string"],
-  "mainWin": "string com período de referência",
-  "mainConcern": "string com período de referência",
-  "priorityAction": "string dentro de ${maxVar}%",
+  "diagnosis": "string — 3 a 5 frases, leitura de especialista",
+  "keyPoints": ["string", "string"],
+  "priorityAction": "string dentro de ${maxVar}%, sem número exato de reajuste",
+  "watchNextWeek": "string — 1 a 2 frases",
   "tone": "positive|neutral|warning",
   "actionType": "price_proposal|discount_proposal|agent_config|none",
   "agentPrompt": "string máx 280 chars",
@@ -870,9 +874,6 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
     // Fallback data-driven: usa KPIs reais quando a IA falha — nunca "Dados coletados com sucesso"
     const fallbackRevparDelta = prevSnapshot ? deltaPct(currentSnapshot.revpar, prevSnapshot.revpar) : null
     const fallbackKeyPoints = [
-      currentSnapshot.revpar > 0
-        ? `RevPAR ${fmtMoney(currentSnapshot.revpar)}${fallbackRevparDelta !== null ? ` (${fallbackRevparDelta >= 0 ? '+' : ''}${fallbackRevparDelta.toFixed(1)}% vs semana anterior ${fmtPrevStart}–${fmtPrevEnd})` : ''}`
-        : 'Sem dados de RevPAR para o período',
       currentSnapshot.giro > 0
         ? `Giro ${currentSnapshot.giro.toFixed(2)} loc/suíte${prevSnapshot ? ` vs ${prevSnapshot.giro.toFixed(2)} na semana anterior` : ''}`
         : null,
@@ -880,23 +881,22 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
         ? `Receita ${fmtMoney(currentSnapshot.receita)}, ${currentSnapshot.locacoes} locações`
         : null,
     ].filter(Boolean) as string[]
+    const fallbackDiagnosis = currentSnapshot.revpar > 0
+      ? `RevPAR de ${fmtMoney(currentSnapshot.revpar)} no período${fallbackRevparDelta !== null ? ` — ${fallbackRevparDelta >= 0 ? 'alta' : 'queda'} de ${Math.abs(fallbackRevparDelta).toFixed(1)}% vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})` : ''}.${opportunities.length > 0 ? ` A oportunidade de maior impacto identificada: ${opportunities[0].suggestion}` : ' Não foi possível gerar a leitura interpretativa completa — os dados numéricos abaixo estão corretos, mas a IA não respondeu a tempo.'}`
+      : 'Sem dados suficientes para o período.'
 
     // Link genérico sempre presente — garante que todo relatório tem caminho para o agente
     const genericAgentLink = `/dashboard/agente?unit=${unitSlug}&q=${encodeURIComponent(`[Relatório ${fmtPeriodStart}–${fmtPeriodEnd}] Analise os KPIs desta semana, compare com a semana anterior e sugira a ação de maior impacto para o próximo período.`)}`
 
     let executiveSummary: WeeklyReportData['executiveSummary'] = {
       headline: `${fmtPeriodStart}–${fmtPeriodEnd}: RevPAR ${fmtMoney(currentSnapshot.revpar)}`,
+      diagnosis: fallbackDiagnosis,
       keyPoints: fallbackKeyPoints.length > 0 ? fallbackKeyPoints : ['Dados do período coletados'],
-      mainWin: prevSnapshot && fallbackRevparDelta !== null && fallbackRevparDelta > 0
-        ? `RevPAR subiu ${fallbackRevparDelta.toFixed(1)}% vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})`
-        : '',
-      mainConcern: prevSnapshot && fallbackRevparDelta !== null && fallbackRevparDelta < -3
-        ? `RevPAR recuou ${Math.abs(fallbackRevparDelta).toFixed(1)}% vs semana anterior — avaliar ajuste de preços`
-        : '',
-      priorityAction: '',
+      priorityAction: opportunities[0]?.suggestion ?? '',
+      watchNextWeek: '',
       tone: fallbackRevparDelta !== null && fallbackRevparDelta > 2 ? 'positive' : fallbackRevparDelta !== null && fallbackRevparDelta < -3 ? 'warning' : 'neutral',
-      actionType: 'none',
-      agentPromptLink: genericAgentLink,
+      actionType: opportunities.length > 0 ? 'price_proposal' : 'none',
+      agentPromptLink: opportunities[0]?.agentPromptLink ?? genericAgentLink,
     }
     let aiLeverageComment = ''
 
@@ -907,7 +907,7 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
           model: ANALYSIS_MODEL,
           system: reportSystemPrompt,
           messages: [{ role: 'user', content: summaryContextBlocks ? `${summaryContextBlocks}\n\n---\n\n${weeklyReportUserMsg}` : weeklyReportUserMsg }],
-          maxOutputTokens: 800,
+          maxOutputTokens: 1800,
         })
         const stripped = text
           .replace(/<think>[\s\S]*?<\/think>/gi, '')
@@ -922,10 +922,10 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
           : null
         executiveSummary = {
           headline: parsed.headline ?? executiveSummary.headline,
+          diagnosis: parsed.diagnosis ?? executiveSummary.diagnosis,
           keyPoints: parsed.keyPoints ?? executiveSummary.keyPoints,
-          mainWin: parsed.mainWin ?? '',
-          mainConcern: parsed.mainConcern ?? '',
           priorityAction: parsed.priorityAction ?? '',
+          watchNextWeek: parsed.watchNextWeek ?? '',
           tone: parsed.tone ?? 'neutral',
           actionType: parsed.actionType ?? 'none',
           // Específico quando a IA gerou agentPrompt; genérico como garantia mínima

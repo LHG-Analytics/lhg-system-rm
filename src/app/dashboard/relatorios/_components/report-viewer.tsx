@@ -275,13 +275,13 @@ export function ReportViewer({ report, loading, onGenerateNow, onRetry, unitSlug
         </Button>
       </div>
 
-      <ExecutiveSummary data={data.executiveSummary} aiSummary={report.ai_summary} />
+      <ExecutiveSummary data={data.executiveSummary} opportunities={data.opportunities ?? []} aiSummary={report.ai_summary} />
       {data.evolution.hasPreviousReport && <EvolutionBanner data={data.evolution} />}
       <BudgetTracking data={data.budgetTracking} />
       <KpisSection data={data.kpis} />
       <DiscountsSection data={data.discounts} />
       <DemandSection data={data.demand} />
-      <OpportunitiesSection data={data.opportunities} />
+      <OpportunitiesSection data={data.opportunities ?? []} />
       <CompetitorsSection data={data.competitors} />
       <OutlookSection data={data.outlook} />
       <IntelligenceSection data={data.intelligence} />

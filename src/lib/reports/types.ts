@@ -20,10 +20,12 @@ export interface WeeklyReportData {
 
   executiveSummary: {
     headline: string
+    /** Leitura interpretativa (3-5 frases) — o que aconteceu e por quê, como um especialista de RM explicaria pro dono do negócio. Opcional só por compat com relatórios salvos antes desse campo existir. */
+    diagnosis?: string
     keyPoints: string[]
-    mainWin: string
-    mainConcern: string
     priorityAction: string
+    /** O que observar/monitorar na próxima semana. Opcional por compat com relatórios antigos. */
+    watchNextWeek?: string
     tone: 'positive' | 'neutral' | 'warning'
     /** Tipo de ação prioritária para gerar o link correto */
     actionType: 'price_proposal' | 'discount_proposal' | 'agent_config' | 'none'

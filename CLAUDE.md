@@ -1338,6 +1338,18 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Variáveis necessárias em produção:** `RESEND_API_KEY` e `RESEND_FROM_EMAIL` (domínio já verificado pelo usuário no Resend antes desta entrega)
   - **Armadilha:** `queryPeriodMix`/`queryCategoryPeriodKPIs` não são afetados por esta mudança — só a previsão de fechamento (mês corrente) e o relatório semanal foram tocados
 
+- **fix+feat(relatórios): resumo executivo reescrito como briefing de especialista + teste de e-mail manual** ✅ 2026-07-28
+  - **Bug do link do e-mail:** "Ver relatório completo" levava a `rm.lhgmoteis.com.br` (domínio customizado configurado como produção na Vercel), que não carregava — DNS do domínio não aponta corretamente pro Vercel ainda. Não é bug de código; requer corrigir o registro DNS (`CNAME` → `cname.vercel-dns.com`) e verificar em Settings → Domains do projeto
+  - **Resumo executivo reescrito:** `executiveSummary` troca `mainWin`/`mainConcern` (fragmentados) por `diagnosis` (3-5 frases interpretativas — o que aconteceu e por quê, como um especialista de RM explicaria pro dono do negócio) e `watchNextWeek` (o que observar na próxima semana); `maxOutputTokens` 800→1800 pra caber a narrativa
+  - Prompt reforça: NUNCA sugerir % exato de reajuste na `priorityAction` (fica a cargo do Agente RM calcular respeitando guardrails/elasticidade) — o resumo fica estratégico (direção + recorte), o número sai depois
+  - `ExecutiveSummary` (componente) redesenhado: diagnóstico em destaque com ícone, "Plano de ação" agora mostra as top-3 `opportunities` (dados determinísticos, não a IA) numeradas com CTA individual pro Agente RM cada uma, além do `priorityAction`/CTA já existente; `watchNextWeek` como nota de rodapé
+  - `opportunities` agora é passado como prop pra `ExecutiveSummary` (`report-viewer.tsx`) — mesma lista completa que já alimenta a seção ⑦; fallback `?? []` em todos os call sites (relatórios gerados antes desse campo existir não têm `opportunities` no JSONB salvo)
+  - Fallback (quando a IA falha): `diagnosis`/`priorityAction`/`agentPromptLink` passam a vir de `opportunities[0]` (dados reais) em vez de texto genérico
+  - `send-weekly-report.ts`: e-mail passa a incluir `diagnosis` e `watchNextWeek` no corpo
+  - **Rota de teste manual:** `POST /api/admin/test-weekly-email` (`unitSlug` + `testEmail`, admin+) — pega o relatório `done` mais recente da unidade e envia só pro e-mail informado (`sendWeeklyReportEmail` ganhou `testEmailOverride`), sem tocar na lista real de destinatários; assunto prefixado `[TESTE]`
+  - **Armadilha:** essa rota exige sessão autenticada no navegador (cookie) — não pode ser chamada via curl/CLI sem uma sessão real; testes locais via CLI precisam replicar a lógica direto (script one-off com `node --env-file=.env.local`, deletado depois de usar)
+  - **Limitação desta sessão:** ferramentas de navegador (chrome-devtools/playwright) estavam desconectadas — o redesenho visual do `ExecutiveSummary` foi validado só por tsc+build, sem screenshot; pendente validação visual do usuário
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
