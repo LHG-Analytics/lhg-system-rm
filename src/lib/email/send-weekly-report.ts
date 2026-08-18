@@ -170,7 +170,7 @@ export async function sendWeeklyReportEmail(params: SendWeeklyReportEmailParams)
     console.warn('[send-weekly-report] RESEND_API_KEY não configurada — e-mail não enviado.')
     return
   }
-  const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'relatorios@lushmotel.com.br'
+  const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'relatorios@lhgmoteis.com.br'
 
   const recipients = await getReportRecipients(params.unitId)
   if (!recipients.length) {
