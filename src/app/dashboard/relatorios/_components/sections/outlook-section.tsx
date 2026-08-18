@@ -31,7 +31,7 @@ export function OutlookSection({ data }: Props) {
         onClick={() => setOpen(v => !v)}
       >
         <div className="flex items-center gap-2">
-          <h3 className="font-medium text-sm">⑧ Outlook — próximas 2 semanas</h3>
+          <h3 className="font-medium text-sm">⑨ Outlook — próximas 2 semanas</h3>
           {hotDays > 0 && <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 rounded-full">{hotDays} dia(s) quente(s)</span>}
           {coldDays > 0 && <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">{coldDays} dia(s) fraco(s)</span>}
         </div>

@@ -10,6 +10,7 @@ import { BudgetTracking } from './sections/budget-tracking'
 import { KpisSection } from './sections/kpis-section'
 import { DiscountsSection } from './sections/discounts-section'
 import { DemandSection } from './sections/demand-section'
+import { OpportunitiesSection } from './sections/opportunities-section'
 import { CompetitorsSection } from './sections/competitors-section'
 import { OutlookSection } from './sections/outlook-section'
 import { IntelligenceSection } from './sections/intelligence-section'
@@ -280,6 +281,7 @@ export function ReportViewer({ report, loading, onGenerateNow, onRetry, unitSlug
       <KpisSection data={data.kpis} />
       <DiscountsSection data={data.discounts} />
       <DemandSection data={data.demand} />
+      <OpportunitiesSection data={data.opportunities} />
       <CompetitorsSection data={data.competitors} />
       <OutlookSection data={data.outlook} />
       <IntelligenceSection data={data.intelligence} />

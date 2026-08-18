@@ -70,6 +70,7 @@ export function KpisSection({ data }: Props) {
                 <th className="text-left pb-1 font-medium">KPI</th>
                 <th className="text-right pb-1 font-medium">Este período</th>
                 {data.previousWeek && <th className="text-right pb-1 font-medium">Semana ant.</th>}
+                {data.previousMonth && <th className="text-right pb-1 font-medium">Mês ant.</th>}
                 {data.sameWeekLastYear && <th className="text-right pb-1 font-medium">Ano anterior</th>}
               </tr>
             </thead>
@@ -82,6 +83,12 @@ export function KpisSection({ data }: Props) {
                     <td className="text-right text-muted-foreground">
                       {item.fmt(data.previousWeek[item.key])}
                       <span className="text-xs ml-1">({deltaPct(data.current[item.key], data.previousWeek[item.key])})</span>
+                    </td>
+                  )}
+                  {data.previousMonth && (
+                    <td className="text-right text-muted-foreground">
+                      {item.fmt(data.previousMonth[item.key])}
+                      <span className="text-xs ml-1">({deltaPct(data.current[item.key], data.previousMonth[item.key])})</span>
                     </td>
                   )}
                   {data.sameWeekLastYear && (

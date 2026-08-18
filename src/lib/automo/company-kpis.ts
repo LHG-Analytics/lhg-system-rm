@@ -20,6 +20,7 @@ import {
   cteSuiteDaysByDow,
 } from './suite-days'
 import { buildWeekdayFilterSQL } from './operational-day'
+import { queryWeekdayForecastBasis, queryFutureSuiteDaysByDow, computeWeekdayWeightedRemainder } from './weekday-forecast'
 
 // ─── Date helpers (exportados para uso em channel-kpis.ts) ────────────────────
 
@@ -238,7 +239,7 @@ async function queryBigNumbers(
   // Para retrocompatibilidade, expomos um "totalSuites equivalente" = suite_dias / dias
   const totalSuites = Math.max(1, Math.round(totalSuiteDias / Math.max(1, daysDiff)))
 
-  return { totalAllValue, totalRentals, avgTicket, giro, trevpar, avgOccTime, totalSuites }
+  return { totalAllValue, totalRentals, avgTicket, giro, trevpar, avgOccTime, totalSuites, totalSuiteDias }
 }
 
 // ─── DataTableSuiteCategory query ─────────────────────────────────────────────
@@ -665,7 +666,6 @@ export async function fetchCompanyKPIsFromAutomo(
   const monIsoEnd   = `${nowBR.getFullYear()}-${String(nowBR.getMonth() + 1).padStart(2, '0')}-${String(nowBR.getDate()).padStart(2, '0')} 05:59:59`
   const daysElapsed = yesterday.getDate()
   const totalDaysInMonth = new Date(nowBR.getFullYear(), nowBR.getMonth() + 1, 0).getDate()
-  const remainingDays = totalDaysInMonth - daysElapsed
 
   const periodType = await getUnitPeriodType(unitSlug)
 
@@ -699,13 +699,25 @@ export async function fetchCompanyKPIsFromAutomo(
     queryPeriodMixInline(pool, periodType, catIds, isoStart, isoEnd,                    timeFilter, statusFilter, dateCol, weekdays),
   ])
 
-  // Previsão de fechamento do mês
-  const safeElapsed = daysElapsed > 0 ? daysElapsed : 1
-  const dailyAvgValue   = monthBN.totalAllValue   / safeElapsed
-  const dailyAvgRentals = monthBN.totalRentals     / safeElapsed
-  const forecastValue   = monthBN.totalAllValue   + dailyAvgValue   * remainingDays
-  const forecastRentals = monthBN.totalRentals     + dailyAvgRentals * remainingDays
-  // RevPAR/Ocupação forecast: taxa diária do mês atual (já normalizada por suites×dias) → projetada para o mês inteiro
+  // Previsão de fechamento do mês — ponderada por dia da semana (não mais média linear).
+  // Para cada dia que falta no mês: giro (locações/suíte-dia) e ticket médio das ÚLTIMAS 4
+  // ocorrências daquele dia da semana (janela de 28 dias corridos), aplicados às suítes-dia
+  // realmente disponíveis nesse dia futuro (já descontando bloqueios agendados).
+  const histStartIso       = addDays(monIsoEnd, -28)
+  const firstOfNextMonthIso = addDays(monIsoStart, totalDaysInMonth)
+  const [weekdayBasis, futureSuiteDaysByDow] = await Promise.all([
+    queryWeekdayForecastBasis(pool, catIds, histStartIso, monIsoEnd),
+    queryFutureSuiteDaysByDow(pool, catIds, monIsoEnd, firstOfNextMonthIso),
+  ])
+  const remainder = computeWeekdayWeightedRemainder(weekdayBasis, futureSuiteDaysByDow)
+
+  const forecastValue   = monthBN.totalAllValue + remainder.remainingValue
+  const forecastRentals = monthBN.totalRentals  + remainder.remainingLocacoes
+  const forecastSuiteDias = monthBN.totalSuiteDias + remainder.remainingSuiteDias
+
+  // RevPAR/Ocupação forecast: ainda usam a taxa corrente do mês (não ponderada por dia da
+  // semana) — dependem de uma base de receita diferente (valorliquidolocacao/tempo ocupado)
+  // que não está coberta por esta primeira iteração da previsão ponderada.
   const revparForecast     = +monthRevOcc.totalRevpar.toFixed(2)
   const occupancyForecast  = +monthRevOcc.totalOccupancyRate.toFixed(2)
 
@@ -713,9 +725,9 @@ export async function fetchCompanyKPIsFromAutomo(
     totalAllValueForecast:              +forecastValue.toFixed(2),
     totalAllRentalsApartmentsForecast:  Math.round(forecastRentals),
     totalAllTicketAverageForecast:      forecastRentals > 0 ? +(forecastValue / forecastRentals).toFixed(2) : 0,
-    totalAllTrevparForecast:            currentBN.totalSuites > 0 ? +(forecastValue / currentBN.totalSuites / totalDaysInMonth).toFixed(2) : 0,
+    totalAllTrevparForecast:            forecastSuiteDias > 0 ? +(forecastValue / forecastSuiteDias).toFixed(2) : 0,
     totalAllRevparForecast:             revparForecast,
-    totalAllGiroForecast:               currentBN.totalSuites > 0 ? +(forecastRentals / currentBN.totalSuites / totalDaysInMonth).toFixed(2) : 0,
+    totalAllGiroForecast:               forecastSuiteDias > 0 ? +(forecastRentals / forecastSuiteDias).toFixed(2) : 0,
     totalAverageOccupationTimeForecast: monthBN.avgOccTime,
     totalAllOccupancyRateForecast:      occupancyForecast,
   }

@@ -6,6 +6,8 @@ import { runAnomalyDetection } from '@/lib/anomaly/detector'
 import { computeAndPersistElasticity } from '@/lib/pricing/elasticity'
 import { syncBudgetForUnit } from '@/lib/budget/google-sheets'
 import { generateWeeklyReport } from '@/lib/reports/generate-weekly-report'
+import { sendWeeklyReportEmail } from '@/lib/email/send-weekly-report'
+import type { WeeklyReportData } from '@/lib/reports/types'
 import { updateGuiaCompetitorsForUnit } from '@/lib/competitors/cron-update'
 import { bootstrapPricingLessons } from '@/lib/agente/bootstrap-learning'
 import { fetchCompanyKPIsFromAutomo } from '@/lib/automo/company-kpis'
@@ -340,7 +342,7 @@ export async function runPendingReviews(): Promise<RunReviewsResult> {
   // Refreshar cache de eventos + registrar observação clima × demanda para todas as unidades
   const { data: allConfigs } = await admin
     .from('rm_agent_config')
-    .select('unit_id, city, budget_sheet_url, units(slug)')
+    .select('unit_id, city, budget_sheet_url, units(slug, name)')
     .not('city', 'is', null)
 
   // Manutenção por unidade em paralelo — era sequencial e causava timeout
@@ -364,18 +366,46 @@ export async function runPendingReviews(): Promise<RunReviewsResult> {
     const periodEnd   = lastSunday.toISOString().slice(0, 10)
 
     // Gera relatório apenas para unidades SEM revisão agendada hoje (revisão > relatório)
-    const reportSlugs = (allConfigs ?? [])
+    const reportTargets = (allConfigs ?? [])
       .filter(c => !reviewedUnitIds.has(c.unit_id))
-      .map(c => (c.units as { slug: string } | null)?.slug)
-      .filter(Boolean) as string[]
+      .map(c => ({ unitId: c.unit_id, unit: c.units as { slug: string; name: string } | null }))
+      .filter(t => !!t.unit?.slug) as { unitId: string; unit: { slug: string; name: string } }[]
 
-    console.log(`[run-reviews] Segunda-feira — gerando relatórios para: ${reportSlugs.join(', ')} (${periodStart} → ${periodEnd})`)
+    console.log(`[run-reviews] Segunda-feira — gerando relatórios para: ${reportTargets.map(t => t.unit.slug).join(', ')} (${periodStart} → ${periodEnd})`)
 
     const reportResults = await Promise.allSettled(
-      reportSlugs.map(slug => generateWeeklyReport(slug, periodStart, periodEnd))
+      reportTargets.map(async (t) => {
+        const reportId = await generateWeeklyReport(t.unit.slug, periodStart, periodEnd)
+        if (!reportId) return null
+
+        // Envio por e-mail — falha não deve derrubar o relatório em si (já persistido).
+        try {
+          const { data: reportRow } = await admin
+            .from('rm_weekly_reports')
+            .select('report_data')
+            .eq('id', reportId)
+            .single()
+          const reportData = reportRow?.report_data as unknown as WeeklyReportData | null
+          if (reportData) {
+            await sendWeeklyReportEmail({
+              unitId: t.unitId,
+              unitSlug: t.unit.slug,
+              unitName: t.unit.name,
+              reportId,
+              periodStart,
+              periodEnd,
+              reportData,
+            })
+          }
+        } catch (e) {
+          console.error(`[run-reviews] Falha ao enviar e-mail do relatório de ${t.unit.slug}:`, e instanceof Error ? e.message : String(e))
+        }
+
+        return reportId
+      })
     )
-    const reportDone   = reportResults.filter(r => r.status === 'fulfilled').length
-    const reportFailed = reportResults.filter(r => r.status === 'rejected').length
+    const reportDone   = reportResults.filter(r => r.status === 'fulfilled' && r.value).length
+    const reportFailed = reportResults.length - reportDone
     console.log(`[run-reviews] Relatórios: ${reportDone} gerados, ${reportFailed} falhou`)
   }
 

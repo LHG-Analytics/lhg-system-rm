@@ -22,6 +22,8 @@ import { buildRejectionLessonsBlock } from '@/lib/agente/rejection-lessons'
 import { buildUnitStructureBlock } from '@/lib/agente/unit-structure'
 import { queryDemandPattern, buildDemandPatternBlock } from '@/lib/automo/demand-pattern'
 import { queryCategoryTurnoKPIs } from '@/lib/automo/category-turno-kpis'
+import { queryCategoryPeriodKPIs } from '@/lib/automo/category-period-kpis'
+import { detectOpportunities } from '@/lib/reports/opportunities'
 
 const MONTH_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
@@ -120,6 +122,12 @@ export async function generateWeeklyReport(
   const lyEnd = new Date(periodEnd + 'T12:00:00Z')
   lyEnd.setUTCFullYear(lyEnd.getUTCFullYear() - 1)
 
+  // Mesmo período, um mês atrás (mesma duração)
+  const moStart = new Date(periodStart + 'T12:00:00Z')
+  moStart.setUTCMonth(moStart.getUTCMonth() - 1)
+  const moEnd = new Date(periodEnd + 'T12:00:00Z')
+  moEnd.setUTCMonth(moEnd.getUTCMonth() - 1)
+
   // Upcoming events cutoff
   const eventsEnd = new Date(periodEnd + 'T12:00:00Z')
   eventsEnd.setUTCDate(eventsEnd.getUTCDate() + 14)
@@ -157,6 +165,8 @@ export async function generateWeeklyReport(
       demandPatternResult,
       mtdKpisResult,
       turnoCategoryResult,
+      monthAgoKpisResult,
+      categoryPeriodResult,
     ] = await Promise.allSettled([
       fetchCompanyKPIsFromAutomo(unitSlug, startDDMM, endDDMM),
       fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(prevStartStr), isoToDDMMYYYY(prevEndStr)),
@@ -231,6 +241,8 @@ export async function generateWeeklyReport(
       queryDemandPattern(unitSlug, 60),
       fetchCompanyKPIsFromAutomo(unitSlug, firstOfBudgetMonthDDMM, mtdEndDDMM),
       queryCategoryTurnoKPIs(unitSlug, startDDMM, endDDMM),
+      fetchCompanyKPIsFromAutomo(unitSlug, isoToDDMMYYYY(moStart.toISOString().slice(0, 10)), isoToDDMMYYYY(moEnd.toISOString().slice(0, 10))),
+      queryCategoryPeriodKPIs(unitSlug, startDDMM, endDDMM),
     ])
 
     const guardrailsResult = await admin
@@ -259,6 +271,8 @@ export async function generateWeeklyReport(
     const prevReport = prevReportResult.status === 'fulfilled' ? prevReportResult.value.data?.[0] : null
     const demandPattern = demandPatternResult.status === 'fulfilled' ? demandPatternResult.value : null
     const turnoCategoryRows = turnoCategoryResult.status === 'fulfilled' ? turnoCategoryResult.value : []
+    const monthAgoKpis = monthAgoKpisResult.status === 'fulfilled' ? monthAgoKpisResult.value : null
+    const categoryPeriodKPIs = categoryPeriodResult.status === 'fulfilled' ? categoryPeriodResult.value : []
     const guardrailsCount = guardrailsResult.count ?? 0
 
     // Recomputa gaps usando snapshots existentes (análise já feita na aba Concorrentes).
@@ -289,6 +303,7 @@ export async function generateWeeklyReport(
     }
     const prevSnapshot = prevKpis ? kpiSnapshotFromResponse(prevKpis) : null
     const lySnapshot = lyKpis ? kpiSnapshotFromResponse(lyKpis) : null
+    const monthAgoSnapshot = monthAgoKpis ? kpiSnapshotFromResponse(monthAgoKpis) : null
 
     const prevReportData = prevReport?.report_data as WeeklyReportData | null
     const prevCurrentSnapshot = prevReportData?.kpis?.current ?? null
@@ -692,6 +707,29 @@ export async function generateWeeklyReport(
     const { formatMoney: fmtMoney } = makeCurrencyFormatter(unitSlug)
     const unitStructureBlock = buildUnitStructureBlock(suiteAvail, [], [])
 
+    // Oportunidades por categoria × período/turno/dia da semana — calculadas a partir de
+    // dados já buscados (sem query extra), com link direto pro Agente RM em cada item.
+    const opportunities: WeeklyReportData['opportunities'] = detectOpportunities(
+      categoryPeriodKPIs,
+      turnoCategoryRows,
+      kpis?.DataTableGiroByWeek ?? [],
+      fmtMoney,
+    ).map(o => ({
+      dimension: o.dimension,
+      categoria: o.categoria,
+      label: o.label,
+      metric: o.metric,
+      value: o.value,
+      benchmarkValue: o.benchmarkValue,
+      gapPct: o.gapPct,
+      direction: o.direction,
+      suggestion: o.suggestion,
+      agentPromptLink: `/dashboard/agente?unit=${unitSlug}&q=${encodeURIComponent(`[Relatório ${startDDMM}–${endDDMM}] ${o.agentPrompt}`)}`,
+    }))
+    const opportunitiesBlock = opportunities.length > 0
+      ? `## Oportunidades detectadas (top ${opportunities.length})\n` + opportunities.map(o => `- ${o.suggestion}`).join('\n')
+      : null
+
     // Contexto analítico
     const competitorGapsTyped: CompetitorGap[] = competitorGaps.map(g => ({
       categoria_nossa: g.categoria_nossa ?? '',
@@ -786,6 +824,7 @@ ${historicalInsights.map(h => `- ${h.fromDate}→${h.toDate}: ${h.changesCount} 
       seasonalityBlock || null,
       forecastBlock || null,
       historicalCtx || null,
+      opportunitiesBlock,
     ].filter(Boolean).join('\n\n')
 
     // Trava anti-Guia: se a unidade não opera o canal Guia de Motéis, não sugerir descontos do Guia.
@@ -810,7 +849,7 @@ PERÍODOS DE REFERÊNCIA (cite SEMPRE ao mencionar variações — use APENAS o 
 REGRAS INVIOLÁVEIS para o JSON:
 1. "headline": inclua o período atual em DD/MM e um dado numérico chave.
 2. "keyPoints": termine cada bullet com o período de referência. Use "vs semana anterior (${fmtPrevStart}–${fmtPrevEnd})" ou "vs ano anterior (${fmtLyStart}–${fmtLyEnd})". NUNCA use siglas como "LY" ou "yoy".
-3. "priorityAction": use dados REAIS. NUNCA sugira variação > ${maxVar}% — se o mercado exigir mais, diga "ajustar em ${maxVar}% agora e reavaliar". Pode propor novo tier de dia se o padrão horário justificar.
+3. "priorityAction": use dados REAIS. NUNCA sugira variação > ${maxVar}% — se o mercado exigir mais, diga "ajustar em ${maxVar}% agora e reavaliar". Pode propor novo tier de dia se o padrão horário justificar. Se houver "Oportunidades detectadas" no contexto, baseie a priorityAction na de maior impacto — não invente uma oportunidade diferente das listadas.
 4. "agentPrompt": instrução cirúrgica (máx 280 chars) que NÃO mencione percentual fixo — cite categorias específicas, padrão de dia (semana vs FDS) e objetivo de KPI. Exemplos: "Analise RevPAR por categoria e reduza seletivamente semana para categorias com giro <2 e eleve FDS premium 3-5%." NÃO escreva "ajuste de até X%" — isso faz o agente aplicar o mesmo % em tudo. SEMPRE preencha este campo — nunca deixe null.
 5. "actionType": "price_proposal" | "discount_proposal" | "agent_config" | "none". Use "none" SOMENTE se os KPIs estão dentro da meta E sem variação relevante — na prática quase sempre há uma ação útil.
 
@@ -916,8 +955,10 @@ Retorne APENAS o JSON (sem markdown fence, sem texto extra):
       kpis: {
         current: currentSnapshot,
         previousWeek: prevSnapshot,
+        previousMonth: monthAgoSnapshot,
         sameWeekLastYear: lySnapshot,
       },
+      opportunities,
       discounts,
       demand,
       competitors,

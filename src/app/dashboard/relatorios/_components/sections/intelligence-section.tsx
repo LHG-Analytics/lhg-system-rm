@@ -93,7 +93,7 @@ export function IntelligenceSection({ data }: Props) {
         onClick={() => setOpen(v => !v)}
       >
         <div className="flex items-center gap-3">
-          <h3 className="font-medium text-sm">⑨ O que o agente aprendeu no período</h3>
+          <h3 className="font-medium text-sm">⑩ O que o agente aprendeu no período</h3>
           {insights.length > 0 && (
             <span className="text-xs text-muted-foreground">
               {insights.length} {insights.length > 1 ? 'transições' : 'transição'} analisada{insights.length > 1 ? 's' : ''}

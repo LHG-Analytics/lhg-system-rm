@@ -1317,11 +1317,29 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - `SpreadsheetView`: prop `unitSlug?` adicionada; aplica `getCategoryDisplayName` na tabela principal e no painel-resumo lateral
   - **Para adicionar mapeamento de outra unidade:** adicionar entrada em `UNIT_CATEGORY_MAP` e/ou `UNIT_SCHED_EXCLUDED` em `category-display-names.ts`
 
+- **feat(previsão+relatórios+e-mail): previsão ponderada por dia da semana, oportunidades no relatório semanal e envio automático por e-mail** ✅ 2026-07-28 (commit `cb60e30`→próximo; Linear pendente — limite)
+  - **Previsão de fechamento ponderada por dia da semana:** `fetchCompanyKPIsFromAutomo` trocou a extrapolação linear (`totalAllValue / diasElapsed × diasRestantes`, que ignorava o mix de dias da semana) por um cálculo bottom-up dia-a-dia
+  - `src/lib/automo/weekday-forecast.ts`: `queryWeekdayForecastBasis` (giro e ticket médio por dia da semana, janela de 28 dias corridos = últimas 4 ocorrências de cada dia) + `queryFutureSuiteDaysByDow` (suítes-dia disponíveis nos dias que faltam no mês, por dia da semana — respeita bloqueios/manutenção já agendados) + `computeWeekdayWeightedRemainder` (combina os dois: giro histórico × capacidade futura real)
+  - Afeta `totalAllValueForecast`, `totalAllRentalsApartmentsForecast`, `totalAllTicketAverageForecast`, `totalAllGiroForecast`, `totalAllTrevparForecast` — todos ponderados; **RevPAR e Ocupação forecast permanecem como taxa corrente** (base de receita diferente — `valorliquidolocacao`/tempo ocupado — não coberta nesta iteração)
+  - `queryBigNumbers` passou a expor `totalSuiteDias` (suítes-dia da janela elapsed) — necessário para compor o denominador ponderado do mês inteiro
+  - **Armadilha:** a janela histórica de 28 dias pode cruzar o limite do mês anterior — é intencional (queremos as últimas 4 ocorrências reais do dia da semana, não só as do mês corrente)
+  - **Relatório semanal mais recomendativo:** nova comparação **mês anterior** (`kpis.previousMonth`, mesma duração do período, um mês atrás) ao lado de semana anterior e ano anterior; coluna "Mês ant." adicionada em `kpis-section.tsx`
+  - `src/lib/reports/opportunities.ts`: motor de detecção **determinístico** (sem IA) — compara giro/RevPAR de cada categoria×período, categoria×turno e categoria×dia-da-semana com a média ponderada da própria categoria; desvio ≥25% (mín. 3 locações de amostra) entra na lista, ordenado por |gap%| desc, top 8
+  - Reaproveita dados já buscados — `queryCategoryPeriodKPIs` (novo fetch), `turnoCategoryTable` e `DataTableGiroByWeek` (já existentes) — sem custo de latência extra relevante
+  - Nova seção `⑦ Oportunidades e plano de ação` (`opportunities-section.tsx`) no relatório — cada item com sugestão em português + link direto pro Agente RM (`agentPromptLink`, mesmo padrão do `executiveSummary`); seções ⑦→⑪ renumeradas (Competidores/Outlook/Intelligence/AgentConfig)
+  - Bloco "Oportunidades detectadas" injetado no contexto do resumo executivo (IA) — instrução explícita para a `priorityAction` se basear na oportunidade de maior impacto, não inventar uma diferente
+  - **Envio automático por e-mail toda segunda-feira:** `src/lib/email/send-weekly-report.ts` — `sendWeeklyReportEmail()` via Resend (`RESEND_API_KEY` + `RESEND_FROM_EMAIL`, mesmo padrão de degradação graciosa das integrações opcionais — sem a key, loga e não envia)
+  - Destinatários: perfis `super_admin`/`admin`/`manager` vinculados à unidade **+ admins globais** (`unit_id IS NULL`) — mesma regra de acesso usada nas RLS policies do resto do sistema; sem tela de configuração nova
+  - E-mail HTML (tabelas inline, sem flexbox — compatibilidade com clientes de e-mail): headline + key points, ação prioritária, top 3 oportunidades, KPIs principais, botão para o relatório completo
+  - Hook em `run-reviews.ts`: dentro do bloco de segunda-feira, após `generateWeeklyReport` retornar o `reportId`, busca `report_data` recém-salvo e chama `sendWeeklyReportEmail` — falha de e-mail não derruba o relatório (já persistido antes)
+  - **Variáveis necessárias em produção:** `RESEND_API_KEY` e `RESEND_FROM_EMAIL` (domínio já verificado pelo usuário no Resend antes desta entrega)
+  - **Armadilha:** `queryPeriodMix`/`queryCategoryPeriodKPIs` não são afetados por esta mudança — só a previsão de fechamento (mês corrente) e o relatório semanal foram tocados
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
 - **LHG-168:** Publicação automática de preços aprovados no site próprio via API Automo — hoje aprovação existe só no banco; sem push ao canal, o agente é puramente advisory
-- **LHG-169:** Relatório executivo semanal por e-mail (Resend) — resumo RevPAR/Giro/Ocupação vs meta, melhor/pior categoria, proposta de ação — valor visível para gestão sem abrir o app
+- ~~**LHG-169:** Relatório executivo semanal por e-mail (Resend)~~ ✅ concluído em 2026-07-28 (ver entrada abaixo)
 
 #### 🟠 P1 — Inteligência preditiva
 - ~~**LHG-171:** Dashboard de performance do agente RM~~ ✅ concluído em 2026-05-06

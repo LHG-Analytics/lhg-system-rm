@@ -66,8 +66,23 @@ export interface WeeklyReportData {
   kpis: {
     current: KPISnapshot
     previousWeek: KPISnapshot | null
+    previousMonth: KPISnapshot | null
     sameWeekLastYear: KPISnapshot | null
   }
+
+  /** Oportunidades detectadas por categoria × período/turno/dia da semana — o "plano de ação" do relatório. */
+  opportunities: {
+    dimension: 'periodo' | 'turno' | 'dia_semana'
+    categoria: string
+    label: string
+    metric: 'giro' | 'revpar'
+    value: number
+    benchmarkValue: number
+    gapPct: number
+    direction: 'below' | 'above'
+    suggestion: string
+    agentPromptLink: string
+  }[]
 
   discounts: {
     activeDiscounts: {
