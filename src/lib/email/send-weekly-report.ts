@@ -156,6 +156,8 @@ export interface SendWeeklyReportEmailParams {
   periodStart: string  // YYYY-MM-DD
   periodEnd:   string  // YYYY-MM-DD
   reportData:  WeeklyReportData
+  /** Quando informado, ignora a lista de destinatários da unidade e envia SÓ para este e-mail — usado no teste manual. */
+  testEmailOverride?: string
 }
 
 /**
@@ -172,7 +174,9 @@ export async function sendWeeklyReportEmail(params: SendWeeklyReportEmailParams)
   }
   const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'relatorios@lhgmoteis.com.br'
 
-  const recipients = await getReportRecipients(params.unitId)
+  const recipients = params.testEmailOverride
+    ? [{ email: params.testEmailOverride, name: null }]
+    : await getReportRecipients(params.unitId)
   if (!recipients.length) {
     console.warn(`[send-weekly-report] Nenhum destinatário encontrado para a unidade ${params.unitSlug}.`)
     return
@@ -196,7 +200,7 @@ export async function sendWeeklyReportEmail(params: SendWeeklyReportEmailParams)
   const { error } = await resend.emails.send({
     from: `LHG Revenue Manager <${fromEmail}>`,
     to: recipients.map((r) => r.email),
-    subject: `Relatório semanal — ${params.unitName} (${periodLabel})`,
+    subject: `${params.testEmailOverride ? '[TESTE] ' : ''}Relatório semanal — ${params.unitName} (${periodLabel})`,
     html,
   })
 
