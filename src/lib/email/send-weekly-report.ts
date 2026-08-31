@@ -211,6 +211,9 @@ export async function sendWeeklyReportEmail(params: SendWeeklyReportEmailParams)
     return
   }
   const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'relatorios@lhgmoteis.com.br'
+  // Cópia fixa em todo envio real — não entra em envios de teste (testEmailOverride),
+  // que devem ficar isolados só pro endereço de teste.
+  const ccEmail = process.env.WEEKLY_REPORT_CC_EMAIL ?? 'clovis@lhgmoteis.com.br'
 
   const recipients = params.testEmailOverride
     ? [{ email: params.testEmailOverride, name: null }]
@@ -238,6 +241,7 @@ export async function sendWeeklyReportEmail(params: SendWeeklyReportEmailParams)
   const { error } = await resend.emails.send({
     from: `LHG Revenue Manager <${fromEmail}>`,
     to: recipients.map((r) => r.email),
+    ...(params.testEmailOverride ? {} : { cc: ccEmail }),
     subject: `${params.testEmailOverride ? '[TESTE] ' : ''}Relatório semanal — ${params.unitName} (${periodLabel})`,
     html,
   })
