@@ -16,6 +16,7 @@ export interface ScheduledReview {
   checkpoint_days: number  // 7 | 14 | 28 — HV1
   status: 'pending' | 'running' | 'done' | 'failed'
   conv_id: string | null
+  report_id: string | null
   created_at: string
   executed_at: string | null
 }

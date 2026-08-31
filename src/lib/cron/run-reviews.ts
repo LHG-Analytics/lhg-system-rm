@@ -315,10 +315,16 @@ export async function runPendingReviews(): Promise<RunReviewsResult> {
         link:    `/dashboard/agente/relatorios?unit=${unit.slug}`,
       })
 
-      await admin
+      // conv_id NÃO é usado aqui — tem FK pra rm_conversations, e reportId é um id de
+      // rm_weekly_reports (revisões geram relatório completo, não conversa, desde LHG-162).
+      // Setar conv_id=reportId violava a FK e fazia esse UPDATE falhar silenciosamente
+      // (código não checava erro) — a revisão ficava travada em 'running' pra sempre,
+      // mesmo já tendo concluído com sucesso (notificação criada, relatório gerado).
+      const { error: updateErr } = await admin
         .from('scheduled_reviews')
-        .update({ status: 'done', conv_id: reportId ?? null, executed_at: new Date().toISOString() })
+        .update({ status: 'done', report_id: reportId ?? null, executed_at: new Date().toISOString() })
         .eq('id', review.id)
+      if (updateErr) throw new Error(`Falha ao marcar revisão como done: ${updateErr.message}`)
 
       results.push({
         reviewId: review.id,

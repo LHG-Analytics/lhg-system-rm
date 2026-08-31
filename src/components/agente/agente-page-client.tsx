@@ -608,7 +608,6 @@ export function AgenteChatPage({ activeUnit, initialProposals, userRole, units =
           <ScheduledReviewsList
             unitSlug={unitSlug}
             unitId={unitId}
-            onSelectConversation={handleSelectConversationById}
             onSelectProposal={handleSelectProposal}
           />
         </TabsContent>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -32,7 +33,6 @@ import type { ScheduledReview } from '@/app/api/agente/scheduled-reviews/route'
 interface ScheduledReviewsListProps {
   unitSlug: string
   unitId: string
-  onSelectConversation?: (convId: string) => void
   onSelectProposal?: (proposalId: string) => void
 }
 
@@ -48,7 +48,7 @@ function formatScheduled(iso: string) {
   return format(d, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
 }
 
-export function ScheduledReviewsList({ unitSlug, unitId, onSelectConversation, onSelectProposal }: ScheduledReviewsListProps) {
+export function ScheduledReviewsList({ unitSlug, unitId, onSelectProposal }: ScheduledReviewsListProps) {
   const supabase = useMemo(() => createClient(), [])
   const [reviews, setReviews]         = useState<ScheduledReview[]>([])
   const [loading, setLoading]         = useState(true)
@@ -367,15 +367,12 @@ export function ScheduledReviewsList({ unitSlug, unitId, onSelectConversation, o
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
-                      {review.conv_id && onSelectConversation && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-xs gap-1.5"
-                          onClick={() => onSelectConversation(review.conv_id!)}
-                        >
-                          <CalendarCheck className="size-3.5" />
-                          Ver análise
+                      {review.report_id && (
+                        <Button variant="outline" size="sm" className="text-xs gap-1.5" asChild>
+                          <Link href={`/dashboard/agente/relatorios?unit=${unitSlug}`}>
+                            <CalendarCheck className="size-3.5" />
+                            Ver análise
+                          </Link>
                         </Button>
                       )}
                       <Button

@@ -1582,6 +1582,7 @@ export type Database = {
           id: string
           note: string | null
           proposal_id: string | null
+          report_id: string | null
           scheduled_at: string
           status: string
           unit_id: string
@@ -1595,6 +1596,7 @@ export type Database = {
           id?: string
           note?: string | null
           proposal_id?: string | null
+          report_id?: string | null
           scheduled_at?: string
           status?: string
           unit_id: string
@@ -1608,6 +1610,7 @@ export type Database = {
           id?: string
           note?: string | null
           proposal_id?: string | null
+          report_id?: string | null
           scheduled_at?: string
           status?: string
           unit_id?: string
@@ -1625,6 +1628,13 @@ export type Database = {
             columns: ["proposal_id"]
             isOneToOne: false
             referencedRelation: "price_proposals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_reviews_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "rm_weekly_reports"
             referencedColumns: ["id"]
           },
           {
