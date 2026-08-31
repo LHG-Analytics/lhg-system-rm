@@ -190,9 +190,6 @@ export async function runPendingReviews(): Promise<RunReviewsResult> {
 
   if (fetchError) throw new Error(`Erro ao buscar revisões: ${fetchError.message}`)
 
-  // IDs de unidades que têm revisão agendada hoje — serão excluídas do relatório de segunda
-  const reviewedUnitIds = new Set<string>((reviews ?? []).map((r) => r.unit_id))
-
   const results: ReviewRunResult[] = []
 
   for (const review of reviews ?? []) {
@@ -371,9 +368,10 @@ export async function runPendingReviews(): Promise<RunReviewsResult> {
     const periodStart = lastMonday.toISOString().slice(0, 10)
     const periodEnd   = lastSunday.toISOString().slice(0, 10)
 
-    // Gera relatório apenas para unidades SEM revisão agendada hoje (revisão > relatório)
+    // Toda unidade recebe o relatório semanal + e-mail, mesmo as que também têm uma
+    // revisão de checkpoint agendada hoje — são relatórios distintos (o checkpoint cobre
+    // a janela da proposta aprovada; este cobre a semana corrida) e o e-mail só sai daqui.
     const reportTargets = (allConfigs ?? [])
-      .filter(c => !reviewedUnitIds.has(c.unit_id))
       .map(c => ({ unitId: c.unit_id, unit: c.units as { slug: string; name: string } | null }))
       .filter(t => !!t.unit?.slug) as { unitId: string; unit: { slug: string; name: string } }[]
 

@@ -1385,6 +1385,12 @@ Fase 2 (high value) entregue em 2026-05-04. 5 issues concluídas em paralelo apr
   - **Lição:** todo `.update()`/`.insert()` do Supabase que não desestrutura `{ error }` e não trata falha é um ponto cego — pode falhar silenciosamente (FK, RLS, constraint) sem nenhum sinal, e o código segue como se tivesse dado certo. Vale auditar os outros updates "fire-and-forget" do `run-reviews.ts` com a mesma lente
   - **Armadilha:** o middleware Next.js 16 (`proxy.ts`) rodar em `/api/*` é redundante por definição neste projeto — toda rota já se autentica sozinha; qualquer nova exclusão de rota pública deve ser pensada com isso em mente (a resposta certa quase sempre é "toda API é pública pro middleware, a rota se vira sozinha")
 
+- **feat(email): CC fixo + relatório semanal de TODA unidade toda segunda, sem exceção** ✅ 2026-08-31
+  - `WEEKLY_REPORT_CC_EMAIL` (fallback `clovis@lhgmoteis.com.br`) — cópia fixa em todo envio real de relatório semanal; não entra em envios de teste (`testEmailOverride`), que ficam isolados só pro endereço de teste
+  - **Cron do relatório semanal movido pra 08:00 BRT** (`vercel.json`: `0 10 * * *` → `0 11 * * *`, já que BRT = UTC-3 sem horário de verão desde 2019)
+  - **Regra "revisão > relatório" removida:** antes, uma unidade com checkpoint de revisão agendado pra segunda-feira NÃO recebia o relatório semanal regular nem o e-mail (só a notificação in-app da revisão) — por isso só 2 de 6 unidades receberam e-mail na primeira segunda após o fix do cron. Agora `reportTargets` inclui TODAS as unidades com `rm_agent_config`, sem filtrar por revisão agendada no mesmo dia — são relatórios com propósitos diferentes (checkpoint cobre a janela da proposta aprovada; semanal cobre a semana corrida) e o e-mail só sai do fluxo semanal
+  - **Armadilha:** isso significa que uma unidade pode gerar 2 relatórios no mesmo dia (checkpoint + semanal) — é intencional, não duplicata; se o usuário reclamar de volume, a solução é revisar a frequência dos checkpoints, não voltar a suprimir o relatório semanal
+
 ### 🔲 Roadmap — Fase 5 (planejado 2026-05+)
 
 #### 🔴 P0 — Fecha o loop de valor (agente → canal)
